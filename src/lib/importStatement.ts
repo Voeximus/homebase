@@ -126,8 +126,11 @@ export function parseBofaCsv(text: string): RawRow[] {
 
 // --- Plan --------------------------------------------------------------------
 
+// Dedup on date + amount + normalized MERCHANT (not the raw description), so a
+// transaction is recognized as already-logged even if the wording differs a
+// little between a CSV row, a PDF row, or a hand-entered one.
 const dupeKey = (date: string, amount: number, desc: string) =>
-  `${date}|${amount.toFixed(2)}|${desc.slice(0, 40)}`;
+  `${date}|${amount.toFixed(2)}|${merchantKey(desc)}`;
 
 /** Classify every row, resolve bills to recurring ids, and drop anything that's
  *  already in the ledger. */

@@ -62,14 +62,13 @@ export const SEED_RECURRING: SeedRecurring[] = [
   // --- Xinyan personal (from Xinyan) ---
   { name: "Spot Pet insurance", amount: 99.93, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", dueDays: [4] },
   { name: "T-Mobile", amount: 27.48, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Xinyan", owner: "Xinyan", dueDays: [29] },
-  { name: "Apple", amount: 15.12, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Xinyan", owner: "Xinyan", dueDays: [1] },
   { name: "Claude Pro", amount: 21.62, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Xinyan", owner: "Xinyan", dueDays: [20] },
-  { name: "Card payment (…6813)", amount: 85, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", note: "min payment", dueDays: [8], linksDebtLast4: "6813" },
+  { name: "Card payment (…6813)", amount: 35, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", note: "min payment (~$35; was $85 once for late fees)", dueDays: [8], linksDebtLast4: "6813" },
 ];
 
 export const SEED_DEBTS: SeedDebt[] = [
   { name: "Credit card (…4728)", balance: 4156.78, apr: 26.49, minPayment: 135, color: "#ef4444" },
-  { name: "Xinyan card (…6813)", balance: 591.09, minPayment: 85, color: "#f59e0b" },
+  { name: "Xinyan card (…6813)", balance: 591.09, minPayment: 35, color: "#f59e0b" },
   { name: "Affirm — Anthropic", balance: 99.1, color: "#6366f1" },
   { name: "Affirm — Amazon", balance: 189.68, color: "#8b5cf6" },
   { name: "Mom (China)", balance: 800, color: "#ec4899" },

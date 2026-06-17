@@ -20,6 +20,7 @@ import {
   orderedDebts,
   payoffSchedule,
   planMath,
+  SAVINGS_SPLIT,
   simulatePayoff,
   sumTargets,
 } from "../lib/plan";
@@ -68,7 +69,7 @@ export function ThreeMonthPlan() {
   }
 
   const payoff = simulatePayoff(ordered, math.firepower, new Date());
-  const schedule = payoffSchedule(ordered, math.firepower, new Date());
+  const schedule = payoffSchedule(ordered, math.firepower, new Date(), [15, 29], SAVINGS_SPLIT);
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
   const totalOriginal = data.debts.reduce((s, d) => s + d.originalBalance, 0);
   const cleared = totalOriginal - math.totalDebt;
@@ -294,6 +295,22 @@ export function ThreeMonthPlan() {
                         </p>
                       </div>
                       <div className="mt-2 space-y-1.5">
+                        {ev.toSavings > 0 && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-semibold text-emerald-300">
+                              {formatMoney(ev.toSavings)}
+                            </span>
+                            <span className="text-slate-500">→</span>
+                            <span className="text-slate-300">
+                              {ev.savingsKind === "emergency" ? "Emergency fund" : "Investing / goals"}
+                            </span>
+                            {ev.savingsKind === "emergency" && (
+                              <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">
+                                {formatMoney(ev.emergencyBalance)} / {formatMoney(SAVINGS_SPLIT.emergencyTarget)}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {ev.payments.map((p, j) => (
                           <div key={j} className="flex items-center gap-2 text-xs">
                             <span className="font-semibold text-white">{formatMoney(p.amount)}</span>
@@ -318,8 +335,9 @@ export function ThreeMonthPlan() {
           </>
         )}
         <p className="mt-3 text-[11px] text-slate-500">
-          Smallest debts first (snowball) for fast wins; the …4728 card keeps accruing 26.49% so it's
-          last but gets everything once the rest are gone.
+          Smallest debts first (snowball) for fast wins. Once the …4728 card is all that's left,
+          $500/check builds your emergency fund to {formatMoney(SAVINGS_SPLIT.emergencyTarget)} (then rolls into
+          investing) and the rest keeps hitting the card.
         </p>
       </Card>
 

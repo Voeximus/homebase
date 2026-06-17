@@ -171,10 +171,24 @@ export interface PayoffPayment {
 export interface PayoffEvent {
   date: Date;
   payments: PayoffPayment[];
-  total: number; // sent this payday
+  total: number; // total sent this payday (debt + savings)
+  toDebt: number; // portion to debts
+  toSavings: number; // portion skimmed for savings (0 before the split)
+  savingsKind: "emergency" | "investing" | null;
+  emergencyBalance: number; // running emergency-fund balance
   interest: number; // interest that accrued before this payday
   remaining: number; // total debt left after this payday
 }
+
+// The plan change (Gino + Xinyan, 2026-06-17): ONCE every debt except the …4728
+// card is cleared, skim $500/check into savings — emergency fund first to $1,500,
+// then it rolls into investing/goals — and the rest keeps hitting the card. Until
+// the card is the last one standing, every check stays all-at-debt (snowball).
+export interface SavingsSplit {
+  perCheck: number; // $ skimmed off each check for savings
+  emergencyTarget: number; // fill emergency to here, then redirect to investing
+}
+export const SAVINGS_SPLIT: SavingsSplit = { perCheck: 500, emergencyTarget: 1500 };
 
 function nextPayday(after: Date, payDays: number[]): Date {
   const day = after.getDate();
@@ -194,6 +208,7 @@ export function payoffSchedule(
   monthlyFirepower: number,
   from: Date,
   payDays: number[] = [15, 29],
+  split?: SavingsSplit,
 ): PayoffEvent[] {
   if (monthlyFirepower <= 0) return [];
   const perPay = monthlyFirepower / 2;
@@ -204,10 +219,24 @@ export function payoffSchedule(
     rate: (d.apr ?? 0) / 100 / 24, // per-payday (~24 paydays/yr)
   }));
   const events: PayoffEvent[] = [];
+  let emergency = 0;
   let date = nextPayday(from, payDays);
   let guard = 0;
 
   while (bal.some((b) => b.balance > 0.005) && guard++ < 240) {
+    // The split only starts once the card is the ONLY debt left (everything
+    // smaller is snowballed away first). Then skim the savings slice off the top.
+    const cardOnly = bal.filter((b) => b.balance > 0.005).length === 1;
+    let toSavings = 0;
+    let savingsKind: "emergency" | "investing" | null = null;
+    if (split && cardOnly) {
+      toSavings = Math.min(split.perCheck, perPay);
+      const emShare = Math.min(toSavings, Math.max(0, split.emergencyTarget - emergency));
+      emergency += emShare;
+      savingsKind = emShare > 0.005 ? "emergency" : "investing";
+    }
+    const debtFire = perPay - toSavings;
+
     let interest = 0;
     for (const b of bal)
       if (b.balance > 0) {
@@ -215,7 +244,7 @@ export function payoffSchedule(
         b.balance += i;
         interest += i;
       }
-    let fire = perPay;
+    let fire = debtFire;
     const payments: PayoffPayment[] = [];
     for (const b of bal) {
       if (fire <= 0.005) break;
@@ -225,8 +254,19 @@ export function payoffSchedule(
       fire -= pay;
       payments.push({ debtId: b.id, name: b.name, amount: pay, clears: b.balance <= 0.005 });
     }
+    const toDebt = debtFire - fire;
     const remaining = bal.reduce((s, b) => s + Math.max(0, b.balance), 0);
-    events.push({ date: new Date(date), payments, total: perPay - fire, interest, remaining });
+    events.push({
+      date: new Date(date),
+      payments,
+      total: toDebt + toSavings,
+      toDebt,
+      toSavings,
+      savingsKind,
+      emergencyBalance: emergency,
+      interest,
+      remaining,
+    });
     date = nextPayday(date, payDays);
   }
   return events;
