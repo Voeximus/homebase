@@ -41,11 +41,17 @@ export interface SkippedItem {
   reason: string;
 }
 
+export interface DuplicateItem {
+  date: string;
+  amount: number; // positive magnitude
+  description: string;
+}
+
 export interface ImportPlan {
   variable: VariableItem[];
   bills: BillItem[];
   skipped: SkippedItem[];
-  duplicates: number; // rows already in the ledger, dropped silently
+  duplicates: DuplicateItem[]; // already in the ledger — shown, not added
 }
 
 // --- CSV ---------------------------------------------------------------------
@@ -154,7 +160,12 @@ export function buildImportPlan(
   const variable: VariableItem[] = [];
   const bills: BillItem[] = [];
   const skipped: SkippedItem[] = [];
-  let duplicates = 0;
+  const duplicates: DuplicateItem[] = [];
+  const asDup = (r: RawRow): DuplicateItem => ({
+    date: r.date,
+    amount: Math.abs(r.amount),
+    description: r.description,
+  });
 
   for (const r of rows) {
     const c = classify(r.description, r.amount, learned);
@@ -170,13 +181,13 @@ export function buildImportPlan(
         // Bill rule matched but no such recurring row — treat as variable other.
         if (!seen.has(dupeKey(r.date, r.amount, r.description))) {
           variable.push({ date: r.date, amount: Math.abs(r.amount), description: r.description, appCategory: "other", reason: `${c.reason} (no matching bill row)`, include: true, merchant: merchantKey(r.description), lowConfidence: true });
-        } else duplicates++;
+        } else duplicates.push(asDup(r));
         continue;
       }
       const monthKey = r.date.slice(0, 7);
       const day = parseInt(r.date.slice(8, 10), 10);
       if (paidBill.has(`${rec.id}|${monthKey}|${day}`)) {
-        duplicates++;
+        duplicates.push(asDup(r));
         continue;
       }
       bills.push({ date: r.date, monthKey, day, amount: Math.abs(r.amount), description: r.description, billName: rec.name, recurringId: rec.id, include: true });
@@ -185,7 +196,7 @@ export function buildImportPlan(
 
     // variable
     if (seen.has(dupeKey(r.date, r.amount, r.description))) {
-      duplicates++;
+      duplicates.push(asDup(r));
       continue;
     }
     variable.push({ date: r.date, amount: Math.abs(r.amount), description: r.description, appCategory: c.appCategory ?? "other", reason: c.reason, include: true, merchant: merchantKey(r.description), lowConfidence: c.confidence === "low" });

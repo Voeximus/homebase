@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { FileUp, Check } from "lucide-react";
+import { Check, ChevronDown, FileUp } from "lucide-react";
 import { useStore } from "../store/FinanceStore";
 import { formatMoney } from "../lib/format";
 import { getCategory } from "../lib/seed";
@@ -32,6 +32,7 @@ export function ImportSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [showDupes, setShowDupes] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
   const expenseCats = useMemo(
@@ -52,6 +53,7 @@ export function ImportSheet({
     setQuestions([]);
     setClarifyIdx(0);
     setClarified(true);
+    setShowDupes(false);
     setFileName(null);
     setError(null);
     setResult(null);
@@ -298,9 +300,49 @@ export function ImportSheet({
               <div className="rounded-xl bg-white/5 py-3">
                 <p className="text-xs text-slate-400">Skipped</p>
                 <p className="text-sm font-bold text-white">{plan.skipped.length}</p>
-                <p className="text-[10px] text-slate-500">{plan.duplicates} dupes</p>
+                <p className="text-[10px] text-slate-500">{plan.duplicates.length} dupes</p>
               </div>
             </div>
+
+            {/* Already in here — recognized and NOT re-added */}
+            {plan.duplicates.length > 0 && (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setShowDupes((s) => !s)}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                >
+                  <Check size={16} className="shrink-0 text-emerald-400" />
+                  <span className="flex-1 text-sm font-medium text-emerald-200">
+                    {plan.duplicates.length} already in here — no need to add
+                  </span>
+                  <ChevronDown
+                    size={15}
+                    className={`text-emerald-400/70 transition-transform ${showDupes ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {showDupes && (
+                  <div className="max-h-44 space-y-1 overflow-y-auto px-3 pb-2.5">
+                    {plan.duplicates.map((d, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between gap-2 text-xs text-slate-400"
+                      >
+                        <span className="min-w-0 truncate line-through">{d.description}</span>
+                        <span className="shrink-0">
+                          {d.date.slice(5)} · {formatMoney(d.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* What's actually being added */}
+            {(plan.bills.some((b) => b.include) || plan.variable.some((v) => v.include)) && (
+              <p className="-mb-1 text-sm font-semibold text-white">We'll add these</p>
+            )}
 
             {/* Category breakdown */}
             {Object.keys(totals.byCat).length > 0 && (
@@ -394,8 +436,8 @@ export function ImportSheet({
 
             {plan.variable.length === 0 && plan.bills.length === 0 && (
               <p className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-400">
-                Nothing new to import — everything in this file is already in your
-                ledger ({plan.duplicates} duplicates skipped).
+                Nothing new to import — all {plan.duplicates.length} of these are
+                already in your ledger.
               </p>
             )}
 
