@@ -120,6 +120,7 @@ export interface FinanceStore {
   loading: boolean;
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
+  setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
   setAccountBalance: (accountId: string, balance: number) => Promise<void>;
   addDebt: (d: {
     name: string;
@@ -595,6 +596,19 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             }
           }
         }
+      },
+      async setTransactionCategory(id, categoryId) {
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === id ? { ...t, categoryId } : t,
+          ),
+        }));
+        const { error } = await supabase
+          .from("transactions")
+          .update({ category_id: categoryId })
+          .eq("id", id);
+        if (error) console.error(error);
       },
       async setAccountBalance(accountId, balance) {
         setData((p) => ({

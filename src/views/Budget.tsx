@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, PieChart, Target } from "lucide-react";
+import { ChevronDown, PieChart, Target, Trash2 } from "lucide-react";
+import type { Transaction } from "../types";
 import { useStore } from "../store/FinanceStore";
 import { currentMonthKey, formatDate, formatMoney, monthLabel } from "../lib/format";
 import {
@@ -10,10 +11,14 @@ import {
   sumTargets,
   variableSpentThisMonth,
 } from "../lib/plan";
-import { Card, EmptyState, ProgressBar } from "../components/ui";
+import { Button, Card, EmptyState, labelClass, ProgressBar, Sheet } from "../components/ui";
 
 export function Budget() {
-  const { data } = useStore();
+  const { data, setTransactionCategory, deleteTransaction } = useStore();
+  const [editTxn, setEditTxn] = useState<Transaction | null>(null);
+  const expenseCats = data.categories.filter(
+    (c) => c.type === "expense" || c.type === "both",
+  );
   const target = sumTargets(LEAN_VARIABLE);
   const spent = variableSpentThisMonth(data.transactions, currentMonthKey());
   const byCat = spentByCategory(data.transactions, currentMonthKey());
@@ -156,18 +161,21 @@ export function Budget() {
                       </p>
                     ) : (
                       txns.map((t) => (
-                        <div
+                        <button
                           key={t.id}
-                          className="flex items-center justify-between gap-2 border-b border-white/[0.04] py-1.5 last:border-0"
+                          onClick={() => setEditTxn(t)}
+                          className="flex w-full items-center justify-between gap-2 border-b border-white/[0.04] py-1.5 text-left transition last:border-0 hover:bg-white/[0.03]"
                         >
                           <div className="min-w-0">
-                            <p className="truncate text-xs text-white">{t.description}</p>
-                            <p className="text-[10px] text-slate-500">{formatDate(t.date)}</p>
+                            <p className="break-words text-xs text-white">{t.description}</p>
+                            <p className="text-[10px] text-slate-500">
+                              {formatDate(t.date)} · tap to recategorize or delete
+                            </p>
                           </div>
                           <span className="shrink-0 text-xs font-medium text-white">
                             {formatMoney(t.amount)}
                           </span>
-                        </div>
+                        </button>
                       ))
                     )}
                   </div>
@@ -185,6 +193,57 @@ export function Budget() {
       <p className="px-2 pb-2 text-center text-[11px] text-slate-500">
         Spending fills in as you log purchases or import a statement.
       </p>
+
+      {/* Relabel or delete a transaction */}
+      <Sheet open={!!editTxn} onClose={() => setEditTxn(null)} title="Transaction">
+        {editTxn && (
+          <div className="space-y-4">
+            <div>
+              <p className="break-words text-sm font-medium text-white">
+                {editTxn.description}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {formatDate(editTxn.date)} · {formatMoney(editTxn.amount)}
+              </p>
+            </div>
+            <div>
+              <label className={labelClass}>Category — tap to change</label>
+              <div className="grid grid-cols-4 gap-2">
+                {expenseCats.map((c) => {
+                  const active = c.id === editTxn.categoryId;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={async () => {
+                        await setTransactionCategory(editTxn.id, c.id);
+                        setEditTxn(null);
+                      }}
+                      className={`flex flex-col items-center gap-1 rounded-xl border py-2.5 transition ${
+                        active
+                          ? "border-violet-500 bg-violet-500/15"
+                          : "border-white/10 bg-white/5 hover:bg-white/10"
+                      }`}
+                    >
+                      <span className="text-xl">{c.icon}</span>
+                      <span className="text-[10px] leading-tight text-slate-300">{c.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <Button
+              variant="danger"
+              className="w-full"
+              onClick={async () => {
+                await deleteTransaction(editTxn.id);
+                setEditTxn(null);
+              }}
+            >
+              <Trash2 size={18} /> Delete transaction
+            </Button>
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 }

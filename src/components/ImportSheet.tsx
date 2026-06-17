@@ -248,7 +248,7 @@ export function ImportSheet({
             </div>
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
               <p className="text-xs text-slate-400">New to me — what is this?</p>
-              <p className="mt-1 truncate text-base font-semibold text-white">
+              <p className="mt-1 break-words text-base font-semibold text-white">
                 {questions[clarifyIdx].sampleDesc}
               </p>
               <p className="mt-0.5 text-[11px] text-slate-500">
@@ -328,7 +328,7 @@ export function ImportSheet({
                         key={i}
                         className="flex items-center justify-between gap-2 text-xs text-slate-400"
                       >
-                        <span className="min-w-0 truncate line-through">{d.description}</span>
+                        <span className="min-w-0 break-words line-through">{d.description}</span>
                         <span className="shrink-0">
                           {d.date.slice(5)} · {formatMoney(d.amount)}
                         </span>
@@ -400,7 +400,7 @@ export function ImportSheet({
                   {plan.variable.map((v, i) => (
                     <div
                       key={i}
-                      className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${
+                      className={`flex items-start gap-2 rounded-lg px-2 py-1.5 ${
                         v.include ? "" : "opacity-40"
                       }`}
                     >
@@ -408,10 +408,10 @@ export function ImportSheet({
                         type="checkbox"
                         checked={v.include}
                         onChange={(e) => setVariable(i, { include: e.target.checked })}
-                        className="accent-violet-500"
+                        className="mt-0.5 accent-violet-500"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs text-white">{v.description}</p>
+                        <p className="break-words text-xs text-white">{v.description}</p>
                         <p className="text-[10px] text-slate-500">{v.date.slice(5)} · {v.reason}</p>
                       </div>
                       <select
