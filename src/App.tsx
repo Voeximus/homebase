@@ -101,7 +101,7 @@ function Shell() {
       </header>
 
       {/* Content */}
-      <main className="mt-3">
+      <main className="mt-4">
         {loading ? (
           <div className="flex justify-center py-32">
             <Loader2 className="animate-spin text-violet-400" size={26} />

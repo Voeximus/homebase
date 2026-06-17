@@ -77,7 +77,7 @@ export function ThreeMonthPlan() {
   const commit = commitmentProgress(new Date());
 
   return (
-    <div className="space-y-4 px-4 pt-4 lg:px-6">
+    <div className="space-y-5 px-4 pb-12 pt-4 lg:px-6">
       {/* Hero — the 90-day commitment (the real point: habits, not a deadline) */}
       <div
         className="overflow-hidden rounded-3xl p-6 text-white shadow-lg"

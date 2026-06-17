@@ -52,7 +52,7 @@ export function Budget() {
   }
 
   return (
-    <div className="space-y-4 px-4 pt-4 lg:px-6">
+    <div className="space-y-5 px-4 pb-12 pt-4 lg:px-6">
       {/* Hero — the big number, front and center */}
       <div
         className="overflow-hidden rounded-3xl p-6 text-white shadow-lg"

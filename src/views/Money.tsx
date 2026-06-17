@@ -159,7 +159,7 @@ export function Money() {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   return (
-    <div className="space-y-4 px-4 pt-4 lg:px-6">
+    <div className="space-y-5 px-4 pb-12 pt-4 lg:px-6">
       {/* Cash + accounts */}
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm text-slate-300">
