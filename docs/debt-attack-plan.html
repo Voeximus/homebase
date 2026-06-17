@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Debt Attack Plan — by the numbers</title>
+<style>
+  :root{
+    --bg:#06070b; --card:#0e1018; --card2:#15171f; --line:rgba(255,255,255,.07);
+    --text:#e8eaf0; --muted:#8b90a0; --dim:#6b7080;
+    --violet:#7c5cff; --teal:#2dd4bf; --emerald:#34d399; --amber:#f59e0b; --rose:#fb7185; --slate:#64748b;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:radial-gradient(1100px 700px at 80% -10%, rgba(124,92,255,.10), transparent 60%), var(--bg);
+    color:var(--text); font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased; padding:0 0 80px;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:0 20px}
+  header{padding:54px 0 30px}
+  .kicker{font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--violet); font-weight:700}
+  h1{font-size:34px; line-height:1.15; margin:.35em 0 .25em; letter-spacing:-.02em}
+  .thesis{font-size:17px; color:var(--muted); max-width:640px}
+  .thesis b{color:var(--text)}
+  nav.toc{display:flex; flex-wrap:wrap; gap:8px; margin-top:22px}
+  nav.toc a{font-size:12.5px; color:var(--muted); text-decoration:none; border:1px solid var(--line);
+    padding:6px 11px; border-radius:999px; transition:.15s}
+  nav.toc a:hover{color:var(--text); border-color:rgba(124,92,255,.5); background:rgba(124,92,255,.08)}
+  section{margin-top:34px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:20px; padding:24px}
+  h2{font-size:13px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim); margin:0 0 4px; font-weight:700}
+  .lead{font-size:21px; font-weight:650; letter-spacing:-.01em; margin:0 0 16px}
+  p{margin:0 0 12px} p:last-child{margin-bottom:0}
+  .muted{color:var(--muted)} .small{font-size:13.5px}
+  b.v{color:var(--violet)} b.t{color:var(--teal)} b.e{color:var(--emerald)} b.r{color:var(--rose)} b.a{color:var(--amber)}
+  .num{font-family:var(--mono)}
+
+  /* allocation bar */
+  .bar{display:flex; height:46px; border-radius:12px; overflow:hidden; margin:6px 0 14px; font-size:12px; font-weight:700}
+  .bar > div{display:flex; align-items:center; justify-content:center; color:#0a0a0f}
+  .seg-live{background:var(--slate); color:#fff}
+  .seg-var{background:var(--amber)}
+  .seg-debt{background:var(--violet); color:#fff}
+  .legend{display:flex; flex-wrap:wrap; gap:16px; font-size:13px; color:var(--muted)}
+  .legend i{width:10px; height:10px; border-radius:3px; display:inline-block; margin-right:7px; vertical-align:middle}
+
+  .grid{display:grid; gap:14px}
+  .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:620px){.g3,.g2{grid-template-columns:1fr}}
+  .stat{background:var(--card2); border:1px solid var(--line); border-radius:14px; padding:15px}
+  .stat .lbl{font-size:12px; color:var(--muted)}
+  .stat .big{font-size:23px; font-weight:750; letter-spacing:-.02em; margin-top:3px}
+  .stat .sub{font-size:12px; color:var(--dim); margin-top:2px}
+
+  table{width:100%; border-collapse:collapse; font-size:14px; margin-top:6px}
+  th,td{text-align:left; padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:700}
+  td.n{font-family:var(--mono); white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .pick{background:rgba(124,92,255,.07)}
+  .tag{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; letter-spacing:.04em}
+  .tag.you{background:rgba(124,92,255,.18); color:#c4b5fd}
+  .tag.alt{background:rgba(148,163,184,.16); color:#cbd5e1}
+
+  /* timeline */
+  .tl{margin-top:6px}
+  .tl-row{display:grid; grid-template-columns:96px 1fr 92px; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line)}
+  .tl-row:last-child{border-bottom:none}
+  .tl-when{font-size:13px; font-weight:650}
+  .tl-when small{display:block; color:var(--dim); font-weight:400; font-size:11px}
+  .tl-track{height:22px; background:var(--card2); border-radius:7px; overflow:hidden; position:relative}
+  .tl-fill{height:100%; border-radius:7px; background:linear-gradient(90deg,#5b3fd6,#7c5cff)}
+  .tl-fill.zero{background:var(--emerald)}
+  .tl-amt{font-family:var(--mono); font-size:14px; text-align:right; font-weight:650}
+  .tl-note{font-size:12px; color:var(--teal); margin-top:2px}
+
+  .callout{border-left:3px solid var(--violet); padding:4px 0 4px 16px; margin:14px 0; color:var(--muted)}
+  .callout b{color:var(--text)}
+  footer{margin-top:40px; color:var(--dim); font-size:12.5px; text-align:center}
+  .pay{display:grid; grid-template-columns:64px 1fr; gap:14px; align-items:start; padding:12px 0; border-bottom:1px solid var(--line)}
+  .pay:last-child{border-bottom:none}
+  .pay .day{font-family:var(--mono); font-size:15px; font-weight:700; color:var(--violet)}
+  .pay .t{font-weight:650; font-size:14.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="kicker">Homebase · Strategy</div>
+    <h1>The Debt Attack Plan — by the numbers</h1>
+    <p class="thesis">The whole plan rests on one idea: <b>clear the debt for momentum, not for math</b> — because at this payoff speed the two barely differ. Here's the percentage logic, the alternatives, and exactly when the money moves. Numbers are the conservative 2-paycheck month.</p>
+    <nav class="toc">
+      <a href="#split">The split</a>
+      <a href="#person">Per person</a>
+      <a href="#options">Other options</a>
+      <a href="#time">Over time</a>
+      <a href="#when">When to pay</a>
+    </nav>
+  </header>
+
+  <!-- ===================== THE SPLIT ===================== -->
+  <section id="split">
+    <div class="card">
+      <h2>1 · Where every dollar goes</h2>
+      <p class="lead">~34¢ of every dollar you earn is aimed at the debt.</p>
+      <div class="bar">
+        <div class="seg-live" style="width:44.7%">Living 45%</div>
+        <div class="seg-var" style="width:20.9%">Variable 21%</div>
+        <div class="seg-debt" style="width:34.4%">Debt 34%</div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--slate)"></i>Fixed living — rent, utilities, phones, insurance</span>
+        <span><i style="background:var(--amber)"></i>Lean variable — food, gas, dog, etc.</span>
+        <span><i style="background:var(--violet)"></i>Debt firepower</span>
+      </div>
+      <div class="grid g3" style="margin-top:18px">
+        <div class="stat"><div class="lbl">Fixed living</div><div class="big num">$2,672</div><div class="sub">44.7% of income</div></div>
+        <div class="stat"><div class="lbl">Lean variable</div><div class="big num">$1,250</div><div class="sub">20.9% of income</div></div>
+        <div class="stat" style="border-color:rgba(124,92,255,.4)"><div class="lbl" style="color:#c4b5fd">→ At the debt</div><div class="big num" style="color:var(--violet)">$2,053</div><div class="sub">34.4% of income</div></div>
+      </div>
+      <p class="small muted" style="margin-top:14px">Combined income is <b class="num" style="color:var(--text)">$5,975/mo</b> ($3,600 you + $2,375 Xinyan). The $2,053 firepower = your real surplus (~$1,633) <i>plus</i> the $420 of card &amp; Affirm minimums already baked into your bills.</p>
+    </div>
+  </section>
+
+  <!-- ===================== PER PERSON ===================== -->
+  <section id="person">
+    <div class="card">
+      <h2>2 · What each of you puts in</h2>
+      <p class="lead">Same ratio, two incomes — you each feel a one-third bite.</p>
+      <p class="muted small">You pool your money, so the 45 / 21 / 34 split applies to <b style="color:var(--text)">both</b> paychecks. Out of every dollar either of you earns, about 34¢ goes to debt right now. Your income split is already 60 / 40, which is why that's how you share rent.</p>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="stat">
+          <div class="lbl">Gino · 60% of household income</div>
+          <div class="big num">$3,600<span style="font-size:14px;color:var(--muted)">/mo</span></div>
+          <table style="margin-top:10px">
+            <tr><td>Living</td><td class="n">~$1,609</td></tr>
+            <tr><td>Variable</td><td class="n">~$753</td></tr>
+            <tr><td><b class="v">To debt</b></td><td class="n"><b class="v">~$1,237</b></td></tr>
+          </table>
+        </div>
+        <div class="stat">
+          <div class="lbl">Xinyan · 40% of household income</div>
+          <div class="big num">$2,375<span style="font-size:14px;color:var(--muted)">/mo</span></div>
+          <table style="margin-top:10px">
+            <tr><td>Living</td><td class="n">~$1,063</td></tr>
+            <tr><td>Variable</td><td class="n">~$497</td></tr>
+            <tr><td><b class="v">To debt</b></td><td class="n"><b class="v">~$816</b></td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="callout">
+        Most of the <b>balances</b> are yours (the $4,157 card, the Affirms, the $800 to mom) — Xinyan only carries the $591 card. So in practice: <b>Xinyan clears her own $591 card first</b>, then her third flows into the household attack. <b>Your income does the heavy lifting</b> on the big card. Same sacrifice rate, you just carry more weight.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== OPTIONS ===================== -->
+  <section id="options">
+    <div class="card">
+      <h2>3 · What the other options are</h2>
+      <p class="lead">Two real choices: the <i>order</i>, and the <i>intensity</i>.</p>
+
+      <p class="muted small" style="margin-top:4px"><b style="color:var(--text)">A. The order</b> — which debt dies first.</p>
+      <table>
+        <tr><th>&nbsp;</th><th>Snowball <span class="tag you">your pick</span></th><th>Avalanche <span class="tag alt">the alternative</span></th></tr>
+        <tr><td>Rule</td><td>smallest balance first</td><td>highest interest rate first</td></tr>
+        <tr><td>First target</td><td>Affirms → Xinyan's card</td><td>…4728 card (19.99%)</td></tr>
+        <tr><td>You feel a win</td><td class="n">in ~1 month (3 debts gone)</td><td class="n">in ~2½ months</td></tr>
+        <tr><td>Frees up</td><td>$285/mo of minimums to roll forward</td><td>nothing until the big card is done</td></tr>
+        <tr><td>Interest cost</td><td class="n">~$70 more, total</td><td class="n">~$70 less (the "winner")</td></tr>
+        <tr class="pick"><td>Verdict</td><td colspan="2">At a ~3-month payoff the gap is only <b class="v">~$70</b>. You're buying 3 quick wins + momentum for the price of one dinner out. Snowball wins.</td></tr>
+      </table>
+
+      <p class="muted small" style="margin-top:22px"><b style="color:var(--text)">B. The intensity</b> — how much of the 34% you actually commit. Less to debt = more breathing room now, but a longer road (and more interest on the 19.99% card).</p>
+      <table>
+        <tr><th>Level</th><th>% of income</th><th>$ / month</th><th>Debt-free</th><th>Left for life</th></tr>
+        <tr class="pick"><td><b class="v">All-in</b> <span class="tag you">plan</span></td><td class="n">34%</td><td class="n">$2,053</td><td class="n">~early Oct · 3 mo</td><td class="n">tightest</td></tr>
+        <tr><td>Balanced</td><td class="n">25%</td><td class="n">~$1,500</td><td class="n">~Nov · 4 mo</td><td class="n">+$550/mo</td></tr>
+        <tr><td>Gentle</td><td class="n">17%</td><td class="n">~$1,000</td><td class="n">~Dec–Jan · 6 mo</td><td class="n">+$1,050/mo</td></tr>
+      </table>
+      <p class="small muted" style="margin-top:12px">The 3-month plan is the <i>all-in</i> line — but remember it's a habit window, not a deadline. If a month runs hot, drop to "balanced" without guilt; the finish just slides a few weeks.</p>
+    </div>
+  </section>
+
+  <!-- ===================== OVER TIME ===================== -->
+  <section id="time">
+    <div class="card">
+      <h2>4 · How it plays out over time</h2>
+      <p class="lead">$5,837 → $0, firing $2,053/mo in snowball order.</p>
+      <div class="tl">
+        <div class="tl-row">
+          <div class="tl-when">Now<small>mid-June</small></div>
+          <div class="tl-track"><div class="tl-fill" style="width:100%"></div></div>
+          <div class="tl-amt">$5,837</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-when">+1 month<small>~mid-July</small></div>
+          <div class="tl-track"><div class="tl-fill" style="width:66%"></div></div>
+          <div class="tl-amt">$3,853</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-when">+2 months<small>~mid-Aug</small></div>
+          <div class="tl-track"><div class="tl-fill" style="width:32%"></div></div>
+          <div class="tl-amt">$1,864</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-when">+3 months<small>~late Sep / early Oct</small></div>
+          <div class="tl-track"><div class="tl-fill zero" style="width:4%"></div></div>
+          <div class="tl-amt" style="color:var(--emerald)">$0</div>
+        </div>
+      </div>
+      <p class="tl-note" style="margin-top:10px">By <b>mid-July</b>: Affirms ✓ · Xinyan's card ✓ · Mom (China) ✓ — <b>4 of 5 debts gone</b>, only the big card left. That early clean-sweep is the momentum the whole plan is built around.</p>
+      <p class="small muted" style="margin-top:10px">After that it's a single target: the $4,157 card, hit with the full $2,053/mo (now carrying the freed-up minimums). The light June check nudges the finish from mid-September toward <b style="color:var(--text)">early October</b> — and that's fine.</p>
+    </div>
+  </section>
+
+  <!-- ===================== WHEN ===================== -->
+  <section id="when">
+    <div class="card">
+      <h2>5 · When to put the money in</h2>
+      <p class="lead">Two sweeps a month — right after each check clears its bills.</p>
+      <p class="muted small">Your cash lands on paydays (~15th &amp; ~29th); rent leaves on the 1st. So don't attack debt at the start of the month when cash is committed to rent — sweep the leftover to the target debt <b style="color:var(--text)">right after each paycheck</b>, once that cycle's bills are covered.</p>
+
+      <div style="margin-top:14px">
+        <div class="pay"><div class="day">1st</div><div><div class="t">Rent leaves — hold</div><div class="muted small">$1,715 out. Cash is committed; no debt sweep here.</div></div></div>
+        <div class="pay"><div class="day">~15th</div><div><div class="t">Payday → Sweep #1</div><div class="muted small">Both checks land. Cover mom + the card minimum, then send <b class="num" style="color:var(--text)">~$1,000</b> to the target debt.</div></div></div>
+        <div class="pay"><div class="day">~29th</div><div><div class="t">Payday → Sweep #2</div><div class="muted small">Second check lands. Cover mom's 2nd half, then send <b class="num" style="color:var(--text)">~$1,000</b> more.</div></div></div>
+      </div>
+
+      <div class="callout" style="margin-top:18px">
+        <b>The one rule:</b> never let a sweep drop your cash below <b class="num">~$2,700</b> (about one month of expenses). That cushion stays put the whole sprint — so if something breaks, it doesn't go back on the 19.99% card and undo the work.
+      </div>
+      <p class="small muted">This month only: the <b class="r">end-of-June check is light (~$1,400)</b> — sick days from the trip. So Sweep #2 is smaller in June; full pace resumes with the normal ~July 13 check.</p>
+    </div>
+  </section>
+
+  <footer>
+    Remember the date is the <b style="color:var(--text)">scoreboard, not the deadline</b>. When the debt's gone, the same $2,053/mo (that 34%) swings onto the next target — China&nbsp;→ studio&nbsp;→ emergency fund. Same machine, new goal.<br>
+    <span style="opacity:.6">Homebase · debt-attack-plan · conservative 2-paycheck month</span>
+  </footer>
+
+</div>
+</body>
+</html>
