@@ -59,7 +59,7 @@ Accounts: **Geo $1,566.26 · Xinyan $751.00 · Joint $18.74 = cash $2,336.00**. 
 Every tap in the deployed/preview app writes to the **live Supabase DB**. On 2026-06-18 Gino feature-tested thinking it was a sandbox → 7 stray `payDebtExtra` rows drove cash to −$266; restored exactly via a reversal script. **Health-mode food library + gauge + meal selection are local-first (localStorage) and do NOT touch Supabase** until `foods` syncs. A "practice mode" was offered, not built.
 
 ## OPEN ITEMS / pending Gino actions
-1. **▶ Run `supabase/schema_v6.sql` once** in the Supabase SQL editor → turns on **food-library cloud sync** (until then it's per-device localStorage, fully working; on first load after the table exists, local foods migrate up once). The SQL is idempotent.
+1. ✅ **DONE (2026-06-18):** Gino ran `supabase/schema_v6.sql` — the `foods` table is live (RLS verified, reachable). **Food-library cloud sync is ON.** Each device's local foods migrate up on next open.
 2. **🔒 Security lockdown (still open):** the app is public with RLS=authenticated-full → (a) open the URL → sign up the **shared household login**, (b) Supabase → Auth → **disable new sign-ups** (else any stranger who signs up sees their finances). Test account stays valid after.
 3. To see the **new app icon** on a phone, remove + re-add the home-screen shortcut (PWA icons cache).
 4. **Offered, not built:** a "practice mode"/demo login (sandbox); logging the weekly scale over time (health trend).
