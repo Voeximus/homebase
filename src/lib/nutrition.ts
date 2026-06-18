@@ -175,6 +175,9 @@ export function loadCustomFoods(): Food[] {
 export function saveCustomFoods(foods: Food[]): void {
   localStorage.setItem(LS_KEY, JSON.stringify(foods));
 }
+export function clearCustomFoods(): void {
+  localStorage.removeItem(LS_KEY);
+}
 export function loadLibrary(): Food[] {
   return [...SEED_FOODS, ...loadCustomFoods()];
 }

@@ -1,6 +1,8 @@
 // Domain model for Homebase. These shapes map 1:1 to future Supabase tables,
 // so moving from local storage to the cloud is a swap, not a rewrite.
 
+import type { Food } from "./lib/nutrition";
+
 export type TxnType = "income" | "expense";
 
 export interface Category {
@@ -132,6 +134,7 @@ export interface AppData {
   recurring: Recurring[];
   paidBills: PaidBill[];
   merchantRules: MerchantRule[];
+  foods: Food[]; // shared custom food library (meal builder)
 }
 
 export type Tab = "plan" | "budget" | "money";

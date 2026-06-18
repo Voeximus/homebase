@@ -4,9 +4,7 @@ import { BarcodeScanner } from "../components/BarcodeScanner";
 import { lookupBarcode } from "../lib/barcode";
 import {
   DAILY,
-  loadLibrary,
-  loadCustomFoods,
-  saveCustomFoods,
+  SEED_FOODS,
   ROLE_LABEL,
   ROLE_ORDER,
   scaleTarget,
@@ -15,6 +13,7 @@ import {
   type FoodRole,
   type MealSolution,
 } from "../lib/nutrition";
+import { useStore } from "../store/FinanceStore";
 import { Button, inputClass, labelClass, Sheet } from "../components/ui";
 
 const ACC = { gino: "#ef8136", xinyan: "#2dd1c0" };
@@ -27,7 +26,8 @@ const SHARES: { label: string; v: number }[] = [
 ];
 
 export function MealBuilder() {
-  const [lib, setLib] = useState<Food[]>(() => loadLibrary());
+  const { data } = useStore();
+  const lib = useMemo(() => [...SEED_FOODS, ...data.foods], [data.foods]);
   const [selected, setSelected] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem("hb-meal-sel") || "[]");
@@ -46,8 +46,6 @@ export function MealBuilder() {
   useEffect(() => {
     localStorage.setItem("hb-meal-share", String(share));
   }, [share]);
-
-  const refresh = () => setLib(loadLibrary());
 
   const selFoods = useMemo(
     () => selected.map((id) => lib.find((f) => f.id === id)).filter(Boolean) as Food[],
@@ -209,11 +207,7 @@ export function MealBuilder() {
         </p>
       </section>
 
-      <AddFoodSheet
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onSaved={refresh}
-      />
+      <AddFoodSheet open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }
@@ -257,12 +251,12 @@ const ROLES: FoodRole[] = ["protein", "carb", "veg", "fat", "other"];
 function AddFoodSheet({
   open,
   onClose,
-  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
 }) {
+  const { data, addFood, deleteFood } = useStore();
+  const customs = data.foods;
   const [name, setName] = useState("");
   const [role, setRole] = useState<FoodRole>("protein");
   const [kcal, setKcal] = useState("");
@@ -273,11 +267,6 @@ function AddFoodSheet({
   const [scanOpen, setScanOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [customs, setCustoms] = useState<Food[]>(() => loadCustomFoods());
-
-  useEffect(() => {
-    if (open) setCustoms(loadCustomFoods());
-  }, [open]);
 
   const num = (s: string) => Math.max(0, parseFloat(s) || 0);
   const valid = name.trim() !== "" && kcal !== "";
@@ -286,7 +275,7 @@ function AddFoodSheet({
     const clean = code.replace(/\D/g, "");
     if (clean.length < 6) return;
     setBarcode(clean);
-    const existing = loadCustomFoods().find((x) => x.barcode === clean);
+    const existing = data.foods.find((x) => x.barcode === clean);
     if (existing) {
       setStatus(`"${existing.name}" is already in your library.`);
       return;
@@ -310,21 +299,15 @@ function AddFoodSheet({
 
   function save() {
     if (!valid) return;
-    const food: Food = {
-      id: `c-${Date.now()}`,
+    addFood({
       name: name.trim(),
       role,
       kcal: num(kcal),
       p: num(p),
       c: num(c),
       f: num(f),
-      custom: true,
       barcode: barcode.replace(/\D/g, "") || undefined,
-    };
-    const next = [...loadCustomFoods(), food];
-    saveCustomFoods(next);
-    setCustoms(next);
-    onSaved();
+    });
     setName("");
     setKcal("");
     setP("");
@@ -335,10 +318,7 @@ function AddFoodSheet({
   }
 
   function remove(id: string) {
-    const next = loadCustomFoods().filter((x) => x.id !== id);
-    saveCustomFoods(next);
-    setCustoms(next);
-    onSaved();
+    deleteFood(id);
   }
 
   return (

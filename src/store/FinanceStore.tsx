@@ -22,6 +22,12 @@ import type {
 import { supabase } from "../lib/supabase";
 import { DEFAULT_CATEGORIES } from "../lib/seed";
 import { SEED_ACCOUNTS, SEED_DEBTS, SEED_RECURRING } from "../lib/household";
+import {
+  type Food,
+  loadCustomFoods,
+  saveCustomFoods,
+  clearCustomFoods,
+} from "../lib/nutrition";
 
 // --- DB row -> app model mappers --------------------------------------------
 // Postgres numeric columns come back as strings, so amounts are Number()'d.
@@ -113,6 +119,35 @@ function mapMerchantRule(r: any): MerchantRule {
   };
 }
 
+function mapFood(r: any): Food {
+  return {
+    id: r.id,
+    name: r.name,
+    role: r.role,
+    kcal: Number(r.kcal),
+    p: Number(r.p),
+    c: Number(r.c),
+    f: Number(r.f),
+    serving: r.serving != null ? Number(r.serving) : undefined,
+    note: r.note ?? undefined,
+    barcode: r.barcode ?? undefined,
+    custom: true,
+  };
+}
+function foodToRow(f: Omit<Food, "id" | "custom">) {
+  return {
+    name: f.name,
+    role: f.role,
+    kcal: f.kcal,
+    p: f.p,
+    c: f.c,
+    f: f.f,
+    serving: f.serving ?? null,
+    note: f.note ?? null,
+    barcode: f.barcode ?? null,
+  };
+}
+
 const IMPOSSIBLE_ID = "00000000-0000-0000-0000-000000000000";
 
 export interface FinanceStore {
@@ -182,6 +217,9 @@ export interface FinanceStore {
     categoryId?: string;
     billName?: string;
   }) => Promise<void>;
+  // Shared food library for the meal builder (Supabase when set up, else local).
+  addFood: (food: Omit<Food, "id" | "custom">) => Promise<void>;
+  deleteFood: (id: string) => Promise<void>;
 }
 
 const Ctx = createContext<FinanceStore | null>(null);
@@ -196,12 +234,19 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     recurring: [],
     paidBills: [],
     merchantRules: [],
+    foods: [],
   });
   const [loading, setLoading] = useState(true);
 
   // Latest data for actions that read-modify-write (payDebt, contributeGoal).
   const dataRef = useRef(data);
   dataRef.current = data;
+  // True once the `foods` table is reachable; false → fall back to localStorage.
+  const foodsSynced = useRef(false);
+  const migrationDone = useRef(false);
+  // Resolves when the initial foods load finishes, so add/delete never run
+  // against an undetermined sync mode.
+  const foodsReady = useRef<Promise<void> | null>(null);
 
   // Initial load + live sync. Any change (from either device) refetches the
   // affected table so both screens stay in step.
@@ -258,7 +303,62 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (active)
         setData((p) => ({ ...p, merchantRules: (rows ?? []).map(mapMerchantRule) }));
     }
+    async function loadFoods() {
+      const { data: rows, error } = await supabase
+        .from("foods")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (!active) return;
+      if (error) {
+        // `foods` table not created yet → fall back to this device's localStorage.
+        foodsSynced.current = false;
+        setData((p) => ({ ...p, foods: loadCustomFoods() }));
+        return;
+      }
+      foodsSynced.current = true;
+      const dbFoods = (rows ?? []).map(mapFood);
 
+      // One-time migration: lift any local foods not already in the cloud up to
+      // Supabase, then drop the local copy. Runs once per session, and clears
+      // localStorage ONLY after the insert is confirmed — a failed insert must
+      // never erase the user's foods.
+      if (!migrationDone.current) {
+        const local = loadCustomFoods();
+        const missing = local.filter(
+          (l) =>
+            !dbFoods.some((d) =>
+              l.barcode
+                ? d.barcode === l.barcode
+                : d.name.toLowerCase() === l.name.toLowerCase(),
+            ),
+        );
+        if (missing.length) {
+          const { error: insErr } = await supabase
+            .from("foods")
+            .insert(missing.map(foodToRow));
+          if (insErr) {
+            // Keep localStorage intact; show local + cloud merged, retry next load.
+            console.error("Food library migration failed:", insErr);
+            if (active)
+              setData((p) => ({ ...p, foods: [...dbFoods, ...loadCustomFoods()] }));
+            return;
+          }
+          clearCustomFoods();
+          migrationDone.current = true;
+          const { data: rows2 } = await supabase
+            .from("foods")
+            .select("*")
+            .order("created_at", { ascending: true });
+          if (active) setData((p) => ({ ...p, foods: (rows2 ?? []).map(mapFood) }));
+          return;
+        }
+        migrationDone.current = true;
+      }
+      setData((p) => ({ ...p, foods: dbFoods }));
+    }
+
+    const foodsPromise = loadFoods();
+    foodsReady.current = foodsPromise;
     Promise.all([
       loadTransactions(),
       loadDebts(),
@@ -267,6 +367,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       loadRecurring(),
       loadPaidBills(),
       loadMerchantRules(),
+      foodsPromise,
     ]).finally(() => {
       if (active) setLoading(false);
     });
@@ -307,6 +408,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "merchant_rules" },
         () => loadMerchantRules(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "foods" },
+        () => loadFoods(),
       )
       .subscribe();
 
@@ -504,6 +610,40 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               mapMerchantRule(saved),
             ],
           }));
+      },
+      async addFood(food) {
+        await foodsReady.current;
+        if (!foodsSynced.current) {
+          const f: Food = { ...food, id: `c-${Date.now()}`, custom: true };
+          saveCustomFoods([...loadCustomFoods(), f]);
+          setData((p) => ({ ...p, foods: [...p.foods, f] }));
+          return;
+        }
+        const { data: row, error } = await supabase
+          .from("foods")
+          .insert(foodToRow(food))
+          .select()
+          .single();
+        if (error || !row) return console.error(error);
+        setData((p) => ({ ...p, foods: [...p.foods, mapFood(row)] }));
+      },
+      async deleteFood(id) {
+        await foodsReady.current;
+        setData((p) => ({ ...p, foods: p.foods.filter((x) => x.id !== id) }));
+        if (!foodsSynced.current) {
+          saveCustomFoods(loadCustomFoods().filter((x) => x.id !== id));
+          return;
+        }
+        const { error } = await supabase.from("foods").delete().eq("id", id);
+        if (error) {
+          // Delete failed → restore truth from the cloud so the UI doesn't lie.
+          console.error(error);
+          const { data: rows } = await supabase
+            .from("foods")
+            .select("*")
+            .order("created_at", { ascending: true });
+          setData((p) => ({ ...p, foods: (rows ?? []).map(mapFood) }));
+        }
       },
       async addTransaction(t) {
         const { data: row, error } = await supabase

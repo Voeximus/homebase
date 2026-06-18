@@ -1,20 +1,22 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="hb" x1="110" y1="116" x2="402" y2="398" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#34c5e8"/>
+    <linearGradient id="hb" x1="150" y1="150" x2="360" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3fd0ec"/>
       <stop offset="1" stop-color="#46d18a"/>
     </linearGradient>
+    <radialGradient id="glow" cx="256" cy="250" r="175" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34c5e8" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#34c5e8" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="512" height="512" rx="0" fill="#0a0d12"/>
-  <!-- faint blueprint hairlines -->
-  <g stroke="#19222e" stroke-width="2">
-    <path d="M0 176 H512 M0 336 H512 M176 0 V512 M336 0 V512"/>
-  </g>
-  <!-- house: cyan -> green, the two-instrument identity -->
+  <!-- full-bleed graphite: any OS mask shows no white edge -->
+  <rect width="512" height="512" fill="#0a0d12"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+  <!-- bold house, kept inside the maskable safe zone -->
   <g fill="url(#hb)">
-    <path d="M256 112 256 112 408 256 104 256 Z"/>
-    <rect x="146" y="244" width="220" height="156" rx="22"/>
+    <path d="M256 140 384 262 128 262 Z"/>
+    <rect x="160" y="252" width="192" height="132" rx="22"/>
   </g>
   <!-- door cutout -->
-  <rect x="228" y="318" width="56" height="82" rx="12" fill="#0a0d12"/>
+  <rect x="236" y="324" width="40" height="60" rx="9" fill="#0a0d12"/>
 </svg>
