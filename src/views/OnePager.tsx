@@ -57,6 +57,7 @@ import {
 import { TransactionRow } from "../components/TransactionRow";
 import { AddTransactionSheet } from "../components/AddTransactionSheet";
 import { ImportSheet } from "../components/ImportSheet";
+import { ModeToggle, type AppMode } from "../components/ModeToggle";
 import {
   useActiveSection,
   useCountUp,
@@ -174,7 +175,13 @@ function Reveal({
 }
 
 // ── the page ─────────────────────────────────────────────────────────────────
-export function OnePager() {
+export function OnePager({
+  mode,
+  onMode,
+}: {
+  mode: AppMode;
+  onMode: (m: AppMode) => void;
+}) {
   const store = useStore();
   const { data, payDebtExtra, payBill, markBillPaid, deleteTransaction } = store;
   const { signOut } = useAuth();
@@ -295,77 +302,43 @@ export function OnePager() {
       {/* ── sticky header + jump chips ── */}
       <div className="safe-top sticky top-0 z-40 border-b border-edge bg-bg/90 backdrop-blur">
         <div className="mx-auto max-w-[640px] px-4">
-          <div className="flex h-14 items-center justify-between">
-            {scrolled ? (
-              <>
+          <div className="flex h-14 items-center gap-2">
+            <ModeToggle mode={mode} onMode={onMode} />
+            <div className="min-w-0 flex-1">
+              {scrolled && (
                 <button
                   onClick={() => scrollTo("cash")}
-                  className="text-left leading-tight"
+                  className="block max-w-full truncate text-left leading-tight"
                 >
                   <span className="num text-base font-semibold text-mint">
                     {formatMoney(totalCash)}
                   </span>
-                  <span className="ml-1.5 text-[11px] text-faint">cash</span>
-                </button>
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-taupe">
-                    Day {commit.day} ·{" "}
-                    {next && (
-                      <>
-                        {fmtDay(next.date)}{" "}
-                        <span className="num font-semibold text-accent">
-                          {formatMoney(next.total)}
-                        </span>
-                      </>
-                    )}
+                  <span className="ml-1.5 text-[11px] text-faint">
+                    Day {commit.day}
+                    {next ? ` · ${fmtDay(next.date)} ` : " "}
                   </span>
-                  <button
-                    onClick={() => setSettingsOpen(true)}
-                    className="rounded-full p-1.5 text-taupe transition hover:bg-raised"
-                    aria-label="Settings"
-                  >
-                    <Settings size={17} />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="leading-none">
-                  <p className="text-[15px] font-semibold text-bone">Homebase</p>
-                  <Eyebrow color="text-faint">
-                    {today
-                      .toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      })
-                      .replace(",", " ·")}
-                  </Eyebrow>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="hidden items-center gap-1.5 rounded-full bg-raised py-1 pl-1 pr-3 sm:flex">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-bg">
-                      G
+                  {next && (
+                    <span className="num text-[11px] font-semibold text-accent">
+                      {formatMoney(next.total)}
                     </span>
-                    <span className="text-xs font-medium text-taupe">+ X</span>
-                  </span>
-                  <button
-                    onClick={() => setSettingsOpen(true)}
-                    className="rounded-full p-2 text-taupe transition hover:bg-raised"
-                    aria-label="Settings"
-                  >
-                    <Settings size={18} />
-                  </button>
-                  <button
-                    onClick={() => signOut()}
-                    className="rounded-full p-2 text-taupe transition hover:bg-raised"
-                    aria-label="Logout"
-                  >
-                    <LogOut size={17} />
-                  </button>
-                </div>
-              </>
-            )}
+                  )}
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="rounded-full p-2 text-taupe transition hover:bg-raised"
+              aria-label="Settings"
+            >
+              <Settings size={18} />
+            </button>
+            <button
+              onClick={() => signOut()}
+              className="rounded-full p-2 text-taupe transition hover:bg-raised"
+              aria-label="Logout"
+            >
+              <LogOut size={17} />
+            </button>
           </div>
           {/* jump chips */}
           <div className="hide-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-2.5">
