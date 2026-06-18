@@ -21,7 +21,6 @@ import {
   payoffSchedule,
   planMath,
   SAVINGS_SPLIT,
-  simulatePayoff,
   sumTargets,
 } from "../lib/plan";
 
@@ -68,8 +67,14 @@ export function ThreeMonthPlan() {
     );
   }
 
-  const payoff = simulatePayoff(ordered, math.firepower, new Date());
+  // One source of truth: the schedule (with the savings split). The scoreboard
+  // date and each debt's clear date are derived from it, so they never disagree.
   const schedule = payoffSchedule(ordered, math.firepower, new Date(), [15, 29], SAVINGS_SPLIT);
+  const payoffDate = schedule.length ? schedule[schedule.length - 1].date : new Date();
+  const clearDateOf = (debtId: string) => {
+    const ev = schedule.find((e) => e.payments.some((p) => p.debtId === debtId && p.clears));
+    return ev ? ev.date : null;
+  };
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
   const totalOriginal = data.debts.reduce((s, d) => s + d.originalBalance, 0);
   const cleared = totalOriginal - math.totalDebt;
@@ -130,7 +135,7 @@ export function ThreeMonthPlan() {
           <div className="text-right">
             <p className="text-xs text-slate-400">at this pace</p>
             <p className="text-sm font-semibold text-violet-300">
-              ~{fmtDate(payoff.payoffDate)}
+              ~{fmtDate(payoffDate)}
             </p>
           </div>
         </div>
@@ -154,10 +159,8 @@ export function ThreeMonthPlan() {
             const done = d.balance <= 0.005;
             const isTarget =
               !done && ordered.slice(0, i).every((x) => x.balance <= 0.005);
-            const clearsMonth = payoff.perDebt.find((p) => p.id === d.id)?.clearsMonth;
-            const clearDate = clearsMonth
-              ? fmtDate(new Date(Date.now() + clearsMonth * 30.44 * 864e5))
-              : null;
+            const cd = clearDateOf(d.id);
+            const clearDate = cd ? fmtDate(cd) : null;
             const pct =
               d.originalBalance > 0
                 ? ((d.originalBalance - d.balance) / d.originalBalance) * 100
