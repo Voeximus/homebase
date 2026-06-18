@@ -1,4 +1,4 @@
-import type { Recurring, Transaction } from "../types";
+import type { Recurring } from "../types";
 import { monthlyAmount } from "./recurring";
 
 // Day-of-month each recurring item posts, detected from Mar–Jun 2026 bank
@@ -7,7 +7,6 @@ import { monthlyAmount } from "./recurring";
 // down — so it falls into "unscheduled".
 export const DUE_DAYS: Record<string, number[]> = {
   Rent: [1],
-  Apple: [1],
   "Spot Pet insurance": [4],
   Spotify: [10],
   "Electric (SRP)": [13],
@@ -39,11 +38,6 @@ export const ANNUAL: {
 
 export type FlowDir = "in" | "out" | "transfer";
 
-/** Stable key for a scheduled event's paid-state ("<label>@<day-of-month>"). */
-export function billKey(e: { label: string; day: number }): string {
-  return `${e.label}@${e.day}`;
-}
-
 export interface ScheduleEntry {
   day: number;
   label: string;
@@ -51,23 +45,6 @@ export interface ScheduleEntry {
   direction: FlowDir;
   owner?: string;
   recurringId?: string; // the row this came from (absent for annual fees)
-}
-
-/** Ledger-derived: has this bill installment been recorded paid this month? */
-export function isBillPaid(
-  transactions: Transaction[],
-  recurringId: string,
-  monthKey: string,
-  day?: number,
-): boolean {
-  return transactions.some(
-    (t) =>
-      t.type === "expense" &&
-      t.appliesTo?.kind === "bill" &&
-      t.appliesTo.recurringId === recurringId &&
-      t.appliesTo.monthKey === monthKey &&
-      (day == null || t.appliesTo.day === day),
-  );
 }
 
 export interface MonthlySchedule {

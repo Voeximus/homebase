@@ -185,7 +185,14 @@ export function buildImportPlan(
         continue;
       }
       const monthKey = r.date.slice(0, 7);
-      const day = parseInt(r.date.slice(8, 10), 10);
+      const postDay = parseInt(r.date.slice(8, 10), 10);
+      // Use the bill's SCHEDULED due day (the one closest to the actual post day
+      // for multi-installment bills like Mom), not the raw bank post day — so an
+      // imported bill lines up with a calendar-marked one and re-imports dedup.
+      const day =
+        rec.dueDays && rec.dueDays.length
+          ? rec.dueDays.reduce((best, d) => (Math.abs(d - postDay) < Math.abs(best - postDay) ? d : best), rec.dueDays[0])
+          : postDay;
       if (paidBill.has(`${rec.id}|${monthKey}|${day}`)) {
         duplicates.push(asDup(r));
         continue;

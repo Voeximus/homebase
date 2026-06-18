@@ -275,10 +275,16 @@ export function ThreeMonthPlan() {
                   {clearsList(schedule[0]).length > 1 ? "s" : ""} gone in one check.
                 </p>
               )}
-              <p className="mt-2 text-[11px] text-amber-300/80">
-                Heads up: this check is light (the trip's sick days), so send what you comfortably
-                can — if it's less, the plan just slides a little later. No strain.
-              </p>
+              {schedule[0].date < new Date("2026-06-30T00:00:00") ? (
+                <p className="mt-2 text-[11px] text-amber-300/80">
+                  Heads up: this check is light (the trip's sick days), so send what you comfortably
+                  can — if it's less, the plan just slides a little later. No strain.
+                </p>
+              ) : (
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Send what you comfortably can — if it's less, the plan just slides a little later.
+                </p>
+              )}
             </div>
 
             {/* The rest, paycheck by paycheck */}

@@ -1,21 +1,9 @@
 import type { Account, Recurring } from "../types";
 import { CADENCE_TO_MONTHLY } from "./household";
-import type { Cadence } from "../types";
 
 /** A recurring item's amount normalized to a monthly figure. */
 export function monthlyAmount(r: Recurring): number {
   return r.amount * (CADENCE_TO_MONTHLY[r.cadence] ?? 1);
-}
-
-const CADENCE_LABEL: Record<Cadence, string> = {
-  weekly: "/wk",
-  biweekly: "/2wks",
-  semimonthly: "×2/mo",
-  monthly: "/mo",
-  yearly: "/yr",
-};
-export function cadenceLabel(c: Cadence): string {
-  return CADENCE_LABEL[c] ?? "/mo";
 }
 
 export interface AccountFlow {
@@ -42,16 +30,6 @@ export function accountFlow(
     }
   }
   return { inflow, outflow, net: inflow - outflow };
-}
-
-/** The recurring items that touch an account (as source or transfer destination). */
-export function accountItems(
-  accountId: string,
-  recurring: Recurring[],
-): Recurring[] {
-  return recurring.filter(
-    (r) => r.accountId === accountId || r.toAccountId === accountId,
-  );
 }
 
 /** Household-wide monthly income vs bills (transfers excluded — they're internal). */

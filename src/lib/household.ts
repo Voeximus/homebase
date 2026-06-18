@@ -57,7 +57,7 @@ export const SEED_RECURRING: SeedRecurring[] = [
   { name: "Verizon", amount: 83, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Geo", owner: "Gino", dueDays: [17] },
   { name: "Spotify", amount: 14.04, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Geo", owner: "Gino", dueDays: [10] },
   { name: "Card payment (…4728)", amount: 135, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "min payment", dueDays: [15], linksDebtLast4: "4728" },
-  { name: "Affirm", amount: 200, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "winding down (~$289 left) — attack via the ladder" },
+  { name: "Affirm", amount: 200, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "winding down — attack via the ladder" },
 
   // --- Xinyan personal (from Xinyan) ---
   { name: "Spot Pet insurance", amount: 99.93, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", dueDays: [4] },

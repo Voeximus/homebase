@@ -96,60 +96,6 @@ export function planMath(
   return { income, fixed, fixedNonDebt, debtPaymentsInFixed, variable, firepower, totalDebt };
 }
 
-export interface PayoffResult {
-  monthsFloat: number;
-  payoffDate: Date;
-  perDebt: { id: string; name: string; clearsMonth: number }[];
-}
-
-/**
- * Month-by-month snowball simulation. Accrues monthly interest on each debt,
- * then throws the whole monthly firepower at them in attack order. Returns a
- * fractional month count (for a real date) and when each debt clears.
- */
-export function simulatePayoff(
-  debtsOrdered: Debt[],
-  firepower: number,
-  from: Date,
-): PayoffResult {
-  if (firepower <= 0) {
-    return { monthsFloat: Infinity, payoffDate: from, perDebt: [] };
-  }
-  const bal = debtsOrdered.map((d) => ({
-    id: d.id,
-    name: d.name,
-    balance: d.balance,
-    rate: (d.apr ?? 0) / 100 / 12,
-  }));
-  const perDebt: { id: string; name: string; clearsMonth: number }[] = [];
-  let month = 0;
-  let monthsFloat = 0;
-
-  while (bal.some((b) => b.balance > 0.005) && month < 600) {
-    month++;
-    for (const b of bal) if (b.balance > 0) b.balance += b.balance * b.rate;
-    let fire = firepower;
-    for (const b of bal) {
-      if (fire <= 0.005) break;
-      if (b.balance <= 0) continue;
-      const pay = Math.min(fire, b.balance);
-      b.balance -= pay;
-      fire -= pay;
-      if (b.balance <= 0.005 && !perDebt.find((p) => p.id === b.id)) {
-        perDebt.push({ id: b.id, name: b.name, clearsMonth: month });
-      }
-    }
-    if (!bal.some((b) => b.balance > 0.005)) {
-      monthsFloat = month - 1 + (firepower - fire) / firepower;
-      break;
-    }
-  }
-  if (monthsFloat === 0) monthsFloat = month;
-
-  const payoffDate = new Date(from.getTime() + monthsFloat * 30.44 * 864e5);
-  return { monthsFloat, payoffDate, perDebt };
-}
-
 export function sumTargets(lines: BudgetLine[]): number {
   return lines.reduce((s, l) => s + l.target, 0);
 }

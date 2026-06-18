@@ -47,7 +47,6 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /\bSRP\b|ECHXPWR/i, bill: "Electric (SRP)" },
   { re: /VZ WIRELESS|VERIZON/i, bill: "Verizon" },
   { re: /TMOBILE|T-MOBILE/i, bill: "T-Mobile" },
-  { re: /APPLE\.?COM/i, bill: "Apple" },
   { re: /SPOTIFY/i, bill: "Spotify" },
   { re: /CLAUDE\.AI/i, bill: "Claude Pro" },
   { re: /SPOT PET/i, bill: "Spot Pet insurance" },
