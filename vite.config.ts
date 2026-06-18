@@ -17,11 +17,12 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'Homebase',
         short_name: 'Homebase',
-        description: "Gino & Xinyan's money — plan, budget, and bills, in one place.",
-        theme_color: '#7c5cff',
-        background_color: '#06070b',
+        description: "Gino & Xinyan's money + health, calibrated in one place.",
+        theme_color: '#0a0d12',
+        background_color: '#0a0d12',
         display: 'standalone',
         orientation: 'portrait',
+        categories: ['finance', 'health', 'lifestyle'],
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },

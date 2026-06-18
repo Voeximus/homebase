@@ -692,8 +692,8 @@ export function OnePager({
       {/* floating add */}
       <button
         onClick={() => setAddOpen(true)}
-        className="fixed bottom-6 right-5 z-30 flex items-center justify-center rounded-full bg-accent text-bg shadow-lg transition active:scale-95"
-        style={{ height: 52, width: 52 }}
+        className="fixed right-5 z-30 flex items-center justify-center rounded-full bg-accent text-bg shadow-lg transition active:scale-95"
+        style={{ height: 52, width: 52, bottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
         aria-label="Add transaction"
       >
         <Plus size={24} />
