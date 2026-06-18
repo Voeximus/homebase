@@ -78,7 +78,7 @@ export function AddTransactionSheet({
         />
 
         <div className="flex items-center justify-center gap-1 py-2">
-          <span className="text-3xl font-semibold text-slate-500">$</span>
+          <span className="text-3xl font-semibold text-faint">$</span>
           <input
             type="number"
             inputMode="decimal"
@@ -86,7 +86,7 @@ export function AddTransactionSheet({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             autoFocus
-            className="w-40 bg-transparent text-center text-5xl font-bold tracking-tight text-white outline-none placeholder:text-slate-600"
+            className="num w-40 bg-transparent text-center text-5xl font-bold tracking-tight text-bone outline-none placeholder:text-faint"
           />
         </div>
 
@@ -102,12 +102,12 @@ export function AddTransactionSheet({
                   onClick={() => setCategoryId(c.id)}
                   className={`flex flex-col items-center gap-1 rounded-xl border py-2.5 transition ${
                     active
-                      ? "border-violet-500 bg-violet-500/15"
-                      : "border-white/10 bg-white/5"
+                      ? "border-accent bg-accent/15"
+                      : "border-edge bg-raised"
                   }`}
                 >
                   <span className="text-xl">{c.icon}</span>
-                  <span className="text-[11px] leading-tight text-slate-300">
+                  <span className="text-[11px] leading-tight text-taupe">
                     {c.name}
                   </span>
                 </button>
@@ -125,7 +125,7 @@ export function AddTransactionSheet({
               className={inputClass}
             >
               {data.accounts.map((a) => (
-                <option key={a.id} value={a.id} className="bg-slate-800">
+                <option key={a.id} value={a.id} className="bg-tile">
                   {a.name} ····{a.last4}
                 </option>
               ))}

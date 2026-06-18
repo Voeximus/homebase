@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 // Shared dark-theme primitives so every screen matches the dashboard.
 
 export const inputClass =
-  "w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-white placeholder:text-slate-500 outline-none transition focus:border-violet-500 focus:bg-white/10 focus:ring-2 focus:ring-violet-500/25";
+  "w-full rounded-xl border border-edge bg-raised px-3.5 py-3 text-bone placeholder:text-faint outline-none transition focus:border-accent focus:bg-raised focus:ring-2 focus:ring-accent/25";
 
-export const labelClass = "mb-1.5 block text-sm font-medium text-slate-300";
+export const labelClass = "mb-1.5 block text-sm font-medium text-taupe";
 
 export function Card({
   children,
@@ -20,7 +20,7 @@ export function Card({
   return (
     <div
       onClick={onClick}
-      className={`rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur ${
+      className={`rounded-2xl border border-edge bg-tile ${
         onClick ? "cursor-pointer transition active:scale-[0.99]" : ""
       } ${className}`}
     >
@@ -47,10 +47,10 @@ export function Button({
   const base =
     "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100";
   const variants = {
-    primary: "bg-violet-600 text-white shadow-sm hover:bg-violet-500",
-    soft: "bg-violet-500/15 text-violet-300 hover:bg-violet-500/25",
-    ghost: "bg-white/5 text-slate-200 hover:bg-white/10",
-    danger: "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25",
+    primary: "bg-accent text-bg hover:brightness-110",
+    soft: "bg-accent/15 text-accent hover:bg-accent/25",
+    ghost: "bg-raised text-bone hover:brightness-110",
+    danger: "bg-ember/15 text-ember hover:bg-ember/25",
   };
   return (
     <button
@@ -66,8 +66,8 @@ export function Button({
 
 export function ProgressBar({
   value,
-  color = "#2dd4bf",
-  track = "rgba(255,255,255,0.08)",
+  color = "#34c5e8",
+  track = "rgba(255,255,255,0.07)",
 }: {
   value: number;
   color?: string;
@@ -98,7 +98,7 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div
-      className="grid gap-1 rounded-xl bg-white/5 p-1"
+      className="grid gap-1 rounded-xl bg-raised p-1"
       style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
     >
       {options.map((o) => (
@@ -108,8 +108,8 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
             value === o.value
-              ? "bg-white/15 text-white shadow-sm"
-              : "text-slate-400 hover:text-slate-200"
+              ? "bg-bg text-bone shadow-sm"
+              : "text-taupe hover:text-bone"
           }`}
         >
           {o.label}
@@ -142,13 +142,13 @@ export function Sheet({
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="safe-bottom relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0d0f17] p-5 shadow-2xl sm:rounded-3xl">
-        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/15 sm:hidden" />
+      <div className="safe-bottom scroll-soft relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-edge bg-tile p-5 shadow-2xl sm:rounded-3xl">
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-edge sm:hidden" />
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <h2 className="text-lg font-semibold text-bone">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-white/10"
+            className="rounded-full p-1.5 text-taupe transition hover:bg-raised"
             aria-label="Close"
           >
             <X size={20} />
@@ -171,12 +171,12 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center">
-      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-500">
+      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-raised text-taupe">
         {icon}
       </div>
-      <h3 className="text-base font-semibold text-slate-200">{title}</h3>
+      <h3 className="text-base font-semibold text-bone">{title}</h3>
       {children && (
-        <div className="mt-1 text-sm text-slate-400">{children}</div>
+        <div className="mt-1 text-sm text-taupe">{children}</div>
       )}
     </div>
   );
@@ -248,7 +248,7 @@ export function EmojiPicker({
           type="button"
           onClick={() => onChange(e)}
           className={`flex h-11 items-center justify-center rounded-xl text-xl transition ${
-            value === e ? "bg-violet-500/20 ring-2 ring-violet-500" : "bg-white/5"
+            value === e ? "bg-accent/20 ring-2 ring-accent" : "bg-raised"
           }`}
         >
           {e}

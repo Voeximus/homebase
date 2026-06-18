@@ -25,14 +25,14 @@ export function TransactionRow({
         {cat.icon}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-white">
+        <p className="truncate font-medium text-bone">
           {txn.description || cat.name}
         </p>
-        <p className="truncate text-xs text-slate-400">{cat.name}</p>
+        <p className="truncate text-xs text-taupe">{cat.name}</p>
       </div>
       <p
-        className={`shrink-0 font-semibold tabular-nums ${
-          income ? "text-emerald-400" : "text-slate-200"
+        className={`num shrink-0 font-semibold tabular-nums ${
+          income ? "text-mint" : "text-bone"
         }`}
       >
         {income ? "+" : "−"}

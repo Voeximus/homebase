@@ -183,7 +183,7 @@ export function ImportSheet({
       <div className="space-y-4">
         {!plan && !result && (
           <>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-taupe">
               Drop in a Bank of America statement — a CSV export or a “Print
               Transaction Details” PDF. Every line is auto-sorted using your own
               history: spending feeds the budget, bills get marked paid, income and
@@ -204,7 +204,7 @@ export function ImportSheet({
               <FileUp size={18} /> {parsing ? "Reading…" : "Choose CSV or PDF"}
             </Button>
             {fileName && parsing && (
-              <p className="text-xs text-slate-500">Reading {fileName}…</p>
+              <p className="text-xs text-faint">Reading {fileName}…</p>
             )}
           </>
         )}
@@ -215,7 +215,7 @@ export function ImportSheet({
 
         {result && (
           <div className="space-y-3">
-            <p className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            <p className="flex items-center gap-2 rounded-lg bg-mint/10 px-3 py-2 text-sm text-mint">
               <Check size={16} /> {result}
             </p>
             <Button
@@ -235,23 +235,23 @@ export function ImportSheet({
         {plan && !clarified && questions[clarifyIdx] && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-white">Quick questions</p>
-              <span className="text-xs text-slate-400">
+              <p className="text-sm font-semibold text-bone">Quick questions</p>
+              <span className="text-xs text-taupe">
                 {clarifyIdx + 1} of {questions.length}
               </span>
             </div>
-            <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-1 w-full overflow-hidden rounded-full bg-raised">
               <div
-                className="h-full rounded-full bg-violet-500 transition-all duration-300"
+                className="h-full rounded-full bg-accent transition-all duration-300"
                 style={{ width: `${(clarifyIdx / questions.length) * 100}%` }}
               />
             </div>
-            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
-              <p className="text-xs text-slate-400">New to me — what is this?</p>
-              <p className="mt-1 break-words text-base font-semibold text-white">
+            <div className="rounded-2xl border border-edge bg-tile p-4">
+              <p className="text-xs text-taupe">New to me — what is this?</p>
+              <p className="mt-1 break-words text-base font-semibold text-bone">
                 {questions[clarifyIdx].sampleDesc}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
+              <p className="mt-0.5 text-[11px] text-faint">
                 {questions[clarifyIdx].count} transaction
                 {questions[clarifyIdx].count > 1 ? "s" : ""} ·{" "}
                 {formatMoney(questions[clarifyIdx].total)} total
@@ -263,7 +263,7 @@ export function ImportSheet({
                     <button
                       key={cid}
                       onClick={() => answerClarify(questions[clarifyIdx], cid)}
-                      className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm text-white transition hover:border-violet-500 hover:bg-violet-500/10"
+                      className="flex items-center gap-2 rounded-xl border border-edge bg-raised px-3 py-2.5 text-left text-sm text-bone transition hover:border-accent hover:bg-accent/10"
                     >
                       <span className="text-lg">{c.icon}</span> {c.name}
                     </button>
@@ -272,12 +272,12 @@ export function ImportSheet({
               </div>
               <button
                 onClick={() => answerClarify(questions[clarifyIdx], "skip")}
-                className="mt-2 w-full rounded-xl bg-white/5 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-white/10"
+                className="mt-2 w-full rounded-xl bg-raised py-2.5 text-sm font-medium text-taupe transition hover:bg-raised"
               >
                 Skip — don't track this
               </button>
             </div>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-faint">
               I'll remember your answer and never ask about this one again.
             </p>
           </div>
@@ -287,38 +287,38 @@ export function ImportSheet({
           <>
             {/* Summary */}
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-xl bg-white/5 py-3">
-                <p className="text-xs text-slate-400">Spending</p>
-                <p className="text-sm font-bold text-white">{formatMoney(totals.variableTotal)}</p>
-                <p className="text-[10px] text-slate-500">{totals.variableCount} items</p>
+              <div className="rounded-xl bg-raised py-3">
+                <p className="text-xs text-taupe">Spending</p>
+                <p className="text-sm font-bold text-bone">{formatMoney(totals.variableTotal)}</p>
+                <p className="text-[10px] text-faint">{totals.variableCount} items</p>
               </div>
-              <div className="rounded-xl bg-violet-600/15 py-3">
-                <p className="text-xs text-violet-200">Bills paid</p>
-                <p className="text-sm font-bold text-white">{totals.billCount}</p>
-                <p className="text-[10px] text-slate-500">marked</p>
+              <div className="rounded-xl bg-accent/15 py-3">
+                <p className="text-xs text-accent">Bills paid</p>
+                <p className="text-sm font-bold text-bone">{totals.billCount}</p>
+                <p className="text-[10px] text-faint">marked</p>
               </div>
-              <div className="rounded-xl bg-white/5 py-3">
-                <p className="text-xs text-slate-400">Skipped</p>
-                <p className="text-sm font-bold text-white">{plan.skipped.length}</p>
-                <p className="text-[10px] text-slate-500">{plan.duplicates.length} dupes</p>
+              <div className="rounded-xl bg-raised py-3">
+                <p className="text-xs text-taupe">Skipped</p>
+                <p className="text-sm font-bold text-bone">{plan.skipped.length}</p>
+                <p className="text-[10px] text-faint">{plan.duplicates.length} dupes</p>
               </div>
             </div>
 
             {/* Already in here — recognized and NOT re-added */}
             {plan.duplicates.length > 0 && (
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06]">
+              <div className="rounded-xl border border-mint/20 bg-mint/[0.06]">
                 <button
                   type="button"
                   onClick={() => setShowDupes((s) => !s)}
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
                 >
-                  <Check size={16} className="shrink-0 text-emerald-400" />
-                  <span className="flex-1 text-sm font-medium text-emerald-200">
+                  <Check size={16} className="shrink-0 text-mint" />
+                  <span className="flex-1 text-sm font-medium text-mint">
                     {plan.duplicates.length} already in here — no need to add
                   </span>
                   <ChevronDown
                     size={15}
-                    className={`text-emerald-400/70 transition-transform ${showDupes ? "rotate-180" : ""}`}
+                    className={`text-mint/70 transition-transform ${showDupes ? "rotate-180" : ""}`}
                   />
                 </button>
                 {showDupes && (
@@ -326,7 +326,7 @@ export function ImportSheet({
                     {plan.duplicates.map((d, i) => (
                       <div
                         key={i}
-                        className="flex items-center justify-between gap-2 text-xs text-slate-400"
+                        className="flex items-center justify-between gap-2 text-xs text-taupe"
                       >
                         <span className="min-w-0 break-words line-through">{d.description}</span>
                         <span className="shrink-0">
@@ -341,7 +341,7 @@ export function ImportSheet({
 
             {/* What's actually being added */}
             {(plan.bills.some((b) => b.include) || plan.variable.some((v) => v.include)) && (
-              <p className="-mb-1 text-sm font-semibold text-white">We'll add these</p>
+              <p className="-mb-1 text-sm font-semibold text-bone">We'll add these</p>
             )}
 
             {/* Category breakdown */}
@@ -354,7 +354,7 @@ export function ImportSheet({
                     return (
                       <span
                         key={cat}
-                        className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-slate-300"
+                        className="flex items-center gap-1 rounded-full bg-raised px-2.5 py-1 text-[11px] text-taupe"
                       >
                         <span>{c.icon}</span> {c.name} · {formatMoney(amt)}
                       </span>
@@ -367,22 +367,22 @@ export function ImportSheet({
             {plan.bills.length > 0 && (
               <div>
                 <p className={labelClass}>Bills to mark paid</p>
-                <div className="space-y-1 rounded-xl border border-white/[0.06] p-2">
+                <div className="space-y-1 rounded-xl border border-edge p-2">
                   {plan.bills.map((b, i) => (
                     <label
                       key={i}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-raised"
                     >
                       <input
                         type="checkbox"
                         checked={b.include}
                         onChange={(e) => setBill(i, { include: e.target.checked })}
-                        className="accent-violet-500"
+                        className="accent-accent"
                       />
-                      <span className="min-w-0 flex-1 truncate text-sm text-white">
+                      <span className="min-w-0 flex-1 truncate text-sm text-bone">
                         {b.billName}
                       </span>
-                      <span className="text-[11px] text-slate-500">{b.date.slice(5)}</span>
+                      <span className="text-[11px] text-faint">{b.date.slice(5)}</span>
                       <span className="text-sm font-medium text-rose-300">
                         {formatMoney(b.amount)}
                       </span>
@@ -396,7 +396,7 @@ export function ImportSheet({
             {plan.variable.length > 0 && (
               <div>
                 <p className={labelClass}>Spending ({plan.variable.length}) · tap a category to fix it</p>
-                <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-white/[0.06] p-2">
+                <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-edge p-2">
                   {plan.variable.map((v, i) => (
                     <div
                       key={i}
@@ -408,24 +408,24 @@ export function ImportSheet({
                         type="checkbox"
                         checked={v.include}
                         onChange={(e) => setVariable(i, { include: e.target.checked })}
-                        className="mt-0.5 accent-violet-500"
+                        className="mt-0.5 accent-accent"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="break-words text-xs text-white">{v.description}</p>
-                        <p className="text-[10px] text-slate-500">{v.date.slice(5)} · {v.reason}</p>
+                        <p className="break-words text-xs text-bone">{v.description}</p>
+                        <p className="text-[10px] text-faint">{v.date.slice(5)} · {v.reason}</p>
                       </div>
                       <select
                         value={v.appCategory}
                         onChange={(e) => setVariable(i, { appCategory: e.target.value })}
-                        className="rounded-lg border border-white/10 bg-white/5 px-1.5 py-1 text-[11px] text-slate-200 outline-none"
+                        className="rounded-lg border border-edge bg-raised px-1.5 py-1 text-[11px] text-bone outline-none"
                       >
                         {expenseCats.map((c) => (
-                          <option key={c.id} value={c.id} className="bg-slate-800">
+                          <option key={c.id} value={c.id} className="bg-tile">
                             {c.icon} {c.name}
                           </option>
                         ))}
                       </select>
-                      <span className="w-14 shrink-0 text-right text-xs font-medium text-white">
+                      <span className="w-14 shrink-0 text-right text-xs font-medium text-bone">
                         {formatMoney(v.amount)}
                       </span>
                     </div>
@@ -435,7 +435,7 @@ export function ImportSheet({
             )}
 
             {plan.variable.length === 0 && plan.bills.length === 0 && (
-              <p className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-400">
+              <p className="rounded-lg bg-raised px-3 py-2 text-sm text-taupe">
                 Nothing new to import — all {plan.duplicates.length} of these are
                 already in your ledger.
               </p>
