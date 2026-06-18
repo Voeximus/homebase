@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Plus, Trash2, UtensilsCrossed } from "lucide-react";
+import { Check, Plus, ScanLine, Trash2, UtensilsCrossed } from "lucide-react";
+import { BarcodeScanner } from "../components/BarcodeScanner";
+import { lookupBarcode } from "../lib/barcode";
 import {
   DAILY,
   loadLibrary,
@@ -267,6 +269,10 @@ function AddFoodSheet({
   const [p, setP] = useState("");
   const [c, setC] = useState("");
   const [f, setF] = useState("");
+  const [barcode, setBarcode] = useState("");
+  const [scanOpen, setScanOpen] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [customs, setCustoms] = useState<Food[]>(() => loadCustomFoods());
 
   useEffect(() => {
@@ -275,6 +281,32 @@ function AddFoodSheet({
 
   const num = (s: string) => Math.max(0, parseFloat(s) || 0);
   const valid = name.trim() !== "" && kcal !== "";
+
+  async function lookup(code: string) {
+    const clean = code.replace(/\D/g, "");
+    if (clean.length < 6) return;
+    setBarcode(clean);
+    const existing = loadCustomFoods().find((x) => x.barcode === clean);
+    if (existing) {
+      setStatus(`"${existing.name}" is already in your library.`);
+      return;
+    }
+    setBusy(true);
+    setStatus("Looking up…");
+    const r = await lookupBarcode(clean);
+    setBusy(false);
+    if (!r) {
+      setStatus("Not in the food database — enter the macros by hand.");
+      return;
+    }
+    setName(r.name);
+    setRole(r.role);
+    setKcal(String(r.kcal));
+    setP(String(r.p));
+    setC(String(r.c));
+    setF(String(r.f));
+    setStatus(`Found "${r.name}" — check the macros and save.`);
+  }
 
   function save() {
     if (!valid) return;
@@ -287,6 +319,7 @@ function AddFoodSheet({
       c: num(c),
       f: num(f),
       custom: true,
+      barcode: barcode.replace(/\D/g, "") || undefined,
     };
     const next = [...loadCustomFoods(), food];
     saveCustomFoods(next);
@@ -297,6 +330,8 @@ function AddFoodSheet({
     setP("");
     setC("");
     setF("");
+    setBarcode("");
+    setStatus(null);
   }
 
   function remove(id: string) {
@@ -307,11 +342,43 @@ function AddFoodSheet({
   }
 
   return (
+    <>
     <Sheet open={open} onClose={onClose} title="Add a food">
       <div className="space-y-4">
+        {/* barcode → auto-fill from OpenFoodFacts */}
+        <div>
+          <label className={labelClass}>Scan or enter a barcode</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setScanOpen(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 py-2.5 text-sm font-semibold text-bg transition active:scale-[0.98]"
+            >
+              <ScanLine size={16} /> Scan
+            </button>
+            <input
+              className={`${inputClass} num`}
+              inputMode="numeric"
+              placeholder="or type the number"
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+            />
+            <Button
+              variant="ghost"
+              disabled={busy || barcode.replace(/\D/g, "").length < 6}
+              onClick={() => lookup(barcode)}
+            >
+              {busy ? "…" : "Look up"}
+            </Button>
+          </div>
+          {status && (
+            <p className="mt-2 rounded-lg bg-raised px-3 py-2 text-[12px] text-taupe">
+              {status}
+            </p>
+          )}
+        </div>
+
         <p className="text-sm text-taupe">
-          Enter the macros <b className="text-bone">per 100g</b> (from the label).
-          Barcode scanning to auto-fill this is coming next.
+          …or enter the macros <b className="text-bone">per 100g</b> from the label.
         </p>
         <div>
           <label className={labelClass}>Name</label>
@@ -381,5 +448,14 @@ function AddFoodSheet({
         )}
       </div>
     </Sheet>
+    <BarcodeScanner
+      open={scanOpen}
+      onClose={() => setScanOpen(false)}
+      onResult={(code) => {
+        setScanOpen(false);
+        lookup(code);
+      }}
+    />
+    </>
   );
 }
