@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Sheet, Button, inputClass } from "./ui";
+import { t } from "../lib/i18n";
 
 // Lazy-loaded zxing controls type (kept loose to avoid importing the dep eagerly).
 interface ScannerControls {
@@ -65,7 +66,7 @@ export function BarcodeScanner({
   }, [open, onResult]);
 
   return (
-    <Sheet open={open} onClose={onClose} title="Scan a barcode">
+    <Sheet open={open} onClose={onClose} title={t("Scan a barcode")}>
       <div className="space-y-4">
         {status !== "fallback" && (
           <>
@@ -83,8 +84,8 @@ export function BarcodeScanner({
             </div>
             <p className="text-center font-mono text-[11px] text-faint">
               {status === "starting"
-                ? "starting camera…"
-                : "point the back camera at the barcode"}
+                ? t("starting camera…")
+                : t("point the back camera at the barcode")}
             </p>
           </>
         )}
@@ -92,8 +93,8 @@ export function BarcodeScanner({
         <div className="rounded-xl bg-raised p-3">
           <p className="mb-2 text-[12px] text-taupe">
             {status === "fallback"
-              ? "Camera unavailable — type the number under the barcode instead."
-              : "Camera not cooperating? Type the number under the barcode."}
+              ? t("Camera unavailable — type the number under the barcode instead.")
+              : t("Camera not cooperating? Type the number under the barcode.")}
           </p>
           <div className="flex gap-2">
             <input
@@ -107,7 +108,7 @@ export function BarcodeScanner({
               disabled={manual.replace(/\D/g, "").length < 6}
               onClick={() => onResult(manual.replace(/\D/g, ""))}
             >
-              Use
+              {t("Use")}
             </Button>
           </div>
         </div>

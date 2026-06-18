@@ -1,4 +1,5 @@
 import { Activity, Wallet } from "lucide-react";
+import { t } from "../lib/i18n";
 
 export type AppMode = "finance" | "health";
 
@@ -30,7 +31,7 @@ export function ModeToggle({
             }`}
           >
             <Icon size={14} />
-            {on && <span>{label}</span>}
+            {on && <span>{t(label)}</span>}
           </button>
         );
       })}

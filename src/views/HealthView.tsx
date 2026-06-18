@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ClipboardList, LogOut, UtensilsCrossed } from "lucide-react";
+import { t } from "../lib/i18n";
 import { useAuth } from "../auth/AuthProvider";
 import { ModeToggle, type AppMode } from "../components/ModeToggle";
+import { LangToggle } from "../components/LanguageProvider";
 import { MealBuilder } from "./MealBuilder";
 
 // ── Two Bodies · One Engine ──────────────────────────────────────────────────
@@ -32,24 +34,24 @@ const GAUGE: Record<Person, GaugeCfg> = {
     unit: "lb / week", signed: true,
     rate: (cur, wk) => (cur - 143) / wk,
     verdict: (r) =>
-      r < 0 ? ["Dropping — you're under maintenance. Add ~250 kcal.", false]
-      : r < 0.05 ? ["Flat — add ~200 kcal/day to get moving.", false]
-      : r < 0.25 ? ["A touch slow — nudge +150–200 kcal.", false]
-      : r <= 0.5 ? ["On track. Hold everything.", true]
-      : r <= 0.75 ? ["Upper edge — fine, just watch the mirror.", true]
-      : ["Gaining too fast — trim ~150 kcal to keep it muscle.", false],
+      r < 0 ? [t("Dropping — you're under maintenance. Add ~250 kcal."), false]
+      : r < 0.05 ? [t("Flat — add ~200 kcal/day to get moving."), false]
+      : r < 0.25 ? [t("A touch slow — nudge +150–200 kcal."), false]
+      : r <= 0.5 ? [t("On track. Hold everything."), true]
+      : r <= 0.75 ? [t("Upper edge — fine, just watch the mirror."), true]
+      : [t("Gaining too fast — trim ~150 kcal to keep it muscle."), false],
   },
   xinyan: {
     start: 149, goal: 118, min: 0, max: 2.0, bandLo: 0.5, bandHi: 1.0,
     unit: "lb / week loss", signed: false,
     rate: (cur, wk) => (149 - cur) / wk,
     verdict: (r) =>
-      r < 0 ? ["Up this week — tighten portions, cut ~100 kcal.", false]
-      : r < 0.25 ? ["Stalled — add steps first, then trim ~100 kcal.", false]
-      : r < 0.5 ? ["A bit slow — add steps, hold calories a week.", false]
-      : r <= 1.0 ? ["On track. Hold.", true]
-      : r <= 1.25 ? ["Brisk but okay — keep protein high.", true]
-      : ["Too fast — add ~150 kcal to protect muscle.", false],
+      r < 0 ? [t("Up this week — tighten portions, cut ~100 kcal."), false]
+      : r < 0.25 ? [t("Stalled — add steps first, then trim ~100 kcal."), false]
+      : r < 0.5 ? [t("A bit slow — add steps, hold calories a week."), false]
+      : r <= 1.0 ? [t("On track. Hold."), true]
+      : r <= 1.25 ? [t("Brisk but okay — keep protein high."), true]
+      : [t("Too fast — add ~150 kcal to protect muscle."), false],
   },
 };
 
@@ -83,8 +85,9 @@ export function HealthView({
           <div className="flex h-14 items-center gap-2">
             <ModeToggle mode={mode} onMode={onMode} />
             <div className="min-w-0 flex-1 text-right">
-              <span className="eyebrow text-faint">Two Bodies · One Engine</span>
+              <span className="eyebrow text-faint">{t("Two Bodies · One Engine")}</span>
             </div>
+            <LangToggle />
             <button
               onClick={() => signOut()}
               className="rounded-full p-2 text-taupe transition hover:bg-raised"
@@ -96,8 +99,8 @@ export function HealthView({
           {/* sub-nav: per-person plan vs the shared meal builder */}
           <div className="grid grid-cols-2 gap-2 pb-2.5">
             {[
-              { k: "plan" as const, label: "Plan", Icon: ClipboardList },
-              { k: "kitchen" as const, label: "Meal Builder", Icon: UtensilsCrossed },
+              { k: "plan" as const, label: t("Plan"), Icon: ClipboardList },
+              { k: "kitchen" as const, label: t("Meal Builder"), Icon: UtensilsCrossed },
             ].map(({ k, label, Icon }) => {
               const on = sub === k;
               return (
@@ -140,7 +143,7 @@ export function HealthView({
                     <span>{p === "gino" ? "▲" : "▼"}</span>
                     {p === "gino" ? "Gino" : "Xinyan"}
                     <span className="font-mono text-[10px] tracking-widest opacity-70">
-                      {p === "gino" ? "BUILD" : "CUT"}
+                      {p === "gino" ? t("BUILD") : t("CUT")}
                     </span>
                   </button>
                 );
@@ -151,10 +154,8 @@ export function HealthView({
               {person === "gino" ? <GinoPlan acc={acc} /> : <XinyanPlan acc={acc} />}
             </div>
             <footer className="mt-7 border-t border-edge pt-5 font-mono text-[11px] leading-relaxed text-faint">
-              <span className="text-taupe">One framework, two signs.</span> Both plans
-              run the same loop: set a calorie seed → train → read the weekly-average
-              scale → adjust ONE variable at a time. The formula is a guess; the scale
-              is the measurement.
+              <span className="text-taupe">{t("One framework, two signs.")}</span>{" "}
+              {t("Both plans run the same loop: set a calorie seed → train → read the weekly-average scale → adjust ONE variable at a time. The formula is a guess; the scale is the measurement.")}
             </footer>
           </>
         )}
@@ -222,16 +223,16 @@ function Macros({
             >
               {m.v}
             </div>
-            <div className="font-mono text-[10px] text-faint">{m.u}</div>
+            <div className="font-mono text-[10px] text-faint">{t(m.u)}</div>
             <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-taupe">
-              {m.k}
+              {t(m.k)}
             </div>
           </div>
         ))}
       </div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[11.5px] text-taupe">
         {seed.map((s, i) => (
-          <span key={i}>{s}</span>
+          <span key={i}>{t(s)}</span>
         ))}
       </div>
     </>
@@ -262,14 +263,14 @@ function Pillars({
         {items.map((p, i) => (
           <div key={i} className="rounded-lg border border-edge bg-raised p-3">
             <p className="mb-0.5 text-[13px] font-semibold" style={{ color: acc }}>
-              {p.t}
+              {t(p.t)}
             </p>
-            <p className="font-mono text-[11.5px] leading-relaxed text-taupe">{p.d}</p>
+            <p className="font-mono text-[11.5px] leading-relaxed text-taupe">{t(p.d)}</p>
           </div>
         ))}
       </div>
       <p className="mt-3 text-[13px] text-taupe">{conf}</p>
-      <p className="mt-2 font-mono text-[10.5px] text-faint">sources: {src}</p>
+      <p className="mt-2 font-mono text-[10.5px] text-faint">{t("sources:")} {src}</p>
     </>
   );
 }
@@ -291,7 +292,7 @@ function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
   const hi = pctOf(cfg.bandHi);
   const [verdictText, verdictOn] = valid
     ? cfg.verdict(r)
-    : ["Enter your numbers to read the trend.", false];
+    : [t("Enter your numbers to read the trend."), false];
   const shown = valid ? (cfg.signed && r >= 0 ? "+" : "") + r.toFixed(2) : "—";
 
   // progress to goal (xinyan)
@@ -304,19 +305,19 @@ function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
   return (
     <section className="rounded-xl border border-edge bg-bg p-4">
       <p className="eyebrow" style={{ color: acc }}>
-        Calibration check
+        {t("Calibration check")}
       </p>
       <p className="mt-1 text-[17px] font-semibold text-bone">
-        {person === "gino" ? "Are you gaining at the right rate?" : "Are you losing at the right rate?"}
+        {person === "gino" ? t("Are you gaining at the right rate?") : t("Are you losing at the right rate?")}
       </p>
       <p className="mb-4 mt-0.5 font-mono text-[11.5px] text-faint">
-        enter your 7-day average — the scale is the measurement
+        {t("enter your 7-day average — the scale is the measurement")}
       </p>
 
       <div className="mb-5 grid grid-cols-2 gap-2.5">
         <label className="block">
           <span className="font-mono text-[10.5px] uppercase tracking-wider text-faint">
-            Current weight (lb)
+            {t("Current weight (lb)")}
           </span>
           <input
             type="number"
@@ -329,7 +330,7 @@ function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
         </label>
         <label className="block">
           <span className="font-mono text-[10.5px] uppercase tracking-wider text-faint">
-            Weeks on plan
+            {t("Weeks on plan")}
           </span>
           <input
             type="number"
@@ -363,14 +364,14 @@ function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
         )}
       </div>
       <div className="flex justify-between font-mono text-[10px] text-faint">
-        <span>too slow</span>
-        <span style={{ color: acc }}>target band</span>
-        <span>too fast</span>
+        <span>{t("too slow")}</span>
+        <span style={{ color: acc }}>{t("target band")}</span>
+        <span>{t("too fast")}</span>
       </div>
 
       <div className="mt-4 flex items-baseline gap-2">
         <span className="num text-[34px] font-bold leading-none text-bone">{shown}</span>
-        <span className="font-mono text-[13px] text-faint">{cfg.unit}</span>
+        <span className="font-mono text-[13px] text-faint">{t(cfg.unit)}</span>
       </div>
       <p
         className="mt-2 text-[14px] leading-snug"
@@ -382,9 +383,14 @@ function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
       {cfg.goal != null && valid && (
         <div className="mt-3.5 border-t border-edge pt-3 font-mono text-[11.5px] text-faint">
           <span>
-            Progress to {cfg.goal}:{" "}
+            {t("Progress to {goal}:", { goal: cfg.goal })}{" "}
             <b className="text-bone">
-              {toGo! <= 0 ? "Goal reached 🎉" : `${toGo!.toFixed(1)} lb to go · ${Math.round(donePct)}% there`}
+              {toGo! <= 0
+                ? t("Goal reached 🎉")
+                : t("{remaining} lb to go · {pct}% there", {
+                    remaining: toGo!.toFixed(1),
+                    pct: Math.round(donePct),
+                  })}
             </b>
           </span>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised">
@@ -404,18 +410,17 @@ function GinoPlan({ acc }: { acc: string }) {
   return (
     <>
       <Card>
-        <SecHead n="01" title="Snapshot" acc={acc} />
-        <Chips items={["25M", "5'7\"", "143 lb · hardgainer", "novice lifter", "sleep-limited", "goal: strength + size"]} />
+        <SecHead n="01" title={t("Snapshot")} acc={acc} />
+        <Chips items={["25M", "5'7\"", t("143 lb · hardgainer"), t("novice lifter"), t("sleep-limited"), t("goal: strength + size")]} />
         <p className="text-[15px] leading-relaxed text-bone">
-          You've been stuck on{" "}
-          <b style={{ color: acc }}>fuel and protein, not effort</b>. Eat above
-          maintenance, train each muscle 2×/week in small recoverable doses, and
-          progress by measurement.
+          {t("You've been stuck on")}{" "}
+          <b style={{ color: acc }}>{t("fuel and protein, not effort")}</b>.{" "}
+          {t("Eat above maintenance, train each muscle 2×/week in small recoverable doses, and progress by measurement.")}
         </p>
       </Card>
 
       <Card>
-        <SecHead n="02" title="Daily fuel" sub="surplus biased slow, to add muscle not fat" acc={acc} />
+        <SecHead n="02" title={t("Daily fuel")} sub={t("surplus biased slow, to add muscle not fat")} acc={acc} />
         <Macros
           acc={acc}
           items={[
@@ -426,11 +431,10 @@ function GinoPlan({ acc }: { acc: string }) {
           ]}
           seed={["maintenance seed ~2,500", "target +0.25–0.5 lb/wk", "protein ~2.0 g/kg"]}
         />
-        <Block title="The hardgainer lever">
-          One shake/day — whey + whole milk + banana/PB ≈{" "}
-          <b className="text-bone">500–700 liquid kcal</b> that won't fill you up.
-          Bolt protein (chicken, tofu, beef, eggs) onto the rice/noodles you
-          already eat.
+        <Block title={t("The hardgainer lever")}>
+          {t("One shake/day — whey + whole milk + banana/PB ≈")}{" "}
+          <b className="text-bone">{t("500–700 liquid kcal")}</b>{" "}
+          {t("that won't fill you up. Bolt protein (chicken, tofu, beef, eggs) onto the rice/noodles you already eat.")}
         </Block>
       </Card>
 
@@ -439,21 +443,21 @@ function GinoPlan({ acc }: { acc: string }) {
       <Card>
         <SecHead
           n="03"
-          title="Training — 4-day Upper / Lower"
-          sub="~30 min · each muscle 2×/wk · don't stack all 4 days · RIR = reps left in the tank"
+          title={t("Training — 4-day Upper / Lower")}
+          sub={t("~30 min · each muscle 2×/wk · don't stack all 4 days · RIR = reps left in the tank")}
           acc={acc}
         />
         {TRAINING.map((s, i) => (
           <Session key={i} s={s} acc={acc} open={i === 0} />
         ))}
-        <Block title="Progression — the 5-week block">
-          <b className="text-bone">Double progression:</b> hit the top of the rep
-          range on all sets, then add the smallest load. Log every set.
+        <Block title={t("Progression — the 5-week block")}>
+          <b className="text-bone">{t("Double progression:")}</b>{" "}
+          {t("hit the top of the rep range on all sets, then add the smallest load. Log every set.")}
         </Block>
         <table className="mt-2 w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              {["Week", "Effort", "Do"].map((h) => (
+              {[t("Week"), t("Effort"), t("Do")].map((h) => (
                 <th key={h} className="border-b border-edge px-1.5 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-faint">
                   {h}
                 </th>
@@ -466,8 +470,8 @@ function GinoPlan({ acc }: { acc: string }) {
                 <td className="border-b border-edge px-1.5 py-2 font-mono font-semibold" style={{ color: acc }}>
                   {row.wk}
                 </td>
-                <td className="border-b border-edge px-1.5 py-2 text-bone">{row.effort}</td>
-                <td className="border-b border-edge px-1.5 py-2 text-taupe">{row.do}</td>
+                <td className="border-b border-edge px-1.5 py-2 text-bone">{t(row.effort)}</td>
+                <td className="border-b border-edge px-1.5 py-2 text-taupe">{t(row.do)}</td>
               </tr>
             ))}
           </tbody>
@@ -475,20 +479,19 @@ function GinoPlan({ acc }: { acc: string }) {
       </Card>
 
       <Card>
-        <SecHead n="04" title="Around the lifting" acc={acc} />
+        <SecHead n="04" title={t("Around the lifting")} acc={acc} />
         <ul className="space-y-0">
-          <Line acc={acc} mark="▲" title="Sleep is the ceiling.">
-            4–6 broken hours caps growth more than any program detail. Highest-leverage
-            fix: full blackout, white noise, consolidate to one block.
+          <Line acc={acc} mark="▲" title={t("Sleep is the ceiling.")}>
+            {t("4–6 broken hours caps growth more than any program detail. Highest-leverage fix: full blackout, white noise, consolidate to one block.")}
           </Line>
-          <Line acc={acc} mark="▲" title="Running: 2–3×/wk, easy Zone-2 only, non-leg days.">
-            Keeps cardio without draining the surplus or leg recovery.
+          <Line acc={acc} mark="▲" title={t("Running: 2–3×/wk, easy Zone-2 only, non-leg days.")}>
+            {t("Keeps cardio without draining the surplus or leg recovery.")}
           </Line>
         </ul>
       </Card>
 
       <Card>
-        <SecHead n="05" title="Why this works" acc={acc} />
+        <SecHead n="05" title={t("Why this works")} acc={acc} />
         <Pillars
           acc={acc}
           items={[
@@ -499,10 +502,8 @@ function GinoPlan({ acc }: { acc: string }) {
           ]}
           conf={
             <>
-              <b className="text-bone">Confidence:</b> structure & progression ~90% ·
-              protein ~90% · maintenance calories ~60% (formula ±15%, the scale
-              corrects it) · 30-min fit is tight — use the 4-exercise fallback when
-              pressed.
+              <b className="text-bone">{t("Confidence:")}</b>{" "}
+              {t("structure & progression ~90% · protein ~90% · maintenance calories ~60% (formula ±15%, the scale corrects it) · 30-min fit is tight — use the 4-exercise fallback when pressed.")}
             </>
           }
           src="Schoenfeld 2017 · Pelland 2025 · Morton 2018 · Nedeltcheva 2010 (sleep)"
@@ -517,38 +518,36 @@ function XinyanPlan({ acc }: { acc: string }) {
   return (
     <>
       <Card>
-        <SecHead n="01" title="Snapshot" acc={acc} />
-        <Chips items={["24F", "5'3\"", "149 lb · BMI ~26", "busy · limited exercise", "goal: 118 lb (~31 to lose)"]} />
+        <SecHead n="01" title={t("Snapshot")} acc={acc} />
+        <Chips items={["24F", "5'3\"", t("149 lb · BMI ~26"), t("busy · limited exercise"), t("goal: 118 lb (~31 to lose)")]} />
         <p className="text-[15px] leading-relaxed text-bone">
-          Same engine as Gino's, <b style={{ color: acc }}>reversed</b>. A moderate
-          deficit, protein-forward to keep muscle and curb hunger, steps for
-          movement — calibrated off the weekly scale. 118 is a healthy weight she
-          already held, so this is a return to baseline.
+          {t("Same engine as Gino's,")} <b style={{ color: acc }}>{t("reversed")}</b>.{" "}
+          {t("A moderate deficit, protein-forward to keep muscle and curb hunger, steps for movement — calibrated off the weekly scale. 118 is a healthy weight she already held, so this is a return to baseline.")}
         </p>
       </Card>
 
       <div className="rounded-lg border p-3.5" style={{ borderColor: acc, background: acc + "16" }}>
         <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide" style={{ color: acc }}>
-          ⚑ Before you start
+          ⚑ {t("Before you start")}
         </p>
         <ol className="list-decimal space-y-1.5 pl-4 text-[13.5px] text-bone">
           <li>
-            <b>Medical clear?</b> A deficit isn't safe in pregnancy/breastfeeding or
-            with some conditions — check with a doctor if any apply.
+            <b>{t("Medical clear?")}</b>{" "}
+            {t("A deficit isn't safe in pregnancy/breastfeeding or with some conditions — check with a doctor if any apply.")}
           </li>
           <li>
-            <b>This is yours to drive.</b> Adherence is the whole game; build it
-            around how you actually eat.
+            <b>{t("This is yours to drive.")}</b>{" "}
+            {t("Adherence is the whole game; build it around how you actually eat.")}
           </li>
           <li>
-            <b>Gentle, not strict</b> — if food has ever been a struggle, keep it
-            flexible. The calorie floor is a hard line.
+            <b>{t("Gentle, not strict")}</b>{" "}
+            {t("— if food has ever been a struggle, keep it flexible. The calorie floor is a hard line.")}
           </li>
         </ol>
       </div>
 
       <Card>
-        <SecHead n="02" title="Daily fuel" sub="moderate deficit · protein-forward to protect muscle" acc={acc} />
+        <SecHead n="02" title={t("Daily fuel")} sub={t("moderate deficit · protein-forward to protect muscle")} acc={acc} />
         <Macros
           acc={acc}
           items={[
@@ -559,46 +558,42 @@ function XinyanPlan({ acc }: { acc: string }) {
           ]}
           seed={["maintenance seed ~1,850", "target −0.5–1 lb/wk", "floor 1,400 kcal"]}
         />
-        <Block title="Eating, built around your food">
-          Keep rice but <b className="text-bone">portion it</b>. Pile on vegetables
-          (volume = fullness). Lean protein every meal — chicken, fish, tofu, eggs.
-          Broth soups are a cheat code. Watch the hidden calories:{" "}
-          <b className="text-bone">cooking oil</b>, sugary drinks, fried food.
+        <Block title={t("Eating, built around your food")}>
+          {t("Keep rice but")} <b className="text-bone">{t("portion it")}</b>.{" "}
+          {t("Pile on vegetables (volume = fullness). Lean protein every meal — chicken, fish, tofu, eggs. Broth soups are a cheat code. Watch the hidden calories:")}{" "}
+          <b className="text-bone">{t("cooking oil")}</b>{t(", sugary drinks, fried food.")}
         </Block>
       </Card>
 
       <CalibrationGauge person="xinyan" acc={acc} />
 
       <Card>
-        <SecHead n="03" title="Movement — schedule-proof" acc={acc} />
+        <SecHead n="03" title={t("Movement — schedule-proof")} acc={acc} />
         <ul className="space-y-0">
-          <Line acc={acc} mark="▼" title="Step target: build toward ~8,000/day.">
-            Woven into your day, no gym needed — this is your main "exercise."
+          <Line acc={acc} mark="▼" title={t("Step target: build toward ~8,000/day.")}>
+            {t('Woven into your day, no gym needed — this is your main "exercise."')}
           </Line>
-          <Line acc={acc} mark="▼" title="Optional: 2 × 10-min home resistance/week">
-            (bodyweight squats, incline push-ups, a band). Protects more muscle — as
-            a novice you could even recomp.
+          <Line acc={acc} mark="▼" title={t("Optional: 2 × 10-min home resistance/week")}>
+            {t("(bodyweight squats, incline push-ups, a band). Protects more muscle — as a novice you could even recomp.")}
           </Line>
         </ul>
       </Card>
 
       <Card>
-        <SecHead n="04" title="The long game" acc={acc} />
-        <Block title="~8–12 months · two phases">
-          ~31 lb at a sustainable pace. Loss runs faster early, slower near the end —
-          the slow pace is what keeps muscle on.{" "}
-          <b className="text-bone">Getting to 118 is the cut; staying there is the win</b>{" "}
-          — change what drove the gain (food environment), or it returns.
+        <SecHead n="04" title={t("The long game")} acc={acc} />
+        <Block title={t("~8–12 months · two phases")}>
+          {t("~31 lb at a sustainable pace. Loss runs faster early, slower near the end — the slow pace is what keeps muscle on.")}{" "}
+          <b className="text-bone">{t("Getting to 118 is the cut; staying there is the win")}</b>{" "}
+          {t("— change what drove the gain (food environment), or it returns.")}
         </Block>
-        <Block title="Diet breaks keep it sustainable">
-          Every ~6–10 weeks, eat at <b className="text-bone">maintenance for 1–2 weeks</b>{" "}
-          (no deficit). Protects adherence and blunts the metabolic slowdown that
-          stalls the scale.
+        <Block title={t("Diet breaks keep it sustainable")}>
+          {t("Every ~6–10 weeks, eat at")} <b className="text-bone">{t("maintenance for 1–2 weeks")}</b>{" "}
+          {t("(no deficit). Protects adherence and blunts the metabolic slowdown that stalls the scale.")}
         </Block>
       </Card>
 
       <Card>
-        <SecHead n="05" title="Why this works" acc={acc} />
+        <SecHead n="05" title={t("Why this works")} acc={acc} />
         <Pillars
           acc={acc}
           items={[
@@ -609,11 +604,10 @@ function XinyanPlan({ acc }: { acc: string }) {
           ]}
           conf={
             <>
-              <b className="text-bone">Confidence:</b> the framework (deficit +
-              protein + steps) ~90% · maintenance calories ~55% (your real activity is
-              the unknown — the scale corrects it). <b className="text-bone">Listen to
-              your body:</b> persistent fatigue/dizziness means eat more, not push
-              harder.
+              <b className="text-bone">{t("Confidence:")}</b>{" "}
+              {t("the framework (deficit + protein + steps) ~90% · maintenance calories ~55% (your real activity is the unknown — the scale corrects it).")}{" "}
+              <b className="text-bone">{t("Listen to your body:")}</b>{" "}
+              {t("persistent fatigue/dizziness means eat more, not push harder.")}
             </>
           }
           src="Hall (metabolic ward) · Morton 2018 · Garthe 2011 · Pontzer 2026 · Byrne 2018 (diet breaks)"
@@ -703,16 +697,16 @@ function Session({ s, acc, open }: { s: Sess; acc: string; open?: boolean }) {
   return (
     <details className="mb-2.5 overflow-hidden rounded-lg border border-edge" open={open}>
       <summary className="flex cursor-pointer list-none items-center justify-between bg-raised px-3.5 py-3 text-sm font-semibold text-bone [&::-webkit-details-marker]:hidden">
-        {s.title}
-        <span className="font-mono text-[11px] font-medium text-faint">{s.meta}</span>
+        {t(s.title)}
+        <span className="font-mono text-[11px] font-medium text-faint">{t(s.meta)}</span>
       </summary>
       <div>
         {s.ex.map((e, i) => (
           <div key={i} className="flex items-start justify-between gap-3 border-t border-edge px-3.5 py-2.5">
             <div className="text-[14px]">
-              <span className="font-medium text-bone">{e.name}</span>
+              <span className="font-medium text-bone">{t(e.name)}</span>
               {e.note && (
-                <span className="mt-0.5 block font-mono text-[11.5px] text-faint">{e.note}</span>
+                <span className="mt-0.5 block font-mono text-[11.5px] text-faint">{t(e.note)}</span>
               )}
             </div>
             <span

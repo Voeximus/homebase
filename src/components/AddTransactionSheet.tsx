@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { TxnType } from "../types";
 import { useStore } from "../store/FinanceStore";
 import { todayISO } from "../lib/format";
+import { t } from "../lib/i18n";
 import {
   Button,
   inputClass,
@@ -66,14 +67,14 @@ export function AddTransactionSheet({
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="Add transaction">
+    <Sheet open={open} onClose={onClose} title={t("Add transaction")}>
       <div className="space-y-4">
         <Segmented<TxnType>
           value={type}
           onChange={changeType}
           options={[
-            { value: "expense", label: "Expense" },
-            { value: "income", label: "Income" },
+            { value: "expense", label: t("Expense") },
+            { value: "income", label: t("Income") },
           ]}
         />
 
@@ -91,7 +92,7 @@ export function AddTransactionSheet({
         </div>
 
         <div>
-          <label className={labelClass}>Category</label>
+          <label className={labelClass}>{t("Category")}</label>
           <div className="grid grid-cols-4 gap-2">
             {cats.map((c) => {
               const active = c.id === categoryId;
@@ -108,7 +109,7 @@ export function AddTransactionSheet({
                 >
                   <span className="text-xl">{c.icon}</span>
                   <span className="text-[11px] leading-tight text-taupe">
-                    {c.name}
+                    {t(c.name)}
                   </span>
                 </button>
               );
@@ -118,7 +119,7 @@ export function AddTransactionSheet({
 
         {data.accounts.length > 0 && (
           <div>
-            <label className={labelClass}>From account</label>
+            <label className={labelClass}>{t("From account")}</label>
             <select
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
@@ -135,7 +136,7 @@ export function AddTransactionSheet({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelClass}>Date</label>
+            <label className={labelClass}>{t("Date")}</label>
             <input
               type="date"
               value={date}
@@ -144,10 +145,10 @@ export function AddTransactionSheet({
             />
           </div>
           <div>
-            <label className={labelClass}>Note</label>
+            <label className={labelClass}>{t("Note")}</label>
             <input
               type="text"
-              placeholder="Optional"
+              placeholder={t("Optional")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className={inputClass}
@@ -160,7 +161,9 @@ export function AddTransactionSheet({
           disabled={!valid}
           className="w-full"
         >
-          Save {type === "income" ? "income" : "expense"}
+          {t("Save {kind}", {
+            kind: type === "income" ? t("income") : t("expense"),
+          })}
         </Button>
       </div>
     </Sheet>

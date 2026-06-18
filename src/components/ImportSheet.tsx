@@ -12,6 +12,7 @@ import {
   type ImportPlan,
 } from "../lib/importStatement";
 import type { LearnedRules } from "../lib/categorize";
+import { t } from "../lib/i18n";
 // pdf.js is heavy — load it only when a PDF is actually chosen (code-split).
 import { Button, labelClass, Sheet } from "./ui";
 
@@ -75,8 +76,8 @@ export function ImportSheet({
         setPlan(null);
         setError(
           isPdf
-            ? "Couldn't read transactions from that PDF. Use a Bank of America “Print Transaction Details” PDF, or the CSV export."
-            : "That doesn't look like a Bank of America CSV export. Download from BofA → Statements & Documents → Download (CSV).",
+            ? t("Couldn't read transactions from that PDF. Use a Bank of America “Print Transaction Details” PDF, or the CSV export.")
+            : t("That doesn't look like a Bank of America CSV export. Download from BofA → Statements & Documents → Download (CSV)."),
         );
         return;
       }
@@ -88,7 +89,7 @@ export function ImportSheet({
       setClarified(qs.length === 0); // no questions → straight to the preview
     } catch (err) {
       console.error(err);
-      setError("Couldn't read that file. Try the BofA CSV export instead.");
+      setError(t("Couldn't read that file. Try the BofA CSV export instead."));
     } finally {
       setParsing(false);
     }
@@ -162,10 +163,10 @@ export function ImportSheet({
     const r = await commitImport(items);
     setBusy(false);
     if (r.ok) {
-      setResult(`Imported ${r.count} entries — your spend and paid bills are updated.`);
+      setResult(t("Imported {count} entries — your spend and paid bills are updated.", { count: r.count }));
       setPlan(null);
     } else {
-      setError("Import failed — check the console. Nothing was changed.");
+      setError(t("Import failed — check the console. Nothing was changed."));
     }
   }
 
@@ -178,16 +179,13 @@ export function ImportSheet({
         reset();
         onClose();
       }}
-      title="Import bank statement"
+      title={t("Import bank statement")}
     >
       <div className="space-y-4">
         {!plan && !result && (
           <>
             <p className="text-sm text-taupe">
-              Drop in a Bank of America statement — a CSV export or a “Print
-              Transaction Details” PDF. Every line is auto-sorted using your own
-              history: spending feeds the budget, bills get marked paid, income and
-              transfers are skipped. You review before anything saves.
+              {t("Drop in a Bank of America statement — a CSV export or a “Print Transaction Details” PDF. Every line is auto-sorted using your own history: spending feeds the budget, bills get marked paid, income and transfers are skipped. You review before anything saves.")}
             </p>
             <input
               ref={fileRef}
@@ -201,10 +199,10 @@ export function ImportSheet({
               disabled={parsing}
               onClick={() => fileRef.current?.click()}
             >
-              <FileUp size={18} /> {parsing ? "Reading…" : "Choose CSV or PDF"}
+              <FileUp size={18} /> {parsing ? t("Reading…") : t("Choose CSV or PDF")}
             </Button>
             {fileName && parsing && (
-              <p className="text-xs text-faint">Reading {fileName}…</p>
+              <p className="text-xs text-faint">{t("Reading {fileName}…", { fileName })}</p>
             )}
           </>
         )}
@@ -226,7 +224,7 @@ export function ImportSheet({
                 onClose();
               }}
             >
-              Done
+              {t("Done")}
             </Button>
           </div>
         )}
@@ -235,9 +233,9 @@ export function ImportSheet({
         {plan && !clarified && questions[clarifyIdx] && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-bone">Quick questions</p>
+              <p className="text-sm font-semibold text-bone">{t("Quick questions")}</p>
               <span className="text-xs text-taupe">
-                {clarifyIdx + 1} of {questions.length}
+                {t("{current} of {total}", { current: clarifyIdx + 1, total: questions.length })}
               </span>
             </div>
             <div className="h-1 w-full overflow-hidden rounded-full bg-raised">
@@ -247,14 +245,20 @@ export function ImportSheet({
               />
             </div>
             <div className="rounded-2xl border border-edge bg-tile p-4">
-              <p className="text-xs text-taupe">New to me — what is this?</p>
+              <p className="text-xs text-taupe">{t("New to me — what is this?")}</p>
               <p className="mt-1 break-words text-base font-semibold text-bone">
                 {questions[clarifyIdx].sampleDesc}
               </p>
               <p className="mt-0.5 text-[11px] text-faint">
-                {questions[clarifyIdx].count} transaction
-                {questions[clarifyIdx].count > 1 ? "s" : ""} ·{" "}
-                {formatMoney(questions[clarifyIdx].total)} total
+                {questions[clarifyIdx].count > 1
+                  ? t("{count} transactions · {total} total", {
+                      count: questions[clarifyIdx].count,
+                      total: formatMoney(questions[clarifyIdx].total),
+                    })
+                  : t("{count} transaction · {total} total", {
+                      count: questions[clarifyIdx].count,
+                      total: formatMoney(questions[clarifyIdx].total),
+                    })}
               </p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {CLARIFY_CATS.map((cid) => {
@@ -265,7 +269,7 @@ export function ImportSheet({
                       onClick={() => answerClarify(questions[clarifyIdx], cid)}
                       className="flex items-center gap-2 rounded-xl border border-edge bg-raised px-3 py-2.5 text-left text-sm text-bone transition hover:border-accent hover:bg-accent/10"
                     >
-                      <span className="text-lg">{c.icon}</span> {c.name}
+                      <span className="text-lg">{c.icon}</span> {t(c.name)}
                     </button>
                   );
                 })}
@@ -274,11 +278,11 @@ export function ImportSheet({
                 onClick={() => answerClarify(questions[clarifyIdx], "skip")}
                 className="mt-2 w-full rounded-xl bg-raised py-2.5 text-sm font-medium text-taupe transition hover:bg-raised"
               >
-                Skip — don't track this
+                {t("Skip — don't track this")}
               </button>
             </div>
             <p className="text-[11px] text-faint">
-              I'll remember your answer and never ask about this one again.
+              {t("I'll remember your answer and never ask about this one again.")}
             </p>
           </div>
         )}
@@ -288,19 +292,19 @@ export function ImportSheet({
             {/* Summary */}
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-raised py-3">
-                <p className="text-xs text-taupe">Spending</p>
+                <p className="text-xs text-taupe">{t("Spending")}</p>
                 <p className="text-sm font-bold text-bone">{formatMoney(totals.variableTotal)}</p>
-                <p className="text-[10px] text-faint">{totals.variableCount} items</p>
+                <p className="text-[10px] text-faint">{t("{count} items", { count: totals.variableCount })}</p>
               </div>
               <div className="rounded-xl bg-accent/15 py-3">
-                <p className="text-xs text-accent">Bills paid</p>
+                <p className="text-xs text-accent">{t("Bills paid")}</p>
                 <p className="text-sm font-bold text-bone">{totals.billCount}</p>
-                <p className="text-[10px] text-faint">marked</p>
+                <p className="text-[10px] text-faint">{t("marked")}</p>
               </div>
               <div className="rounded-xl bg-raised py-3">
-                <p className="text-xs text-taupe">Skipped</p>
+                <p className="text-xs text-taupe">{t("Skipped")}</p>
                 <p className="text-sm font-bold text-bone">{plan.skipped.length}</p>
-                <p className="text-[10px] text-faint">{plan.duplicates.length} dupes</p>
+                <p className="text-[10px] text-faint">{t("{count} dupes", { count: plan.duplicates.length })}</p>
               </div>
             </div>
 
@@ -314,7 +318,7 @@ export function ImportSheet({
                 >
                   <Check size={16} className="shrink-0 text-mint" />
                   <span className="flex-1 text-sm font-medium text-mint">
-                    {plan.duplicates.length} already in here — no need to add
+                    {t("{count} already in here — no need to add", { count: plan.duplicates.length })}
                   </span>
                   <ChevronDown
                     size={15}
@@ -341,7 +345,7 @@ export function ImportSheet({
 
             {/* What's actually being added */}
             {(plan.bills.some((b) => b.include) || plan.variable.some((v) => v.include)) && (
-              <p className="-mb-1 text-sm font-semibold text-bone">We'll add these</p>
+              <p className="-mb-1 text-sm font-semibold text-bone">{t("We'll add these")}</p>
             )}
 
             {/* Category breakdown */}
@@ -356,7 +360,7 @@ export function ImportSheet({
                         key={cat}
                         className="flex items-center gap-1 rounded-full bg-raised px-2.5 py-1 text-[11px] text-taupe"
                       >
-                        <span>{c.icon}</span> {c.name} · {formatMoney(amt)}
+                        <span>{c.icon}</span> {t(c.name)} · {formatMoney(amt)}
                       </span>
                     );
                   })}
@@ -366,7 +370,7 @@ export function ImportSheet({
             {/* Bills to mark paid */}
             {plan.bills.length > 0 && (
               <div>
-                <p className={labelClass}>Bills to mark paid</p>
+                <p className={labelClass}>{t("Bills to mark paid")}</p>
                 <div className="space-y-1 rounded-xl border border-edge p-2">
                   {plan.bills.map((b, i) => (
                     <label
@@ -395,7 +399,7 @@ export function ImportSheet({
             {/* Variable spend — editable */}
             {plan.variable.length > 0 && (
               <div>
-                <p className={labelClass}>Spending ({plan.variable.length}) · tap a category to fix it</p>
+                <p className={labelClass}>{t("Spending ({count}) · tap a category to fix it", { count: plan.variable.length })}</p>
                 <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-edge p-2">
                   {plan.variable.map((v, i) => (
                     <div
@@ -421,7 +425,7 @@ export function ImportSheet({
                       >
                         {expenseCats.map((c) => (
                           <option key={c.id} value={c.id} className="bg-tile">
-                            {c.icon} {c.name}
+                            {c.icon} {t(c.name)}
                           </option>
                         ))}
                       </select>
@@ -436,21 +440,20 @@ export function ImportSheet({
 
             {plan.variable.length === 0 && plan.bills.length === 0 && (
               <p className="rounded-lg bg-raised px-3 py-2 text-sm text-taupe">
-                Nothing new to import — all {plan.duplicates.length} of these are
-                already in your ledger.
+                {t("Nothing new to import — all {count} of these are already in your ledger.", { count: plan.duplicates.length })}
               </p>
             )}
 
             <div className="flex gap-2">
               <Button variant="ghost" className="flex-1" onClick={reset} disabled={busy}>
-                Choose another
+                {t("Choose another")}
               </Button>
               <Button
                 className="flex-1"
                 onClick={commit}
                 disabled={busy || (totals.variableCount === 0 && totals.billCount === 0)}
               >
-                {busy ? "Importing…" : "Import"}
+                {busy ? t("Importing…") : t("Import")}
               </Button>
             </div>
           </>

@@ -6,6 +6,7 @@ import { FinanceProvider, useStore } from "./store/FinanceStore";
 import { OnePager } from "./views/OnePager";
 import { HealthView } from "./views/HealthView";
 import type { AppMode } from "./components/ModeToggle";
+import { LanguageProvider } from "./components/LanguageProvider";
 
 export default function App() {
   return (
@@ -42,8 +43,15 @@ function Shell() {
     localStorage.setItem("hb-mode", mode);
   }, [mode]);
 
-  if (mode === "health") return <HealthView mode={mode} onMode={setMode} />;
-  return <FinanceGate mode={mode} onMode={setMode} />;
+  return (
+    <LanguageProvider>
+      {mode === "health" ? (
+        <HealthView mode={mode} onMode={setMode} />
+      ) : (
+        <FinanceGate mode={mode} onMode={setMode} />
+      )}
+    </LanguageProvider>
+  );
 }
 
 function FinanceGate({

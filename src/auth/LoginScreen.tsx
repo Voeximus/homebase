@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Eye, EyeOff, Wallet } from "lucide-react";
 import { useAuth } from "./AuthProvider";
 import { Button, inputClass, labelClass } from "../components/ui";
+import { t } from "../lib/i18n";
 
 export function LoginScreen() {
   const { signIn, signUp } = useAuth();
@@ -23,7 +24,7 @@ export function LoginScreen() {
     if (error) {
       setError(error);
     } else if (mode === "up") {
-      setNotice("Account created — you can sign in now.");
+      setNotice(t("Account created — you can sign in now."));
       setMode("in");
     }
     setBusy(false);
@@ -39,8 +40,8 @@ export function LoginScreen() {
           <h1 className="text-2xl font-bold text-bone">Homebase</h1>
           <p className="mt-1 text-sm text-taupe">
             {mode === "in"
-              ? "Sign in to your shared finances"
-              : "Create your account"}
+              ? t("Sign in to your shared finances")
+              : t("Create your account")}
           </p>
         </div>
 
@@ -49,7 +50,7 @@ export function LoginScreen() {
           className="space-y-4 rounded-xl border border-edge bg-tile p-5 shadow-sm"
         >
           <div>
-            <label className={labelClass}>Email</label>
+            <label className={labelClass}>{t("Email")}</label>
             <input
               type="email"
               autoComplete="email"
@@ -61,7 +62,7 @@ export function LoginScreen() {
             />
           </div>
           <div>
-            <label className={labelClass}>Password</label>
+            <label className={labelClass}>{t("Password")}</label>
             <div className="relative">
               <input
                 type={showPw ? "text" : "password"}
@@ -97,10 +98,10 @@ export function LoginScreen() {
 
           <Button type="submit" disabled={busy} className="w-full">
             {busy
-              ? "Working…"
+              ? t("Working…")
               : mode === "in"
-                ? "Sign in"
-                : "Create account"}
+                ? t("Sign in")
+                : t("Create account")}
           </Button>
         </form>
 
@@ -114,13 +115,13 @@ export function LoginScreen() {
         >
           {mode === "in" ? (
             <>
-              Need an account?{" "}
-              <span className="font-semibold text-accent">Sign up</span>
+              {t("Need an account?")}{" "}
+              <span className="font-semibold text-accent">{t("Sign up")}</span>
             </>
           ) : (
             <>
-              Already have one?{" "}
-              <span className="font-semibold text-accent">Sign in</span>
+              {t("Already have one?")}{" "}
+              <span className="font-semibold text-accent">{t("Sign in")}</span>
             </>
           )}
         </button>

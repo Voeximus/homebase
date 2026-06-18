@@ -45,6 +45,7 @@ import {
   type ScheduleEntry,
 } from "../lib/schedule";
 import { getCategory } from "../lib/seed";
+import { t } from "../lib/i18n";
 import {
   Button,
   Card,
@@ -58,6 +59,7 @@ import { TransactionRow } from "../components/TransactionRow";
 import { AddTransactionSheet } from "../components/AddTransactionSheet";
 import { ImportSheet } from "../components/ImportSheet";
 import { ModeToggle, type AppMode } from "../components/ModeToggle";
+import { LangToggle } from "../components/LanguageProvider";
 import {
   useActiveSection,
   useCountUp,
@@ -271,12 +273,11 @@ export function OnePager({
     return (
       <div className="mx-auto min-h-screen max-w-[640px] px-4 pt-16">
         <Card className="p-2">
-          <EmptyState icon={<Target size={24} />} title="Set up your household">
-            Load your income, bills and debts and the whole plan maps itself out
-            here.
+          <EmptyState icon={<Target size={24} />} title={t("Set up your household")}>
+            {t("Load your income, bills and debts and the whole plan maps itself out here.")}
           </EmptyState>
           <Button className="mb-4 w-full" onClick={() => setSettingsOpen(true)}>
-            Open setup
+            {t("Open setup")}
           </Button>
         </Card>
         <SettingsSheet
@@ -314,7 +315,7 @@ export function OnePager({
                     {formatMoney(totalCash)}
                   </span>
                   <span className="ml-1.5 text-[11px] text-faint">
-                    Day {commit.day}
+                    {t("Day {day}", { day: commit.day })}
                     {next ? ` · ${fmtDay(next.date)} ` : " "}
                   </span>
                   {next && (
@@ -325,6 +326,7 @@ export function OnePager({
                 </button>
               )}
             </div>
+            <LangToggle />
             <button
               onClick={() => setSettingsOpen(true)}
               className="rounded-full p-2 text-taupe transition hover:bg-raised"
@@ -352,7 +354,7 @@ export function OnePager({
                     : "bg-tile text-taupe hover:text-bone"
                 }`}
               >
-                {s.label}
+                {t(s.label)}
               </button>
             ))}
           </div>
@@ -365,25 +367,25 @@ export function OnePager({
           <div className="hero-bar overflow-hidden rounded-xl border border-edgehero bg-hero p-5">
             <Eyebrow color="text-accent">
               <Zap size={11} className="-mt-0.5 mr-1 inline" />
-              Your next move {next ? `· ${fmtDay(next.date)}` : ""}
+              {t("Your next move")} {next ? `· ${fmtDay(next.date)}` : ""}
             </Eyebrow>
 
             {next ? (
               <>
                 <div className="slip-recess mt-3 rounded-xl p-4">
                   <p className="text-[22px] font-medium leading-snug text-bone">
-                    On your{" "}
-                    <span className="text-accent">{fmtDay(next.date)}</span> check,
-                    send{" "}
-                    <CountMoney value={next.total} className="num font-semibold text-accent" />
+                    {t("On your {date} check, send {amount}", {
+                      date: fmtDay(next.date),
+                      amount: formatMoney(next.total),
+                    })}
                   </p>
                   <div className="mt-3 space-y-1.5">
                     {next.toSavings > 0 && (
                       <SplitChip
                         label={
                           next.savingsKind === "emergency"
-                            ? "Emergency fund"
-                            : "Investing / goals"
+                            ? t("Emergency fund")
+                            : t("Investing / goals")
                         }
                         amount={next.toSavings}
                         tone="mint"
@@ -406,7 +408,7 @@ export function OnePager({
                   onClick={() => setMarkSentOpen(true)}
                   className="breathe mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-semibold text-bg transition active:scale-[0.98]"
                 >
-                  Mark sent <ArrowRight size={16} />
+                  {t("Mark sent")} <ArrowRight size={16} />
                 </button>
                 <p
                   className={`mt-2.5 text-center text-[11px] ${
@@ -414,19 +416,19 @@ export function OnePager({
                   }`}
                 >
                   {lightCheck
-                    ? "This check is light (the trip) — send what you comfortably can; the plan just slides a little."
-                    : "Send what you comfortably can. Tap the slip to see the whole payday-by-payday plan."}
+                    ? t("This check is light (the trip) — send what you comfortably can; the plan just slides a little.")
+                    : t("Send what you comfortably can. Tap the slip to see the whole payday-by-payday plan.")}
                 </p>
                 <button
                   onClick={() => setScheduleOpen(true)}
                   className="mt-1 w-full text-center text-[11px] font-medium text-accent/80"
                 >
-                  See the full payoff plan →
+                  {t("See the full payoff plan →")}
                 </button>
               </>
             ) : (
               <p className="mt-3 text-sm text-taupe">
-                No firepower scheduled — check the budget.
+                {t("No firepower scheduled — check the budget.")}
               </p>
             )}
           </div>
@@ -440,14 +442,14 @@ export function OnePager({
               onClick={() => setAccountsOpen(true)}
               className="rounded-xl border border-edge bg-tile p-4 text-left transition active:scale-[0.99]"
             >
-              <Eyebrow>Cash on hand</Eyebrow>
+              <Eyebrow>{t("Cash on hand")}</Eyebrow>
               <CountMoney
                 value={totalCash}
                 className="num mt-1 block text-2xl font-medium tracking-tight text-bone"
               />
               <OwnerBar accounts={data.accounts} total={totalCash} />
               <p className="mt-2 text-[11px] text-mint">
-                {formatMoney(netFlow, { sign: true })}/mo net
+                {t("{amount}/mo net", { amount: formatMoney(netFlow, { sign: true }) })}
               </p>
             </button>
             {/* streak */}
@@ -455,7 +457,7 @@ export function OnePager({
               onClick={() => setHabitsOpen(true)}
               className="flex flex-col items-center rounded-xl border border-edge bg-tile p-4 text-center transition active:scale-[0.99]"
             >
-              <Eyebrow>The habit</Eyebrow>
+              <Eyebrow>{t("The habit")}</Eyebrow>
               <StreakRing day={commit.day} total={commit.total} pct={commit.pct} />
               <div className="mt-2 flex gap-1.5 text-sm">
                 {HABITS.map((h) => (
@@ -473,8 +475,9 @@ export function OnePager({
             className="block w-full rounded-xl border border-edge bg-tile p-5 text-left transition active:scale-[0.99]"
           >
             <Eyebrow>
-              The sprint · debt-free{" "}
-              {payoffDate ? payoffDate.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '") : "soon"}
+              {t("The sprint · debt-free {date}", {
+                date: payoffDate ? payoffDate.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '") : t("soon"),
+              })}
             </Eyebrow>
             <div className="mt-1 flex items-end justify-between">
               <CountMoney
@@ -482,15 +485,20 @@ export function OnePager({
                 className="num text-2xl font-medium tracking-tight text-bone"
               />
               <span className="rounded-full bg-mint/15 px-2.5 py-0.5 text-[11px] font-semibold text-mint">
-                Free by {payoffDate ? payoffDate.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '") : "soon"}
+                {t("Free by {date}", {
+                  date: payoffDate ? payoffDate.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '") : t("soon"),
+                })}
               </span>
             </div>
             <RunnerRoad startLabel={kMoney(totalOriginal)} pct={clearedPct} />
             <p className="mt-2 text-[11px] text-taupe">
               <span className="font-medium text-accent">
-                firing {formatMoney(math.firepower)}/mo
+                {t("firing {amount}/mo", { amount: formatMoney(math.firepower) })}
               </span>{" "}
-              · {formatMoney(cleared)} of {formatMoney(totalOriginal)} cleared · tap for the ladder
+              · {t("{cleared} of {total} cleared · tap for the ladder", {
+                cleared: formatMoney(cleared),
+                total: formatMoney(totalOriginal),
+              })}
             </p>
           </button>
         </Reveal>
@@ -502,23 +510,23 @@ export function OnePager({
               onClick={() => setIncomeOpen(true)}
               className="rounded-xl border border-edge bg-tile p-4 text-left transition active:scale-[0.99]"
             >
-              <Eyebrow>Firepower / mo</Eyebrow>
+              <Eyebrow>{t("Firepower / mo")}</Eyebrow>
               <CountMoney
                 value={math.firepower}
                 className="num mt-1 block text-2xl font-medium tracking-tight text-accent"
               />
-              <p className="mt-1 text-[11px] text-taupe">income − living − variable</p>
+              <p className="mt-1 text-[11px] text-taupe">{t("income − living − variable")}</p>
             </button>
             <button
               onClick={() => scrollTo("budget")}
               className="rounded-xl border border-edge bg-tile p-4 text-left transition active:scale-[0.99]"
             >
-              <Eyebrow>Spent this month</Eyebrow>
+              <Eyebrow>{t("Spent this month")}</Eyebrow>
               <p className="num mt-1 text-2xl font-medium tracking-tight text-bone">
                 {formatMoney(spent)}
               </p>
               <p className="text-[11px] text-taupe">
-                of {formatMoney(target)} lean
+                {t("of {amount} lean", { amount: formatMoney(target) })}
               </p>
               <div className="mt-2">
                 <ProgressBar
@@ -533,7 +541,7 @@ export function OnePager({
         {/* ── BUDGET · envelopes ── */}
         <Reveal id="budget">
           <div className="rounded-xl border border-edge bg-tile p-5">
-            <Eyebrow>This month's envelopes</Eyebrow>
+            <Eyebrow>{t("This month's envelopes")}</Eyebrow>
             <p className="mb-3 mt-0.5 text-xs text-taupe">{monthLabel(monthKey)}</p>
             <div className="grid grid-cols-2 gap-3">
               {LEAN_VARIABLE.map((l) => {
@@ -551,7 +559,7 @@ export function OnePager({
                     <div className="flex items-start gap-1.5">
                       <span className="text-base leading-none">{l.icon}</span>
                       <span className="text-xs font-medium leading-tight text-bone">
-                        {l.label}
+                        {t(l.label)}
                       </span>
                     </div>
                     <p className="num mt-1.5 text-[13px] font-medium text-bone">
@@ -575,10 +583,10 @@ export function OnePager({
         <Reveal id="bills">
           <div className="rounded-xl border border-edge bg-tile p-5">
             <div className="flex items-center justify-between">
-              <Eyebrow>This month's bills</Eyebrow>
+              <Eyebrow>{t("This month's bills")}</Eyebrow>
               <span className="text-[11px] text-taupe">
-                <span className="text-mint">{formatMoney(paidOut)} paid</span> ·{" "}
-                {formatMoney(leftOut)} left
+                <span className="text-mint">{t("{amount} paid", { amount: formatMoney(paidOut) })}</span> ·{" "}
+                {t("{amount} left", { amount: formatMoney(leftOut) })}
               </span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -613,7 +621,7 @@ export function OnePager({
               className="mt-4 flex w-full items-center justify-between rounded-xl bg-raised px-4 py-2.5 text-left"
             >
               <span className="flex items-center gap-2 text-xs font-medium text-taupe">
-                <CalendarDays size={14} /> Money calendar
+                <CalendarDays size={14} /> {t("Money calendar")}
               </span>
               <ChevronDown
                 size={15}
@@ -633,13 +641,13 @@ export function OnePager({
             )}
 
             <div className="mt-4 border-t border-edge pt-3">
-              <Eyebrow color="text-faint">Coming up</Eyebrow>
+              <Eyebrow color="text-faint">{t("Coming up")}</Eyebrow>
               <div className="mt-2 space-y-1.5">
                 {UPCOMING_INCOME.map((p) => (
                   <div key={p.label} className="flex items-center justify-between">
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] text-bone">{p.label}</p>
-                      <p className="text-[11px] text-faint">{p.when}</p>
+                      <p className="truncate text-[13px] text-bone">{t(p.label)}</p>
+                      <p className="text-[11px] text-faint">{t(p.when)}</p>
                     </div>
                     <span className="text-[13px] font-semibold text-mint">
                       +{formatMoney(p.amount)}
@@ -655,11 +663,11 @@ export function OnePager({
         <Reveal id="activity">
           <div className="rounded-xl border border-edge bg-tile p-2">
             <div className="px-3 pt-3">
-              <Eyebrow>Just happened</Eyebrow>
+              <Eyebrow>{t("Just happened")}</Eyebrow>
             </div>
             {recent.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-faint">
-                Nothing logged yet.
+                {t("Nothing logged yet.")}
               </p>
             ) : (
               <div className="mt-1 divide-y divide-edge">
@@ -675,17 +683,17 @@ export function OnePager({
             )}
             <div className="flex gap-2 p-3">
               <Button className="flex-1" onClick={() => setAddOpen(true)}>
-                <Plus size={16} /> Log a purchase
+                <Plus size={16} /> {t("Log a purchase")}
               </Button>
               <Button variant="ghost" onClick={() => setImportOpen(true)}>
-                <FileUp size={16} /> Import
+                <FileUp size={16} /> {t("Import")}
               </Button>
             </div>
           </div>
         </Reveal>
 
         <p className="pt-1 text-center text-[11px] text-faint">
-          One event ripples everywhere — cash, debt, and the plan stay in step.
+          {t("One event ripples everywhere — cash, debt, and the plan stay in step.")}
         </p>
       </main>
 
@@ -790,7 +798,7 @@ function SplitChip({
       {sub && <span className="text-[11px] text-ember">{sub}</span>}
       {cleared && (
         <span className="rounded-full bg-mint/15 px-1.5 text-[10px] font-semibold text-mint">
-          ✓ paid off
+          ✓ {t("paid off")}
         </span>
       )}
       <span className="ml-auto text-[13px] font-semibold text-bone">
@@ -856,7 +864,7 @@ function StreakRing({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
         <span className="num text-xl font-semibold text-bone">{day}</span>
-        <span className="text-[10px] text-faint">of {total}</span>
+        <span className="text-[10px] text-faint">{t("of {total}", { total })}</span>
       </div>
     </div>
   );
@@ -961,7 +969,7 @@ function MiniCalendar({
         })}
       </div>
       <p className="mt-2 text-[10px] text-faint">
-        {MONTHS[month]} · dots mark income, bills & transfers
+        {t(MONTHS[month])} · {t("dots mark income, bills & transfers")}
       </p>
     </div>
   );
@@ -973,7 +981,7 @@ function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const [edit, setEdit] = useState<Account | null>(null);
   const [val, setVal] = useState("");
   return (
-    <Sheet open={open} onClose={onClose} title="Cash & accounts">
+    <Sheet open={open} onClose={onClose} title={t("Cash & accounts")}>
       <div className="space-y-2">
         {data.accounts.map((a) => {
           const f = accountFlow(a.id, data.recurring);
@@ -987,11 +995,11 @@ function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }
                     <span className="text-faint">····{a.last4}</span>
                   </p>
                   <p className="text-[11px] text-faint">
-                    {a.owner} · {formatMoney(f.net, { sign: true })}/mo
+                    {a.owner} · {t("{amount}/mo", { amount: formatMoney(f.net, { sign: true }) })}
                   </p>
                 </div>
                 {editing ? (
-                  <span className="text-sm text-faint">editing…</span>
+                  <span className="text-sm text-faint">{t("editing…")}</span>
                 ) : (
                   <button
                     onClick={() => {
@@ -1003,7 +1011,7 @@ function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }
                     <span className="font-semibold text-bone">
                       {formatMoney(a.balance)}
                     </span>
-                    <span className="block text-[10px] text-accent">tap to set</span>
+                    <span className="block text-[10px] text-accent">{t("tap to set")}</span>
                   </button>
                 )}
               </div>
@@ -1027,7 +1035,7 @@ function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }
                     }}
                     disabled={val === "" || isNaN(parseFloat(val))}
                   >
-                    Set
+                    {t("Set")}
                   </Button>
                 </div>
               )}
@@ -1035,8 +1043,7 @@ function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }
           );
         })}
         <p className="px-1 text-[11px] text-faint">
-          Set each account to the real balance from your bank — every event moves
-          it from there.
+          {t("Set each account to the real balance from your bank — every event moves it from there.")}
         </p>
       </div>
     </Sheet>
@@ -1053,19 +1060,18 @@ function HabitsSheet({
   commit: { day: number; total: number; pct: number; endDate: Date };
 }) {
   return (
-    <Sheet open={open} onClose={onClose} title="The 90-day commitment">
+    <Sheet open={open} onClose={onClose} title={t("The 90-day commitment")}>
       <div className="space-y-4">
         <p className="text-sm text-taupe">
-          The real point isn't a deadline — it's 90 days of dedicated good habits.
-          Debt-free is the scoreboard; the habits are the win.
+          {t("The real point isn't a deadline — it's 90 days of dedicated good habits. Debt-free is the scoreboard; the habits are the win.")}
         </p>
         <div className="rounded-xl bg-raised p-4 text-center">
           <p className="text-3xl font-semibold text-bone">
-            Day {commit.day}{" "}
-            <span className="text-lg text-faint">of {commit.total}</span>
+            {t("Day {day}", { day: commit.day })}{" "}
+            <span className="text-lg text-faint">{t("of {total}", { total: commit.total })}</span>
           </p>
           <p className="mt-1 text-[11px] text-taupe">
-            holding through {fmtFull(commit.endDate)}
+            {t("holding through {date}", { date: fmtFull(commit.endDate) })}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -1074,7 +1080,7 @@ function HabitsSheet({
               key={h.label}
               className="flex items-center gap-2 rounded-xl bg-raised px-3 py-2.5 text-sm text-bone"
             >
-              <span className="text-lg">{h.icon}</span> {h.label}
+              <span className="text-lg">{h.icon}</span> {t(h.label)}
             </div>
           ))}
         </div>
@@ -1095,10 +1101,10 @@ function ScheduleSheet({
   totalInterest: number;
 }) {
   return (
-    <Sheet open={open} onClose={onClose} title="The payoff plan">
+    <Sheet open={open} onClose={onClose} title={t("The payoff plan")}>
       <div className="space-y-3">
         <div className="flex items-center justify-between rounded-xl bg-raised px-4 py-3">
-          <span className="text-sm text-taupe">Interest you'll pay</span>
+          <span className="text-sm text-taupe">{t("Interest you'll pay")}</span>
           <span className="font-semibold text-ember">~{formatMoney(totalInterest)}</span>
         </div>
         {schedule.map((ev, i) => (
@@ -1106,13 +1112,13 @@ function ScheduleSheet({
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-bone">{fmtFull(ev.date)}</p>
               <p className="text-sm font-bold text-accent">
-                send {formatMoney(ev.total)}
+                {t("send {amount}", { amount: formatMoney(ev.total) })}
               </p>
             </div>
             <div className="mt-2 space-y-1">
               {ev.toSavings > 0 && (
                 <Line
-                  label={ev.savingsKind === "emergency" ? "Emergency fund" : "Investing"}
+                  label={ev.savingsKind === "emergency" ? t("Emergency fund") : t("Investing")}
                   amount={ev.toSavings}
                   mint
                 />
@@ -1127,7 +1133,7 @@ function ScheduleSheet({
               ))}
             </div>
             <p className="mt-2 border-t border-edge pt-1.5 text-[11px] text-faint">
-              {ev.remaining <= 0.005 ? "🎉 debt-free!" : `${formatMoney(ev.remaining)} to go`}
+              {ev.remaining <= 0.005 ? t("🎉 debt-free!") : t("{amount} to go", { amount: formatMoney(ev.remaining) })}
             </p>
           </div>
         ))}
@@ -1156,7 +1162,7 @@ function Line({
       <span className="text-taupe">{label}</span>
       {cleared && (
         <span className="rounded-full bg-mint/15 px-1.5 text-[9px] font-bold text-mint">
-          PAID OFF
+          {t("PAID OFF")}
         </span>
       )}
     </div>
@@ -1184,9 +1190,9 @@ function SprintSheet({
   };
   return (
     <>
-      <Sheet open={open} onClose={onClose} title="The attack ladder">
+      <Sheet open={open} onClose={onClose} title={t("The attack ladder")}>
         <div className="space-y-2.5">
-          <p className="text-xs text-taupe">Snowball order · smallest first</p>
+          <p className="text-xs text-taupe">{t("Snowball order · smallest first")}</p>
           {ordered.map((d, i) => {
             const done = d.balance <= 0.005;
             const isTarget = !done && ordered.slice(0, i).every((x) => x.balance <= 0.005);
@@ -1217,11 +1223,11 @@ function SprintSheet({
                       )}
                     </div>
                     {cd && !done && (
-                      <p className="text-[11px] text-faint">clears ~{fmtDay(cd)}</p>
+                      <p className="text-[11px] text-faint">{t("clears ~{date}", { date: fmtDay(cd) })}</p>
                     )}
                   </div>
                   <span className={`text-sm font-bold ${done ? "text-mint" : "text-bone"}`}>
-                    {done ? "Cleared" : formatMoney(d.balance)}
+                    {done ? t("Cleared") : formatMoney(d.balance)}
                   </span>
                 </div>
                 {!done && (
@@ -1231,7 +1237,7 @@ function SprintSheet({
                       onClick={() => setPayFor(d)}
                       className={`w-full rounded-lg bg-accent/15 py-2 text-xs font-semibold text-accent transition hover:bg-accent/25 ${pct > 0 ? "mt-2" : ""}`}
                     >
-                      Make a payment
+                      {t("Make a payment")}
                     </button>
                   </div>
                 )}
@@ -1239,7 +1245,7 @@ function SprintSheet({
             );
           })}
           <div className="flex items-center justify-between rounded-xl bg-raised px-4 py-3">
-            <span className="text-sm text-taupe">Total to clear</span>
+            <span className="text-sm text-taupe">{t("Total to clear")}</span>
             <span className="font-bold text-bone">{formatMoney(totalDebt)}</span>
           </div>
         </div>
@@ -1279,15 +1285,15 @@ function PaymentSheet({
         setAmount("");
         onClose();
       }}
-      title={debt ? `Pay ${debt.name}` : "Payment"}
+      title={debt ? t("Pay {name}", { name: debt.name }) : t("Payment")}
     >
       {debt && (
         <div className="space-y-4">
           <p className="text-sm text-taupe">
-            Balance: <span className="font-semibold text-bone">{formatMoney(debt.balance)}</span>
+            {t("Balance:")} <span className="font-semibold text-bone">{formatMoney(debt.balance)}</span>
           </p>
           <div>
-            <label className={labelClass}>Payment amount</label>
+            <label className={labelClass}>{t("Payment amount")}</label>
             <input
               className={inputClass}
               type="number"
@@ -1300,7 +1306,7 @@ function PaymentSheet({
           </div>
           {accounts.length > 0 && (
             <div>
-              <label className={labelClass}>From account</label>
+              <label className={labelClass}>{t("From account")}</label>
               <select
                 className={inputClass}
                 value={accountId}
@@ -1324,7 +1330,7 @@ function PaymentSheet({
             disabled={!valid}
             className="w-full"
           >
-            Apply payment
+            {t("Apply payment")}
           </Button>
         </div>
       )}
@@ -1343,35 +1349,33 @@ function IncomeSheet({
 }) {
   const widthOf = (v: number) => `${(v / math.income) * 100}%`;
   return (
-    <Sheet open={open} onClose={onClose} title="Where every dollar goes">
+    <Sheet open={open} onClose={onClose} title={t("Where every dollar goes")}>
       <div className="space-y-4">
         <div className="flex h-9 w-full overflow-hidden rounded-xl">
           <div className="flex items-center justify-center bg-steel text-[10px] font-semibold text-bg" style={{ width: widthOf(math.fixedNonDebt) }}>
-            Living
+            {t("Living")}
           </div>
           <div className="flex items-center justify-center bg-gold text-[10px] font-semibold text-bg" style={{ width: widthOf(math.variable) }}>
-            Variable
+            {t("Variable")}
           </div>
           <div className="flex items-center justify-center bg-accent text-[10px] font-semibold text-bg" style={{ width: widthOf(math.firepower) }}>
-            Debt
+            {t("Debt")}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 text-center">
-          <Stat label="Income" value={formatMoney(math.income)} tone="text-mint" />
-          <Stat label="Living" value={formatMoney(math.fixedNonDebt)} />
-          <Stat label="Variable" value={formatMoney(math.variable)} />
-          <Stat label="At the debt" value={formatMoney(math.firepower)} tone="text-accent" />
+          <Stat label={t("Income")} value={formatMoney(math.income)} tone="text-mint" />
+          <Stat label={t("Living")} value={formatMoney(math.fixedNonDebt)} />
+          <Stat label={t("Variable")} value={formatMoney(math.variable)} />
+          <Stat label={t("At the debt")} value={formatMoney(math.firepower)} tone="text-accent" />
         </div>
         <p className="text-[11px] text-faint">
-          Holding the lean budget is what frees ~{formatMoney(math.firepower)}/mo to
-          attack the debt. The one-time hits below come from your cash cushion, not
-          this firepower.
+          {t("Holding the lean budget is what frees ~{amount}/mo to attack the debt. The one-time hits below come from your cash cushion, not this firepower.", { amount: formatMoney(math.firepower) })}
         </p>
         <div className="space-y-1.5">
           {ONE_TIMES.map((o) => (
             <div key={o.label} className="flex items-center gap-2 rounded-lg bg-raised px-3 py-2">
               <span>{o.icon}</span>
-              <span className="flex-1 text-sm text-bone">{o.label}</span>
+              <span className="flex-1 text-sm text-bone">{t(o.label)}</span>
               <span className="text-sm font-semibold text-bone">{formatMoney(o.amount)}</span>
             </div>
           ))}
@@ -1422,24 +1426,24 @@ function MarkSentSheet({
   }, [open, accounts]);
   if (!next) return null;
   return (
-    <Sheet open={open} onClose={onClose} title="Record this payment">
+    <Sheet open={open} onClose={onClose} title={t("Record this payment")}>
       {done ? (
         <div className="flex flex-col items-center py-6 text-center">
           <span className="pop flex h-16 w-16 items-center justify-center rounded-full bg-mint text-bg">
             <Check size={32} />
           </span>
-          <p className="mt-4 text-lg font-semibold text-bone">Sent!</p>
+          <p className="mt-4 text-lg font-semibold text-bone">{t("Sent!")}</p>
           <p className="mt-1 text-sm text-taupe">
-            Cash, debt and the sprint all moved.
+            {t("Cash, debt and the sprint all moved.")}
           </p>
           <Button className="mt-5 w-full" onClick={onClose}>
-            Done
+            {t("Done")}
           </Button>
         </div>
       ) : (
         <div className="space-y-4">
           <p className="text-sm text-taupe">
-            Recording <span className="font-semibold text-accent">{formatMoney(next.payments.reduce((s, p) => s + p.amount, 0))}</span> across these debts. This moves the cash and drops each balance.
+            {t("Recording {amount} across these debts. This moves the cash and drops each balance.", { amount: formatMoney(next.payments.reduce((s, p) => s + p.amount, 0)) })}
           </p>
           <div className="space-y-1.5">
             {next.payments.map((p, i) => (
@@ -1451,11 +1455,14 @@ function MarkSentSheet({
           </div>
           {next.toSavings > 0 && (
             <p className="rounded-lg bg-mint/10 px-3 py-2 text-[11px] text-mint">
-              Plus {formatMoney(next.toSavings)} to {next.savingsKind === "emergency" ? "your emergency fund" : "investing"} — move that yourself in your bank.
+              {t("Plus {amount} to {target} — move that yourself in your bank.", {
+                amount: formatMoney(next.toSavings),
+                target: next.savingsKind === "emergency" ? t("your emergency fund") : t("investing"),
+              })}
             </p>
           )}
           <div>
-            <label className={labelClass}>From account</label>
+            <label className={labelClass}>{t("From account")}</label>
             <select
               className={inputClass}
               value={accountId}
@@ -1480,11 +1487,10 @@ function MarkSentSheet({
               setDone(true);
             }}
           >
-            {busy ? "Recording…" : "Confirm — record payment"}
+            {busy ? t("Recording…") : t("Confirm — record payment")}
           </Button>
           <p className="text-[11px] text-faint">
-            Only do this once you've actually sent it. Deleting the entries later
-            fully reverses everything.
+            {t("Only do this once you've actually sent it. Deleting the entries later fully reverses everything.")}
           </p>
         </div>
       )}
@@ -1523,12 +1529,12 @@ function EnvelopeSheet({
       <Sheet
         open={!!line}
         onClose={onClose}
-        title={line ? `${line.icon} ${line.label}` : "Envelope"}
+        title={line ? `${line.icon} ${t(line.label)}` : t("Envelope")}
       >
         {line && (
           <div className="space-y-3">
             <div className="flex items-center justify-between rounded-xl bg-raised px-4 py-3">
-              <span className="text-sm text-taupe">Spent / budget</span>
+              <span className="text-sm text-taupe">{t("Spent / budget")}</span>
               <span className="font-semibold text-bone">
                 {formatMoney(spent)}{" "}
                 <span className="font-normal text-faint">/ {formatMoney(line.target)}</span>
@@ -1536,24 +1542,24 @@ function EnvelopeSheet({
             </div>
             {txns.length === 0 ? (
               <p className="py-6 text-center text-sm text-faint">
-                Nothing logged here this month yet.
+                {t("Nothing logged here this month yet.")}
               </p>
             ) : (
               <div className="divide-y divide-edge">
-                {txns.map((t) => (
+                {txns.map((txn) => (
                   <button
-                    key={t.id}
-                    onClick={() => setEdit(t)}
+                    key={txn.id}
+                    onClick={() => setEdit(txn)}
                     className="flex w-full items-center justify-between gap-2 py-2.5 text-left"
                   >
                     <div className="min-w-0">
-                      <p className="break-words text-[13px] text-bone">{t.description}</p>
+                      <p className="break-words text-[13px] text-bone">{txn.description}</p>
                       <p className="text-[11px] text-faint">
-                        {formatDate(t.date)} · tap to recategorize or delete
+                        {formatDate(txn.date)} · {t("tap to recategorize or delete")}
                       </p>
                     </div>
                     <span className="shrink-0 text-sm font-medium text-bone">
-                      {formatMoney(t.amount)}
+                      {formatMoney(txn.amount)}
                     </span>
                   </button>
                 ))}
@@ -1563,7 +1569,7 @@ function EnvelopeSheet({
         )}
       </Sheet>
 
-      <Sheet open={!!edit} onClose={() => setEdit(null)} title="Transaction">
+      <Sheet open={!!edit} onClose={() => setEdit(null)} title={t("Transaction")}>
         {edit && (
           <div className="space-y-4">
             <div>
@@ -1573,7 +1579,7 @@ function EnvelopeSheet({
               </p>
             </div>
             <div>
-              <label className={labelClass}>Category — tap to change</label>
+              <label className={labelClass}>{t("Category — tap to change")}</label>
               <div className="grid grid-cols-4 gap-2">
                 {expenseCats.map((c) => (
                   <button
@@ -1589,7 +1595,7 @@ function EnvelopeSheet({
                     }`}
                   >
                     <span className="text-xl">{c.icon}</span>
-                    <span className="text-[10px] leading-tight text-taupe">{c.name}</span>
+                    <span className="text-[10px] leading-tight text-taupe">{t(c.name)}</span>
                   </button>
                 ))}
               </div>
@@ -1602,7 +1608,7 @@ function EnvelopeSheet({
                 setEdit(null);
               }}
             >
-              <Trash2 size={18} /> Delete transaction
+              <Trash2 size={18} /> {t("Delete transaction")}
             </Button>
           </div>
         )}
@@ -1645,15 +1651,15 @@ function PayBillSheet({
     if (entry) setAccountId(defaultAccountId || accounts[0]?.id || "");
   }, [entry, defaultAccountId, accounts]);
   return (
-    <Sheet open={!!entry} onClose={onClose} title={entry ? `Pay ${entry.label}` : "Pay bill"}>
+    <Sheet open={!!entry} onClose={onClose} title={entry ? t("Pay {name}", { name: entry.label }) : t("Pay bill")}>
       {entry && (
         <div className="space-y-4">
           <div className="flex items-center justify-between rounded-xl bg-raised px-4 py-3">
-            <span className="text-sm text-taupe">Amount</span>
+            <span className="text-sm text-taupe">{t("Amount")}</span>
             <span className="text-lg font-bold text-bone">{formatMoney(entry.amount)}</span>
           </div>
           <div>
-            <label className={labelClass}>From account</label>
+            <label className={labelClass}>{t("From account")}</label>
             <select
               className={inputClass}
               value={accountId}
@@ -1677,7 +1683,7 @@ function PayBillSheet({
               onClose();
             }}
           >
-            {busy ? "Working…" : "Pay now — move the cash"}
+            {busy ? t("Working…") : t("Pay now — move the cash")}
           </Button>
           <button
             onClick={async () => {
@@ -1690,11 +1696,10 @@ function PayBillSheet({
             disabled={busy}
             className="w-full rounded-xl bg-raised py-3 text-sm font-semibold text-bone transition hover:brightness-110 disabled:opacity-40"
           >
-            Already paid — just mark it
+            {t("Already paid — just mark it")}
           </button>
           <p className="text-[11px] text-faint">
-            "Pay now" moves the cash (and drops the card for a card minimum).
-            "Already paid" just marks it — for a bill already in your balance.
+            {t("\"Pay now\" moves the cash (and drops the card for a card minimum). \"Already paid\" just marks it — for a bill already in your balance.")}
           </p>
         </div>
       )}
@@ -1715,7 +1720,7 @@ function TxnDetailSheet({
 }) {
   const cat = txn ? getCategory(categories, txn.categoryId) : null;
   return (
-    <Sheet open={!!txn} onClose={onClose} title="Transaction">
+    <Sheet open={!!txn} onClose={onClose} title={t("Transaction")}>
       {txn && cat && (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
@@ -1727,10 +1732,10 @@ function TxnDetailSheet({
             </div>
             <div className="flex-1">
               <p className="break-words font-semibold text-bone">
-                {txn.description || cat.name}
+                {txn.description || t(cat.name)}
               </p>
               <p className="text-sm text-taupe">
-                {cat.name} · {formatDate(txn.date)}
+                {t(cat.name)} · {formatDate(txn.date)}
               </p>
             </div>
             <p className={`text-lg font-bold ${txn.type === "income" ? "text-mint" : "text-bone"}`}>
@@ -1740,8 +1745,7 @@ function TxnDetailSheet({
           </div>
           {txn.appliesTo && txn.appliesTo.kind !== "income" && !txn.appliesTo.settled && (
             <p className="rounded-lg bg-raised px-3 py-2 text-[11px] text-taupe">
-              Deleting this reverses everything it touched — the cash and any linked
-              debt or goal.
+              {t("Deleting this reverses everything it touched — the cash and any linked debt or goal.")}
             </p>
           )}
           <Button
@@ -1752,7 +1756,7 @@ function TxnDetailSheet({
               onClose();
             }}
           >
-            <Trash2 size={18} /> Delete transaction
+            <Trash2 size={18} /> {t("Delete transaction")}
           </Button>
         </div>
       )}
@@ -1775,17 +1779,16 @@ function SettingsSheet({
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
-    <Sheet open={open} onClose={onClose} title="Settings">
+    <Sheet open={open} onClose={onClose} title={t("Settings")}>
       <div className="space-y-3">
         <div className="rounded-xl bg-mint/10 p-3 text-sm">
-          <p className="font-semibold text-mint">☁️ Cloud sync is on</p>
+          <p className="font-semibold text-mint">☁️ {t("Cloud sync is on")}</p>
           <p className="mt-0.5 text-mint/70">
-            Signed in as {session?.user.email}. Changes sync live to every device
-            you're both signed in on.
+            {t("Signed in as {email}. Changes sync live to every device you're both signed in on.", { email: session?.user.email ?? "" })}
           </p>
         </div>
         <Button variant="soft" className="w-full" onClick={onImport}>
-          <FileUp size={16} /> Import bank statement
+          <FileUp size={16} /> {t("Import bank statement")}
         </Button>
         <Button
           className="w-full"
@@ -1798,7 +1801,7 @@ function SettingsSheet({
             setBusy(false);
           }}
         >
-          {busy ? "Setting up…" : "Set up my household"}
+          {busy ? t("Setting up…") : t("Set up my household")}
         </Button>
         {status && (
           <p className="rounded-lg bg-raised px-3 py-2 text-sm text-taupe">{status}</p>
@@ -1809,7 +1812,7 @@ function SettingsSheet({
           onClick={async () => {
             if (
               window.confirm(
-                "Delete ALL accounts, recurring, transactions, debts and goals? This can't be undone.",
+                t("Delete ALL accounts, recurring, transactions, debts and goals? This can't be undone."),
               )
             ) {
               await resetAll();
@@ -1817,7 +1820,7 @@ function SettingsSheet({
             }
           }}
         >
-          Clear all data
+          {t("Clear all data")}
         </Button>
       </div>
     </Sheet>

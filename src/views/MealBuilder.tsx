@@ -15,6 +15,7 @@ import {
 } from "../lib/nutrition";
 import { useStore } from "../store/FinanceStore";
 import { Button, inputClass, labelClass, Sheet } from "../components/ui";
+import { t } from "../lib/i18n";
 
 const ACC = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const round = (n: number) => Math.round(n);
@@ -68,7 +69,7 @@ export function MealBuilder() {
     <div className="space-y-3">
       {/* meal size */}
       <section className="rounded-xl border border-edge bg-tile p-4">
-        <p className="eyebrow text-taupe">How much of the day is this meal?</p>
+        <p className="eyebrow text-taupe">{t("How much of the day is this meal?")}</p>
         <div className="mt-2.5 grid grid-cols-3 gap-2">
           {SHARES.map((s) => {
             const on = Math.abs(s.v - share) < 0.001;
@@ -80,13 +81,13 @@ export function MealBuilder() {
                   on ? "bg-bone text-bg" : "bg-raised text-taupe hover:text-bone"
                 }`}
               >
-                {s.label}
+                {t(s.label)}
               </button>
             );
           })}
         </div>
         <p className="mt-2 font-mono text-[11px] text-faint">
-          targets each plate at {Math.round(share * 100)}% of the daily plan
+          {t("targets each plate at {pct}% of the daily plan", { pct: Math.round(share * 100) })}
         </p>
       </section>
 
@@ -94,19 +95,19 @@ export function MealBuilder() {
       <section className="rounded-xl border border-edge bg-tile p-4">
         <div className="mb-1 flex items-center gap-2">
           <UtensilsCrossed size={15} className="text-taupe" />
-          <p className="eyebrow text-taupe">Your plate · portions per person</p>
+          <p className="eyebrow text-taupe">{t("Your plate · portions per person")}</p>
         </div>
 
         {selFoods.length === 0 ? (
           <p className="py-6 text-center text-sm text-faint">
-            Pick a protein, a carb, and a veg below — I'll set each person's grams.
+            {t("Pick a protein, a carb, and a veg below — I'll set each person's grams.")}
           </p>
         ) : (
           <>
             {/* column heads */}
             <div className="mt-3 flex items-center gap-2 border-b border-edge pb-2">
               <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-faint">
-                Ingredient
+                {t("Ingredient")}
               </span>
               <span className="w-16 text-right font-mono text-[10px] uppercase tracking-wider" style={{ color: ACC.gino }}>
                 ▲ Gino
@@ -118,10 +119,10 @@ export function MealBuilder() {
             {sortedSel.map((f) => (
               <div key={f.id} className="flex items-center gap-2 border-b border-edge py-2.5 last:border-0">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] text-bone">{f.name}</p>
+                  <p className="text-[13.5px] text-bone">{t(f.name)}</p>
                   <p className="font-mono text-[10px] text-faint">
-                    {ROLE_LABEL[f.role]}
-                    {f.note ? ` · ${f.note}` : ""}
+                    {t(ROLE_LABEL[f.role])}
+                    {f.note ? ` · ${t(f.note)}` : ""}
                   </p>
                 </div>
                 <span className="num w-16 text-right text-[14px] font-semibold" style={{ color: ACC.gino }}>
@@ -143,7 +144,7 @@ export function MealBuilder() {
               <div className="mt-2 space-y-1">
                 {gino.notes.map((n, i) => (
                   <p key={i} className="font-mono text-[11px] text-gold">
-                    ⚑ {n}
+                    ⚑ {t(n)}
                   </p>
                 ))}
               </div>
@@ -152,7 +153,7 @@ export function MealBuilder() {
               onClick={() => setSelected([])}
               className="mt-3 w-full rounded-lg bg-raised py-2 text-[12px] font-medium text-taupe transition hover:text-bone"
             >
-              Clear plate
+              {t("Clear plate")}
             </button>
           </>
         )}
@@ -161,12 +162,12 @@ export function MealBuilder() {
       {/* library picker */}
       <section className="rounded-xl border border-edge bg-tile p-4">
         <div className="flex items-center justify-between">
-          <p className="eyebrow text-taupe">Food library · tap to add</p>
+          <p className="eyebrow text-taupe">{t("Food library · tap to add")}</p>
           <button
             onClick={() => setAddOpen(true)}
             className="flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 text-[12px] font-semibold text-accent transition hover:bg-accent/25"
           >
-            <Plus size={13} /> Add food
+            <Plus size={13} /> {t("Add food")}
           </button>
         </div>
         <div className="mt-3 space-y-3.5">
@@ -176,7 +177,7 @@ export function MealBuilder() {
             return (
               <div key={role}>
                 <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-faint">
-                  {ROLE_LABEL[role]}
+                  {t(ROLE_LABEL[role])}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {items.map((f) => {
@@ -192,7 +193,7 @@ export function MealBuilder() {
                         }`}
                       >
                         {on && <Check size={12} className="text-accent" />}
-                        {f.name}
+                        {t(f.name)}
                       </button>
                     );
                   })}
@@ -202,8 +203,7 @@ export function MealBuilder() {
           })}
         </div>
         <p className="mt-3 font-mono text-[10px] text-faint">
-          macros are per 100g, as-eaten — a starting portion, not gospel. The scale
-          calibrates from there.
+          {t("macros are per 100g, as-eaten — a starting portion, not gospel. The scale calibrates from there.")}
         </p>
       </section>
 
@@ -222,7 +222,7 @@ function PersonTotals({ name, acc, sol }: { name: string; acc: string; sol: Meal
   return (
     <div className="rounded-lg border p-2.5" style={{ borderColor: acc + "55", background: acc + "12" }}>
       <p className="mb-1.5 text-[12px] font-semibold" style={{ color: acc }}>
-        {name}'s plate
+        {t("{name}'s plate", { name })}
       </p>
       <div className="grid grid-cols-4 gap-1 text-center">
         {macros.map((m) => {
@@ -234,7 +234,7 @@ function PersonTotals({ name, acc, sol }: { name: string; acc: string; sol: Meal
                 {round(m.v)}
                 <span className="text-[9px] font-normal text-faint">{m.u}</span>
               </p>
-              <p className="font-mono text-[9px] text-faint">{m.k}</p>
+              <p className="font-mono text-[9px] text-faint">{t(m.k)}</p>
               <p className="font-mono text-[8.5px]" style={{ color: ok ? acc : "#e3b341" }}>
                 /{round(m.t)}
               </p>
@@ -277,15 +277,15 @@ function AddFoodSheet({
     setBarcode(clean);
     const existing = data.foods.find((x) => x.barcode === clean);
     if (existing) {
-      setStatus(`"${existing.name}" is already in your library.`);
+      setStatus(t('"{name}" is already in your library.', { name: existing.name }));
       return;
     }
     setBusy(true);
-    setStatus("Looking up…");
+    setStatus(t("Looking up…"));
     const r = await lookupBarcode(clean);
     setBusy(false);
     if (!r) {
-      setStatus("Not in the food database — enter the macros by hand.");
+      setStatus(t("Not in the food database — enter the macros by hand."));
       return;
     }
     setName(r.name);
@@ -294,7 +294,7 @@ function AddFoodSheet({
     setP(String(r.p));
     setC(String(r.c));
     setF(String(r.f));
-    setStatus(`Found "${r.name}" — check the macros and save.`);
+    setStatus(t('Found "{name}" — check the macros and save.', { name: r.name }));
   }
 
   function save() {
@@ -323,22 +323,22 @@ function AddFoodSheet({
 
   return (
     <>
-    <Sheet open={open} onClose={onClose} title="Add a food">
+    <Sheet open={open} onClose={onClose} title={t("Add a food")}>
       <div className="space-y-4">
         {/* barcode → auto-fill from OpenFoodFacts */}
         <div>
-          <label className={labelClass}>Scan or enter a barcode</label>
+          <label className={labelClass}>{t("Scan or enter a barcode")}</label>
           <div className="flex gap-2">
             <button
               onClick={() => setScanOpen(true)}
               className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 py-2.5 text-sm font-semibold text-bg transition active:scale-[0.98]"
             >
-              <ScanLine size={16} /> Scan
+              <ScanLine size={16} /> {t("Scan")}
             </button>
             <input
               className={`${inputClass} num`}
               inputMode="numeric"
-              placeholder="or type the number"
+              placeholder={t("or type the number")}
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
             />
@@ -347,7 +347,7 @@ function AddFoodSheet({
               disabled={busy || barcode.replace(/\D/g, "").length < 6}
               onClick={() => lookup(barcode)}
             >
-              {busy ? "…" : "Look up"}
+              {busy ? "…" : t("Look up")}
             </Button>
           </div>
           {status && (
@@ -358,14 +358,14 @@ function AddFoodSheet({
         </div>
 
         <p className="text-sm text-taupe">
-          …or enter the macros <b className="text-bone">per 100g</b> from the label.
+          {t("…or enter the macros")} <b className="text-bone">{t("per 100g")}</b> {t("from the label.")}
         </p>
         <div>
-          <label className={labelClass}>Name</label>
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Chicken thigh" />
+          <label className={labelClass}>{t("Name")}</label>
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Chicken thigh")} />
         </div>
         <div>
-          <label className={labelClass}>Role</label>
+          <label className={labelClass}>{t("Role")}</label>
           <div className="grid grid-cols-5 gap-1.5">
             {ROLES.map((r) => (
               <button
@@ -375,7 +375,7 @@ function AddFoodSheet({
                   role === r ? "bg-accent text-bg" : "bg-raised text-taupe"
                 }`}
               >
-                {r}
+                {t(r)}
               </button>
             ))}
           </div>
@@ -388,7 +388,7 @@ function AddFoodSheet({
             { l: "F (g)", v: f, set: setF },
           ].map((fld) => (
             <div key={fld.l}>
-              <label className={labelClass}>{fld.l}</label>
+              <label className={labelClass}>{t(fld.l)}</label>
               <input
                 className={`${inputClass} num px-2 text-center`}
                 type="number"
@@ -401,13 +401,13 @@ function AddFoodSheet({
           ))}
         </div>
         <Button className="w-full" disabled={!valid} onClick={save}>
-          Save to library
+          {t("Save to library")}
         </Button>
 
         {customs.length > 0 && (
           <div className="border-t border-edge pt-3">
             <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-faint">
-              Your added foods
+              {t("Your added foods")}
             </p>
             <div className="space-y-1.5">
               {customs.map((cf) => (
