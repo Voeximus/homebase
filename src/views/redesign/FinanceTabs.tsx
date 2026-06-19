@@ -25,6 +25,7 @@ import {
 } from "../OnePager";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { BillsSheet } from "./BillsSheet";
+import { TxnSheet } from "./TxnSheet";
 import type { ScheduleEntry } from "../../lib/schedule";
 import type { BillRow } from "./vm";
 import {
@@ -125,6 +126,11 @@ export function FinanceTabs({
   const [markSentOpen, setMarkSentOpen] = useState(false);
   const [billsOpen, setBillsOpen] = useState(false);
   const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
+  const [txnId, setTxnId] = useState<string | null>(null);
+
+  const anySheetOpen =
+    ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
+    settingsOpen || markSentOpen || billsOpen || !!payBillEntry || !!txnId;
 
   // The snowball plan (for the attack ladder + the mark-sent slip).
   const debtPlan = useMemo(() => {
@@ -210,9 +216,15 @@ export function FinanceTabs({
   }, [envLine, data.transactions, monthKey]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[440px] flex-col" style={{ background: "#0b0f17" }}>
+    <div
+      className="mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
+      style={{ background: "#0b0f17" }}
+    >
       <TopBar mode={mode} onMode={onMode} lens={lens} onLens={onLens} />
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className="min-h-0 flex-1"
+        style={{ overflowY: anySheetOpen ? "hidden" : "auto", overscrollBehaviorY: "contain" }}
+      >
         {tab === "home" ? (
           <HomeTab
             vm={vms.home}
@@ -234,7 +246,7 @@ export function FinanceTabs({
             vm={vms.activity}
             taps={{
               onRefresh: refresh,
-              onRow: () => setLedgerOpen(true),
+              onRow: (id) => setTxnId(id),
               onAdd: () => setAddOpen(true),
             }}
           />
@@ -262,9 +274,9 @@ export function FinanceTabs({
         vm={envVM}
         open={!!envLine}
         onClose={() => setEnvLine(null)}
-        onTxn={() => {
+        onTxn={(id) => {
           setEnvLine(null);
-          setLedgerOpen(true);
+          setTxnId(id);
         }}
       />
       <SprintSheet
@@ -295,6 +307,7 @@ export function FinanceTabs({
         onMarkPaid={markBillPaid}
         onSetVariable={setRecurringVariable}
       />
+      <TxnSheet txnId={txnId} open={!!txnId} onClose={() => setTxnId(null)} />
     </div>
   );
 }

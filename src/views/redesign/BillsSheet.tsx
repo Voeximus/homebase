@@ -29,21 +29,21 @@ export function BillsSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3"
       style={{ background: "rgba(0,0,0,.55)" }}
       onClick={onClose}
     >
       <div
-        className="max-h-[88vh] w-full max-w-[440px] overflow-y-auto"
+        className="max-h-[86vh] w-full max-w-[420px] overflow-y-auto"
         style={{
           background: "#0f141c",
+          border: "1px solid #232d3a",
           borderTop: "2px solid #fb923c",
-          borderRadius: "24px 24px 0 0",
-          padding: "14px 16px 24px",
+          borderRadius: "22px",
+          padding: "16px",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3.5 h-1 w-10 rounded-full" style={{ background: "#2a3441" }} />
 
         <div className="mb-3.5 flex items-center gap-2.5">
           <span

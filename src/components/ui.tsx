@@ -134,16 +134,18 @@ export function Sheet({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3"
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="safe-bottom scroll-soft relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-edge bg-tile p-5 shadow-2xl sm:rounded-3xl">
-        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-edge sm:hidden" />
+      <div
+        className="scroll-soft relative z-10 max-h-[86vh] w-full max-w-[420px] overflow-y-auto rounded-[22px] p-5 shadow-2xl"
+        style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #34c5e8" }}
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-bone">{title}</h2>
           <button

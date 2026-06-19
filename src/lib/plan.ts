@@ -25,7 +25,9 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   { key: "dining", label: "Dining out", icon: "🍽️", target: 150, cats: ["dining"], note: "a few times, to enjoy life" },
   { key: "household", label: "Household + hygiene", icon: "🧴", target: 90, cats: ["shopping"], note: "supplies · hygiene" },
   { key: "health", label: "Health + grooming", icon: "💊", target: 110, cats: ["health"], note: "supplements · haircut" },
-  { key: "other", label: "Dog · car · subs · misc", icon: "📦", target: 150, cats: ["other", "subscriptions", "entertainment", "kids", "housing", "utilities"], note: "the catch-all" },
+  { key: "pets", label: "Dog / pets", icon: "🐾", target: 100, cats: ["pets"], note: "food · vet · toys" },
+  { key: "subscriptions", label: "Subscriptions", icon: "🔁", target: 30, cats: ["subscriptions", "entertainment"], note: "streaming · apps" },
+  { key: "misc", label: "Miscellaneous", icon: "📦", target: 20, cats: ["other", "kids", "housing", "utilities"], note: "the catch-all" },
 ];
 
 export interface OneTime {

@@ -17,6 +17,7 @@ import {
   Home,
   Baby,
   Banknote,
+  PawPrint,
   HelpCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export const CAT_COLOR: Record<string, string> = {
   housing: "#60a5fa", // blue
   utilities: "#fb923c", // amber-orange
   kids: "#f472b6", // pink
+  pets: "#f472b6", // pink — dog / pets
   salary: "#46d18a", // mint (income)
 };
 
@@ -51,6 +53,7 @@ const CAT_ICON: Record<string, LucideIcon> = {
   housing: Home,
   utilities: Zap,
   kids: Baby,
+  pets: PawPrint,
   salary: Banknote,
 };
 
