@@ -207,6 +207,7 @@ export interface FinanceStore {
       description: string;
       appliesTo?: AppliesTo;
     }[],
+    accountId?: string,
   ) => Promise<{ ok: boolean; count: number }>;
   // Teach the categorizer: upsert a learned rule for a merchant pattern.
   saveMerchantRule: (rule: {
@@ -561,7 +562,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error || !row) return console.error(error);
         setData((p) => ({ ...p, transactions: [mapTxn(row), ...p.transactions] }));
       },
-      async commitImport(items) {
+      async commitImport(items, accountId) {
         if (!items.length) return { ok: true, count: 0 };
         const rows = items.map((it) => ({
           date: it.date,
@@ -569,7 +570,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           type: "expense" as const,
           category_id: it.categoryId,
           description: it.description,
-          account_id: null,
+          // Tag which account the statement was for — display + per-person
+          // activity. Settled bill-markers stay account-less (they move no
+          // cash). Imported rows are records only; no balance moves.
+          account_id: it.appliesTo?.settled ? null : accountId ?? null,
           applies_to: it.appliesTo ?? null,
         }));
         const { data: inserted, error } = await supabase

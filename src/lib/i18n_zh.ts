@@ -43,6 +43,7 @@ const SEED: Record<string, string> = {
   "Set up my household": "设置我的家庭账户",
   "Delete transaction": "删除交易",
   "Import bank statement": "导入银行账单",
+  "Add these to which account?": "把这些归入哪个账户？",
 
   // ── finance: OnePager ──
   "Your next move": "你的下一步",

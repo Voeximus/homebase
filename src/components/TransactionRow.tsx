@@ -1,18 +1,26 @@
-import type { Category, Transaction } from "../types";
+import type { Account, Category, Transaction } from "../types";
 import { getCategory } from "../lib/seed";
 import { formatMoney } from "../lib/format";
 
 export function TransactionRow({
   txn,
   categories,
+  accounts,
   onClick,
 }: {
   txn: Transaction;
   categories: Category[];
+  accounts?: Account[];
   onClick?: () => void;
 }) {
   const cat = getCategory(categories, txn.categoryId);
   const income = txn.type === "income";
+  const acct = accounts?.find((a) => a.id === txn.accountId);
+  const d = new Date(txn.date + "T00:00:00");
+  const dateLabel = isNaN(d.getTime())
+    ? txn.date
+    : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const sub = [dateLabel, acct?.name, cat.name].filter(Boolean).join(" · ");
   return (
     <button
       onClick={onClick}
@@ -28,7 +36,7 @@ export function TransactionRow({
         <p className="truncate font-medium text-bone">
           {txn.description || cat.name}
         </p>
-        <p className="truncate text-xs text-taupe">{cat.name}</p>
+        <p className="num truncate text-xs text-taupe">{sub}</p>
       </div>
       <p
         className={`num shrink-0 font-semibold tabular-nums ${

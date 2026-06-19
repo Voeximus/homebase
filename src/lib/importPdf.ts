@@ -7,10 +7,13 @@
 // validated in Node against Gino's real PDFs before shipping (see _pdftest.mjs).
 
 import * as pdfjsLib from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 import type { RawRow } from "./importStatement";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+// Let Vite bundle + instantiate the worker (handles the /homebase/ base path
+// and the ESM worker type). The old `?url` + workerSrc path failed to load the
+// worker on the deployed PWA — that is why PDF import stopped working.
+pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const TYPE_RE = /^(Debit|Credit|Transfer|Deposit|Other|Virtual|Card|Payment)( (Card|Payment))?$/;
 const STATUS_RE = /^(Cleared|Pending|Processing|Reconcile)$/i;

@@ -274,10 +274,14 @@ export function OnePager({
     () => (personal ? ownAccounts(data.accounts, owner) : data.accounts),
     [personal, data.accounts, owner],
   );
-  const myAccountIds = useMemo(
-    () => new Set(myAccountsList.map((a) => a.id)),
-    [myAccountsList],
-  );
+  // Personal activity shows everything EXCEPT the other person's own accounts —
+  // so your accounts + joint + untagged legacy history all surface in your view.
+  const otherAccountIds = useMemo(() => {
+    const otherLabel = owner === "gino" ? "Xinyan" : "Gino";
+    return new Set(
+      data.accounts.filter((a) => a.owner === otherLabel).map((a) => a.id),
+    );
+  }, [data.accounts, owner]);
   const cashShown = totalBalance(myAccountsList);
   const jointCash = personal ? totalBalance(jointAccounts(data.accounts)) : 0;
   const netFlowShown = personal
@@ -315,8 +319,7 @@ export function OnePager({
       [...data.transactions]
         .filter((tx) => !tx.appliesTo?.settled)
         .filter(
-          (tx) =>
-            !personal || (tx.accountId != null && myAccountIds.has(tx.accountId)),
+          (tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId),
         )
         .sort((a, b) =>
           a.date === b.date
@@ -324,7 +327,7 @@ export function OnePager({
             : b.date.localeCompare(a.date),
         )
         .slice(0, 6),
-    [data.transactions, personal, myAccountIds],
+    [data.transactions, personal, otherAccountIds],
   );
 
   // setup guard
@@ -861,6 +864,7 @@ export function OnePager({
                     key={t.id}
                     txn={t}
                     categories={data.categories}
+                    accounts={data.accounts}
                     onClick={() => setTxnDetail(t)}
                   />
                 ))}

@@ -35,6 +35,7 @@ export function ImportSheet({
   const [parsing, setParsing] = useState(false);
   const [showDupes, setShowDupes] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string>(() => data.accounts[0]?.id ?? "");
 
   const expenseCats = useMemo(
     () => data.categories.filter((c) => c.type === "expense" || c.type === "both"),
@@ -160,7 +161,7 @@ export function ImportSheet({
         appliesTo: { kind: "bill", recurringId: b.recurringId, monthKey: b.monthKey, day: b.day, settled: true },
       });
     }
-    const r = await commitImport(items);
+    const r = await commitImport(items, accountId || data.accounts[0]?.id);
     setBusy(false);
     if (r.ok) {
       setResult(t("Imported {count} entries — your spend and paid bills are updated.", { count: r.count }));
@@ -443,6 +444,21 @@ export function ImportSheet({
                 {t("Nothing new to import — all {count} of these are already in your ledger.", { count: plan.duplicates.length })}
               </p>
             )}
+
+            <div>
+              <label className={labelClass}>{t("Add these to which account?")}</label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                className="w-full rounded-xl border border-edge bg-raised px-3 py-2.5 text-sm text-bone outline-none"
+              >
+                {data.accounts.map((a) => (
+                  <option key={a.id} value={a.id} className="bg-tile">
+                    {a.name} · {a.owner}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="flex gap-2">
               <Button variant="ghost" className="flex-1" onClick={reset} disabled={busy}>
