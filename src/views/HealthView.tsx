@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ClipboardList, LogOut, ScanLine, UtensilsCrossed } from "lucide-react";
+import { ClipboardList, LogOut, UtensilsCrossed } from "lucide-react";
 import { t } from "../lib/i18n";
 import { DAILY } from "../lib/nutrition";
 import { useAuth } from "../auth/AuthProvider";
@@ -138,13 +138,6 @@ export function HealthView({
           /* ── PERSONAL · curated dashboard ── */
           <div className="space-y-3">
             <MacroNeeds owner={owner} acc={acc} />
-            <button
-              onClick={() => setSub("kitchen")}
-              className="flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-semibold text-bg transition active:scale-[0.98]"
-              style={{ background: acc }}
-            >
-              <ScanLine size={18} /> {t("Scan a barcode")}
-            </button>
             <PersonalWorkouts owner={owner} acc={acc} />
           </div>
         ) : (

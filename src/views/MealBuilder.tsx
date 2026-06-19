@@ -21,9 +21,9 @@ const ACC = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const round = (n: number) => Math.round(n);
 
 const SHARES: { label: string; v: number }[] = [
-  { label: "⅓ meal", v: 1 / 3 },
-  { label: "½ day", v: 0.5 },
-  { label: "Full day", v: 1 },
+  { label: "2 meals", v: 0.5 },
+  { label: "3 meals", v: 1 / 3 },
+  { label: "4 meals", v: 0.25 },
 ];
 
 export function MealBuilder() {
@@ -40,6 +40,7 @@ export function MealBuilder() {
     () => parseFloat(localStorage.getItem("hb-meal-share") || "") || 1 / 3,
   );
   const [addOpen, setAddOpen] = useState(false);
+  const [addAutoScan, setAddAutoScan] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("hb-meal-sel", JSON.stringify(selected));
@@ -67,9 +68,20 @@ export function MealBuilder() {
 
   return (
     <div className="space-y-3">
-      {/* meal size */}
+      {/* scan → add a food to the library */}
+      <button
+        onClick={() => {
+          setAddAutoScan(true);
+          setAddOpen(true);
+        }}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-base font-semibold text-bg transition active:scale-[0.98]"
+      >
+        <ScanLine size={18} /> {t("Scan a barcode")}
+      </button>
+
+      {/* meals per day */}
       <section className="rounded-xl border border-edge bg-tile p-4">
-        <p className="eyebrow text-taupe">{t("How much of the day is this meal?")}</p>
+        <p className="eyebrow text-taupe">{t("How many meals a day?")}</p>
         <div className="mt-2.5 grid grid-cols-3 gap-2">
           {SHARES.map((s) => {
             const on = Math.abs(s.v - share) < 0.001;
@@ -87,7 +99,7 @@ export function MealBuilder() {
           })}
         </div>
         <p className="mt-2 font-mono text-[11px] text-faint">
-          {t("targets each plate at {pct}% of the daily plan", { pct: Math.round(share * 100) })}
+          {t("Each plate ≈ one of your meals · {pct}% of the day", { pct: Math.round(share * 100) })}
         </p>
       </section>
 
@@ -207,7 +219,14 @@ export function MealBuilder() {
         </p>
       </section>
 
-      <AddFoodSheet open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddFoodSheet
+        open={addOpen}
+        autoScan={addAutoScan}
+        onClose={() => {
+          setAddOpen(false);
+          setAddAutoScan(false);
+        }}
+      />
     </div>
   );
 }
@@ -251,9 +270,11 @@ const ROLES: FoodRole[] = ["protein", "carb", "veg", "fat", "other"];
 function AddFoodSheet({
   open,
   onClose,
+  autoScan,
 }: {
   open: boolean;
   onClose: () => void;
+  autoScan?: boolean;
 }) {
   const { data, addFood, deleteFood } = useStore();
   const customs = data.foods;
@@ -267,6 +288,11 @@ function AddFoodSheet({
   const [scanOpen, setScanOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Opened via the big "Scan a barcode" button → jump straight to the camera.
+  useEffect(() => {
+    if (open && autoScan) setScanOpen(true);
+  }, [open, autoScan]);
 
   const num = (s: string) => Math.max(0, parseFloat(s) || 0);
   const valid = name.trim() !== "" && kcal !== "";

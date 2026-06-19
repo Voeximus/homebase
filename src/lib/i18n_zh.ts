@@ -140,6 +140,12 @@ const SEED: Record<string, string> = {
 
   // ── health: meal builder ──
   "How much of the day is this meal?": "这一餐占全天的多少？",
+  "How many meals a day?": "每天吃几餐？",
+  "2 meals": "2 餐",
+  "3 meals": "3 餐",
+  "4 meals": "4 餐",
+  "Each plate ≈ one of your meals · {pct}% of the day":
+    "每盘 ≈ 你的一餐 · 当天的 {pct}%",
   "⅓ meal": "⅓ 一餐",
   "½ day": "½ 半天",
   "Full day": "全天",
