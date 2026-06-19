@@ -147,45 +147,35 @@ export function WelcomeScreen({
           <p className="mt-4 text-xs text-taupe">{t("throw a switch to begin")} →</p>
         </div>
 
-        {/* throw-rail */}
-        <div className="relative h-[300px] w-[84px] shrink-0">
-          <div
-            className="absolute inset-0 rounded-full border border-edge bg-recessed transition-opacity duration-300"
-            style={{ opacity: entering ? 0 : 1 }}
-          />
-          {MODES.map(({ m, Icon, label }, i) => {
-            const chosen = thrown === m;
-            const dimmed = entering && !chosen;
-            return (
-              <button
-                key={m}
-                onClick={() => throwTo(m)}
-                aria-label={label}
-                className="absolute left-1/2 grid h-14 w-14 place-items-center rounded-2xl border text-accent transition-all duration-500"
-                style={{
-                  top: chosen ? 8 : i === 0 ? 24 : 222,
-                  borderColor: "rgba(52,197,232,.4)",
-                  background: "rgba(52,197,232,.13)",
-                  transform: `translateX(-50%) scale(${chosen ? 1.08 : 1})`,
-                  opacity: dimmed ? 0 : 1,
-                  boxShadow: chosen
-                    ? "0 0 0 1px rgba(52,197,232,.6), 0 10px 30px rgba(52,197,232,.4)"
-                    : "none",
-                }}
-              >
-                <Icon size={26} />
-              </button>
-            );
-          })}
-          {MODES.map(({ m, label }, i) => (
-            <span
-              key={m}
-              className="eyebrow absolute left-1/2 -translate-x-1/2 text-center text-faint transition-opacity duration-300"
-              style={{ top: i === 0 ? 84 : 282, opacity: entering ? 0 : 1 }}
-            >
-              {label}
-            </span>
-          ))}
+        {/* throw-rail — a filled two-segment switch; lifts away on throw */}
+        <div
+          className="shrink-0 transition-all duration-500"
+          style={{
+            opacity: entering ? 0 : 1,
+            transform: entering ? "translateY(-26px)" : "none",
+          }}
+        >
+          <div className="flex h-[316px] w-24 flex-col overflow-hidden rounded-full border border-edge bg-raised">
+            {MODES.map(({ m, Icon, label }, i) => {
+              const chosen = thrown === m;
+              return (
+                <button
+                  key={m}
+                  onClick={() => throwTo(m)}
+                  aria-label={label}
+                  className={`flex flex-1 flex-col items-center justify-center gap-2.5 transition-colors duration-300 ${
+                    i === 0 ? "border-b border-edge" : ""
+                  }`}
+                  style={{
+                    background: chosen ? "rgba(52,197,232,.16)" : "transparent",
+                  }}
+                >
+                  <Icon size={29} className="text-accent" />
+                  <span className="eyebrow text-taupe">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
