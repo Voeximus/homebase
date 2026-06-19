@@ -7,6 +7,8 @@ import { OnePager } from "./views/OnePager";
 import { HealthView } from "./views/HealthView";
 import type { AppMode } from "./components/ModeToggle";
 import { LanguageProvider } from "./components/LanguageProvider";
+import { WelcomeScreen } from "./components/WelcomeScreen";
+import { getOwner, type Owner } from "./lib/owner";
 
 export default function App() {
   return (
@@ -39,13 +41,25 @@ function Shell() {
   const [mode, setMode] = useState<AppMode>(
     () => (localStorage.getItem("hb-mode") as AppMode) || "finance",
   );
+  const [owner, setOwner] = useState<Owner | null>(() => getOwner());
+  // Per cold launch: the welcome screen is the front door every time you open.
+  const [entered, setEntered] = useState(false);
   useEffect(() => {
     localStorage.setItem("hb-mode", mode);
   }, [mode]);
 
   return (
     <LanguageProvider>
-      {mode === "health" ? (
+      {!entered ? (
+        <WelcomeScreen
+          owner={owner}
+          onOwner={setOwner}
+          onEnter={(m) => {
+            setMode(m);
+            setEntered(true);
+          }}
+        />
+      ) : mode === "health" ? (
         <HealthView mode={mode} onMode={setMode} />
       ) : (
         <FinanceGate mode={mode} onMode={setMode} />

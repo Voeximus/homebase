@@ -131,6 +131,19 @@ const SEED: Record<string, string> = {
     "在下面选择蛋白质、碳水和蔬菜 — 我会算出每个人的克数。",
   "Your added foods": "你添加的食物",
 
+  // ── welcome / first-launch identity ──
+  "Whose phone is this?": "这是谁的手机？",
+  "Pick yourself once — this phone will remember.":
+    "选择一次，这台手机会记住。",
+  "You're {name}?": "你是 {name} 吗？",
+  "This phone will stay yours, {name}. You can change it later in Settings.":
+    "这台手机将归你所有，{name}。以后可在设置中更改。",
+  "Yes, that's me": "是的，就是我",
+  "Not me": "不是我",
+  "Welcome back,": "欢迎回来，",
+  "measure, don't infer": "测量，而非臆断",
+  "throw a switch to begin": "拨动开关开始",
+
   // ── auth ──
   "Sign in to your shared finances": "登录你们的共享账户",
   "Create your account": "创建账户",
