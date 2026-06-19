@@ -30,11 +30,18 @@ export function LedgerSheet({
   txns: Transaction[]; // already lens-filtered by the caller
   hasRule: (desc: string) => boolean; // a merchant_rule exists for this merchant
 }) {
-  const { data, setTransactionCategory, saveMerchantRule, excludeFromBudget, deleteTransaction } =
-    useStore();
+  const {
+    data,
+    setTransactionCategory,
+    saveMerchantRule,
+    excludeFromBudget,
+    makeRecurringBill,
+    deleteTransaction,
+  } = useStore();
   const [q, setQ] = useState("");
   const [quick, setQuick] = useState<Quick>("all");
   const [edit, setEdit] = useState<Transaction | null>(null);
+  const [remember, setRemember] = useState(true);
   const expenseCats = data.categories.filter((c) => c.type === "expense" || c.type === "both");
 
   const counts = (tx: Transaction) => tx.type === "expense" && !tx.appliesTo;
@@ -120,7 +127,10 @@ export function LedgerSheet({
                   return (
                     <button
                       key={tx.id}
-                      onClick={() => setEdit(tx)}
+                      onClick={() => {
+                        setRemember(true);
+                        setEdit(tx);
+                      }}
                       className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition active:bg-white/5"
                     >
                       <span
@@ -182,18 +192,29 @@ export function LedgerSheet({
               </p>
             </div>
             <div>
-              <label className={labelClass}>{t("Category — tap to set & remember")}</label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className={labelClass}>{t("Category")}</label>
+                <button
+                  onClick={() => setRemember((r) => !r)}
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition ${
+                    remember ? "bg-accent/15 text-accent" : "bg-raised text-faint"
+                  }`}
+                >
+                  {remember ? t("✓ Remember merchant") : t("Just this one")}
+                </button>
+              </div>
               <div className="grid grid-cols-4 gap-2">
                 {expenseCats.map((c) => (
                   <button
                     key={c.id}
                     onClick={async () => {
                       await setTransactionCategory(edit.id, c.id);
-                      await saveMerchantRule({
-                        pattern: merchantKey(edit.description),
-                        kind: "variable",
-                        categoryId: c.id,
-                      });
+                      if (remember)
+                        await saveMerchantRule({
+                          pattern: merchantKey(edit.description),
+                          kind: "variable",
+                          categoryId: c.id,
+                        });
                       setEdit(null);
                     }}
                     className={`flex flex-col items-center gap-1 rounded-xl border py-2.5 transition ${
@@ -205,11 +226,49 @@ export function LedgerSheet({
                   </button>
                 ))}
               </div>
+              {!remember && (
+                <p className="mt-1.5 text-[11px] text-faint">
+                  {t(
+                    "Sets only this charge — other charges from this merchant stay as they are. (Gas stations, warehouse stores, etc.)",
+                  )}
+                </p>
+              )}
             </div>
+
+            <div className="rounded-xl border border-edge bg-raised p-3">
+              <p className="text-[12px] font-semibold text-bone">{t("Repeats every month or year?")}</p>
+              <p className="mb-2 text-[11px] text-taupe">
+                {t("Make it a bill — it joins your calendar and leaves variable spend.")}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="soft"
+                  className="flex-1"
+                  onClick={async () => {
+                    await makeRecurringBill(edit.id, "monthly");
+                    setEdit(null);
+                  }}
+                >
+                  {t("Monthly")}
+                </Button>
+                <Button
+                  variant="soft"
+                  className="flex-1"
+                  onClick={async () => {
+                    await makeRecurringBill(edit.id, "yearly");
+                    setEdit(null);
+                  }}
+                >
+                  {t("Yearly")}
+                </Button>
+              </div>
+            </div>
+
             <button
               onClick={async () => {
                 await excludeFromBudget(edit.id);
-                await saveMerchantRule({ pattern: merchantKey(edit.description), kind: "skip" });
+                if (remember)
+                  await saveMerchantRule({ pattern: merchantKey(edit.description), kind: "skip" });
                 setEdit(null);
               }}
               className="w-full rounded-xl bg-raised py-2.5 text-sm font-medium text-taupe transition"

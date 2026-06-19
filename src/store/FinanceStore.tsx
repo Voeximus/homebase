@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import { supabase } from "../lib/supabase";
 import { DEFAULT_CATEGORIES } from "../lib/seed";
+import { merchantKey } from "../lib/categorize";
 import { SEED_ACCOUNTS, SEED_DEBTS, SEED_RECURRING } from "../lib/household";
 import {
   type Food,
@@ -157,6 +158,7 @@ export interface FinanceStore {
   deleteTransaction: (id: string) => Promise<void>;
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
+  makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
   setAccountBalance: (accountId: string, balance: number) => Promise<void>;
   addDebt: (d: {
     name: string;
@@ -763,6 +765,48 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .update({ applies_to: { kind: "transfer" } })
           .eq("id", id);
         if (error) console.error(error);
+      },
+      async makeRecurringBill(txnId, cadence) {
+        // Promote a recurring subscription to a bill: create the recurring row,
+        // mark THIS transaction as its payment (so it leaves variable spend), and
+        // teach the categorizer that this merchant is a bill going forward.
+        const txn = dataRef.current.transactions.find((x) => x.id === txnId);
+        if (!txn) return;
+        const name = (merchantKey(txn.description) || txn.description || "Subscription").slice(0, 40);
+        const day = parseInt(txn.date.slice(8, 10), 10) || 1;
+        const { data: rec, error: rErr } = await supabase
+          .from("recurring")
+          .insert({
+            name,
+            amount: txn.amount,
+            direction: "out",
+            cadence,
+            category_id: "subscriptions",
+            active: true,
+            due_days: [day],
+          })
+          .select("id")
+          .single();
+        if (rErr || !rec) return console.error(rErr);
+        const appliesTo: AppliesTo = {
+          kind: "bill",
+          recurringId: rec.id,
+          monthKey: txn.date.slice(0, 7),
+          day,
+        };
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === txnId ? { ...t, appliesTo, categoryId: "subscriptions" } : t,
+          ),
+        }));
+        await supabase
+          .from("transactions")
+          .update({ applies_to: appliesTo, category_id: "subscriptions" })
+          .eq("id", txnId);
+        await supabase
+          .from("merchant_rules")
+          .upsert({ pattern: name, kind: "bill", category_id: null, bill_name: name }, { onConflict: "pattern" });
       },
       async setAccountBalance(accountId, balance) {
         setData((p) => ({
