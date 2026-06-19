@@ -156,6 +156,7 @@ export interface FinanceStore {
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
+  excludeFromBudget: (id: string) => Promise<void>;
   setAccountBalance: (accountId: string, balance: number) => Promise<void>;
   addDebt: (d: {
     name: string;
@@ -744,6 +745,22 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase
           .from("transactions")
           .update({ category_id: categoryId })
+          .eq("id", id);
+        if (error) console.error(error);
+      },
+      async excludeFromBudget(id) {
+        // Mark a one-off (a travel/remittance anomaly) as a transfer so it drops
+        // out of the variable-budget gate (type expense && !appliesTo) — without
+        // deleting the record or touching any balance.
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === id ? { ...t, appliesTo: { kind: "transfer" } } : t,
+          ),
+        }));
+        const { error } = await supabase
+          .from("transactions")
+          .update({ applies_to: { kind: "transfer" } })
           .eq("id", id);
         if (error) console.error(error);
       },

@@ -9,6 +9,7 @@ import {
   FileUp,
   Flag,
   Landmark,
+  List,
   LogOut,
   Plus,
   Settings,
@@ -74,6 +75,8 @@ import {
 } from "../lib/hooks";
 import { usePlaidLink } from "react-plaid-link";
 import { createLinkToken, exchangePublicToken } from "../lib/plaidClient";
+import { LedgerSheet } from "../components/LedgerSheet";
+import { merchantKey } from "../lib/categorize";
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function shortDebt(name: string): string {
@@ -234,6 +237,7 @@ export function OnePager({
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   // drill sheets
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [habitsOpen, setHabitsOpen] = useState(false);
@@ -332,6 +336,20 @@ export function OnePager({
         .slice(0, 6),
     [data.transactions, personal, otherAccountIds],
   );
+
+  // Full ledger: the same lens predicate as `recent`, but everything (no slice).
+  const ledgerTxns = useMemo(
+    () =>
+      data.transactions
+        .filter((tx) => !tx.appliesTo?.settled)
+        .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId)),
+    [data.transactions, personal, otherAccountIds],
+  );
+  const ruleSet = useMemo(
+    () => new Set(data.merchantRules.map((r) => r.pattern)),
+    [data.merchantRules],
+  );
+  const hasRule = (desc: string) => ruleSet.has(merchantKey(desc));
 
   // setup guard
   if (data.debts.length === 0 || math.income <= 0) {
@@ -874,6 +892,9 @@ export function OnePager({
               </div>
             )}
             <div className="flex gap-2 p-3">
+              <Button variant="ghost" className="flex-1" onClick={() => setLedgerOpen(true)}>
+                <List size={16} /> {t("All activity")}
+              </Button>
               <Button variant="ghost" className="flex-1" onClick={() => setImportOpen(true)}>
                 <FileUp size={16} /> {t("Import")}
               </Button>
@@ -898,6 +919,7 @@ export function OnePager({
       </button>
 
       {/* ── sheets ── */}
+      <LedgerSheet open={ledgerOpen} onClose={() => setLedgerOpen(false)} txns={ledgerTxns} hasRule={hasRule} />
       <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
       <SettingsSheet

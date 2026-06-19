@@ -50,5 +50,8 @@ export function householdMonthly(recurring: Recurring[]): {
 }
 
 export function totalBalance(accounts: Account[]): number {
-  return accounts.reduce((s, a) => s + a.balance, 0);
+  // Credit cards are debt, not cash — keep them out of the cash total.
+  return accounts
+    .filter((a) => !/credit/i.test(a.type))
+    .reduce((s, a) => s + a.balance, 0);
 }
