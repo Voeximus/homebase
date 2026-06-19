@@ -62,6 +62,22 @@ function pickBalance(a: any): number {
   return b.current ?? b.available ?? 0;
 }
 
+// Resolve a bill payment to its idempotent appliesTo (mirror of buildImportPlan):
+// snap the posted day to the recurring's nearest scheduled due day, so the feed
+// row lines up with a calendar-marked installment and dedups.
+function billAppliesTo(rec: { id: string; dueDays?: number[] }, date: string) {
+  const monthKey = date.slice(0, 7);
+  const postDay = parseInt(date.slice(8, 10), 10);
+  const day =
+    rec.dueDays && rec.dueDays.length
+      ? rec.dueDays.reduce(
+          (best, d) => (Math.abs(d - postDay) < Math.abs(best - postDay) ? d : best),
+          rec.dueDays[0],
+        )
+      : postDay;
+  return { kind: "bill", recurringId: rec.id, monthKey, day, settled: true } as const;
+}
+
 // --- actions ------------------------------------------------------------------
 
 async function linkToken(p: any) {
@@ -133,6 +149,23 @@ async function syncConnection(connId: string, force = false) {
       learned[r.pattern] = { kind: r.kind, categoryId: r.category_id ?? undefined, billName: r.bill_name ?? undefined };
     }
 
+    // active recurring bills (to match feed bill-payments to) + already-recorded
+    // bill installments (so we never double-mark a manual / prior-import / re-sync one)
+    const { data: recRows } = await admin.from("recurring").select("id, name, due_days").eq("active", true);
+    const recByName: Record<string, { id: string; dueDays?: number[] }> = {};
+    for (const r of recRows ?? []) recByName[r.name] = { id: r.id, dueDays: r.due_days ?? undefined };
+    const { data: paidRows } = await admin
+      .from("transactions")
+      .select("applies_to, provider_txn_id")
+      .not("applies_to", "is", null);
+    const paidBill = new Set<string>();
+    const seenProviderIds = new Set<string>();
+    for (const t of paidRows ?? []) {
+      const at = (t as any).applies_to;
+      if (at?.kind === "bill") paidBill.add(`${at.recurringId}|${at.monthKey}|${at.day}`);
+      if ((t as any).provider_txn_id) seenProviderIds.add((t as any).provider_txn_id);
+    }
+
     // fresh balances + our account map
     const accResp = await plaid("/accounts/get", { access_token: token });
     const balByProv: Record<string, number> = {};
@@ -166,11 +199,50 @@ async function syncConnection(connId: string, force = false) {
 
     const ops = reconcile({ added, modified, removed }, contentKey);
 
-    // group posted living-spend by provider account, categorized by your library
+    // group posted rows: living-spend by account, and BILL payments (matched to a
+    // recurring) recorded as appliesTo=bill so they auto-mark paid + log the real
+    // amount. Income / transfers (skip) are dropped.
     const postedByAcct: Record<string, any[]> = {};
+    const billByAcct: Record<string, any[]> = {};
     for (const row of ops.upsertPosted) {
       const c = classify(row.description, row.amount, learned);
-      if (c.kind !== "variable") continue; // income / transfers / bills aren't living spend
+      if (c.kind === "skip") continue;
+      if (c.kind === "bill") {
+        const rec = c.billName ? recByName[c.billName] : undefined;
+        if (rec) {
+          const at = billAppliesTo(rec, row.date);
+          const key = `${rec.id}|${at.monthKey}|${at.day}`;
+          // skip if this installment is already recorded (manual / prior import) —
+          // unless it's THIS feed row re-syncing (the unique index will update it).
+          if (paidBill.has(key) && !seenProviderIds.has(row.providerTxnId)) continue;
+          (billByAcct[row.accountId] ??= []).push({
+            provider_txn_id: row.providerTxnId,
+            provider_account_id: row.accountId,
+            date: row.date,
+            amount: Math.abs(row.amount),
+            type: "expense",
+            category_id: c.appCategory ?? "other",
+            description: row.description,
+            applies_to: at,
+            needs_review: false,
+          });
+          paidBill.add(key);
+          continue;
+        }
+        // bill rule matched but no such recurring row → treat as variable "other"
+        (postedByAcct[row.accountId] ??= []).push({
+          provider_txn_id: row.providerTxnId,
+          provider_account_id: row.accountId,
+          date: row.date,
+          amount: Math.abs(row.amount),
+          type: "expense",
+          category_id: "other",
+          description: row.description,
+          needs_review: true,
+        });
+        continue;
+      }
+      // variable living spend
       (postedByAcct[row.accountId] ??= []).push({
         provider_txn_id: row.providerTxnId,
         provider_account_id: row.accountId,
@@ -192,7 +264,7 @@ async function syncConnection(connId: string, force = false) {
         p_provider: "plaid",
         p_reported_balance: balByProv[provId] ?? null,
         p_balance_date: new Date().toISOString(),
-        p_posted: postedByAcct[provId] ?? [],
+        p_posted: [...(postedByAcct[provId] ?? []), ...(billByAcct[provId] ?? [])],
         p_reverse: reverseSent ? [] : ops.reverse,
       });
       if (error) throw new Error("apply_bank_sync: " + error.message);

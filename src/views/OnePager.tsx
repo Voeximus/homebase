@@ -298,7 +298,7 @@ export function OnePager({
     : netFlow;
 
   // bills (current month)
-  const { entries } = monthlySchedule(data.recurring, monthKey);
+  const { entries } = monthlySchedule(data.recurring, monthKey, data.transactions);
   const outEntries = entries.filter((e) => e.direction === "out");
   const todayNum = today.getDate();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();

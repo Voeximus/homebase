@@ -99,6 +99,7 @@ export interface Recurring {
   toAccountId?: string; // destination (transfers only)
   owner?: string; // "Gino" | "Xinyan" | "Shared"
   active: boolean;
+  variable?: boolean; // amount varies month-to-month → project via rolling avg of actuals
   note?: string;
   dueDays?: number[]; // day(s) of month this posts — the calendar reads this, not a constant
   linkedDebtId?: string; // if this bill is a payment on a debt, the debt it pays down

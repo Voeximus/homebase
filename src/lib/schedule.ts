@@ -1,5 +1,6 @@
-import type { Recurring } from "../types";
+import type { Recurring, Transaction } from "../types";
 import { monthlyAmount } from "./recurring";
+import { billExpected } from "./plan";
 
 // Day-of-month each recurring item posts, detected from Mar–Jun 2026 bank
 // history (keyed by the recurring row's NAME). Mom posts on each payday (two
@@ -45,6 +46,7 @@ export interface ScheduleEntry {
   direction: FlowDir;
   owner?: string;
   recurringId?: string; // the row this came from (absent for annual fees)
+  variable?: boolean; // amount is a rolling-average estimate, not a fixed figure
 }
 
 export interface MonthlySchedule {
@@ -56,13 +58,19 @@ export interface MonthlySchedule {
 export function monthlySchedule(
   recurring: Recurring[],
   monthKey?: string,
+  transactions?: Transaction[],
 ): MonthlySchedule {
   const entries: ScheduleEntry[] = [];
   const unscheduled: { label: string; amount: number; direction: FlowDir }[] = [];
 
   for (const r of recurring) {
     if (!r.active) continue;
-    const monthly = monthlyAmount(r);
+    // Variable bills project from the rolling average of recent actuals; fixed
+    // bills (and all income/transfers) keep the contracted amount.
+    const monthly =
+      r.direction !== "in" && r.variable && transactions
+        ? billExpected(r, transactions)
+        : monthlyAmount(r);
 
     if (r.direction === "in") {
       const inDays = r.dueDays ?? PAY_DAYS;
@@ -102,6 +110,7 @@ export function monthlySchedule(
           direction: dir,
           owner: r.owner,
           recurringId: r.id,
+          variable: r.variable,
         });
       }
     } else {

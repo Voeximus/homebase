@@ -105,6 +105,32 @@ export function lineSpent(line: BudgetLine, byCat: Record<string, number>): numb
   return line.cats.reduce((s, c) => s + (byCat[c] ?? 0), 0);
 }
 
+/** The amount to PROJECT for a recurring bill this cycle.
+ *   - Fixed bills (!variable): the modeled amount — it doesn't move.
+ *   - Variable bills (Electric/SRP, a card payment): the rolling average of the
+ *     last 3 ACTUAL payments recorded for this bill, so the forecast tracks
+ *     reality. Falls back to the modeled amount until a real payment is seen.
+ *  An "actual" = a ledger row whose appliesTo links this bill — exactly the rows
+ *  the bank feed and the import path write. One source of truth (the ledger). */
+export function billExpected(bill: Recurring, transactions: Transaction[]): number {
+  if (!bill.variable) return bill.amount;
+  const actuals = transactions
+    .filter(
+      (t) => t.appliesTo?.kind === "bill" && t.appliesTo.recurringId === bill.id && t.type === "expense",
+    )
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1; // most recent first
+      const am = a.appliesTo?.monthKey ?? "",
+        bm = b.appliesTo?.monthKey ?? "";
+      if (am !== bm) return am < bm ? 1 : -1;
+      return (b.appliesTo?.day ?? 0) - (a.appliesTo?.day ?? 0);
+    })
+    .slice(0, 3)
+    .map((t) => t.amount);
+  if (actuals.length < 1) return bill.amount;
+  return actuals.reduce((s, a) => s + a, 0) / actuals.length;
+}
+
 // --- The dollar-by-dollar payoff schedule ------------------------------------
 // Pay days land ~15th and ~29th. Each payday we throw half the monthly firepower
 // at the debts in attack order, accruing interest along the way, until $0.

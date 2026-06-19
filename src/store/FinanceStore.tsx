@@ -93,6 +93,7 @@ function mapRecurring(r: any): Recurring {
     toAccountId: r.to_account_id ?? undefined,
     owner: r.owner ?? undefined,
     active: r.active,
+    variable: r.variable ?? false,
     note: r.note ?? undefined,
     dueDays: r.due_days ?? undefined,
     linkedDebtId: r.linked_debt_id ?? undefined,
@@ -159,6 +160,7 @@ export interface FinanceStore {
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
   makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
+  setRecurringVariable: (id: string, variable: boolean) => Promise<void>;
   setAccountBalance: (accountId: string, balance: number) => Promise<void>;
   addDebt: (d: {
     name: string;
@@ -807,6 +809,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         await supabase
           .from("merchant_rules")
           .upsert({ pattern: name, kind: "bill", category_id: null, bill_name: name }, { onConflict: "pattern" });
+      },
+      async setRecurringVariable(id, variable) {
+        // Flag a bill as variable-amount — display/projection only, moves no money.
+        setData((p) => ({
+          ...p,
+          recurring: p.recurring.map((r) => (r.id === id ? { ...r, variable } : r)),
+        }));
+        const { error } = await supabase.from("recurring").update({ variable }).eq("id", id);
+        if (error) console.error(error);
       },
       async setAccountBalance(accountId, balance) {
         setData((p) => ({
