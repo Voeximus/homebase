@@ -38,7 +38,7 @@ export interface SeedDebt {
 
 export const SEED_ACCOUNTS: SeedAccount[] = [
   { name: "Geo", owner: "Gino", last4: "4662", type: "checking", balance: 1566.26, sortOrder: 0 },
-  { name: "Xinyan", owner: "Xinyan", last4: "0366", type: "checking", balance: 1095.75, sortOrder: 1 },
+  { name: "Xinyan", owner: "Xinyan", last4: "0366", type: "checking", balance: 751.0, sortOrder: 1 },
   { name: "Joint", owner: "Joint", last4: "1211", type: "checking", balance: 18.74, sortOrder: 2 },
 ];
 
