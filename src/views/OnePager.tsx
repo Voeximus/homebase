@@ -8,6 +8,7 @@ import {
   ChevronRight,
   FileUp,
   Flag,
+  Landmark,
   LogOut,
   Plus,
   Settings,
@@ -71,6 +72,8 @@ import {
   useReveal,
   useScrolled,
 } from "../lib/hooks";
+import { usePlaidLink } from "react-plaid-link";
+import { supabase } from "../lib/supabase";
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function shortDebt(name: string): string {
@@ -1951,6 +1954,56 @@ function TxnDetailSheet({
   );
 }
 
+// "Connect a bank" — the Plaid Link flow. Fetches a link_token from the edge
+// function, opens Plaid Link, and on success hands the public_token back to be
+// exchanged. The server does token custody, account discovery, and sync; the
+// new accounts + categorized transactions then arrive over realtime.
+function ConnectBank() {
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const owner = (() => {
+    const o = localStorage.getItem("hb-owner");
+    return o === "gino" ? "Gino" : o === "xinyan" ? "Xinyan" : "Joint";
+  })();
+
+  const onSuccess = async (public_token: string, metadata: any) => {
+    setBusy(true);
+    setStatus(t("Linking your accounts…"));
+    const { data, error } = await supabase.functions.invoke("plaid", {
+      body: { action: "exchange", public_token, owner, institution: metadata?.institution?.name ?? "Bank" },
+    });
+    setBusy(false);
+    setLinkToken(null);
+    if (error) { setStatus("⚠️ " + error.message); return; }
+    setStatus(t("Linked {n} accounts — transactions are syncing.", { n: data?.accounts ?? 0 }));
+  };
+
+  const { open, ready } = usePlaidLink({ token: linkToken, onSuccess });
+  useEffect(() => {
+    if (linkToken && ready) open();
+  }, [linkToken, ready, open]);
+
+  const start = async () => {
+    setBusy(true);
+    setStatus(null);
+    const { data, error } = await supabase.functions.invoke("plaid", { body: { action: "link_token", owner } });
+    setBusy(false);
+    if (error || !data?.link_token) { setStatus("⚠️ " + (error?.message ?? "no link token")); return; }
+    setLinkToken(data.link_token);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Button variant="soft" className="w-full" disabled={busy} onClick={start}>
+        <Landmark size={16} /> {busy ? t("Connecting…") : t("Connect a bank")}
+      </Button>
+      {status && <p className="rounded-lg bg-raised px-3 py-2 text-sm text-taupe">{status}</p>}
+    </div>
+  );
+}
+
 // Settings — moved here from App so OnePager owns the whole surface.
 function SettingsSheet({
   open,
@@ -1974,6 +2027,7 @@ function SettingsSheet({
             {t("Signed in as {email}. Changes sync live to every device you're both signed in on.", { email: session?.user.email ?? "" })}
           </p>
         </div>
+        <ConnectBank />
         <Button variant="soft" className="w-full" onClick={onImport}>
           <FileUp size={16} /> {t("Import bank statement")}
         </Button>
