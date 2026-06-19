@@ -43,11 +43,22 @@ Homebase pulls **real Bank of America** balances + transactions automatically (r
 
 **⚠️ The wipe (2026-06-19):** old manual accounts + transactions + sandbox test data cleared so BofA could connect into a clean slate; **debts + recurring + merchant_rules + goals KEPT.** Full pre-wipe backup at `_homebase_backup_2026-06-19T*.json` (repo root, **gitignored**, restorable).
 
+**⭐ Auto-sync (2026-06-19):** the feed syncs **on every app open** (App.tsx `syncNow()`) + a **Refresh** button in the Activity header (`force=true` → `/transactions/refresh` nudge, then sync). No background cron yet (offered). Honest ceiling: Plaid pulls ~1–4×/day + the bank's own pending lag → **same-day loop, not minutes-after-swipe.** `lib/plaidClient.ts syncNow(force)`.
+
+**⭐ Bills precision (2026-06-19) — variable bills + the feed records bill payments:**
+- `recurring.variable` flag (**schema_v10, RUN**). A variable bill projects from `billExpected(bill, txns)` (`lib/plan.ts`) = **rolling average of its last 3 actual `appliesTo=bill` payments** (fallback to modeled amount); fixed bills keep the modeled amount.
+- **Injected DISPLAY-ONLY** — `monthlySchedule(recurring, monthKey, transactions)` (`schedule.ts`) uses billExpected for variable out-bills → calendar/chips/upcoming show the estimate; **householdMonthly / planMath / payoffSchedule stay on contracted amounts**, so firepower + the countdown are insulated (load-bearing safety rule).
+- **The feed now RECORDS bill payments** (skipped them before): a posted bill-classified txn is matched to its recurring (`billName`→name; post-day snapped to nearest `due_days`), written `appliesTo={kind:bill,recurringId,monthKey,day,settled:true}` with the real amount → **auto-marks paid + logs the actual.** Idempotent (provider_txn_id unique) + dedups vs manual (`paidBill` set). **schema_v11 (RUN)** makes `apply_bank_sync` carry `applies_to`. New `setRecurringVariable` action.
+- **Electric (SRP) + Verizon** are the only variable bills, flagged + **seeded** with Mar–May actuals from `MasterLedger.csv` → project **~$89.92 / ~$82.83** now. Every bill carries `due_days`, so the feed↔calendar day-match is solid (**verified**).
+- ✅ **Pay-early auto-mark-paid VERIFIED:** pay a bill early (same month) → feed sees it → snaps to due day → marks paid + logs actual + re-averages. Caveats: bank/Plaid latency (hours); paying a *full month* ahead marks the wrong month.
+
 **PENDING (bank feed):**
-1. **Sam's-Club split** (by dollar) — NEXT.
-2. **Card → debt auto-update** — `schema_v10` DESIGNED (link debts to `provider_account_id` + `set_debt_balance`/`link_debt_to_provider` RPCs; route credit accounts to the debt in the function) but **NOT built/run.** Until then: card excluded from cash, debt manual.
-3. **Li (Xinyan) connects HER BofA** on her phone.
-4. **Yearly** sub→bill calendar rendering unverified (monthly is solid).
+1. **⭐ 3 bills-precision polish items (NEXT — Gino wants ALL 3):** (a) a **toggle UI** to flag a bill variable (now set via script; extend PayBillSheet or add a small BillEditSheet from the Bills container — `setRecurringVariable` exists); (b) an **"~est" badge** on variable chips (ScheduleEntry carries `variable`); (c) an **editable amount at pay-time** for variable bills (PayBillSheet, OnePager ~1883-1918).
+2. **Sam's-Club split** (one charge → $X groceries + $Y household, by dollar) — waits on Li's card to test.
+3. **Card → …4728 debt auto-update** — DESIGNED (`debts.provider_account_id` + `link_debt_to_provider`/`set_debt_balance` RPCs; route credit accounts to the debt) but **NOT built/run** (schema_v12). Card excluded from cash; debt is manual $4,156.78.
+4. **Li (Xinyan) connects HER BofA** on her phone.
+5. **Yearly** sub→bill calendar rendering unverified (monthly solid).
+6. **🔒 Confirm the test-account backdoor was DELETED** in Supabase Auth (exposed in this PUBLIC repo). Maintenance now uses the **service-role key** via the "Hombase" access token (`npx supabase projects api-keys`).
 
 ## Stack + dev workflow
 - Vite + React 19 + TypeScript + Tailwind v4 + lucide-react. Supabase (Postgres + auth + realtime). vite-plugin-pwa. @zxing/browser (barcode, lazy). pdfjs-dist (PDF import, lazy).
