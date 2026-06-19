@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 supabase/.temp/
+_homebase_backup_*.json
+_*.mjs
+_*.ts
