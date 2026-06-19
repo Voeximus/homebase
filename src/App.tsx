@@ -12,8 +12,17 @@ import { getOwner, type Owner } from "./lib/owner";
 import { getLens, saveLens, type Lens } from "./lib/lens";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 import { syncNow } from "./lib/plaidClient";
+import { DesignLab } from "./views/redesign/DesignLab";
 
 export default function App() {
+  // ?lab — the bento-reskin design lab: renders the new tabs with mock data,
+  // BEFORE the auth gate, so the look is verifiable without touching Supabase.
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("lab")
+  ) {
+    return <DesignLab />;
+  }
   return (
     <AuthProvider>
       <AuthGate />
