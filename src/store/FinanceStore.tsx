@@ -473,72 +473,47 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const appliesTo: AppliesTo | undefined =
         at && debt ? { ...at, appliedAmount: debtApplied } : at;
 
-      const { data: row, error } = await supabase
-        .from("transactions")
-        .insert({
-          date,
-          amount: ev.amount,
-          type: ev.type,
-          category_id: ev.categoryId,
-          description: ev.description,
-          account_id: ev.accountId ?? null,
-          applies_to: appliesTo ?? null,
-        })
-        .select()
-        .single();
-      if (error || !row) return console.error(error);
-      setData((p) => ({ ...p, transactions: [mapTxn(row), ...p.transactions] }));
-
-      // Any balance write that fails flips this; we then resync to server truth.
-      let writeErr: unknown = null;
-
-      // 1) move cash
-      if (ev.accountId) {
-        const acct = dataRef.current.accounts.find((a) => a.id === ev.accountId);
-        if (acct) {
-          const nb = acct.balance + (ev.type === "income" ? ev.amount : -ev.amount);
-          setData((p) => ({
-            ...p,
-            accounts: p.accounts.map((a) =>
-              a.id === ev.accountId ? { ...a, balance: nb } : a,
-            ),
-          }));
-          const { error: e } = await supabase.from("accounts").update({ balance: nb }).eq("id", ev.accountId);
-          if (e) writeErr = e;
-        }
-      }
-
-      // 2) reduce the linked debt by exactly debtApplied
-      if (debt && debtId) {
-        const nb = debt.balance - debtApplied;
-        setData((p) => ({
-          ...p,
-          debts: p.debts.map((d) => (d.id === debtId ? { ...d, balance: nb } : d)),
-        }));
-        const { error: e } = await supabase.from("debts").update({ balance: nb }).eq("id", debtId);
-        if (e) writeErr = e;
-      }
-
-      // 3) fan out to a goal
-      if (at?.kind === "goal" && at.goalId) {
-        const goal = dataRef.current.goals.find((g) => g.id === at.goalId);
-        if (goal) {
-          const nb = goal.saved + ev.amount;
-          setData((p) => ({
-            ...p,
-            goals: p.goals.map((g) => (g.id === at.goalId ? { ...g, saved: nb } : g)),
-          }));
-          const { error: e } = await supabase.from("savings_goals").update({ saved: nb }).eq("id", at.goalId);
-          if (e) writeErr = e;
-        }
-      }
-
-      // Fail closed: a balance write failed → pull the ledger back from the
-      // server so the screen can't keep a number that never persisted.
-      if (writeErr) {
-        console.error("applyMoneyEvent: balance write failed — resyncing to server truth", writeErr);
+      const { data: row, error } = await supabase.rpc("apply_money_event", {
+        p_date: date,
+        p_amount: ev.amount,
+        p_type: ev.type,
+        p_category_id: ev.categoryId,
+        p_description: ev.description,
+        p_account_id: ev.accountId ?? null,
+        p_debt_id: debtId ?? null,
+        p_goal_id: at?.kind === "goal" ? at.goalId ?? null : null,
+        p_applies_to: appliesTo ?? null,
+      });
+      if (error || !row) {
+        console.error("apply_money_event failed — resyncing to server truth", error);
         await resyncLedger();
+        return;
       }
+      // The RPC inserted the ledger row AND moved cash/debt/goal in ONE
+      // transaction; mirror it locally for instant UI (realtime reconciles).
+      setData((p) => ({
+        ...p,
+        transactions: [mapTxn(row), ...p.transactions],
+        accounts: ev.accountId
+          ? p.accounts.map((a) =>
+              a.id === ev.accountId
+                ? { ...a, balance: a.balance + (ev.type === "income" ? ev.amount : -ev.amount) }
+                : a,
+            )
+          : p.accounts,
+        debts:
+          debt && debtId
+            ? p.debts.map((d) =>
+                d.id === debtId ? { ...d, balance: Math.max(0, d.balance - debtApplied) } : d,
+              )
+            : p.debts,
+        goals:
+          at?.kind === "goal" && at.goalId
+            ? p.goals.map((g) =>
+                g.id === at.goalId ? { ...g, saved: g.saved + ev.amount } : g,
+              )
+            : p.goals,
+      }));
     };
 
     return {
@@ -708,63 +683,51 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       },
       async deleteTransaction(id) {
         const txn = dataRef.current.transactions.find((x) => x.id === id);
+        // optimistic remove
         setData((p) => ({
           ...p,
           transactions: p.transactions.filter((x) => x.id !== id),
         }));
-        const { error } = await supabase
-          .from("transactions")
-          .delete()
-          .eq("id", id);
-        if (error) console.error(error);
-        // Reverse the transaction's effect on the account balance.
-        if (txn?.accountId) {
-          const acct = dataRef.current.accounts.find((a) => a.id === txn.accountId);
-          if (acct) {
-            const nb = acct.balance + (txn.type === "income" ? -txn.amount : txn.amount);
-            setData((p) => ({
-              ...p,
-              accounts: p.accounts.map((a) =>
-                a.id === txn.accountId ? { ...a, balance: nb } : a,
-              ),
-            }));
-            await supabase.from("accounts").update({ balance: nb }).eq("id", txn.accountId);
-          }
+        const { error } = await supabase.rpc("reverse_money_event", { p_txn_id: id });
+        if (error) {
+          console.error("reverse_money_event failed — resyncing to server truth", error);
+          await resyncLedger();
+          return;
         }
-        // Reverse the fan-out too, so undo is total: un-pay a linked debt /
-        // un-fund a goal. Without this, deleting a card payment would restore the
-        // cash but leave the debt understated — the exact desync we're killing.
-        const at = txn?.appliesTo;
-        if (txn && at && !at.settled) {
-          let debtId = at.debtId;
-          if (!debtId && at.kind === "bill" && at.recurringId) {
+        // The RPC deleted the row AND undid its fan-out in ONE transaction;
+        // mirror the reversal locally (settled / imported rows moved nothing).
+        if (txn) {
+          const at = txn.appliesTo;
+          let debtId = at?.debtId;
+          if (!debtId && at?.kind === "bill" && at.recurringId) {
             debtId = dataRef.current.recurring.find((r) => r.id === at.recurringId)?.linkedDebtId;
           }
-          if (debtId) {
-            const debt = dataRef.current.debts.find((d) => d.id === debtId);
-            if (debt) {
-              // Add back exactly what came off the debt (clamped amount), not the
-              // full payment — older rows without it fall back to the amount.
-              const back = at.appliedAmount ?? txn.amount;
-              const nb = debt.balance + back;
-              setData((p) => ({
-                ...p,
-                debts: p.debts.map((d) => (d.id === debtId ? { ...d, balance: nb } : d)),
-              }));
-              await supabase.from("debts").update({ balance: nb }).eq("id", debtId);
-            }
-          }
-          if (at.kind === "goal" && at.goalId) {
-            const goal = dataRef.current.goals.find((g) => g.id === at.goalId);
-            if (goal) {
-              const nb = Math.max(0, goal.saved - txn.amount);
-              setData((p) => ({
-                ...p,
-                goals: p.goals.map((g) => (g.id === at.goalId ? { ...g, saved: nb } : g)),
-              }));
-              await supabase.from("savings_goals").update({ saved: nb }).eq("id", at.goalId);
-            }
-          }
+          const back = at?.appliedAmount ?? txn.amount;
+          setData((p) => ({
+            ...p,
+            accounts: txn.accountId
+              ? p.accounts.map((a) =>
+                  a.id === txn.accountId
+                    ? {
+                        ...a,
+                        balance: a.balance + (txn.type === "income" ? -txn.amount : txn.amount),
+                      }
+                    : a,
+                )
+              : p.accounts,
+            debts:
+              !at?.settled && debtId
+                ? p.debts.map((d) =>
+                    d.id === debtId ? { ...d, balance: d.balance + back } : d,
+                  )
+                : p.debts,
+            goals:
+              !at?.settled && at?.kind === "goal" && at.goalId
+                ? p.goals.map((g) =>
+                    g.id === at.goalId ? { ...g, saved: Math.max(0, g.saved - txn.amount) } : g,
+                  )
+                : p.goals,
+          }));
         }
       },
       async setTransactionCategory(id, categoryId) {
