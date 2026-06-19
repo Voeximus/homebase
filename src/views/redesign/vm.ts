@@ -29,4 +29,36 @@ export interface HomeVM {
   streakTotal: number;
   recent: RecentRow[];
   sinceMonday: number; // "spent $X since Monday"
+  bills: { left: number; nextName: string; nextDate: string }; // the Home Bills tile
+}
+
+// ── Bills surface (Option A list + calendar on tap) ──
+export interface BillRow {
+  id: string; // recurringId@day
+  recurringId?: string;
+  name: string;
+  catId: string; // icon + color
+  amount: number;
+  day: number; // due day-of-month
+  dateLabel: string; // "Jun 20"
+  relLabel: string; // "tomorrow" / "in 10 days" / "overdue"
+  variable: boolean; // amount is a rolling-avg estimate
+}
+
+export interface CalDay {
+  day: number;
+  in: boolean; // an income lands this day
+  out: boolean; // a bill is due this day
+}
+
+export interface BillsVM {
+  leftThisMonth: number;
+  upcoming: BillRow[]; // unpaid, soonest first
+  paidCount: number;
+  paidTotal: number;
+  monthLabel: string; // "June 2026"
+  todayNum: number;
+  daysInMonth: number;
+  firstWeekday: number; // 0=Sun … the weekday of day 1
+  calendar: CalDay[]; // days that carry a dot
 }

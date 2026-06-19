@@ -5,7 +5,8 @@ import { HomeTab } from "./HomeTab";
 import { InsightsTab, MOCK_INSIGHTS } from "./InsightsTab";
 import { ActivityTab, MOCK_ACTIVITY } from "./ActivityTab";
 import { ProfileTab, MOCK_PROFILE } from "./ProfileTab";
-import type { HomeVM } from "./vm";
+import { BillsSheet } from "./BillsSheet";
+import type { HomeVM, BillsVM } from "./vm";
 
 // ── Mock data = Gino's real figures, so the look is verifiable without a login.
 const HOME: HomeVM = {
@@ -35,6 +36,28 @@ const HOME: HomeVM = {
     { id: "1", merchant: "Sam's Club", catId: "groceries", sub: "Groceries · today", amount: 229.81 },
     { id: "2", merchant: "QuikTrip", catId: "transport", sub: "Gas · yesterday", amount: 9.07 },
     { id: "3", merchant: "Verizon", catId: "utilities", sub: "Bill · Jun 17", amount: 83 },
+  ],
+  bills: { left: 449, nextName: "Claude Pro", nextDate: "Jun 20" },
+};
+
+const BILLS: BillsVM = {
+  leftThisMonth: 449.1,
+  upcoming: [
+    { id: "claude@20", name: "Claude Pro", catId: "subscriptions", amount: 21.62, day: 20, dateLabel: "Jun 20", relLabel: "tomorrow", variable: false },
+    { id: "tmobile@29", name: "T-Mobile", catId: "utilities", amount: 27.48, day: 29, dateLabel: "Jun 29", relLabel: "in 10 days", variable: false },
+    { id: "mom@30", name: "Mom", catId: "other", amount: 400, day: 30, dateLabel: "Jun 30", relLabel: "in 11 days", variable: false },
+  ],
+  paidCount: 9,
+  paidTotal: 2099,
+  monthLabel: "June 2026",
+  todayNum: 19,
+  daysInMonth: 30,
+  firstWeekday: 1,
+  calendar: [
+    { day: 1, in: false, out: true }, { day: 4, in: false, out: true }, { day: 8, in: false, out: true },
+    { day: 10, in: false, out: true }, { day: 13, in: false, out: true }, { day: 15, in: true, out: true },
+    { day: 16, in: false, out: true }, { day: 17, in: false, out: true }, { day: 18, in: false, out: true },
+    { day: 20, in: false, out: true }, { day: 29, in: true, out: true }, { day: 30, in: false, out: true },
   ],
 };
 
@@ -78,6 +101,7 @@ function TopBar() {
 
 export function DesignLab() {
   const [tab, setTab] = useState<TabKey>("home");
+  const [billsOpen, setBillsOpen] = useState(false);
   return (
     <div
       className="mx-auto flex min-h-screen max-w-[440px] flex-col"
@@ -86,7 +110,7 @@ export function DesignLab() {
       <TopBar />
       <div className="flex-1 overflow-y-auto">
         {tab === "home" ? (
-          <HomeTab vm={HOME} />
+          <HomeTab vm={HOME} taps={{ onBills: () => setBillsOpen(true) }} />
         ) : tab === "insights" ? (
           <InsightsTab vm={MOCK_INSIGHTS} />
         ) : tab === "activity" ? (
@@ -96,6 +120,7 @@ export function DesignLab() {
         )}
       </div>
       <TabNav active={tab} onTab={setTab} />
+      <BillsSheet vm={BILLS} open={billsOpen} onClose={() => setBillsOpen(false)} />
     </div>
   );
 }

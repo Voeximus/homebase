@@ -19,10 +19,11 @@ import {
   billExpected,
 } from "../../lib/plan";
 import { totalBalance, cashAccounts } from "../../lib/recurring";
+import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { merchantKey } from "../../lib/categorize";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
-import type { HomeVM } from "./vm";
+import type { HomeVM, BillsVM } from "./vm";
 import type { InsightsVM } from "./InsightsTab";
 import type { ActivityVM, ActivityRow, ActivityFate } from "./ActivityTab";
 import type { ProfileVM } from "./ProfileTab";
@@ -55,6 +56,7 @@ export interface FinanceVMs {
   insights: InsightsVM;
   activity: ActivityVM;
   profile: ProfileVM;
+  bills: BillsVM;
 }
 
 export function buildFinanceVMs(
@@ -161,6 +163,68 @@ export function buildFinanceVMs(
     return t.amount > 2.5 * mean;
   }).length;
 
+  // ── bills + money calendar ──
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const firstWeekday = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
+  const todayNum = now.getDate();
+  const { entries } = monthlySchedule(data.recurring, monthKey, data.transactions);
+  const outEntries = entries.filter((e) => e.direction === "out");
+  const recordedBill = (e: ScheduleEntry) =>
+    e.recurringId
+      ? data.transactions.find(
+          (t) =>
+            t.type === "expense" &&
+            t.appliesTo?.kind === "bill" &&
+            t.appliesTo.recurringId === e.recurringId &&
+            t.appliesTo.monthKey === monthKey &&
+            t.appliesTo.day === e.day,
+        )
+      : undefined;
+  const isBillPaid = (e: ScheduleEntry) =>
+    e.recurringId ? !!recordedBill(e) : Math.min(e.day, daysInMonth) <= todayNum;
+  const recCatOf = (recId?: string) =>
+    data.recurring.find((r) => r.id === recId)?.categoryId ?? "other";
+  const relLabelOf = (day: number) => {
+    if (day === todayNum) return "today";
+    if (day === todayNum + 1) return "tomorrow";
+    if (day < todayNum) return "overdue";
+    return `in ${day - todayNum} days`;
+  };
+  const dayDate = (day: number) =>
+    new Date(now.getFullYear(), now.getMonth(), Math.min(day, daysInMonth));
+  const unpaidBills = outEntries.filter((e) => !isBillPaid(e)).sort((a, b) => a.day - b.day);
+  const paidBills = outEntries.filter(isBillPaid);
+  const leftThisMonth = unpaidBills.reduce((s, e) => s + e.amount, 0);
+  const calMap: Record<number, { in: boolean; out: boolean }> = {};
+  entries.forEach((e) => {
+    const d = Math.min(e.day, daysInMonth);
+    calMap[d] ??= { in: false, out: false };
+    if (e.direction === "in") calMap[d].in = true;
+    else calMap[d].out = true;
+  });
+  const nextBill = unpaidBills.find((e) => e.day >= todayNum) ?? unpaidBills[0];
+  const bills: BillsVM = {
+    leftThisMonth,
+    upcoming: unpaidBills.map((e) => ({
+      id: `${e.recurringId ?? e.label}@${e.day}`,
+      recurringId: e.recurringId,
+      name: e.label,
+      catId: recCatOf(e.recurringId),
+      amount: e.amount,
+      day: e.day,
+      dateLabel: fmtDay(dayDate(e.day)),
+      relLabel: relLabelOf(e.day),
+      variable: !!e.variable,
+    })),
+    paidCount: paidBills.length,
+    paidTotal: paidBills.reduce((s, e) => s + e.amount, 0),
+    monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    todayNum,
+    daysInMonth,
+    firstWeekday,
+    calendar: Object.entries(calMap).map(([d, v]) => ({ day: +d, in: v.in, out: v.out })),
+  };
+
   const home: HomeVM = {
     firepower: math.firepower,
     debtFreeBy,
@@ -178,6 +242,11 @@ export function buildFinanceVMs(
     streakTotal: commit.total,
     recent,
     sinceMonday,
+    bills: {
+      left: leftThisMonth,
+      nextName: nextBill ? nextBill.label : "—",
+      nextDate: nextBill ? fmtDay(dayDate(nextBill.day)) : "",
+    },
   };
 
   // ── Insights ──
@@ -272,5 +341,5 @@ export function buildFinanceVMs(
       })),
   };
 
-  return { home, insights, activity, profile };
+  return { home, insights, activity, profile, bills };
 }

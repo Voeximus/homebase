@@ -1,4 +1,4 @@
-import { ChevronRight, ArrowRight, Flame, Wallet, Target } from "lucide-react";
+import { ChevronRight, ArrowRight, Flame, Wallet, Target, Receipt } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import type { HomeVM } from "./vm";
 
@@ -13,6 +13,7 @@ interface Taps {
   onBudget?: () => void;
   onStreak?: () => void;
   onNext?: () => void;
+  onBills?: () => void;
   onAnomaly?: () => void;
   onRecent?: () => void;
 }
@@ -149,6 +150,32 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
             </div>
           </div>
           <ArrowRight size={22} />
+        </button>
+
+        {/* Bills — critical daily glance */}
+        <button
+          onClick={taps.onBills}
+          className="col-span-2 flex items-center gap-3 rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
+        >
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: "#2a2016", color: "#fb923c" }}
+          >
+            <Receipt size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-[13.5px] font-semibold text-bone">Bills</span>
+              <span className="text-[12px]" style={{ color: "#8b97a6" }}>
+                {money(vm.bills.left)} left
+              </span>
+            </div>
+            <div className="truncate text-[11.5px]" style={{ color: "#7e8a98" }}>
+              next: {vm.bills.nextName} · {vm.bills.nextDate}
+            </div>
+          </div>
+          <ChevronRight size={18} style={{ color: "#6b7686" }} />
         </button>
 
         {/* Anomaly alert */}

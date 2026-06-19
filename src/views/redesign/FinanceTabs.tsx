@@ -22,7 +22,11 @@ import {
   MarkSentSheet,
   AccountsSheet,
   SettingsSheet,
+  PayBillSheet,
 } from "../OnePager";
+import { BillsSheet } from "./BillsSheet";
+import type { ScheduleEntry } from "../../lib/schedule";
+import type { BillRow } from "./vm";
 import {
   LEAN_VARIABLE,
   sumTargets,
@@ -107,7 +111,7 @@ export function FinanceTabs({
   lens: Lens;
   onLens: (l: Lens) => void;
 }) {
-  const { data, payDebtExtra } = useStore();
+  const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable } = useStore();
   const { session, signOut } = useAuth();
   const [tab, setTab] = useState<TabKey>("home");
   const [, setSyncing] = useState(false);
@@ -119,6 +123,8 @@ export function FinanceTabs({
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [markSentOpen, setMarkSentOpen] = useState(false);
+  const [billsOpen, setBillsOpen] = useState(false);
+  const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
 
   // The snowball plan (for the attack ladder + the mark-sent slip).
   const debtPlan = useMemo(() => {
@@ -159,6 +165,20 @@ export function FinanceTabs({
   };
   const openCategory = (catId: string) =>
     setEnvLine(LEAN_VARIABLE.find((l) => l.cats.includes(catId)) ?? null);
+  const openBillPay = (b: BillRow) => {
+    setBillsOpen(false);
+    setPayBillEntry({
+      day: b.day,
+      label: b.name,
+      amount: b.amount,
+      direction: "out",
+      recurringId: b.recurringId,
+      variable: b.variable,
+    });
+  };
+  const payRec = payBillEntry
+    ? data.recurring.find((r) => r.id === payBillEntry.recurringId)
+    : undefined;
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[440px] flex-col" style={{ background: "#0b0f17" }}>
@@ -173,6 +193,7 @@ export function FinanceTabs({
               onStreak: () => setSprintOpen(true),
               onBudget: () => setTab("insights"),
               onNext: () => setMarkSentOpen(true),
+              onBills: () => setBillsOpen(true),
               onRecent: () => setLedgerOpen(true),
               onAnomaly: () => setLedgerOpen(true),
             }}
@@ -225,6 +246,18 @@ export function FinanceTabs({
       />
       <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
+      <BillsSheet vm={vms.bills} open={billsOpen} onClose={() => setBillsOpen(false)} onPay={openBillPay} />
+      <PayBillSheet
+        entry={payBillEntry}
+        monthKey={monthKey}
+        accounts={data.accounts}
+        defaultAccountId={payRec?.accountId}
+        variable={payRec?.variable ?? false}
+        onClose={() => setPayBillEntry(null)}
+        onPay={payBill}
+        onMarkPaid={markBillPaid}
+        onSetVariable={setRecurringVariable}
+      />
     </div>
   );
 }

@@ -1870,7 +1870,7 @@ export function EnvelopeSheet({
   );
 }
 
-function PayBillSheet({
+export function PayBillSheet({
   entry,
   monthKey,
   accounts,
