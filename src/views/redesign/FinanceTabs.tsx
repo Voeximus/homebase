@@ -13,6 +13,12 @@ import { InsightsTab } from "./InsightsTab";
 import { ActivityTab } from "./ActivityTab";
 import { ProfileTab } from "./ProfileTab";
 import { buildFinanceVMs } from "./buildVMs";
+import { LedgerSheet } from "../../components/LedgerSheet";
+import { AddTransactionSheet } from "../../components/AddTransactionSheet";
+import { ImportSheet } from "../../components/ImportSheet";
+import { EnvelopeSheet } from "../OnePager";
+import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
+import { merchantKey } from "../../lib/categorize";
 
 function Seg({
   active,
@@ -90,36 +96,83 @@ export function FinanceTabs({
   const { session, signOut } = useAuth();
   const [tab, setTab] = useState<TabKey>("home");
   const [, setSyncing] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [envLine, setEnvLine] = useState<BudgetLine | null>(null);
 
   const vms = useMemo(
     () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
     [data, owner, lens, session],
   );
 
+  // Lens-filtered ledger + a merchant-rule lookup, for the reused LedgerSheet.
+  const personal = lens === "me";
+  const ledgerTxns = useMemo(() => {
+    const otherLabel = owner === "gino" ? "Xinyan" : "Gino";
+    const otherIds = new Set(
+      data.accounts.filter((a) => a.owner === otherLabel).map((a) => a.id),
+    );
+    return data.transactions
+      .filter((tx) => !tx.appliesTo?.settled)
+      .filter((tx) => !personal || !tx.accountId || !otherIds.has(tx.accountId));
+  }, [data.transactions, data.accounts, personal, owner]);
+  const hasRule = useMemo(() => {
+    const set = new Set(data.merchantRules.map((r) => r.pattern));
+    return (d: string) => set.has(merchantKey(d));
+  }, [data.merchantRules]);
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
   const refresh = async () => {
     setSyncing(true);
     await syncNow(true).catch(() => {});
     setSyncing(false);
   };
+  const openCategory = (catId: string) =>
+    setEnvLine(LEAN_VARIABLE.find((l) => l.cats.includes(catId)) ?? null);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[440px] flex-col" style={{ background: "#0b0f17" }}>
       <TopBar mode={mode} onMode={onMode} lens={lens} onLens={onLens} />
       <div className="flex-1 overflow-y-auto">
         {tab === "home" ? (
-          <HomeTab vm={vms.home} />
+          <HomeTab
+            vm={vms.home}
+            taps={{
+              onBudget: () => setTab("insights"),
+              onRecent: () => setLedgerOpen(true),
+              onAnomaly: () => setLedgerOpen(true),
+            }}
+          />
         ) : tab === "insights" ? (
-          <InsightsTab vm={vms.insights} />
+          <InsightsTab vm={vms.insights} taps={{ onCategory: openCategory }} />
         ) : tab === "activity" ? (
-          <ActivityTab vm={vms.activity} taps={{ onRefresh: refresh }} />
+          <ActivityTab
+            vm={vms.activity}
+            taps={{
+              onRefresh: refresh,
+              onRow: () => setLedgerOpen(true),
+              onAdd: () => setAddOpen(true),
+            }}
+          />
         ) : (
           <ProfileTab
             vm={vms.profile}
-            taps={{ onHealth: () => onMode("health"), onSignOut: () => void signOut() }}
+            taps={{
+              onHealth: () => onMode("health"),
+              onSignOut: () => void signOut(),
+              onImport: () => setImportOpen(true),
+            }}
           />
         )}
       </div>
       <TabNav active={tab} onTab={setTab} />
+
+      <LedgerSheet open={ledgerOpen} onClose={() => setLedgerOpen(false)} txns={ledgerTxns} hasRule={hasRule} />
+      <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
+      <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
+      <EnvelopeSheet line={envLine} onClose={() => setEnvLine(null)} monthKey={monthKey} />
     </div>
   );
 }

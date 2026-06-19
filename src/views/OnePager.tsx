@@ -1751,7 +1751,7 @@ function MarkSentSheet({
   );
 }
 
-function EnvelopeSheet({
+export function EnvelopeSheet({
   line,
   onClose,
   monthKey,
