@@ -73,7 +73,7 @@ import {
   useScrolled,
 } from "../lib/hooks";
 import { usePlaidLink } from "react-plaid-link";
-import { supabase } from "../lib/supabase";
+import { createLinkToken, exchangePublicToken } from "../lib/plaidClient";
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function shortDebt(name: string): string {
@@ -1963,17 +1963,10 @@ function ConnectBank() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const owner = (() => {
-    const o = localStorage.getItem("hb-owner");
-    return o === "gino" ? "Gino" : o === "xinyan" ? "Xinyan" : "Joint";
-  })();
-
   const onSuccess = async (public_token: string, metadata: any) => {
     setBusy(true);
     setStatus(t("Linking your accounts…"));
-    const { data, error } = await supabase.functions.invoke("plaid", {
-      body: { action: "exchange", public_token, owner, institution: metadata?.institution?.name ?? "Bank" },
-    });
+    const { data, error } = await exchangePublicToken(public_token, metadata?.institution?.name);
     setBusy(false);
     setLinkToken(null);
     if (error) { setStatus("⚠️ " + error.message); return; }
@@ -1988,10 +1981,10 @@ function ConnectBank() {
   const start = async () => {
     setBusy(true);
     setStatus(null);
-    const { data, error } = await supabase.functions.invoke("plaid", { body: { action: "link_token", owner } });
+    const { token, error } = await createLinkToken();
     setBusy(false);
-    if (error || !data?.link_token) { setStatus("⚠️ " + (error?.message ?? "no link token")); return; }
-    setLinkToken(data.link_token);
+    if (error || !token) { setStatus("⚠️ " + (error ?? "no link token")); return; }
+    setLinkToken(token);
   };
 
   return (

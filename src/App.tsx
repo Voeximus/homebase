@@ -10,6 +10,7 @@ import { LanguageProvider } from "./components/LanguageProvider";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { getOwner, type Owner } from "./lib/owner";
 import { getLens, saveLens, type Lens } from "./lib/lens";
+import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 
 export default function App() {
   return (
@@ -61,6 +62,7 @@ function Shell() {
 
   return (
     <LanguageProvider>
+      <PlaidOAuthReturn />
       {!entered ? (
         <WelcomeScreen
           owner={owner}

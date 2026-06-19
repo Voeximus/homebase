@@ -21,6 +21,7 @@ const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
 const PLAID_BASE = `https://${PLAID_ENV}.plaid.com`;
 const PLAID_CLIENT_ID = Deno.env.get("PLAID_CLIENT_ID")!;
 const PLAID_SECRET = Deno.env.get("PLAID_SECRET")!;
+const PLAID_REDIRECT_URI = Deno.env.get("PLAID_REDIRECT_URI"); // set in production (OAuth)
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -68,6 +69,7 @@ async function linkToken(p: any) {
   } else {
     body.products = ["transactions"];
   }
+  if (PLAID_REDIRECT_URI) body.redirect_uri = PLAID_REDIRECT_URI; // required for OAuth banks
   const r = await plaid("/link/token/create", body);
   return json({ link_token: r.link_token });
 }
