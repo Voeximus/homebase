@@ -92,6 +92,21 @@ const SEED: Record<string, string> = {
 
   // ── health: shared ──
   "Two Bodies · One Engine": "两个身体 · 一套引擎",
+  "Your macro needs": "你的营养需求",
+  "daily targets": "每日目标",
+  Workouts: "训练",
+  "Scan a barcode": "扫描条形码",
+  "4-day Upper / Lower · ~30 min · each muscle 2×/wk.":
+    "四天 上肢／下肢 · 约30分钟 · 每块肌肉每周2次。",
+  "Double-progression — hit the top of the range, then add load. Log every set.":
+    "双重渐进 — 先做到次数上限，再加重量。记录每一组。",
+  "~8,000 steps/day": "每天约8,000步",
+  "Woven into your day — your main exercise, no gym needed.":
+    "融入日常 — 你的主要运动，无需健身房。",
+  "Optional: 2 × 10-min home resistance / week":
+    "可选：每周2次 × 10分钟 家庭力量训练",
+  "Bodyweight squats, incline push-ups, a band — protects muscle.":
+    "徒手深蹲、斜上俯卧撑、弹力带 — 保护肌肉。",
   BUILD: "增肌",
   CUT: "减脂",
   Snapshot: "概况",

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ClipboardList, LogOut, UtensilsCrossed } from "lucide-react";
+import { ClipboardList, LogOut, ScanLine, UtensilsCrossed } from "lucide-react";
 import { t } from "../lib/i18n";
+import { DAILY } from "../lib/nutrition";
 import { useAuth } from "../auth/AuthProvider";
 import { ModeToggle, type AppMode } from "../components/ModeToggle";
 import { LangToggle } from "../components/LanguageProvider";
@@ -133,10 +134,22 @@ export function HealthView({
       <main className="mx-auto max-w-[640px] px-4 pb-16 pt-4">
         {sub === "kitchen" ? (
           <MealBuilder />
+        ) : personal ? (
+          /* ── PERSONAL · curated dashboard ── */
+          <div className="space-y-3">
+            <MacroNeeds owner={owner} acc={acc} />
+            <button
+              onClick={() => setSub("kitchen")}
+              className="flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-semibold text-bg transition active:scale-[0.98]"
+              style={{ background: acc }}
+            >
+              <ScanLine size={18} /> {t("Scan a barcode")}
+            </button>
+            <PersonalWorkouts owner={owner} acc={acc} />
+          </div>
         ) : (
           <>
-            {/* person toggle — only when viewing the whole household */}
-            {!personal && (
+            {/* person toggle */}
             <div className="mb-3 grid grid-cols-2 gap-2">
               {(["gino", "xinyan"] as const).map((p) => {
                 const on = person === p;
@@ -161,7 +174,6 @@ export function HealthView({
                 );
               })}
             </div>
-            )}
             <div key={person} className="rise space-y-3">
               <div className="h-1 rounded-full" style={{ background: acc }} />
               {person === "gino" ? <GinoPlan acc={acc} /> : <XinyanPlan acc={acc} />}
@@ -415,6 +427,54 @@ function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+// ── personal dashboard pieces (Mine view: macros · scan · workouts) ──────────
+function MacroNeeds({ owner, acc }: { owner: Person; acc: string }) {
+  const d = DAILY[owner];
+  return (
+    <Card>
+      <SecHead n="" title={t("Your macro needs")} sub={t("daily targets")} acc={acc} />
+      <Macros
+        acc={acc}
+        items={[
+          { v: d.kcal.toLocaleString(), u: "kcal", k: "Calories", lead: true },
+          { v: String(d.p), u: "g", k: "Protein" },
+          { v: String(d.f), u: "g", k: "Fat" },
+          { v: String(d.c), u: "g", k: "Carbs" },
+        ]}
+        seed={[]}
+      />
+    </Card>
+  );
+}
+
+function PersonalWorkouts({ owner, acc }: { owner: Person; acc: string }) {
+  return (
+    <Card>
+      <SecHead n="" title={t("Workouts")} acc={acc} />
+      {owner === "gino" ? (
+        <>
+          <p className="text-[13px] leading-relaxed text-taupe">
+            {t("4-day Upper / Lower · ~30 min · each muscle 2×/wk.")}
+          </p>
+          <Chips items={[t("Upper A"), t("Lower A"), t("Upper B"), t("Lower B")]} />
+          <p className="font-mono text-[11.5px] text-faint">
+            {t("Double-progression — hit the top of the range, then add load. Log every set.")}
+          </p>
+        </>
+      ) : (
+        <ul className="space-y-0">
+          <Line acc={acc} mark="▼" title={t("~8,000 steps/day")}>
+            {t("Woven into your day — your main exercise, no gym needed.")}
+          </Line>
+          <Line acc={acc} mark="▼" title={t("Optional: 2 × 10-min home resistance / week")}>
+            {t("Bodyweight squats, incline push-ups, a band — protects muscle.")}
+          </Line>
+        </ul>
+      )}
+    </Card>
   );
 }
 
