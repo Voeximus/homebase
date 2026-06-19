@@ -201,7 +201,7 @@ export function OnePager({
   const personal = lens === "me";
   // In "me" the household-level sections collapse behind the Household lens.
   const sections = personal
-    ? SECTIONS.filter((s) => s.id !== "budget" && s.id !== "bills")
+    ? SECTIONS.filter((s) => !["cash", "budget", "bills"].includes(s.id))
     : SECTIONS;
   const active = useActiveSection(sections.map((s) => s.id));
 
@@ -339,7 +339,7 @@ export function OnePager({
           <div className="flex h-14 items-center gap-2">
             <ModeToggle mode={mode} onMode={onMode} />
             <div className="min-w-0 flex-1">
-              {scrolled && (
+              {scrolled && !personal && (
                 <button
                   onClick={() => scrollTo("cash")}
                   className="block max-w-full truncate text-left leading-tight"
@@ -375,22 +375,56 @@ export function OnePager({
               <LogOut size={17} />
             </button>
           </div>
-          {/* jump chips */}
-          <div className="hide-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-2.5">
-            {sections.map((s) => (
+          {personal ? (
+            /* pinned vitals strip — frozen telemetry: cash · debt · streak */
+            <div className="flex gap-2 pb-2.5">
               <button
-                key={s.id}
-                onClick={() => scrollTo(s.id)}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
-                  active === s.id
-                    ? "bg-accent text-bg"
-                    : "bg-tile text-taupe hover:text-bone"
-                }`}
+                onClick={() => setAccountsOpen(true)}
+                className="flex-1 rounded-xl bg-tile px-3 py-2 text-left transition active:scale-[0.98]"
               >
-                {t(s.label)}
+                <p className="eyebrow text-faint">{t("Cash")}</p>
+                <p className="num text-sm font-semibold text-mint">
+                  {formatMoney(cashShown)}
+                </p>
               </button>
-            ))}
-          </div>
+              <button
+                onClick={() => scrollTo("sprint")}
+                className="flex-1 rounded-xl bg-tile px-3 py-2 text-left transition active:scale-[0.98]"
+              >
+                <p className="eyebrow text-faint">{t("Debt left")}</p>
+                <p className="num text-sm font-semibold text-bone">
+                  {formatMoney(math.totalDebt)}
+                </p>
+              </button>
+              <button
+                onClick={() => setHabitsOpen(true)}
+                className="flex-1 rounded-xl bg-tile px-3 py-2 text-left transition active:scale-[0.98]"
+              >
+                <p className="eyebrow text-faint">{t("Streak")}</p>
+                <p className="num text-sm font-semibold text-gold">
+                  {commit.day}
+                  <span className="text-faint">/{commit.total}</span>
+                </p>
+              </button>
+            </div>
+          ) : (
+            /* jump chips */
+            <div className="hide-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-2.5">
+              {sections.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => scrollTo(s.id)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
+                    active === s.id
+                      ? "bg-accent text-bg"
+                      : "bg-tile text-taupe hover:text-bone"
+                  }`}
+                >
+                  {t(s.label)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -474,7 +508,8 @@ export function OnePager({
           </div>
         </Reveal>
 
-        {/* ── CASH + STREAK ── */}
+        {/* ── CASH + STREAK (pinned into the vitals strip in Mine) ── */}
+        {!personal && (
         <Reveal id="cash">
           <div className="grid grid-cols-2 gap-3">
             {/* cash */}
@@ -515,6 +550,7 @@ export function OnePager({
             </button>
           </div>
         </Reveal>
+        )}
 
         {/* ── SPRINT · the road ── */}
         <Reveal id="sprint">
