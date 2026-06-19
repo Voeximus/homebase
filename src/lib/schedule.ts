@@ -1,6 +1,6 @@
 import type { Recurring, Transaction } from "../types";
 import { monthlyAmount } from "./recurring";
-import { billExpected } from "./plan";
+import { billExpected, PAY_DAYS } from "./plan";
 
 // Day-of-month each recurring item posts, detected from Mar–Jun 2026 bank
 // history (keyed by the recurring row's NAME). Mom posts on each payday (two
@@ -19,9 +19,6 @@ export const DUE_DAYS: Record<string, number[]> = {
   "Card payment (…6813)": [8],
   "Xinyan's 40% share": [1],
 };
-
-// Bi-weekly checks drift, but land ~here. Used to place paydays on the timeline.
-export const PAY_DAYS = [15, 29];
 
 // Annual memberships / fees — billed once a year on a fixed month+day (month is
 // 1-indexed). Shown only in that month at full amount, never amortized monthly.

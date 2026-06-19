@@ -38,10 +38,11 @@ import {
   orderedDebts,
   payoffSchedule,
   planMath,
+  PAY_DAYS,
   SAVINGS_SPLIT,
   spentByCategory,
   sumTargets,
-  UPCOMING_INCOME,
+  upcomingIncome,
   variableSpentThisMonth,
   type BudgetLine,
 } from "../lib/plan";
@@ -263,7 +264,8 @@ export function OnePager({
   const math = planMath(data.recurring, data.debts, target);
   const ordered = orderedDebts(data.debts);
   const today = new Date();
-  const schedule = payoffSchedule(ordered, math.firepower, today, [15, 29], SAVINGS_SPLIT);
+  const schedule = payoffSchedule(ordered, math.firepower, today, PAY_DAYS, SAVINGS_SPLIT);
+  const upcoming = upcomingIncome(data.recurring, today);
   const next = schedule[0] ?? null;
   const payoffDate = schedule.length ? schedule[schedule.length - 1].date : null;
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
@@ -817,11 +819,14 @@ export function OnePager({
             <div className="mt-4 border-t border-edge pt-3">
               <Eyebrow color="text-faint">{t("Coming up")}</Eyebrow>
               <div className="mt-2 space-y-1.5">
-                {UPCOMING_INCOME.map((p) => (
-                  <div key={p.label} className="flex items-center justify-between">
+                {upcoming.map((p) => (
+                  <div
+                    key={`${p.label}-${p.date.toISOString().slice(0, 10)}`}
+                    className="flex items-center justify-between"
+                  >
                     <div className="min-w-0">
                       <p className="truncate text-[13px] text-bone">{t(p.label)}</p>
-                      <p className="text-[11px] text-faint">{t(p.when)}</p>
+                      <p className="text-[11px] text-faint">~{fmtDay(p.date)}</p>
                     </div>
                     <span className="text-[13px] font-semibold text-mint">
                       +{formatMoney(p.amount)}
@@ -829,6 +834,9 @@ export function OnePager({
                   </div>
                 ))}
               </div>
+              <p className="mt-2 text-[11px] text-faint">
+                {t("Soft dates — your 15th & month-end checks can land ±a few days (weekends, holidays).")}
+              </p>
             </div>
           </div>
         </Reveal>

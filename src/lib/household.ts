@@ -44,7 +44,7 @@ export const SEED_ACCOUNTS: SeedAccount[] = [
 
 export const SEED_RECURRING: SeedRecurring[] = [
   // --- Income (lands on both paydays) ---
-  { name: "Gino paycheck", amount: 1800, direction: "in", cadence: "biweekly", categoryId: "salary", account: "Geo", owner: "Gino", note: "conservative night-shift floor", dueDays: [15, 29] },
+  { name: "Gino paycheck", amount: 1800, direction: "in", cadence: "semimonthly", categoryId: "salary", account: "Geo", owner: "Gino", note: "semi-monthly — 15th + month-end (±2-3 days)", dueDays: [15, 31] },
   { name: "Xinyan paycheck", amount: 1187.42, direction: "in", cadence: "biweekly", categoryId: "salary", account: "Xinyan", owner: "Xinyan", note: "ASU, fixed", dueDays: [15, 29] },
 
   // --- Shared (paid from Geo, split 60/40 via Xinyan's transfer in) ---

@@ -162,12 +162,24 @@ export interface SavingsSplit {
 }
 export const SAVINGS_SPLIT: SavingsSplit = { perCheck: 500, emergencyTarget: 1500 };
 
+// Pay-day model: Gino is paid semi-monthly — the 15th and month-end. A payDay of
+// 31 is the "month-end" sentinel: it resolves to the real last day (30/31, or
+// 28/29 in Feb). Actual deposits can drift ±2-3 days around it (weekends /
+// holidays); the bank feed reconciles to the true date when a check posts.
+export const PAY_DAYS = [15, 31];
+
+export function paydayDate(year: number, month: number, payDay: number): Date {
+  return payDay >= 31 ? new Date(year, month + 1, 0) : new Date(year, month, payDay);
+}
+
 function nextPayday(after: Date, payDays: number[]): Date {
-  const day = after.getDate();
   const y = after.getFullYear();
   const m = after.getMonth();
-  for (const pd of payDays) if (pd > day) return new Date(y, m, pd);
-  return new Date(y, m + 1, payDays[0]);
+  const cands = payDays
+    .map((pd) => paydayDate(y, m, pd))
+    .sort((a, b) => a.getTime() - b.getTime());
+  for (const c of cands) if (c.getTime() > after.getTime()) return c;
+  return paydayDate(y, m + 1, payDays[0]); // none left this month → next month's first
 }
 
 /**
@@ -179,7 +191,7 @@ export function payoffSchedule(
   debtsOrdered: Debt[],
   monthlyFirepower: number,
   from: Date,
-  payDays: number[] = [15, 29],
+  payDays: number[] = PAY_DAYS,
   split?: SavingsSplit,
 ): PayoffEvent[] {
   if (monthlyFirepower <= 0) return [];
@@ -308,17 +320,37 @@ export function commitmentProgress(now: Date): Commitment {
   return { day, total: PLAN_DAYS, pct: (day / PLAN_DAYS) * 100, endDate };
 }
 
-// --- Next ~30 days of income -------------------------------------------------
-// The real projected checks, including the one light one (trip hangover).
-// Update as checks land / the picture changes.
+// --- Upcoming income ----------------------------------------------------------
+// Derived from the live income rows (one source of truth) so it always matches
+// the calendar — no hand-kept list to go stale. Each is a SOFT target: the
+// scheduled payday can slide ±2-3 days, and the bank feed confirms the real date
+// once the check posts.
 export interface UpcomingPay {
   label: string;
-  amount: number;
-  when: string;
-  note?: string;
+  amount: number; // this single check (the monthly amount split across its paydays)
+  date: Date;
 }
-export const UPCOMING_INCOME: UpcomingPay[] = [
-  { label: "Gino — light check", amount: 1400, when: "~Jun 29", note: "trip hangover · one-time" },
-  { label: "Gino — normal check", amount: 1966, when: "~Jul 13", note: "back to normal" },
-  { label: "Xinyan — 2 checks", amount: 2374.84, when: "bi-weekly" },
-];
+export function upcomingIncome(
+  recurring: Recurring[],
+  from: Date,
+  count = 4,
+): UpcomingPay[] {
+  const startOfDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const out: UpcomingPay[] = [];
+  for (let m = 0; m < 5; m++) {
+    const y = from.getFullYear();
+    const mo = from.getMonth() + m;
+    for (const r of recurring) {
+      if (!r.active || r.direction !== "in") continue;
+      const days = r.dueDays ?? PAY_DAYS;
+      const perCheck = monthlyAmount(r) / days.length;
+      for (const d of days) {
+        const date = paydayDate(y, mo, d);
+        if (date.getTime() >= startOfDay.getTime()) {
+          out.push({ label: r.name, amount: perCheck, date });
+        }
+      }
+    }
+  }
+  return out.sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, count);
+}

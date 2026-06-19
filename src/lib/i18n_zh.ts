@@ -52,6 +52,8 @@ const SEED: Record<string, string> = {
   Track: "跟踪",
   Unlink: "取消关联",
   live: "实时",
+  "Soft dates — your 15th & month-end checks can land ±a few days (weekends, holidays).":
+    "大致日期 — 15 号和月末的工资可能浮动几天（周末、假期）。",
   "Set balance": "设置余额",
   "Choose another": "换一个",
   "Log a purchase": "记一笔支出",
