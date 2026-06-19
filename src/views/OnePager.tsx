@@ -389,22 +389,12 @@ export function OnePager({
                 </p>
               </button>
               <button
-                onClick={() => scrollTo("sprint")}
+                onClick={() => setSprintOpen(true)}
                 className="flex-1 rounded-xl bg-tile px-3 py-2 text-left transition active:scale-[0.98]"
               >
                 <p className="eyebrow text-faint">{t("Debt left")}</p>
                 <p className="num text-sm font-semibold text-bone">
                   {formatMoney(math.totalDebt)}
-                </p>
-              </button>
-              <button
-                onClick={() => setHabitsOpen(true)}
-                className="flex-1 rounded-xl bg-tile px-3 py-2 text-left transition active:scale-[0.98]"
-              >
-                <p className="eyebrow text-faint">{t("Streak")}</p>
-                <p className="num text-sm font-semibold text-gold">
-                  {commit.day}
-                  <span className="text-faint">/{commit.total}</span>
                 </p>
               </button>
             </div>
@@ -430,7 +420,8 @@ export function OnePager({
       </div>
 
       <main className="mx-auto max-w-[640px] space-y-3 px-4 pb-28 pt-4">
-        {/* ── HERO · the next move ── */}
+        {/* ── HERO · next move — moves into the Debt container in Full ── */}
+        {!personal && (
         <Reveal id="nextmove">
           <div className="hero-bar overflow-hidden rounded-xl border border-edgehero bg-hero p-5">
             <Eyebrow color="text-accent">
@@ -501,6 +492,7 @@ export function OnePager({
             )}
           </div>
         </Reveal>
+        )}
 
         {/* ── CASH + STREAK (pinned into the vitals strip in Mine) ── */}
         {!personal && (
@@ -546,7 +538,8 @@ export function OnePager({
         </Reveal>
         )}
 
-        {/* ── SPRINT · the road ── */}
+        {/* ── SPRINT · the road — moves into the Debt container in Full ── */}
+        {!personal && (
         <Reveal id="sprint">
           <button
             onClick={() => setSprintOpen(true)}
@@ -580,6 +573,7 @@ export function OnePager({
             </p>
           </button>
         </Reveal>
+        )}
 
         {!personal && (
           <>
@@ -739,6 +733,49 @@ export function OnePager({
           </div>
         </Reveal>
           </>
+        )}
+
+        {/* ── UPCOMING BILLS · personal ── */}
+        {personal && (
+          <Reveal>
+            <div className="rounded-xl border border-edge bg-tile p-5">
+              <div className="flex items-center justify-between">
+                <Eyebrow>{t("Upcoming bills")}</Eyebrow>
+                <span className="text-[11px] text-taupe">
+                  {t("{amount} left", { amount: formatMoney(leftOut) })}
+                </span>
+              </div>
+              {leftBills.length === 0 ? (
+                <p className="mt-3 text-sm text-faint">
+                  {t("All bills paid this month.")}
+                </p>
+              ) : (
+                <div className="mt-3 space-y-2.5">
+                  {[...leftBills]
+                    .sort((a, b) => a.day - b.day)
+                    .slice(0, 5)
+                    .map((e, i) => (
+                      <div
+                        key={`${e.recurringId ?? e.label}-${e.day}-${i}`}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] text-bone">{e.label}</p>
+                          <p className="text-[11px] text-faint">
+                            {fmtDay(
+                              new Date(today.getFullYear(), today.getMonth(), e.day),
+                            )}
+                          </p>
+                        </div>
+                        <span className="num text-[13px] font-semibold text-bone">
+                          {formatMoney(e.amount)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </Reveal>
         )}
 
         {/* ── ACTIVITY ── */}

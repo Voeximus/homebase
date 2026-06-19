@@ -52,6 +52,8 @@ const SEED: Record<string, string> = {
   "Spent this month": "本月已花",
   "This month's envelopes": "本月预算信封",
   "This month's bills": "本月账单",
+  "Upcoming bills": "即将到来的账单",
+  "All bills paid this month.": "本月账单已全部付清。",
   "Coming up": "即将到来",
   "Just happened": "最近动态",
   "The attack ladder": "进攻阶梯",
