@@ -165,7 +165,6 @@ export interface FinanceStore {
     color: string;
   }) => Promise<void>;
   payDebt: (id: string, amount: number) => Promise<void>;
-  deleteDebt: (id: string) => Promise<void>;
   addGoal: (g: {
     name: string;
     target: number;
@@ -174,7 +173,6 @@ export interface FinanceStore {
     color: string;
   }) => Promise<void>;
   contributeGoal: (id: string, amount: number) => Promise<void>;
-  deleteGoal: (id: string) => Promise<void>;
   seedHousehold: () => Promise<{ ok: boolean; message: string }>;
   resetAll: () => Promise<void>;
   setPaidBill: (month: string, billKey: string, paid: boolean) => Promise<void>;
@@ -424,6 +422,25 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
   type Actions = Omit<FinanceStore, "data" | "loading">;
   const store = useMemo<Actions>(() => {
+    // Fail-closed recovery: if a money write partially fails, pull the ledger
+    // tables back from the server so the UI can never keep an optimistic value
+    // that did not actually persist (the deleteFood refetch-on-error pattern).
+    const resyncLedger = async () => {
+      const [tx, ac, de, go] = await Promise.all([
+        supabase.from("transactions").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("accounts").select("*").order("sort_order", { ascending: true }),
+        supabase.from("debts").select("*").order("created_at", { ascending: true }),
+        supabase.from("savings_goals").select("*").order("created_at", { ascending: true }),
+      ]);
+      setData((p) => ({
+        ...p,
+        transactions: tx.data ? tx.data.map(mapTxn) : p.transactions,
+        accounts: ac.data ? ac.data.map(mapAccount) : p.accounts,
+        debts: de.data ? de.data.map(mapDebt) : p.debts,
+        goals: go.data ? go.data.map(mapGoal) : p.goals,
+      }));
+    };
+
     // The engine: every money event runs through here. It ALWAYS inserts a
     // ledger row and moves the account's cash, then fans out to a debt (an
     // explicit debt payment, or a bill whose recurring row is linkedDebtId) or
@@ -472,6 +489,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (error || !row) return console.error(error);
       setData((p) => ({ ...p, transactions: [mapTxn(row), ...p.transactions] }));
 
+      // Any balance write that fails flips this; we then resync to server truth.
+      let writeErr: unknown = null;
+
       // 1) move cash
       if (ev.accountId) {
         const acct = dataRef.current.accounts.find((a) => a.id === ev.accountId);
@@ -483,7 +503,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               a.id === ev.accountId ? { ...a, balance: nb } : a,
             ),
           }));
-          await supabase.from("accounts").update({ balance: nb }).eq("id", ev.accountId);
+          const { error: e } = await supabase.from("accounts").update({ balance: nb }).eq("id", ev.accountId);
+          if (e) writeErr = e;
         }
       }
 
@@ -494,7 +515,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           ...p,
           debts: p.debts.map((d) => (d.id === debtId ? { ...d, balance: nb } : d)),
         }));
-        await supabase.from("debts").update({ balance: nb }).eq("id", debtId);
+        const { error: e } = await supabase.from("debts").update({ balance: nb }).eq("id", debtId);
+        if (e) writeErr = e;
       }
 
       // 3) fan out to a goal
@@ -506,8 +528,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             ...p,
             goals: p.goals.map((g) => (g.id === at.goalId ? { ...g, saved: nb } : g)),
           }));
-          await supabase.from("savings_goals").update({ saved: nb }).eq("id", at.goalId);
+          const { error: e } = await supabase.from("savings_goals").update({ saved: nb }).eq("id", at.goalId);
+          if (e) writeErr = e;
         }
+      }
+
+      // Fail closed: a balance write failed → pull the ledger back from the
+      // server so the screen can't keep a number that never persisted.
+      if (writeErr) {
+        console.error("applyMoneyEvent: balance write failed — resyncing to server truth", writeErr);
+        await resyncLedger();
       }
     };
 
@@ -795,11 +825,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .eq("id", id);
         if (error) console.error(error);
       },
-      async deleteDebt(id) {
-        setData((p) => ({ ...p, debts: p.debts.filter((d) => d.id !== id) }));
-        const { error } = await supabase.from("debts").delete().eq("id", id);
-        if (error) console.error(error);
-      },
       async addGoal(input) {
         const { data: row, error } = await supabase
           .from("savings_goals")
@@ -828,14 +853,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase
           .from("savings_goals")
           .update({ saved: newSaved })
-          .eq("id", id);
-        if (error) console.error(error);
-      },
-      async deleteGoal(id) {
-        setData((p) => ({ ...p, goals: p.goals.filter((g) => g.id !== id) }));
-        const { error } = await supabase
-          .from("savings_goals")
-          .delete()
           .eq("id", id);
         if (error) console.error(error);
       },
