@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Languages } from "lucide-react";
 import { getLang, setLangVar, type Lang } from "../lib/i18n";
 
 interface LangCtx {
@@ -47,10 +48,11 @@ export function LangToggle() {
   return (
     <button
       onClick={() => setLang(lang === "en" ? "zh" : "en")}
-      className="rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-taupe transition hover:bg-raised hover:text-bone"
-      aria-label={lang === "en" ? "切换到中文" : "Switch to English"}
+      className="notranslate flex items-center gap-1 rounded-full px-2 py-1.5 text-[12px] font-semibold text-taupe transition hover:bg-raised hover:text-bone"
+      aria-label={lang === "en" ? "切换到中文 · Switch to Chinese" : "Switch to English · 切换到英文"}
     >
-      {lang === "en" ? "中" : "EN"}
+      <Languages size={14} />
+      <span className="notranslate">{lang === "en" ? "中" : "EN"}</span>
     </button>
   );
 }

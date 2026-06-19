@@ -1,11 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
     <meta name="theme-color" content="#0a0d12" />
+    <!-- The app handles its own EN/中文 i18n — stop the mobile browser from
+         auto-translating on top of it (which turned 中 into "middle" and
+         mangled casing). -->
+    <meta name="google" content="notranslate" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
