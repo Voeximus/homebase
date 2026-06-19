@@ -60,6 +60,9 @@ import { AddTransactionSheet } from "../components/AddTransactionSheet";
 import { ImportSheet } from "../components/ImportSheet";
 import { ModeToggle, type AppMode } from "../components/ModeToggle";
 import { LangToggle } from "../components/LanguageProvider";
+import { LensToggle } from "../components/LensToggle";
+import { ownAccounts, jointAccounts, type Lens } from "../lib/lens";
+import type { Owner } from "../lib/owner";
 import {
   useActiveSection,
   useCountUp,
@@ -180,16 +183,27 @@ function Reveal({
 export function OnePager({
   mode,
   onMode,
+  owner,
+  lens,
+  onLens,
 }: {
   mode: AppMode;
   onMode: (m: AppMode) => void;
+  owner: Owner;
+  lens: Lens;
+  onLens: (l: Lens) => void;
 }) {
   const store = useStore();
   const { data, payDebtExtra, payBill, markBillPaid, deleteTransaction } = store;
   const { signOut } = useAuth();
 
   const scrolled = useScrolled(130);
-  const active = useActiveSection(SECTIONS.map((s) => s.id));
+  const personal = lens === "me";
+  // In "me" the household-level sections collapse behind the Household lens.
+  const sections = personal
+    ? SECTIONS.filter((s) => s.id !== "budget" && s.id !== "bills")
+    : SECTIONS;
+  const active = useActiveSection(sections.map((s) => s.id));
 
   // global sheets
   const [addOpen, setAddOpen] = useState(false);
@@ -229,6 +243,21 @@ export function OnePager({
     0,
   );
 
+  // ── owner lens · display-only (the math above stays household-level) ──
+  const myAccountsList = useMemo(
+    () => (personal ? ownAccounts(data.accounts, owner) : data.accounts),
+    [personal, data.accounts, owner],
+  );
+  const myAccountIds = useMemo(
+    () => new Set(myAccountsList.map((a) => a.id)),
+    [myAccountsList],
+  );
+  const cashShown = totalBalance(myAccountsList);
+  const jointCash = personal ? totalBalance(jointAccounts(data.accounts)) : 0;
+  const netFlowShown = personal
+    ? myAccountsList.reduce((s, a) => s + accountFlow(a.id, data.recurring).net, 0)
+    : netFlow;
+
   // bills (current month)
   const { entries } = monthlySchedule(data.recurring, monthKey);
   const outEntries = entries.filter((e) => e.direction === "out");
@@ -258,14 +287,18 @@ export function OnePager({
   const recent = useMemo(
     () =>
       [...data.transactions]
-        .filter((t) => !t.appliesTo?.settled)
+        .filter((tx) => !tx.appliesTo?.settled)
+        .filter(
+          (tx) =>
+            !personal || (tx.accountId != null && myAccountIds.has(tx.accountId)),
+        )
         .sort((a, b) =>
           a.date === b.date
             ? b.createdAt.localeCompare(a.createdAt)
             : b.date.localeCompare(a.date),
         )
         .slice(0, 6),
-    [data.transactions],
+    [data.transactions, personal, myAccountIds],
   );
 
   // setup guard
@@ -312,7 +345,7 @@ export function OnePager({
                   className="block max-w-full truncate text-left leading-tight"
                 >
                   <span className="num text-base font-semibold text-mint">
-                    {formatMoney(totalCash)}
+                    {formatMoney(cashShown)}
                   </span>
                   <span className="ml-1.5 text-[11px] text-faint">
                     {t("Day {day}", { day: commit.day })}
@@ -344,7 +377,7 @@ export function OnePager({
           </div>
           {/* jump chips */}
           <div className="hide-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-2.5">
-            {SECTIONS.map((s) => (
+            {sections.map((s) => (
               <button
                 key={s.id}
                 onClick={() => scrollTo(s.id)}
@@ -362,6 +395,13 @@ export function OnePager({
       </div>
 
       <main className="mx-auto max-w-[640px] space-y-3 px-4 pb-28 pt-4">
+        {/* ── owner lens bar ── */}
+        <div className="flex items-center justify-between">
+          <Eyebrow color="text-faint">
+            {personal ? t("Your view") : t("Household view")}
+          </Eyebrow>
+          <LensToggle lens={lens} onLens={onLens} />
+        </div>
         {/* ── HERO · the next move ── */}
         <Reveal id="nextmove">
           <div className="hero-bar overflow-hidden rounded-xl border border-edgehero bg-hero p-5">
@@ -442,14 +482,22 @@ export function OnePager({
               onClick={() => setAccountsOpen(true)}
               className="rounded-xl border border-edge bg-tile p-4 text-left transition active:scale-[0.99]"
             >
-              <Eyebrow>{t("Cash on hand")}</Eyebrow>
+              <Eyebrow>{personal ? t("Your cash") : t("Cash on hand")}</Eyebrow>
               <CountMoney
-                value={totalCash}
+                value={cashShown}
                 className="num mt-1 block text-2xl font-medium tracking-tight text-bone"
               />
-              <OwnerBar accounts={data.accounts} total={totalCash} />
+              {personal ? (
+                jointCash > 0 && (
+                  <p className="mt-1.5 text-[11px] text-faint">
+                    + {t("Joint")} {formatMoney(jointCash)}
+                  </p>
+                )
+              ) : (
+                <OwnerBar accounts={data.accounts} total={totalCash} />
+              )}
               <p className="mt-2 text-[11px] text-mint">
-                {t("{amount}/mo net", { amount: formatMoney(netFlow, { sign: true }) })}
+                {t("{amount}/mo net", { amount: formatMoney(netFlowShown, { sign: true }) })}
               </p>
             </button>
             {/* streak */}
@@ -503,6 +551,8 @@ export function OnePager({
           </button>
         </Reveal>
 
+        {!personal && (
+          <>
         {/* ── FIREPOWER + SPENT ── */}
         <Reveal id="metrics">
           <div className="grid grid-cols-2 gap-3">
@@ -658,6 +708,8 @@ export function OnePager({
             </div>
           </div>
         </Reveal>
+          </>
+        )}
 
         {/* ── ACTIVITY ── */}
         <Reveal id="activity">

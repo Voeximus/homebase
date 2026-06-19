@@ -9,6 +9,7 @@ import type { AppMode } from "./components/ModeToggle";
 import { LanguageProvider } from "./components/LanguageProvider";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { getOwner, type Owner } from "./lib/owner";
+import { getLens, saveLens, type Lens } from "./lib/lens";
 
 export default function App() {
   return (
@@ -44,9 +45,19 @@ function Shell() {
   const [owner, setOwner] = useState<Owner | null>(() => getOwner());
   // Per cold launch: the welcome screen is the front door every time you open.
   const [entered, setEntered] = useState(false);
+  // The owner lens: "me" = your own slice, "all" = the whole household.
+  const [lens, setLens] = useState<Lens>(() => getLens());
   useEffect(() => {
     localStorage.setItem("hb-mode", mode);
   }, [mode]);
+  const onLens = (l: Lens) => {
+    saveLens(l);
+    setLens(l);
+  };
+
+  // owner is guaranteed set once `entered` (you can't throw the switch without
+  // picking who you are on first launch).
+  const who = owner as Owner;
 
   return (
     <LanguageProvider>
@@ -60,9 +71,21 @@ function Shell() {
           }}
         />
       ) : mode === "health" ? (
-        <HealthView mode={mode} onMode={setMode} />
+        <HealthView
+          mode={mode}
+          onMode={setMode}
+          owner={who}
+          lens={lens}
+          onLens={onLens}
+        />
       ) : (
-        <FinanceGate mode={mode} onMode={setMode} />
+        <FinanceGate
+          mode={mode}
+          onMode={setMode}
+          owner={who}
+          lens={lens}
+          onLens={onLens}
+        />
       )}
     </LanguageProvider>
   );
@@ -71,11 +94,19 @@ function Shell() {
 function FinanceGate({
   mode,
   onMode,
+  owner,
+  lens,
+  onLens,
 }: {
   mode: AppMode;
   onMode: (m: AppMode) => void;
+  owner: Owner;
+  lens: Lens;
+  onLens: (l: Lens) => void;
 }) {
   const { loading } = useStore();
   if (loading) return <FullScreenLoader />;
-  return <OnePager mode={mode} onMode={onMode} />;
+  return (
+    <OnePager mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
+  );
 }

@@ -4,6 +4,9 @@ import { t } from "../lib/i18n";
 import { useAuth } from "../auth/AuthProvider";
 import { ModeToggle, type AppMode } from "../components/ModeToggle";
 import { LangToggle } from "../components/LanguageProvider";
+import { LensToggle } from "../components/LensToggle";
+import type { Lens } from "../lib/lens";
+import type { Owner } from "../lib/owner";
 import { MealBuilder } from "./MealBuilder";
 
 // ── Two Bodies · One Engine ──────────────────────────────────────────────────
@@ -58,23 +61,32 @@ const GAUGE: Record<Person, GaugeCfg> = {
 export function HealthView({
   mode,
   onMode,
+  owner,
+  lens,
+  onLens,
 }: {
   mode: AppMode;
   onMode: (m: AppMode) => void;
+  owner: Owner;
+  lens: Lens;
+  onLens: (l: Lens) => void;
 }) {
   const { signOut } = useAuth();
+  const personal = lens === "me";
   const [sub, setSub] = useState<"plan" | "kitchen">(
     () => (localStorage.getItem("hb-health-sub") as "plan" | "kitchen") || "plan",
   );
-  const [person, setPerson] = useState<Person>(() =>
+  const [personSel, setPersonSel] = useState<Person>(() =>
     (localStorage.getItem("hb-health-person") as Person) || "gino",
   );
   useEffect(() => {
     localStorage.setItem("hb-health-sub", sub);
   }, [sub]);
   useEffect(() => {
-    localStorage.setItem("hb-health-person", person);
-  }, [person]);
+    localStorage.setItem("hb-health-person", personSel);
+  }, [personSel]);
+  // In "me" the view is locked to whoever owns this phone.
+  const person: Person = personal ? owner : personSel;
   const acc = ACC[person];
 
   return (
@@ -84,9 +96,8 @@ export function HealthView({
         <div className="mx-auto max-w-[640px] px-4">
           <div className="flex h-14 items-center gap-2">
             <ModeToggle mode={mode} onMode={onMode} />
-            <div className="min-w-0 flex-1 text-right">
-              <span className="eyebrow text-faint">{t("Two Bodies · One Engine")}</span>
-            </div>
+            <div className="min-w-0 flex-1" />
+            <LensToggle lens={lens} onLens={onLens} />
             <LangToggle />
             <button
               onClick={() => signOut()}
@@ -124,7 +135,8 @@ export function HealthView({
           <MealBuilder />
         ) : (
           <>
-            {/* person toggle */}
+            {/* person toggle — only when viewing the whole household */}
+            {!personal && (
             <div className="mb-3 grid grid-cols-2 gap-2">
               {(["gino", "xinyan"] as const).map((p) => {
                 const on = person === p;
@@ -132,7 +144,7 @@ export function HealthView({
                 return (
                   <button
                     key={p}
-                    onClick={() => setPerson(p)}
+                    onClick={() => setPersonSel(p)}
                     className="flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition"
                     style={
                       on
@@ -149,6 +161,7 @@ export function HealthView({
                 );
               })}
             </div>
+            )}
             <div key={person} className="rise space-y-3">
               <div className="h-1 rounded-full" style={{ background: acc }} />
               {person === "gino" ? <GinoPlan acc={acc} /> : <XinyanPlan acc={acc} />}

@@ -144,6 +144,14 @@ const SEED: Record<string, string> = {
   "measure, don't infer": "测量，而非臆断",
   "throw a switch to begin": "拨动开关开始",
 
+  // ── owner lens ──
+  Mine: "我的",
+  Household: "家庭",
+  "Your view": "我的视图",
+  "Household view": "家庭视图",
+  "Your cash": "我的现金",
+  Joint: "共同账户",
+
   // ── auth ──
   "Sign in to your shared finances": "登录你们的共享账户",
   "Create your account": "创建账户",
