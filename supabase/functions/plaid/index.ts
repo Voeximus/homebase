@@ -53,6 +53,15 @@ async function plaid(path: string, body: Record<string, unknown>) {
 const contentKey = (r: NormalRow) =>
   `${r.date}|${r.amount.toFixed(2)}|${merchantKey(r.description)}`;
 
+// Which balance is "truth": for checking/savings the spendable (available)
+// balance — what's actually there after pending holds, matching what you see in
+// the bank app; for a credit card the current balance — the amount owed.
+function pickBalance(a: any): number {
+  const b = a.balances ?? {};
+  if (a.type === "depository") return b.available ?? b.current ?? 0;
+  return b.current ?? b.available ?? 0;
+}
+
 // --- actions ------------------------------------------------------------------
 
 async function linkToken(p: any) {
@@ -94,7 +103,7 @@ async function exchange(p: any) {
       owner: p.owner ?? "Joint",
       last4: a.mask ?? null,
       type: a.subtype || a.type || "checking",
-      balance: a.balances?.current ?? 0,
+      balance: pickBalance(a),
       sort_order: order++,
       connection_id: connId,
       provider_account_id: a.account_id,
@@ -124,7 +133,7 @@ async function syncConnection(connId: string) {
     // fresh balances + our account map
     const accResp = await plaid("/accounts/get", { access_token: token });
     const balByProv: Record<string, number> = {};
-    for (const a of accResp.accounts) balByProv[a.account_id] = a.balances?.current ?? null;
+    for (const a of accResp.accounts) balByProv[a.account_id] = pickBalance(a);
 
     const { data: ourAccts } = await admin
       .from("accounts")
