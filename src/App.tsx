@@ -13,6 +13,7 @@ import { getLens, saveLens, type Lens } from "./lib/lens";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 import { syncNow } from "./lib/plaidClient";
 import { DesignLab } from "./views/redesign/DesignLab";
+import { FinanceTabs } from "./views/redesign/FinanceTabs";
 
 export default function App() {
   // ?lab — the bento-reskin design lab: renders the new tabs with mock data,
@@ -122,6 +123,14 @@ function FinanceGate({
 }) {
   const { loading } = useStore();
   if (loading) return <FullScreenLoader />;
+  // ?newui — render the bento reskin with REAL data, behind a flag so the live
+  // default (OnePager) is untouched until the new UI is blessed on Gino's phone.
+  const newUI =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("newui");
+  if (newUI) {
+    return <FinanceTabs mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />;
+  }
   return (
     <OnePager mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
   );
