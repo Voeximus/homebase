@@ -338,6 +338,7 @@ export function OnePager({
         <div className="mx-auto max-w-[640px] px-4">
           <div className="flex h-14 items-center gap-2">
             <ModeToggle mode={mode} onMode={onMode} />
+            <LensToggle lens={lens} onLens={onLens} />
             <div className="min-w-0 flex-1">
               {scrolled && !personal && (
                 <button
@@ -429,13 +430,6 @@ export function OnePager({
       </div>
 
       <main className="mx-auto max-w-[640px] space-y-3 px-4 pb-28 pt-4">
-        {/* ── owner lens bar ── */}
-        <div className="flex items-center justify-between">
-          <Eyebrow color="text-faint">
-            {personal ? t("Your view") : t("Household view")}
-          </Eyebrow>
-          <LensToggle lens={lens} onLens={onLens} />
-        </div>
         {/* ── HERO · the next move ── */}
         <Reveal id="nextmove">
           <div className="hero-bar overflow-hidden rounded-xl border border-edgehero bg-hero p-5">
