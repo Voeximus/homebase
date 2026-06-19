@@ -1224,7 +1224,7 @@ function MiniCalendar({
 }
 
 // ── sheets ───────────────────────────────────────────────────────────────────
-function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data, setAccountBalance } = useStore();
   const [edit, setEdit] = useState<Account | null>(null);
   const [val, setVal] = useState("");
@@ -1417,7 +1417,7 @@ function Line({
   );
 }
 
-function SprintSheet({
+export function SprintSheet({
   open,
   onClose,
   ordered,
@@ -1655,7 +1655,7 @@ function Stat({
   );
 }
 
-function MarkSentSheet({
+export function MarkSentSheet({
   open,
   onClose,
   next,
@@ -2248,7 +2248,7 @@ function CreditCardRow({
 }
 
 // Settings — moved here from App so OnePager owns the whole surface.
-function SettingsSheet({
+export function SettingsSheet({
   open,
   onClose,
   onImport,

@@ -16,8 +16,23 @@ import { buildFinanceVMs } from "./buildVMs";
 import { LedgerSheet } from "../../components/LedgerSheet";
 import { AddTransactionSheet } from "../../components/AddTransactionSheet";
 import { ImportSheet } from "../../components/ImportSheet";
-import { EnvelopeSheet } from "../OnePager";
-import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
+import {
+  EnvelopeSheet,
+  SprintSheet,
+  MarkSentSheet,
+  AccountsSheet,
+  SettingsSheet,
+} from "../OnePager";
+import {
+  LEAN_VARIABLE,
+  sumTargets,
+  planMath,
+  orderedDebts,
+  payoffSchedule,
+  PAY_DAYS,
+  SAVINGS_SPLIT,
+  type BudgetLine,
+} from "../../lib/plan";
 import { merchantKey } from "../../lib/categorize";
 
 function Seg({
@@ -92,7 +107,7 @@ export function FinanceTabs({
   lens: Lens;
   onLens: (l: Lens) => void;
 }) {
-  const { data } = useStore();
+  const { data, payDebtExtra } = useStore();
   const { session, signOut } = useAuth();
   const [tab, setTab] = useState<TabKey>("home");
   const [, setSyncing] = useState(false);
@@ -100,6 +115,19 @@ export function FinanceTabs({
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [envLine, setEnvLine] = useState<BudgetLine | null>(null);
+  const [sprintOpen, setSprintOpen] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [markSentOpen, setMarkSentOpen] = useState(false);
+
+  // The snowball plan (for the attack ladder + the mark-sent slip).
+  const debtPlan = useMemo(() => {
+    const target = sumTargets(LEAN_VARIABLE);
+    const math = planMath(data.recurring, data.debts, target);
+    const ordered = orderedDebts(data.debts);
+    const schedule = payoffSchedule(ordered, math.firepower, new Date(), PAY_DAYS, SAVINGS_SPLIT);
+    return { ordered, schedule, next: schedule[0] ?? null, totalDebt: math.totalDebt };
+  }, [data.recurring, data.debts]);
 
   const vms = useMemo(
     () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
@@ -140,7 +168,11 @@ export function FinanceTabs({
           <HomeTab
             vm={vms.home}
             taps={{
+              onCash: () => setAccountsOpen(true),
+              onDebt: () => setSprintOpen(true),
+              onStreak: () => setSprintOpen(true),
               onBudget: () => setTab("insights"),
+              onNext: () => setMarkSentOpen(true),
               onRecent: () => setLedgerOpen(true),
               onAnomaly: () => setLedgerOpen(true),
             }}
@@ -163,6 +195,10 @@ export function FinanceTabs({
               onHealth: () => onMode("health"),
               onSignOut: () => void signOut(),
               onImport: () => setImportOpen(true),
+              onEdit: () => setSettingsOpen(true),
+              onBank: () => setSettingsOpen(true),
+              onCards: () => setSettingsOpen(true),
+              onAdvanced: () => setSettingsOpen(true),
             }}
           />
         )}
@@ -173,6 +209,22 @@ export function FinanceTabs({
       <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
       <EnvelopeSheet line={envLine} onClose={() => setEnvLine(null)} monthKey={monthKey} />
+      <SprintSheet
+        open={sprintOpen}
+        onClose={() => setSprintOpen(false)}
+        ordered={debtPlan.ordered}
+        schedule={debtPlan.schedule}
+        totalDebt={debtPlan.totalDebt}
+      />
+      <MarkSentSheet
+        open={markSentOpen}
+        onClose={() => setMarkSentOpen(false)}
+        next={debtPlan.next}
+        accounts={data.accounts}
+        onPay={payDebtExtra}
+      />
+      <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} />
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
     </div>
   );
 }
