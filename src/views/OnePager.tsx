@@ -4,6 +4,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   FileUp,
   Flag,
   LogOut,
@@ -64,7 +66,6 @@ import { LensToggle } from "../components/LensToggle";
 import { ownAccounts, jointAccounts, type Lens } from "../lib/lens";
 import type { Owner } from "../lib/owner";
 import {
-  useActiveSection,
   useCountUp,
   usePrefersReducedMotion,
   useReveal,
@@ -102,15 +103,6 @@ const DOT: Record<string, string> = {
   out: "#e5544e",
   transfer: "#5b82b3",
 };
-
-const SECTIONS = [
-  { id: "nextmove", label: "Next move" },
-  { id: "cash", label: "Cash" },
-  { id: "sprint", label: "Sprint" },
-  { id: "budget", label: "Budget" },
-  { id: "bills", label: "Bills" },
-  { id: "activity", label: "Activity" },
-];
 
 // ── animation atoms ──────────────────────────────────────────────────────────
 /** Grow a value from 0 → target once, on mount, for CSS width/dashoffset fills. */
@@ -180,6 +172,41 @@ function Reveal({
 }
 
 // ── the page ─────────────────────────────────────────────────────────────────
+/** A titled summary card in the Full view's container grid; tap to drill in. */
+function ContainerCard({
+  title,
+  value,
+  sub,
+  tone = "default",
+  onClick,
+}: {
+  title: string;
+  value?: string;
+  sub?: string;
+  tone?: "default" | "accent" | "mint";
+  onClick: () => void;
+}) {
+  const vc =
+    tone === "accent" ? "text-accent" : tone === "mint" ? "text-mint" : "text-bone";
+  return (
+    <button
+      onClick={onClick}
+      className="flex h-full w-full flex-col rounded-xl border border-edge bg-tile p-4 text-left transition active:scale-[0.98]"
+    >
+      <div className="flex items-center justify-between">
+        <p className="eyebrow text-faint">{title}</p>
+        <ChevronRight size={15} className="text-faint" />
+      </div>
+      {value && <p className={`num mt-2 text-xl font-semibold ${vc}`}>{value}</p>}
+      {sub && (
+        <p className={`truncate text-[11px] text-taupe ${value ? "mt-0.5" : "mt-2"}`}>
+          {sub}
+        </p>
+      )}
+    </button>
+  );
+}
+
 export function OnePager({
   mode,
   onMode,
@@ -199,11 +226,6 @@ export function OnePager({
 
   const scrolled = useScrolled(130);
   const personal = lens === "me";
-  // In "me" the household-level sections collapse behind the Household lens.
-  const sections = personal
-    ? SECTIONS.filter((s) => !["cash", "budget", "bills"].includes(s.id))
-    : SECTIONS;
-  const active = useActiveSection(sections.map((s) => s.id));
 
   // global sheets
   const [addOpen, setAddOpen] = useState(false);
@@ -220,6 +242,10 @@ export function OnePager({
   const [envLine, setEnvLine] = useState<BudgetLine | null>(null);
   const [payBillFor, setPayBillFor] = useState<ScheduleEntry | null>(null);
   const [txnDetail, setTxnDetail] = useState<Transaction | null>(null);
+  // Full-view drill-in: which titled container is expanded full-page.
+  const [openContainer, setOpenContainer] = useState<
+    "cash" | "debt" | "bills" | "budget" | "activity" | null
+  >(null);
 
   // ── the math (single source of truth, all live) ──
   const target = sumTargets(LEAN_VARIABLE);
@@ -376,8 +402,8 @@ export function OnePager({
               <LogOut size={17} />
             </button>
           </div>
-          {personal ? (
-            /* pinned vitals strip — frozen telemetry: cash · debt · streak */
+          {personal && (
+            /* pinned vitals strip — frozen telemetry: cash · debt */
             <div className="flex gap-2 pb-2.5">
               <button
                 onClick={() => setAccountsOpen(true)}
@@ -398,30 +424,67 @@ export function OnePager({
                 </p>
               </button>
             </div>
-          ) : (
-            /* jump chips */
-            <div className="hide-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-2.5">
-              {sections.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => scrollTo(s.id)}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
-                    active === s.id
-                      ? "bg-accent text-bg"
-                      : "bg-tile text-taupe hover:text-bone"
-                  }`}
-                >
-                  {t(s.label)}
-                </button>
-              ))}
-            </div>
           )}
         </div>
       </div>
 
       <main className="mx-auto max-w-[640px] space-y-3 px-4 pb-28 pt-4">
+        {/* ── FULL · container grid (titled, tap to drill in) ── */}
+        {!personal && !openContainer && (
+          <div className="grid grid-cols-2 gap-3">
+            <ContainerCard
+              title={t("Cash")}
+              value={formatMoney(totalCash)}
+              sub={t("{n} accounts", { n: data.accounts.length })}
+              tone="mint"
+              onClick={() => setOpenContainer("cash")}
+            />
+            <ContainerCard
+              title={t("Debt")}
+              value={formatMoney(math.totalDebt)}
+              sub={
+                payoffDate
+                  ? t("free {date}", {
+                      date: payoffDate
+                        .toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+                        .replace(" ", " '"),
+                    })
+                  : t("on track")
+              }
+              tone="accent"
+              onClick={() => setOpenContainer("debt")}
+            />
+            <ContainerCard
+              title={t("Bills")}
+              value={formatMoney(leftOut)}
+              sub={t("{n} due", { n: leftBills.length })}
+              onClick={() => setOpenContainer("bills")}
+            />
+            <ContainerCard
+              title={t("Budget")}
+              value={formatMoney(spent)}
+              sub={t("of {amount}", { amount: formatMoney(target) })}
+              onClick={() => setOpenContainer("budget")}
+            />
+            <div className="col-span-2">
+              <ContainerCard
+                title={t("Activity")}
+                sub={recent[0]?.description ?? t("Nothing logged yet.")}
+                onClick={() => setOpenContainer("activity")}
+              />
+            </div>
+          </div>
+        )}
+        {!personal && openContainer && (
+          <button
+            onClick={() => setOpenContainer(null)}
+            className="flex items-center gap-1 text-sm font-medium text-taupe transition hover:text-bone"
+          >
+            <ChevronLeft size={16} /> {t("All")}
+          </button>
+        )}
         {/* ── HERO · next move — moves into the Debt container in Full ── */}
-        {!personal && (
+        {!personal && openContainer === "debt" && (
         <Reveal id="nextmove">
           <div className="hero-bar overflow-hidden rounded-xl border border-edgehero bg-hero p-5">
             <Eyebrow color="text-accent">
@@ -495,7 +558,7 @@ export function OnePager({
         )}
 
         {/* ── CASH + STREAK (pinned into the vitals strip in Mine) ── */}
-        {!personal && (
+        {!personal && openContainer === "cash" && (
         <Reveal id="cash">
           <div className="grid grid-cols-2 gap-3">
             {/* cash */}
@@ -539,7 +602,7 @@ export function OnePager({
         )}
 
         {/* ── SPRINT · the road — moves into the Debt container in Full ── */}
-        {!personal && (
+        {!personal && openContainer === "debt" && (
         <Reveal id="sprint">
           <button
             onClick={() => setSprintOpen(true)}
@@ -575,7 +638,7 @@ export function OnePager({
         </Reveal>
         )}
 
-        {!personal && (
+        {!personal && openContainer === "budget" && (
           <>
         {/* ── FIREPOWER + SPENT ── */}
         <Reveal id="metrics">
@@ -652,8 +715,11 @@ export function OnePager({
             </div>
           </div>
         </Reveal>
+          </>
+        )}
 
         {/* ── BILLS ── */}
+        {!personal && openContainer === "bills" && (
         <Reveal id="bills">
           <div className="rounded-xl border border-edge bg-tile p-5">
             <div className="flex items-center justify-between">
@@ -732,7 +798,6 @@ export function OnePager({
             </div>
           </div>
         </Reveal>
-          </>
         )}
 
         {/* ── UPCOMING BILLS · personal ── */}
@@ -778,7 +843,8 @@ export function OnePager({
           </Reveal>
         )}
 
-        {/* ── ACTIVITY ── */}
+        {/* ── ACTIVITY (personal, or its Full container) ── */}
+        {(personal || openContainer === "activity") && (
         <Reveal id="activity">
           <div className="rounded-xl border border-edge bg-tile p-2">
             <div className="px-3 pt-3">
@@ -810,6 +876,7 @@ export function OnePager({
             </div>
           </div>
         </Reveal>
+        )}
 
         <p className="pt-1 text-center text-[11px] text-faint">
           {t("One event ripples everywhere — cash, debt, and the plan stay in step.")}
