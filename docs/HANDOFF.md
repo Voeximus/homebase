@@ -29,7 +29,7 @@ The unifying idea: the app is a **calibration instrument** — Finance calibrate
 Provider tree: `App → AuthProvider → AuthGate → FinanceProvider → Shell → LanguageProvider → (OnePager | HealthView)`.
 - **AuthProvider** (`auth/AuthProvider.tsx`) — Supabase email/password session.
 - **FinanceProvider** (`store/FinanceStore.tsx`) — THE data store: loads all tables, realtime-subscribes, and exposes the **pipelined money engine** (`applyMoneyEvent` moves cash + writes a ledger row + fans out to a linked debt/goal) plus actions: `payBill`, `payDebtExtra`, `markBillPaid`, `commitImport`, `setAccountBalance`, `setTransactionCategory`, `deleteTransaction`, `saveMerchantRule`, `addFood`/`deleteFood`, `seedHousehold`, `resetAll`.
-- **Shell** (`App.tsx`) — holds `mode` ('finance'|'health', localStorage `hb-mode`); renders OnePager or HealthView inside LanguageProvider.
+- **Shell** (`App.tsx`) — holds `mode` ('finance'|'health', `hb-mode`), `owner` ('gino'|'xinyan', `hb-owner`), `lens` ('me'|'all', `hb-lens`), and in-memory `entered`. While not `entered` it renders `WelcomeScreen` (the front door, shown every cold launch); after, OnePager / HealthView with owner + lens props.
 - **LanguageProvider** (`components/LanguageProvider.tsx`) — holds `lang` ('en'|'zh', `hb-lang`); **remounts its children via `key={lang}`** so every module-level `t()` re-evaluates on toggle (no data refetch since it's below FinanceProvider).
 
 ## Features + key files
@@ -48,6 +48,8 @@ Provider tree: `App → AuthProvider → AuthGate → FinanceProvider → Shell 
 
 **PWA / mobile** — `vite.config.ts` (manifest, theme `#0a0d12`, icons incl. 1024px), `index.html` (viewport-fit=cover, theme-color), `public/favicon.svg` (graphite house, cyan→green) + generated icons, `pwa-assets.config.ts` (`@vite-pwa/assets-generator` devDep, dark bg / no white padding). Touch polish + safe-areas in `index.css` (the instrument theme `@theme` tokens live here too).
 
+**Welcome + owner lens (NEW 2026-06-19)** — `components/WelcomeScreen.tsx` is the front gate (gated in `Shell` via in-memory `entered`, so it shows every cold launch). First launch → "whose phone is this?" → "you're {name}?" confirm → binds the device (`lib/owner.ts`, `hb-owner`); thereafter it greets by name + shows the **throw-rail** (a filled two-segment Finance/Health switch) → throw to enter. The owner is then a **lens** (`lib/lens.ts` filters + persisted `hb-lens`, default `me`; `components/LensToggle.tsx` Mine/Household in each header): **Finance · Mine** = your accounts' cash (Joint as a small line) + your activity, with the shared next-move + sprint on top and budget/bills collapsed (also off the jump chips); **Health · Mine** = locks to the owner and hides the person toggle. "Household" restores the full picture in both. The household math is unchanged — the lens only changes display. Owner-change-in-Settings: offered, NOT built (today: clear `hb-owner`).
+
 ## Data model + Supabase
 - Project `ganzefaciiyibselizqi`, `https://ganzefaciiyibselizqi.supabase.co`. Auth email+password; **RLS = authenticated-full (shared household)**. Tables: accounts, recurring, transactions, debts, savings_goals, paid_bills, merchant_rules, **foods** (v6). DDL in `supabase/schema*.sql`.
 - **Test account = `claude-test@homebase.app` / `homebase123`** (an RLS backdoor; only in memory, not public). Do live-data fixes via a Node script signed in as this account (see the `feedback-do-reconciliation-for-him` memory). The publishable key `sb_publishable_907KbW_QmcTvL-wFHg-8yA_roZe8u_2` is the anon key — safe in the public bundle.
@@ -62,10 +64,14 @@ Every tap in the deployed/preview app writes to the **live Supabase DB**. On 202
 1. ✅ **DONE (2026-06-18):** Gino ran `supabase/schema_v6.sql` — the `foods` table is live (RLS verified, reachable). **Food-library cloud sync is ON.** Each device's local foods migrate up on next open.
 2. **🔒 Security lockdown (still open):** the app is public with RLS=authenticated-full → (a) open the URL → sign up the **shared household login**, (b) Supabase → Auth → **disable new sign-ups** (else any stranger who signs up sees their finances). Test account stays valid after.
 3. To see the **new app icon** on a phone, remove + re-add the home-screen shortcut (PWA icons cache).
-4. **Offered, not built:** a "practice mode"/demo login (sandbox); logging the weekly scale over time (health trend).
+4. **Offered, not built:** owner-change in Settings (welcome owner currently changes only by clearing `hb-owner`); a "practice mode"/demo login (sandbox); logging the weekly scale over time (health trend).
+6. **NEXT (Gino's plan):** redesign each mode's *layout* — how Finance and Health display info, now per **Mine vs Household** lens. The lens is the foundation; the layouts are the next pass.
 5. **⚠️ NEVER re-seed** ("Clear all data" / re-seed wipes the reconciliation; merchant_rules + foods survive resetAll by design).
 
 ## This session's commits (newest first)
+- `171c550` Per-person owner lens — Mine / Household (filter + collapse)
+- `4e2235e` Welcome switch — filled two-segment pill
+- `634d6f0` Welcome screen — per-device owner + throw-rail mode switch
 - `4517f3c` Simplified Chinese (中文) toggle
 - `ccd647b` Food library cloud sync (Supabase) + high-res app icons
 - `5a689b7` Mobile-app treatment (install shell + touch polish)
