@@ -68,7 +68,20 @@ Every tap in the deployed/preview app writes to the **live Supabase DB**. On 202
 6. **NEXT (Gino's plan):** redesign each mode's *layout* — how Finance and Health display info, now per **Mine vs Household** lens. The lens is the foundation; the layouts are the next pass.
 5. **⚠️ NEVER re-seed** ("Clear all data" / re-seed wipes the reconciliation; merchant_rules + foods survive resetAll by design).
 
+## Mode-layout redesign (2026-06-19) — lens-aware layouts
+Each mode now has a distinct **Mine** vs **Household** layout:
+- **Finance · Mine** — sticky header pins a 2-cell **vitals strip** (cash · debt); body = **upcoming bills** + your **activity**. No hero/sprint/budget.
+- **Finance · Household** — a grid of **titled containers** (`ContainerCard`): Cash · Debt · Bills · Budget · Activity. `openContainer` state drills into one full-page (Debt = next-move hero + sprint + progress) with a `‹ All` back. Each section is gated `openContainer === "x"`; old jump-chips/`SECTIONS`/`useActiveSection` removed.
+- **Health · Mine** — curated dashboard: `MacroNeeds` (from `lib/nutrition` `DAILY`) + a big **Scan a barcode** button (→ Meal Builder tab) + `PersonalWorkouts` (compact). Meal Builder is the other sub-tab.
+- **Health · Household** — the full per-person plan (Gino/Xinyan toggle + `GinoPlan`/`XinyanPlan`), unchanged.
+- Follow-up: the Health "Scan a barcode" button navigates to the Meal Builder tab; wiring it to auto-open the scanner (autoScan prop through MealBuilder→AddFoodSheet) is a refinement, not done.
+
 ## This session's commits (newest first)
+- `3a5d277` Health Personal — curated dashboard (macros · scan · workouts)
+- `962f66d` Finance Full — drill-in titled containers
+- `e1ab062` Finance Personal — lean view (cash/debt + upcoming bills + activity)
+- `76342b0` Finance — lens toggle into header
+- `0d19667` Finance Mine — pinned vitals strip
 - `171c550` Per-person owner lens — Mine / Household (filter + collapse)
 - `4e2235e` Welcome switch — filled two-segment pill
 - `634d6f0` Welcome screen — per-device owner + throw-rail mode switch
