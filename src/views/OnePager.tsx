@@ -867,10 +867,7 @@ export function OnePager({
               </div>
             )}
             <div className="flex gap-2 p-3">
-              <Button className="flex-1" onClick={() => setAddOpen(true)}>
-                <Plus size={16} /> {t("Log a purchase")}
-              </Button>
-              <Button variant="ghost" onClick={() => setImportOpen(true)}>
+              <Button variant="ghost" className="flex-1" onClick={() => setImportOpen(true)}>
                 <FileUp size={16} /> {t("Import")}
               </Button>
             </div>

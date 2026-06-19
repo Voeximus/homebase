@@ -98,6 +98,8 @@ const SEED: Record<string, string> = {
   "Scan a barcode": "扫描条形码",
   "4-day Upper / Lower · ~30 min · each muscle 2×/wk.":
     "四天 上肢／下肢 · 约30分钟 · 每块肌肉每周2次。",
+  "4-day Upper / Lower · ~30 min — tap a day to see the exercises.":
+    "四天 上肢／下肢 · 约30分钟 — 点击某天查看动作。",
   "Double-progression — hit the top of the range, then add load. Log every set.":
     "双重渐进 — 先做到次数上限，再加重量。记录每一组。",
   "~8,000 steps/day": "每天约8,000步",

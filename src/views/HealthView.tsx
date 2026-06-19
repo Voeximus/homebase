@@ -449,13 +449,12 @@ function PersonalWorkouts({ owner, acc }: { owner: Person; acc: string }) {
       <SecHead n="" title={t("Workouts")} acc={acc} />
       {owner === "gino" ? (
         <>
-          <p className="text-[13px] leading-relaxed text-taupe">
-            {t("4-day Upper / Lower · ~30 min · each muscle 2×/wk.")}
+          <p className="mb-2 text-[13px] leading-relaxed text-taupe">
+            {t("4-day Upper / Lower · ~30 min — tap a day to see the exercises.")}
           </p>
-          <Chips items={[t("Upper A"), t("Lower A"), t("Upper B"), t("Lower B")]} />
-          <p className="font-mono text-[11.5px] text-faint">
-            {t("Double-progression — hit the top of the range, then add load. Log every set.")}
-          </p>
+          {TRAINING.map((s, i) => (
+            <Session key={i} s={s} acc={acc} />
+          ))}
         </>
       ) : (
         <ul className="space-y-0">
