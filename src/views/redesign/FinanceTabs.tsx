@@ -17,13 +17,13 @@ import { LedgerSheet } from "../../components/LedgerSheet";
 import { AddTransactionSheet } from "../../components/AddTransactionSheet";
 import { ImportSheet } from "../../components/ImportSheet";
 import {
-  EnvelopeSheet,
   SprintSheet,
   MarkSentSheet,
   AccountsSheet,
   SettingsSheet,
   PayBillSheet,
 } from "../OnePager";
+import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { BillsSheet } from "./BillsSheet";
 import type { ScheduleEntry } from "../../lib/schedule";
 import type { BillRow } from "./vm";
@@ -179,6 +179,35 @@ export function FinanceTabs({
   const payRec = payBillEntry
     ? data.recurring.find((r) => r.id === payBillEntry.recurringId)
     : undefined;
+  const envVM: EnvelopeVM | null = useMemo(() => {
+    if (!envLine) return null;
+    const txns = data.transactions.filter(
+      (t) =>
+        t.type === "expense" &&
+        t.date.slice(0, 7) === monthKey &&
+        !t.appliesTo &&
+        envLine.cats.includes(t.categoryId),
+    );
+    return {
+      label: envLine.label,
+      catId: envLine.cats[0],
+      spent: txns.reduce((s, t) => s + t.amount, 0),
+      target: envLine.target,
+      txns: txns
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map((t) => ({
+          id: t.id,
+          name: t.description || t.categoryId,
+          dateLabel: new Date(t.date + "T00:00:00").toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          }),
+          amount: t.amount,
+        })),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [envLine, data.transactions, monthKey]);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[440px] flex-col" style={{ background: "#0b0f17" }}>
@@ -229,7 +258,15 @@ export function FinanceTabs({
       <LedgerSheet open={ledgerOpen} onClose={() => setLedgerOpen(false)} txns={ledgerTxns} hasRule={hasRule} />
       <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
-      <EnvelopeSheet line={envLine} onClose={() => setEnvLine(null)} monthKey={monthKey} />
+      <CategorySheet
+        vm={envVM}
+        open={!!envLine}
+        onClose={() => setEnvLine(null)}
+        onTxn={() => {
+          setEnvLine(null);
+          setLedgerOpen(true);
+        }}
+      />
       <SprintSheet
         open={sprintOpen}
         onClose={() => setSprintOpen(false)}

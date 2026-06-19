@@ -123,15 +123,15 @@ function FinanceGate({
 }) {
   const { loading } = useStore();
   if (loading) return <FullScreenLoader />;
-  // ?newui — render the bento reskin with REAL data, behind a flag so the live
-  // default (OnePager) is untouched until the new UI is blessed on Gino's phone.
-  const newUI =
+  // The bento reskin is now the default. ?oldui falls back to the original
+  // graphite one-pager as a safety net during the transition.
+  const oldUI =
     typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("newui");
-  if (newUI) {
-    return <FinanceTabs mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />;
+    new URLSearchParams(window.location.search).has("oldui");
+  if (oldUI) {
+    return <OnePager mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />;
   }
   return (
-    <OnePager mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
+    <FinanceTabs mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
   );
 }

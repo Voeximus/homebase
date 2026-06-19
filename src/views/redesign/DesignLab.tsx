@@ -6,7 +6,21 @@ import { InsightsTab, MOCK_INSIGHTS } from "./InsightsTab";
 import { ActivityTab, MOCK_ACTIVITY } from "./ActivityTab";
 import { ProfileTab, MOCK_PROFILE } from "./ProfileTab";
 import { BillsSheet } from "./BillsSheet";
+import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import type { HomeVM, BillsVM } from "./vm";
+
+const ENV: EnvelopeVM = {
+  label: "Groceries",
+  catId: "groceries",
+  spent: 492.02,
+  target: 500,
+  txns: [
+    { id: "a", name: "Sam's Club", dateLabel: "Wed, Jun 17", amount: 229.81 },
+    { id: "b", name: "99 Ranch Market", dateLabel: "Tue, Jun 16", amount: 85.9 },
+    { id: "c", name: "Safeway", dateLabel: "Wed, Jun 17", amount: 34.27 },
+    { id: "d", name: "Fantuan Delivery", dateLabel: "Mon, Jun 8", amount: 9.99 },
+  ],
+};
 
 // ── Mock data = Gino's real figures, so the look is verifiable without a login.
 const HOME: HomeVM = {
@@ -102,6 +116,7 @@ function TopBar() {
 export function DesignLab() {
   const [tab, setTab] = useState<TabKey>("home");
   const [billsOpen, setBillsOpen] = useState(false);
+  const [envOpen, setEnvOpen] = useState(false);
   return (
     <div
       className="mx-auto flex min-h-screen max-w-[440px] flex-col"
@@ -112,7 +127,7 @@ export function DesignLab() {
         {tab === "home" ? (
           <HomeTab vm={HOME} taps={{ onBills: () => setBillsOpen(true) }} />
         ) : tab === "insights" ? (
-          <InsightsTab vm={MOCK_INSIGHTS} />
+          <InsightsTab vm={MOCK_INSIGHTS} taps={{ onCategory: () => setEnvOpen(true) }} />
         ) : tab === "activity" ? (
           <ActivityTab vm={MOCK_ACTIVITY} />
         ) : (
@@ -121,6 +136,7 @@ export function DesignLab() {
       </div>
       <TabNav active={tab} onTab={setTab} />
       <BillsSheet vm={BILLS} open={billsOpen} onClose={() => setBillsOpen(false)} />
+      <CategorySheet vm={ENV} open={envOpen} onClose={() => setEnvOpen(false)} />
     </div>
   );
 }
