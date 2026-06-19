@@ -11,6 +11,7 @@ import { WelcomeScreen } from "./components/WelcomeScreen";
 import { getOwner, type Owner } from "./lib/owner";
 import { getLens, saveLens, type Lens } from "./lib/lens";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
+import { syncNow } from "./lib/plaidClient";
 
 export default function App() {
   return (
@@ -51,6 +52,10 @@ function Shell() {
   useEffect(() => {
     localStorage.setItem("hb-mode", mode);
   }, [mode]);
+  // Sync the bank feed once on open, so the day's purchases are waiting to train.
+  useEffect(() => {
+    syncNow().catch(() => {});
+  }, []);
   const onLens = (l: Lens) => {
     saveLens(l);
     setLens(l);

@@ -12,6 +12,7 @@ import {
   List,
   LogOut,
   Plus,
+  RefreshCw,
   Settings,
   Target,
   Trash2,
@@ -74,7 +75,7 @@ import {
   useScrolled,
 } from "../lib/hooks";
 import { usePlaidLink } from "react-plaid-link";
-import { createLinkToken, exchangePublicToken } from "../lib/plaidClient";
+import { createLinkToken, exchangePublicToken, syncNow } from "../lib/plaidClient";
 import { LedgerSheet } from "../components/LedgerSheet";
 import { merchantKey } from "../lib/categorize";
 
@@ -238,6 +239,7 @@ export function OnePager({
   const [importOpen, setImportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   // drill sheets
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [habitsOpen, setHabitsOpen] = useState(false);
@@ -871,8 +873,20 @@ export function OnePager({
         {(personal || openContainer === "activity") && (
         <Reveal id="activity">
           <div className="rounded-xl border border-edge bg-tile p-2">
-            <div className="px-3 pt-3">
+            <div className="flex items-center justify-between px-3 pt-3">
               <Eyebrow>{t("Just happened")}</Eyebrow>
+              <button
+                disabled={syncing}
+                onClick={async () => {
+                  setSyncing(true);
+                  await syncNow(true);
+                  setSyncing(false);
+                }}
+                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-taupe transition active:bg-white/5 disabled:opacity-60"
+              >
+                <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+                {syncing ? t("Syncing…") : t("Refresh")}
+              </button>
             </div>
             {recent.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-faint">

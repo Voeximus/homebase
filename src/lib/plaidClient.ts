@@ -37,6 +37,12 @@ export async function exchangePublicToken(public_token: string, institution?: st
   return res;
 }
 
+/** Pull the latest from the bank. `force` nudges Plaid to re-check the bank now
+ *  (rate-limited + async — brand-new charges may land a few moments later). */
+export async function syncNow(force = false) {
+  return supabase.functions.invoke("plaid", { body: { action: "sync", force } });
+}
+
 /** True when a bank's OAuth flow has just redirected back to us. */
 export const isOAuthRedirect =
   typeof window !== "undefined" && window.location.search.includes("oauth_state_id=");

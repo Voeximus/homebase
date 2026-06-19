@@ -115,11 +115,14 @@ async function exchange(p: any) {
   return json({ connection_id: connId, accounts: acc.accounts.length, ...result });
 }
 
-async function syncConnection(connId: string) {
+async function syncConnection(connId: string, force = false) {
   try {
     const { data: token, error: tErr } = await admin.rpc("get_connection_token", { p_conn_id: connId });
     if (tErr) throw new Error("get_connection_token: " + tErr.message);
     if (!token) throw new Error("no token for connection " + connId);
+
+    // a manual Refresh nudges Plaid to re-pull from the bank (async, rate-limited)
+    if (force) await plaid("/transactions/refresh", { access_token: token }).catch((e) => console.warn("refresh:", String(e)));
 
     // load the trained categorizer rules (a learned one-tap answer wins first)
     const { data: rules } = await admin
@@ -239,12 +242,12 @@ async function syncConnection(connId: string) {
 }
 
 async function syncAll(p: any) {
-  if (p.connection_id) return json(await syncConnection(p.connection_id));
+  if (p.connection_id) return json(await syncConnection(p.connection_id, p.force));
   const { data: conns } = await admin.from("bank_connections").select("id");
   const out: Record<string, unknown>[] = [];
   for (const c of conns ?? []) {
     try {
-      out.push({ id: c.id, ...(await syncConnection(c.id)) });
+      out.push({ id: c.id, ...(await syncConnection(c.id, p.force)) });
     } catch (e) {
       out.push({ id: c.id, error: String((e as Error)?.message ?? e) });
     }
