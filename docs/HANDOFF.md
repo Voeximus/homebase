@@ -62,7 +62,7 @@ Every tap in the deployed/preview app writes to the **live Supabase DB**. On 202
 
 ## OPEN ITEMS / pending Gino actions
 1. ✅ **DONE (2026-06-18):** Gino ran `supabase/schema_v6.sql` — the `foods` table is live (RLS verified, reachable). **Food-library cloud sync is ON.** Each device's local foods migrate up on next open.
-2. **🔒 Security lockdown (still open):** the app is public with RLS=authenticated-full → (a) open the URL → sign up the **shared household login**, (b) Supabase → Auth → **disable new sign-ups** (else any stranger who signs up sees their finances). Test account stays valid after.
+2. ✅ **DONE (2026-06-19):** new sign-ups are **disabled** in Supabase → Auth (verified by screenshot) — the open-signup hole the audit flagged is closed. RLS stays authenticated-full for the shared household; the test account still works.
 3. To see the **new app icon** on a phone, remove + re-add the home-screen shortcut (PWA icons cache).
 4. **Offered, not built:** owner-change in Settings (welcome owner currently changes only by clearing `hb-owner`); a "practice mode"/demo login (sandbox); logging the weekly scale over time (health trend).
 6. **NEXT (Gino's plan):** redesign each mode's *layout* — how Finance and Health display info, now per **Mine vs Household** lens. The lens is the foundation; the layouts are the next pass.
@@ -76,7 +76,13 @@ Each mode now has a distinct **Mine** vs **Household** layout:
 - **Health · Household** — the full per-person plan (Gino/Xinyan toggle + `GinoPlan`/`XinyanPlan`), unchanged.
 - Follow-up: the Health "Scan a barcode" button navigates to the Meal Builder tab; wiring it to auto-open the scanner (autoScan prop through MealBuilder→AddFoodSheet) is a refinement, not done.
 
+## Backend audit (2026-06-19)
+A 25-agent code audit + a read-only live-data check. **Live data is pristine** (cash $2,336.00, debts $5,836.65 all at original, 0 orphans, 0 non-reversible rows). Verified-correct: ledger math + exact reversibility (appliedAmount), the two earlier-fixed bugs, no-double-move on settled markers, lens-is-display-only, only the anon key in the bundle. Fixes shipped: SEED Xinyan 1095.75→751.00 (`89dd9cb`); **fail-closed money writes** — `applyMoneyEvent` now captures each balance-write error and `resyncLedger()`s to server truth so the UI can't keep a value that didn't persist (`5d69461`). **⏳ OPEN: `supabase/schema_v7_rpc.sql` not yet run** — atomic `apply_money_event`/`reverse_money_event` (commit `5d69461`), inert until Gino runs it in the SQL editor (safe: creates functions only). After it's run, switch `FinanceStore` apply/delete to `supabase.rpc(...)` for full atomicity + concurrency-safety (audit findings #2/#4). Import dedup is client-only (low risk: imported rows carry account_id:null, never double-move the anchored baseline) — a DB unique index is the durable fix.
+
 ## This session's commits (newest first)
+- `5d69461` audit: fail-closed money writes + atomic-RPC migration (pending run)
+- `89dd9cb` audit: SEED Xinyan balance → reconciled 751.00
+- `8820ddf` Meal builder: large one-tap Scan + 'meals per day' question
 - `3a5d277` Health Personal — curated dashboard (macros · scan · workouts)
 - `962f66d` Finance Full — drill-in titled containers
 - `e1ab062` Finance Personal — lean view (cash/debt + upcoming bills + activity)
