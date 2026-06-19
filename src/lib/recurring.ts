@@ -49,9 +49,14 @@ export function householdMonthly(recurring: Recurring[]): {
   return { income, bills, net: income - bills };
 }
 
+/** A credit card is debt, not an account that holds cash. */
+export const isCreditAccount = (a: Account): boolean => /credit/i.test(a.type);
+
+/** Only the accounts that actually hold money (cards filtered out). */
+export const cashAccounts = (accounts: Account[]): Account[] =>
+  accounts.filter((a) => !isCreditAccount(a));
+
 export function totalBalance(accounts: Account[]): number {
   // Credit cards are debt, not cash — keep them out of the cash total.
-  return accounts
-    .filter((a) => !/credit/i.test(a.type))
-    .reduce((s, a) => s + a.balance, 0);
+  return cashAccounts(accounts).reduce((s, a) => s + a.balance, 0);
 }

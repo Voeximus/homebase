@@ -55,6 +55,7 @@ function mapDebt(r: any): Debt {
     apr: r.apr != null ? Number(r.apr) : undefined,
     minPayment: r.min_payment != null ? Number(r.min_payment) : undefined,
     color: r.color,
+    providerAccountId: r.provider_account_id ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -78,6 +79,7 @@ function mapAccount(r: any): Account {
     type: r.type,
     balance: Number(r.balance),
     sortOrder: r.sort_order ?? 0,
+    providerAccountId: r.provider_account_id ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -170,6 +172,10 @@ export interface FinanceStore {
     color: string;
   }) => Promise<void>;
   payDebt: (id: string, amount: number) => Promise<void>;
+  // Connect a credit-card account to a debt so its balance auto-syncs from the bank.
+  linkDebtToCard: (debtId: string, accountId: string) => Promise<void>;
+  unlinkDebtCard: (debtId: string) => Promise<void>;
+  createDebtFromCard: (accountId: string) => Promise<void>;
   addGoal: (g: {
     name: string;
     target: number;
@@ -863,6 +869,60 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .update({ balance: newBalance })
           .eq("id", id);
         if (error) console.error(error);
+      },
+      // Point an existing debt at a connected credit card. Snap its balance to
+      // the card's current balance now; the DB trigger keeps it in sync after.
+      async linkDebtToCard(debtId, accountId) {
+        const acct = dataRef.current.accounts.find((a) => a.id === accountId);
+        if (!acct?.providerAccountId) return;
+        const bal = Math.max(0, acct.balance);
+        setData((p) => ({
+          ...p,
+          debts: p.debts.map((d) =>
+            d.id === debtId
+              ? { ...d, providerAccountId: acct.providerAccountId, balance: bal }
+              : d,
+          ),
+        }));
+        const { error } = await supabase
+          .from("debts")
+          .update({ provider_account_id: acct.providerAccountId, balance: bal })
+          .eq("id", debtId);
+        if (error) console.error(error);
+      },
+      async unlinkDebtCard(debtId) {
+        setData((p) => ({
+          ...p,
+          debts: p.debts.map((d) =>
+            d.id === debtId ? { ...d, providerAccountId: undefined } : d,
+          ),
+        }));
+        const { error } = await supabase
+          .from("debts")
+          .update({ provider_account_id: null })
+          .eq("id", debtId);
+        if (error) console.error(error);
+      },
+      // Spin up a fresh debt from a card that isn't tracked yet (e.g. Li's card).
+      // APR is unknown on the lean feed — left blank for you to fill in.
+      async createDebtFromCard(accountId) {
+        const acct = dataRef.current.accounts.find((a) => a.id === accountId);
+        if (!acct?.providerAccountId) return;
+        const bal = Math.max(0, acct.balance);
+        const name = acct.last4 ? `${acct.name} ····${acct.last4}` : acct.name;
+        const { data: row, error } = await supabase
+          .from("debts")
+          .insert({
+            name,
+            balance: bal,
+            original_balance: bal,
+            color: "#e26d5c",
+            provider_account_id: acct.providerAccountId,
+          })
+          .select()
+          .single();
+        if (error || !row) return console.error(error);
+        setData((p) => ({ ...p, debts: [...p.debts, mapDebt(row)] }));
       },
       async addGoal(input) {
         const { data: row, error } = await supabase

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   FileUp,
   Flag,
   Landmark,
@@ -27,7 +28,7 @@ import {
   formatMoney,
   monthLabel,
 } from "../lib/format";
-import { accountFlow, totalBalance } from "../lib/recurring";
+import { accountFlow, cashAccounts, totalBalance } from "../lib/recurring";
 import {
   commitmentProgress,
   HABITS,
@@ -228,7 +229,8 @@ export function OnePager({
   onLens: (l: Lens) => void;
 }) {
   const store = useStore();
-  const { data, payDebtExtra, payBill, markBillPaid, deleteTransaction } = store;
+  const { data, payDebtExtra, payBill, markBillPaid, deleteTransaction, setRecurringVariable } =
+    store;
   const { signOut } = useAuth();
 
   const scrolled = useScrolled(130);
@@ -604,7 +606,7 @@ export function OnePager({
                   </p>
                 )
               ) : (
-                <OwnerBar accounts={data.accounts} total={totalCash} />
+                <OwnerBar accounts={cashAccounts(data.accounts)} total={totalCash} />
               )}
               <p className="mt-2 text-[11px] text-mint">
                 {t("{amount}/mo net", { amount: formatMoney(netFlowShown, { sign: true }) })}
@@ -775,8 +777,14 @@ export function OnePager({
                     {paid && <Check size={12} />}
                     <span className={paid ? "line-through" : ""}>{e.label}</span>
                     <span className="font-medium">
+                      {e.variable ? "~" : ""}
                       {formatMoney(e.amount)}
                     </span>
+                    {e.variable && (
+                      <span className="text-[9px] font-semibold uppercase tracking-wide opacity-60">
+                        {t("est")}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -856,9 +864,11 @@ export function OnePager({
                             {fmtDay(
                               new Date(today.getFullYear(), today.getMonth(), e.day),
                             )}
+                            {e.variable ? ` · ${t("varies")}` : ""}
                           </p>
                         </div>
                         <span className="num text-[13px] font-semibold text-bone">
+                          {e.variable ? "~" : ""}
                           {formatMoney(e.amount)}
                         </span>
                       </div>
@@ -987,9 +997,13 @@ export function OnePager({
         defaultAccountId={
           data.recurring.find((r) => r.id === payBillFor?.recurringId)?.accountId
         }
+        variable={
+          data.recurring.find((r) => r.id === payBillFor?.recurringId)?.variable ?? false
+        }
         onClose={() => setPayBillFor(null)}
         onPay={payBill}
         onMarkPaid={markBillPaid}
+        onSetVariable={setRecurringVariable}
       />
       <TxnDetailSheet
         txn={txnDetail}
@@ -1209,7 +1223,7 @@ function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Sheet open={open} onClose={onClose} title={t("Cash & accounts")}>
       <div className="space-y-2">
-        {data.accounts.map((a) => {
+        {cashAccounts(data.accounts).map((a) => {
           const f = accountFlow(a.id, data.recurring);
           const editing = edit?.id === a.id;
           return (
@@ -1445,6 +1459,11 @@ function SprintSheet({
                       {d.apr != null && d.apr > 20 && (
                         <span className="rounded-full bg-ember/15 px-1.5 text-[10px] font-medium text-ember">
                           {d.apr}%
+                        </span>
+                      )}
+                      {d.providerAccountId && (
+                        <span className="flex items-center gap-0.5 rounded-full bg-accent/15 px-1.5 text-[10px] font-medium text-accent">
+                          <CreditCard size={9} /> {t("live")}
                         </span>
                       )}
                     </div>
@@ -1848,14 +1867,17 @@ function PayBillSheet({
   monthKey,
   accounts,
   defaultAccountId,
+  variable,
   onClose,
   onPay,
   onMarkPaid,
+  onSetVariable,
 }: {
   entry: ScheduleEntry | null;
   monthKey: string;
   accounts: Account[];
   defaultAccountId?: string;
+  variable: boolean;
   onClose: () => void;
   onPay: (
     recurringId: string,
@@ -1870,20 +1892,88 @@ function PayBillSheet({
     amount: number,
     day?: number,
   ) => Promise<void>;
+  onSetVariable: (id: string, variable: boolean) => Promise<void>;
 }) {
   const [accountId, setAccountId] = useState("");
   const [busy, setBusy] = useState(false);
+  // Local mirror of the variable flag so the toggle feels instant.
+  const [isVar, setIsVar] = useState(variable);
+  // The amount to actually pay/record. For a variable bill it's editable
+  // (prefilled with the rolling-average estimate); for a fixed bill it's locked.
+  const [amountStr, setAmountStr] = useState("");
   useEffect(() => {
-    if (entry) setAccountId(defaultAccountId || accounts[0]?.id || "");
-  }, [entry, defaultAccountId, accounts]);
+    if (entry) {
+      setAccountId(defaultAccountId || accounts[0]?.id || "");
+      setIsVar(variable);
+      setAmountStr(entry.amount.toFixed(2));
+    }
+  }, [entry, defaultAccountId, accounts, variable]);
+
+  const amount = isVar ? parseFloat(amountStr) || 0 : entry?.amount ?? 0;
+  const amountValid = amount > 0;
+
   return (
     <Sheet open={!!entry} onClose={onClose} title={entry ? t("Pay {name}", { name: entry.label }) : t("Pay bill")}>
       {entry && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-xl bg-raised px-4 py-3">
-            <span className="text-sm text-taupe">{t("Amount")}</span>
-            <span className="text-lg font-bold text-bone">{formatMoney(entry.amount)}</span>
-          </div>
+          {/* Amount — editable when the bill varies month to month */}
+          {isVar ? (
+            <div>
+              <label className={labelClass}>{t("Amount this month")}</label>
+              <div className="flex items-center rounded-xl bg-raised px-4 py-3">
+                <span className="text-lg font-bold text-taupe">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  className="num w-full bg-transparent pl-1 text-lg font-bold text-bone outline-none"
+                  value={amountStr}
+                  onChange={(e) => setAmountStr(e.target.value)}
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-faint">
+                {t("Estimated ~{amount} from recent bills — enter the real amount.", {
+                  amount: formatMoney(entry.amount),
+                })}
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-xl bg-raised px-4 py-3">
+              <span className="text-sm text-taupe">{t("Amount")}</span>
+              <span className="text-lg font-bold text-bone">{formatMoney(entry.amount)}</span>
+            </div>
+          )}
+
+          {/* Does this bill vary? — flips it into rolling-average projection */}
+          {entry.recurringId && (
+            <button
+              type="button"
+              onClick={async () => {
+                const next = !isVar;
+                setIsVar(next);
+                if (next) setAmountStr(entry.amount.toFixed(2));
+                if (entry.recurringId) await onSetVariable(entry.recurringId, next);
+              }}
+              className="flex w-full items-center justify-between gap-3 rounded-xl bg-raised px-4 py-3 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm text-bone">
+                  {t("Amount varies month to month")}
+                </span>
+                <span className="block text-[11px] text-faint">
+                  {t("Project it from the average of recent payments.")}
+                </span>
+              </span>
+              <span
+                className={`relative h-6 w-10 shrink-0 rounded-full transition ${isVar ? "bg-accent" : "bg-edge"}`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-bone transition-all ${isVar ? "left-[18px]" : "left-0.5"}`}
+                />
+              </span>
+            </button>
+          )}
+
           <div>
             <label className={labelClass}>{t("From account")}</label>
             <select
@@ -1900,11 +1990,11 @@ function PayBillSheet({
           </div>
           <Button
             className="w-full"
-            disabled={!accountId || busy}
+            disabled={!accountId || !amountValid || busy}
             onClick={async () => {
-              if (!entry.recurringId || !accountId) return;
+              if (!entry.recurringId || !accountId || !amountValid) return;
               setBusy(true);
-              await onPay(entry.recurringId, monthKey, entry.amount, entry.day, accountId);
+              await onPay(entry.recurringId, monthKey, amount, entry.day, accountId);
               setBusy(false);
               onClose();
             }}
@@ -1913,13 +2003,13 @@ function PayBillSheet({
           </Button>
           <button
             onClick={async () => {
-              if (!entry.recurringId) return;
+              if (!entry.recurringId || !amountValid) return;
               setBusy(true);
-              await onMarkPaid(entry.recurringId, monthKey, entry.amount, entry.day);
+              await onMarkPaid(entry.recurringId, monthKey, amount, entry.day);
               setBusy(false);
               onClose();
             }}
-            disabled={busy}
+            disabled={busy || !amountValid}
             className="w-full rounded-xl bg-raised py-3 text-sm font-semibold text-bone transition hover:brightness-110 disabled:opacity-40"
           >
             {t("Already paid — just mark it")}
@@ -2033,6 +2123,122 @@ function ConnectBank() {
   );
 }
 
+// Connected credit cards, each shown as a debt you can track. Linking a card to
+// a debt means the bank feed keeps that debt's balance current automatically.
+function CreditCardLinks() {
+  const { data, linkDebtToCard, unlinkDebtCard, createDebtFromCard } = useStore();
+  const cards = data.accounts.filter(
+    (a) => /credit/i.test(a.type) && a.providerAccountId,
+  );
+  if (cards.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-edge bg-tile p-3">
+      <div className="flex items-center gap-1.5">
+        <CreditCard size={14} className="text-taupe" />
+        <Eyebrow>{t("Cards as debt")}</Eyebrow>
+      </div>
+      <div className="mt-2.5 space-y-2">
+        {cards.map((c) => (
+          <CreditCardRow
+            key={c.id}
+            card={c}
+            linkedDebt={data.debts.find(
+              (d) => d.providerAccountId === c.providerAccountId,
+            )}
+            unlinkedDebts={data.debts.filter((d) => !d.providerAccountId)}
+            onLink={linkDebtToCard}
+            onUnlink={unlinkDebtCard}
+            onCreate={createDebtFromCard}
+          />
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-faint">
+        {t("A linked card updates its debt automatically on every bank sync.")}
+      </p>
+    </div>
+  );
+}
+
+function CreditCardRow({
+  card,
+  linkedDebt,
+  unlinkedDebts,
+  onLink,
+  onUnlink,
+  onCreate,
+}: {
+  card: Account;
+  linkedDebt?: Debt;
+  unlinkedDebts: Debt[];
+  onLink: (debtId: string, accountId: string) => Promise<void>;
+  onUnlink: (debtId: string) => Promise<void>;
+  onCreate: (accountId: string) => Promise<void>;
+}) {
+  const [choice, setChoice] = useState("__new__");
+  const [busy, setBusy] = useState(false);
+  const label = `${card.name}${card.last4 ? ` ····${card.last4}` : ""}`;
+  return (
+    <div className="rounded-lg bg-raised p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-sm text-bone">{label}</span>
+        <span className="num shrink-0 text-sm font-semibold text-ember">
+          {formatMoney(Math.max(0, card.balance))}
+        </span>
+      </div>
+      {linkedDebt ? (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-1 text-[12px] text-mint">
+            <Check size={12} className="shrink-0" />
+            <span className="truncate">
+              {t("Tracked as {name} · auto-syncs", { name: linkedDebt.name })}
+            </span>
+          </span>
+          <button
+            onClick={async () => {
+              setBusy(true);
+              await onUnlink(linkedDebt.id);
+              setBusy(false);
+            }}
+            disabled={busy}
+            className="shrink-0 text-[12px] text-faint underline-offset-2 hover:underline disabled:opacity-40"
+          >
+            {t("Unlink")}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center gap-2">
+          <select
+            className={`${inputClass} flex-1`}
+            value={choice}
+            onChange={(e) => setChoice(e.target.value)}
+          >
+            <option value="__new__" className="bg-tile">
+              {t("Track as a new debt")}
+            </option>
+            {unlinkedDebts.map((d) => (
+              <option key={d.id} value={d.id} className="bg-tile">
+                {t("Link to {name}", { name: d.name })}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={async () => {
+              setBusy(true);
+              if (choice === "__new__") await onCreate(card.id);
+              else await onLink(choice, card.id);
+              setBusy(false);
+            }}
+            disabled={busy}
+            className="shrink-0 rounded-lg bg-accent/15 px-3 py-2 text-xs font-semibold text-accent transition hover:bg-accent/25 disabled:opacity-40"
+          >
+            {busy ? t("…") : t("Track")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Settings — moved here from App so OnePager owns the whole surface.
 function SettingsSheet({
   open,
@@ -2057,6 +2263,7 @@ function SettingsSheet({
           </p>
         </div>
         <ConnectBank />
+        <CreditCardLinks />
         <Button variant="soft" className="w-full" onClick={onImport}>
           <FileUp size={16} /> {t("Import bank statement")}
         </Button>

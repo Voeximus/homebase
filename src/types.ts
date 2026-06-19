@@ -54,6 +54,7 @@ export interface Debt {
   apr?: number; // annual interest rate, %
   minPayment?: number;
   color: string; // hex
+  providerAccountId?: string; // linked Plaid credit account — its balance drives this debt
   createdAt: string;
 }
 
@@ -77,6 +78,7 @@ export interface Account {
   type: string; // "checking"
   balance: number;
   sortOrder: number;
+  providerAccountId?: string; // Plaid account_id, when bank-connected
   createdAt: string;
 }
 
