@@ -450,6 +450,23 @@ const SEED: Record<string, string> = {
   Sets: "组数",
   "Log it": "记一笔",
   "{n} min": "{n} 分钟",
+
+  // ── Units + grams entry + shared-dish bowl portioning (2026-06-20e) ──
+  "By the {unit}": "按个数",
+  Grams: "克",
+  "= {n} g": "= {n} 克",
+  "Shared dish": "一起做的菜",
+  "Add what went into the whole dish, then split it into bowls below.": "添加整道菜用的所有食材，然后在下面分到各自碗里。",
+  "Add ingredient": "添加食材",
+  "Edit ingredient": "编辑食材",
+  "Whole dish": "整道菜",
+  "Split into bowls": "分到碗里",
+  "Even split": "平均分",
+  "Roughly how much is in each bowl? Macros follow the portion.": "每碗大概多少？营养按比例计算。",
+  "Your bowl": "你的碗",
+  "{name}'s bowl": "{name} 的碗",
+  "{n} over after": "之后超出 {n}",
+  "Log both bowls": "记录两个碗",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.

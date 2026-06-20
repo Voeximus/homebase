@@ -5,6 +5,14 @@
 
 export type FoodRole = "protein" | "carb" | "veg" | "fat" | "other";
 
+// A countable natural unit for foods you'd add "by the each" (3 eggs, 1 steak,
+// 2 slices). grams = weight of ONE. Macros stay grams-based; this is the
+// entry/display layer. Absent → the food is gram-only (ground beef, rice, oil).
+export interface FoodUnit {
+  name: string; // singular, lowercase: "egg", "slice", "steak", "scoop"
+  grams: number;
+}
+
 export interface Food {
   id: string;
   name: string;
@@ -15,6 +23,7 @@ export interface Food {
   c: number;
   f: number;
   serving?: number; // default grams for "fixed" foods (veg / other)
+  unit?: FoodUnit; // natural countable unit (if any) — see FoodUnit
   note?: string;
   custom?: boolean;
   barcode?: string;

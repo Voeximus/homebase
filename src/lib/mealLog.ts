@@ -5,7 +5,7 @@
 // next meal's allowance (the "next move"). Pure + local-first; one contract the
 // UI renders from, the same way buildVMs feeds the bento tabs.
 
-import type { Food } from "./nutrition";
+import type { Food, FoodUnit } from "./nutrition";
 import { SEED_FOODS } from "./nutrition";
 
 export type Person = "gino" | "xinyan";
@@ -26,8 +26,30 @@ export interface LoggedItem {
   foodId: string;
   name: string;
   role: Food["role"];
-  grams: number;
+  grams: number; // canonical amount — macros always come from this
   per100: Macros;
+  // entry/display layer: when added "by the each", the count + unit (grams stays
+  // the source of truth = qty × unit.grams). Absent → entered by grams.
+  qty?: number;
+  unit?: FoodUnit;
+}
+
+// "3 eggs" → "eggs"; respects n for plural. Light English pluralizer.
+export function pluralizeUnit(name: string, n: number): string {
+  if (n === 1) return name;
+  if (/(s|x|ch|sh)$/.test(name)) return name + "es";
+  if (/o$/.test(name)) return name + "es"; // potato → potatoes, tomato → tomatoes
+  if (/[^aeiou]y$/.test(name)) return name.slice(0, -1) + "ies";
+  return name + "s";
+}
+
+/** How an item was entered, for display: "3 eggs" / "1.5 potatoes" / "200 g". */
+export function amountLabel(item: { grams: number; qty?: number; unit?: FoodUnit }): string {
+  if (item.qty != null && item.unit) {
+    const q = String(Math.round(item.qty * 100) / 100);
+    return `${q} ${pluralizeUnit(item.unit.name, item.qty)}`;
+  }
+  return `${Math.round(item.grams)} g`;
 }
 
 export interface Meal {

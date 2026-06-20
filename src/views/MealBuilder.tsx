@@ -14,15 +14,18 @@ import {
 } from "lucide-react";
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { lookupBarcode } from "../lib/barcode";
-import { DAILY, type Food, type FoodRole } from "../lib/nutrition";
+import { DAILY, type Food, type FoodRole, type FoodUnit } from "../lib/nutrition";
 import {
+  amountLabel,
   buildLibrary,
   contribution,
   dayTotals,
   mealTotals,
+  pluralizeUnit,
   rowId,
   searchFoods,
   todayStr,
+  ZERO,
   type DayLog,
   type LoggedItem,
   type Macros,
@@ -52,13 +55,30 @@ const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
 const mealName = (i: number) => `Meal ${i + 1}`;
 
 const macroOf = (f: Food): Macros => ({ kcal: f.kcal, p: f.p, c: f.c, f: f.f });
-const toItem = (f: Food, grams: number): LoggedItem => ({
+
+// How much of a food — either a gram weight, or a count of its natural unit
+// (grams stays canonical = qty × unit.grams).
+export interface Amount {
+  grams: number;
+  qty?: number;
+  unit?: FoodUnit;
+}
+const toItem = (f: Food, a: Amount): LoggedItem => ({
   id: rowId(),
   foodId: f.id,
   name: f.name,
   role: f.role,
-  grams,
+  grams: a.grams,
   per100: macroOf(f),
+  qty: a.qty,
+  unit: a.unit,
+});
+// scale an existing item (for shared-meal bowl portioning) by a fraction
+const scaleItem = (it: LoggedItem, frac: number): LoggedItem => ({
+  ...it,
+  id: rowId(),
+  grams: it.grams * frac,
+  qty: it.qty != null ? it.qty * frac : undefined,
 });
 
 // ── entry point ────────────────────────────────────────────────────────────────
@@ -151,19 +171,19 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
     return id;
   };
   const startNewMeal = () => setAddTo(addMeal());
-  const addItem = (mealId: string, food: Food, grams: number) =>
+  const addItem = (mealId: string, food: Food, amount: Amount) =>
     update((l) => ({
       ...l,
       meals: l.meals.map((m) =>
-        m.id === mealId ? { ...m, items: [...m.items, toItem(food, grams)] } : m,
+        m.id === mealId ? { ...m, items: [...m.items, toItem(food, amount)] } : m,
       ),
     }));
-  const updateItem = (mealId: string, itemId: string, grams: number) =>
+  const updateItem = (mealId: string, itemId: string, amount: Amount) =>
     update((l) => ({
       ...l,
       meals: l.meals.map((m) =>
         m.id === mealId
-          ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, grams } : it)) }
+          ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, grams: amount.grams, qty: amount.qty, unit: amount.unit } : it)) }
           : m,
       ),
     }));
@@ -227,8 +247,8 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         onClose={() => setAddTo(null)}
         library={library}
         title={t("Add food")}
-        onAdd={(food, grams) => {
-          if (addTo) addItem(addTo, food, grams);
+        onAdd={(food, amount) => {
+          if (addTo) addItem(addTo, food, amount);
         }}
       />
 
@@ -245,12 +265,13 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
                 name: editing.item.name,
                 role: editing.item.role,
                 ...editing.item.per100,
+                unit: editing.item.unit,
               } as Food)
             : undefined
         }
-        initialGrams={editing?.item.grams}
-        onAdd={(_food, grams) => {
-          if (editing) updateItem(editing.mealId, editing.item.id, grams);
+        initialAmount={editing ? { grams: editing.item.grams, qty: editing.item.qty, unit: editing.item.unit } : undefined}
+        onAdd={(_food, amount) => {
+          if (editing) updateItem(editing.mealId, editing.item.id, amount);
         }}
         onRemove={() => {
           if (editing) removeItem(editing.mealId, editing.item.id);
@@ -260,11 +281,13 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   );
 }
 
-// ── TOGETHER — build one shared meal, double breakdown for both ─────────────────
-interface SharedItem {
+// ── TOGETHER — build ONE shared dish, then split it into bowls per person ───────
+interface DishItem {
   rid: string;
   food: Food;
-  g: Record<Person, number>;
+  grams: number;
+  qty?: number;
+  unit?: FoodUnit;
 }
 
 function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
@@ -273,95 +296,107 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const partner = other(owner);
   const order: Person[] = [you, partner];
 
-  // both day logs come from the shared store (single source of truth), so the
-  // shared meal lands on each person's REAL remaining and syncs to their phone.
   const { getDay, setDay } = useHealth();
   const logs: Record<Person, DayLog> = { gino: getDay("gino", today), xinyan: getDay("xinyan", today) };
-  const [shared, setShared] = useState<SharedItem[]>([]);
+  const [dish, setDish] = useState<DishItem[]>([]);
+  const [bowls, setBowls] = useState<Record<Person, number> | null>(null); // null = even split
   const [searchOpen, setSearchOpen] = useState(false);
+  const [editDish, setEditDish] = useState<DishItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const targets: Record<Person, Macros> = { gino: DAILY.gino, xinyan: DAILY.xinyan };
-  // each person's meal contribution from the in-progress shared meal
-  const sharedTotals = (p: Person): Macros =>
-    mealTotals({ id: "x", name: "x", items: shared.filter((s) => s.g[p] > 0).map((s) => toItem(s.food, s.g[p])) });
+  const dishItems = dish.map((d) => toItem(d.food, { grams: d.grams, qty: d.qty, unit: d.unit }));
+  const dishMacros = mealTotals({ id: "x", name: "x", items: dishItems });
+  const dishGrams = dish.reduce((s, d) => s + d.grams, 0);
 
-  const addShared = (food: Food, youG: number, partnerG: number) =>
-    setShared((s) => [...s, { rid: rowId(), food, g: { [you]: youG, [partner]: partnerG } as Record<Person, number> }]);
-  const setGrams = (rid: string, p: Person, grams: number) =>
-    setShared((s) => s.map((it) => (it.rid === rid ? { ...it, g: { ...it.g, [p]: Math.max(0, grams) } } : it)));
-  const removeShared = (rid: string) => setShared((s) => s.filter((it) => it.rid !== rid));
+  const effBowl = (p: Person) => (bowls ? bowls[p] ?? 0 : dishGrams / 2);
+  const bowlMacros = (p: Person): Macros => {
+    if (dishGrams <= 0) return { ...ZERO };
+    const f = effBowl(p) / dishGrams;
+    return { kcal: dishMacros.kcal * f, p: dishMacros.p * f, c: dishMacros.c * f, f: dishMacros.f * f };
+  };
+  const setBowl = (p: Person, v: number) =>
+    setBowls((b) => {
+      const cur = b ?? { gino: dishGrams / 2, xinyan: dishGrams / 2 };
+      return { ...cur, [p]: Math.max(0, v) };
+    });
+
+  const addDishItem = (food: Food, a: Amount) =>
+    setDish((d) => [...d, { rid: rowId(), food, grams: a.grams, qty: a.qty, unit: a.unit }]);
+  const editDishItem = (rid: string, a: Amount) =>
+    setDish((d) => d.map((x) => (x.rid === rid ? { ...x, grams: a.grams, qty: a.qty, unit: a.unit } : x)));
+  const removeDish = (rid: string) => setDish((d) => d.filter((x) => x.rid !== rid));
 
   const logForBoth = () => {
-    if (!shared.length) return;
+    if (!dish.length || dishGrams <= 0) return;
     for (const p of ["gino", "xinyan"] as Person[]) {
-      const items = shared.filter((s) => s.g[p] > 0).map((s) => toItem(s.food, s.g[p]));
+      const f = effBowl(p) / dishGrams;
+      if (f <= 0) continue;
+      const items = dishItems.map((it) => scaleItem(it, f)).filter((it) => it.grams > 0.01);
       if (!items.length) continue;
       const log = getDay(p, today);
-      const meal: Meal = { id: rowId(), name: mealName(log.meals.length), items };
-      setDay({ ...log, meals: [...log.meals, meal] });
+      setDay({ ...log, meals: [...log.meals, { id: rowId(), name: mealName(log.meals.length), items }] });
     }
-    setShared([]);
+    setDish([]);
+    setBowls(null);
     setToast(t("Logged for both 🍽️"));
     setTimeout(() => setToast(null), 2200);
   };
 
   return (
     <div className="flex flex-col gap-3">
-      {/* sticky dual Daily Macro Summary — live preview of the shared meal on top */}
+      {/* sticky dual summary — each bowl previewed against that person's day */}
       <div className="sticky z-30 grid grid-cols-2 gap-3" style={{ top: STICKY_TOP }}>
         {order.map((p) => {
           const live = dayTotals(logs[p]);
-          const sh = sharedTotals(p);
-          const totalEaten = { kcal: live.kcal + sh.kcal, p: live.p + sh.p, c: live.c + sh.c, f: live.f + sh.f };
+          const bm = bowlMacros(p);
+          const totalEaten = { kcal: live.kcal + bm.kcal, p: live.p + bm.p, c: live.c + bm.c, f: live.f + bm.f };
           return <PersonSummary key={p} person={p} you={p === you} target={targets[p]} eaten={totalEaten} />;
         })}
       </div>
 
-      {/* the shared meal */}
+      {/* the shared dish */}
       <section className="rounded-[18px] border p-4" style={TILE}>
         <div className="mb-1 flex items-center gap-2">
           <UtensilsCrossed size={15} style={{ color: "#34c5e8" }} />
-          <p className="text-[13.5px] font-semibold text-bone">{t("Shared meal")}</p>
+          <p className="text-[13.5px] font-semibold text-bone">{t("Shared dish")}</p>
         </div>
-        <p className="mb-3 text-[11.5px]" style={{ color: "#7e8a98" }}>
-          {t("Add a food, then set how much each of you eats.")}
+        <p className="mb-3 text-[11.5px]" style={{ color: "#97a3b2" }}>
+          {t("Add what went into the whole dish, then split it into bowls below.")}
         </p>
 
-        {shared.length === 0 ? (
-          <p className="py-4 text-center text-[12.5px]" style={{ color: "#7e8a98" }}>
-            {t("Nothing added yet.")}
-          </p>
+        {dish.length === 0 ? (
+          <p className="py-4 text-center text-[12.5px]" style={{ color: "#7e8a98" }}>{t("Nothing added yet.")}</p>
         ) : (
           <>
-            {/* column heads */}
-            <div className="flex items-center gap-2 border-b pb-2 text-[10px] uppercase tracking-wider" style={{ borderColor: "#1b232e" }}>
-              <span className="flex-1" style={{ color: "#5f6a78" }}>{t("Food")}</span>
-              <span className="w-[88px] text-center" style={{ color: PERSON_ACC[you] }}>{t("You")}</span>
-              <span className="w-[88px] text-center" style={{ color: PERSON_ACC[partner] }}>{PERSON_NAME[partner]}</span>
-              <span className="w-4" />
-            </div>
-            {shared.map((it) => (
-              <div key={it.rid} className="flex items-center gap-2 border-b py-2.5" style={{ borderColor: "#1b232e" }}>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] text-bone">{it.food.name}</p>
-                  <p className="num text-[10px]" style={{ color: "#7e8a98" }}>
-                    {it.food.kcal} {t("kcal")}/100g
-                  </p>
-                </div>
-                <GramPill value={it.g[you]} onChange={(v) => setGrams(it.rid, you, v)} color={PERSON_ACC[you]} />
-                <GramPill value={it.g[partner]} onChange={(v) => setGrams(it.rid, partner, v)} color={PERSON_ACC[partner]} />
-                <button onClick={() => removeShared(it.rid)} className="w-4 shrink-0" style={{ color: "#6b7686" }}>
-                  <X size={15} />
+            {dish.map((d) => {
+              const it = toItem(d.food, { grams: d.grams, qty: d.qty, unit: d.unit });
+              const c = contribution(it);
+              return (
+                <button
+                  key={d.rid}
+                  onClick={() => setEditDish(d)}
+                  className="flex w-full items-center gap-2 border-b py-2.5 text-left last:border-0"
+                  style={{ borderColor: "#1b232e" }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] text-bone">{d.food.name}</p>
+                    <p className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
+                      {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
+                    </p>
+                  </div>
+                  <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+                  <button onClick={(e) => { e.stopPropagation(); removeDish(d.rid); }} className="w-4 shrink-0" style={{ color: "#6b7686" }}>
+                    <X size={15} />
+                  </button>
                 </button>
-              </div>
-            ))}
-
-            {/* the double breakdown */}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {order.map((p) => (
-                <BreakdownCard key={p} person={p} you={p === you} totals={sharedTotals(p)} target={targets[p]} eaten={dayTotals(logs[p])} />
-              ))}
+              );
+            })}
+            <div className="mt-2.5 flex items-baseline justify-between rounded-[12px] px-3 py-2" style={{ background: "#0f141c" }}>
+              <span className="stat-key" style={{ color: "#97a3b2" }}>{t("Whole dish")}</span>
+              <span className="num text-[12px] font-semibold text-bone">
+                {r0(dishMacros.kcal)} {t("kcal")} · {r0(dishMacros.p)}P {r0(dishMacros.c)}C {r0(dishMacros.f)}F · {r0(dishGrams)}g
+              </span>
             </div>
           </>
         )}
@@ -371,22 +406,57 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
           style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
         >
-          <Plus size={15} /> {t("Add food to the meal")}
+          <Plus size={15} /> {t("Add ingredient")}
         </button>
-
-        {shared.length > 0 && (
-          <button
-            onClick={logForBoth}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-            style={{ background: BRAND_GRADIENT }}
-          >
-            <Check size={16} /> {t("Log this meal for both")}
-          </button>
-        )}
       </section>
 
+      {/* split into bowls */}
+      {dish.length > 0 && (
+        <section className="rounded-[18px] border p-4" style={TILE}>
+          <div className="mb-1 flex items-center justify-between">
+            <p className="text-[13.5px] font-semibold text-bone">{t("Split into bowls")}</p>
+            <button onClick={() => setBowls(null)} className="text-[11.5px] font-semibold" style={{ color: "#34c5e8" }}>
+              {t("Even split")}
+            </button>
+          </div>
+          <p className="mb-3 text-[11.5px]" style={{ color: "#97a3b2" }}>
+            {t("Roughly how much is in each bowl? Macros follow the portion.")}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {order.map((p) => {
+              const acc = PERSON_ACC[p];
+              const bowl = effBowl(p);
+              const bm = bowlMacros(p);
+              const afterRem = targets[p].kcal - dayTotals(logs[p]).kcal - bm.kcal;
+              const pct = dishGrams > 0 ? Math.round((bowl / dishGrams) * 100) : 0;
+              return (
+                <div key={p} className="rounded-[14px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
+                  <p className="text-[12px] font-semibold" style={{ color: acc }}>{p === you ? t("Your bowl") : t("{name}'s bowl", { name: PERSON_NAME[p] })}</p>
+                  <div className="mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
+                    <NumField value={Math.round(bowl)} onChange={(v) => setBowl(p, v)} className="num w-full bg-transparent text-[17px] font-bold text-bone outline-none" />
+                    <span className="text-[11px]" style={{ color: "#7c8696" }}>g · {pct}%</span>
+                  </div>
+                  <div className="num mt-2 text-[14px] font-bold text-bone">{r0(bm.kcal)} <span className="text-[10px] font-normal" style={{ color: "#7c8696" }}>{t("kcal")}</span></div>
+                  <div className="num text-[10.5px]" style={{ color: "#9aa6b2" }}>{r0(bm.p)}P · {r0(bm.c)}C · {r0(bm.f)}F</div>
+                  <div className="mt-1.5 border-t pt-1.5 stat-key" style={{ borderColor: acc + "33", color: afterRem < 0 ? "#f0556e" : "#7c8696" }}>
+                    {afterRem < 0 ? t("{n} over after", { n: r0(-afterRem) }) : t("{n} kcal left after", { n: r0(afterRem) })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={logForBoth}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+            style={{ background: BRAND_GRADIENT }}
+          >
+            <Check size={16} /> {t("Log both bowls")}
+          </button>
+        </section>
+      )}
+
       {toast && (
-        <div className="pop rounded-[14px] px-4 py-3 text-center text-[13px] font-semibold text-white" style={{ background: "#13211a", border: "1px solid #1f3a2c", color: "#9fe3c0" }}>
+        <div className="pop rounded-[14px] px-4 py-3 text-center text-[13px] font-semibold" style={{ background: "#13211a", border: "1px solid #1f3a2c", color: "#9fe3c0" }}>
           {toast}
         </div>
       )}
@@ -395,13 +465,18 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         library={library}
-        title={t("Add food to the meal")}
-        dual
-        youName={t("You")}
-        youAcc={PERSON_ACC[you]}
-        partnerName={PERSON_NAME[partner]}
-        partnerAcc={PERSON_ACC[partner]}
-        onAddDual={(food, youG, partnerG) => addShared(food, youG, partnerG)}
+        title={t("Add ingredient")}
+        onAdd={(food, amount) => addDishItem(food, amount)}
+      />
+      <FoodSearchSheet
+        open={editDish !== null}
+        onClose={() => setEditDish(null)}
+        library={library}
+        title={t("Edit ingredient")}
+        initialFood={editDish ? ({ ...editDish.food } as Food) : undefined}
+        initialAmount={editDish ? { grams: editDish.grams, qty: editDish.qty, unit: editDish.unit } : undefined}
+        onAdd={(_food, amount) => { if (editDish) editDishItem(editDish.rid, amount); }}
+        onRemove={() => { if (editDish) removeDish(editDish.rid); }}
       />
     </div>
   );
@@ -558,27 +633,6 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
   );
 }
 
-function BreakdownCard({ person, you, totals, target, eaten }: { person: Person; you: boolean; totals: Macros; target: Macros; eaten: Macros }) {
-  const acc = PERSON_ACC[person];
-  const afterRem = target.kcal - eaten.kcal - totals.kcal;
-  return (
-    <div className="rounded-[14px] border p-2.5" style={{ background: acc + "12", borderColor: acc + "55" }}>
-      <p className="mb-1.5 text-[11.5px] font-semibold" style={{ color: acc }}>
-        {you ? t("Your plate") : t("{name}'s plate", { name: PERSON_NAME[person] })}
-      </p>
-      <div className="num text-[18px] font-bold leading-none text-bone">{r0(totals.kcal)} <span className="text-[10px] font-normal" style={{ color: "#7e8a98" }}>{t("kcal")}</span></div>
-      <div className="num mt-1 text-[11px]" style={{ color: "#9aa6b2" }}>
-        {r0(totals.p)}P · {r0(totals.c)}C · {r0(totals.f)}F
-      </div>
-      <div className="mt-1.5 border-t pt-1.5 text-[10px]" style={{ borderColor: acc + "33", color: afterRem < 0 ? "#f0556e" : "#7e8a98" }}>
-        {afterRem < 0
-          ? t("{n} over after this", { n: r0(-afterRem) })
-          : t("{n} kcal left after", { n: r0(afterRem) })}
-      </div>
-    </div>
-  );
-}
-
 function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void }) {
   const tot = mealTotals(meal);
   return (
@@ -608,7 +662,7 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index:
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] text-bone">{it.name}</div>
                 <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
-                  {it.grams}g · {r0(c.kcal)} {t("kcal")}
+                  {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
                 </div>
               </div>
               <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>
@@ -629,46 +683,17 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index:
   );
 }
 
-// ── small controls ─────────────────────────────────────────────────────────────
-// a compact grams editor used in the shared-meal rows (tap number to type)
-function GramPill({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
-  return (
-    <span className="flex w-[88px] shrink-0 items-center justify-center gap-1">
-      <button onClick={() => onChange(Math.max(0, value - 10))} className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "#222b38", color: "#cbd5e1" }}>
-        <Minus size={12} />
-      </button>
-      <NumField
-        value={value}
-        onChange={onChange}
-        className="num w-[34px] rounded-md bg-transparent text-center text-[13px] font-semibold outline-none"
-        style={{ color }}
-      />
-      <button onClick={() => onChange(Math.min(MAX_GRAMS, value + 10))} className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "#222b38", color: "#cbd5e1" }}>
-        <Plus size={12} />
-      </button>
-    </span>
-  );
-}
-
 // ── the search / scan / portion sheet ───────────────────────────────────────────
 interface SearchSheetProps {
   open: boolean;
   onClose: () => void;
   library: Food[];
   title: string;
-  // single-portion add (solo)
-  onAdd?: (food: Food, grams: number) => void;
-  // edit an existing item (solo)
+  onAdd?: (food: Food, amount: Amount) => void;
+  // edit an existing item / dish ingredient
   initialFood?: Food;
-  initialGrams?: number;
+  initialAmount?: Amount;
   onRemove?: () => void;
-  // dual-portion add (together)
-  dual?: boolean;
-  youName?: string;
-  youAcc?: string;
-  partnerName?: string;
-  partnerAcc?: string;
-  onAddDual?: (food: Food, youG: number, partnerG: number) => void;
 }
 
 const digits = (s: string) => s.replace(/\D/g, "");
@@ -681,7 +706,7 @@ const ROLE_TINT: Record<FoodRole, string> = {
 };
 
 function FoodSearchSheet(props: SearchSheetProps) {
-  const { open, onClose, library, title, initialFood, initialGrams, dual } = props;
+  const { open, onClose, library, title, initialFood, initialAmount } = props;
   const { addFood, data } = useStore();
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Food | null>(null);
@@ -747,26 +772,15 @@ function FoodSearchSheet(props: SearchSheetProps) {
             <PortionView
               food={picked}
               transient={transient}
-              dual={dual}
-              initialGrams={initialGrams}
-              youName={props.youName}
-              youAcc={props.youAcc}
-              partnerName={props.partnerName}
-              partnerAcc={props.partnerAcc}
+              initialAmount={initialAmount}
               editing={!!initialFood}
               onBack={() => (initialFood ? onClose() : setPicked(null))}
               onRemove={props.onRemove ? () => { props.onRemove!(); onClose(); } : undefined}
-              onConfirmSingle={(grams, save) => {
-                if (save && transient) addFood({ name: picked.name, role: picked.role, kcal: picked.kcal, p: picked.p, c: picked.c, f: picked.f, barcode: picked.barcode });
-                props.onAdd?.(picked, grams);
+              onConfirm={(amount, save) => {
+                if (save && transient) addFood({ name: picked.name, role: picked.role, kcal: picked.kcal, p: picked.p, c: picked.c, f: picked.f, barcode: picked.barcode, unit: picked.unit });
+                props.onAdd?.(picked, amount);
                 if (initialFood) onClose();
                 else { setPicked(null); setStatus(t("Added {name}", { name: picked.name })); }
-              }}
-              onConfirmDual={(yg, pg, save) => {
-                if (save && transient) addFood({ name: picked.name, role: picked.role, kcal: picked.kcal, p: picked.p, c: picked.c, f: picked.f, barcode: picked.barcode });
-                props.onAddDual?.(picked, yg, pg);
-                setPicked(null);
-                setStatus(t("Added {name}", { name: picked.name }));
               }}
             />
           ) : customOpen ? (
@@ -870,50 +884,60 @@ function FoodSearchSheet(props: SearchSheetProps) {
   );
 }
 
-// portion editor — single (solo) or dual (together)
+// portion editor — pick the amount by NATURAL UNIT (3 eggs) or by GRAMS. Grams
+// stays canonical; macros update live from whichever you use.
 function PortionView({
   food,
   transient,
-  dual,
-  initialGrams,
-  youName,
-  youAcc,
-  partnerName,
-  partnerAcc,
+  initialAmount,
   editing,
   onBack,
   onRemove,
-  onConfirmSingle,
-  onConfirmDual,
+  onConfirm,
 }: {
   food: Food;
   transient: boolean;
-  dual?: boolean;
-  initialGrams?: number;
-  youName?: string;
-  youAcc?: string;
-  partnerName?: string;
-  partnerAcc?: string;
+  initialAmount?: Amount;
   editing?: boolean;
   onBack: () => void;
   onRemove?: () => void;
-  onConfirmSingle: (grams: number, save: boolean) => void;
-  onConfirmDual: (youG: number, partnerG: number, save: boolean) => void;
+  onConfirm: (amount: Amount, save: boolean) => void;
 }) {
+  const hasUnit = !!food.unit;
+  const gPerUnit = food.unit?.grams ?? (food.serving && food.serving > 0 ? food.serving : 100);
   const base = food.serving && food.serving > 0 ? food.serving : 100;
-  const [grams, setGrams] = useState(initialGrams ?? base);
-  const [youG, setYouG] = useState(base);
-  const [partnerG, setPartnerG] = useState(base);
+  const startMode: "unit" | "grams" = initialAmount
+    ? initialAmount.qty != null && initialAmount.unit
+      ? "unit"
+      : "grams"
+    : hasUnit
+      ? "unit"
+      : "grams";
+  const [mode, setMode] = useState<"unit" | "grams">(hasUnit ? startMode : "grams");
+  const [grams, setGrams] = useState(initialAmount?.grams ?? base);
+  const [qty, setQty] = useState(initialAmount?.qty ?? 1);
   const [save, setSave] = useState(true);
 
-  const contribAt = (g: number): Macros => ({
-    kcal: (food.kcal * g) / 100,
-    p: (food.p * g) / 100,
-    c: (food.c * g) / 100,
-    f: (food.f * g) / 100,
-  });
+  const effGrams = mode === "unit" ? qty * gPerUnit : grams;
+  const c: Macros = {
+    kcal: (food.kcal * effGrams) / 100,
+    p: (food.p * effGrams) / 100,
+    c: (food.c * effGrams) / 100,
+    f: (food.f * effGrams) / 100,
+  };
+  const amount = (): Amount =>
+    mode === "unit" ? { grams: qty * gPerUnit, qty, unit: food.unit } : { grams };
 
-  const quick: [string, number][] = food.serving
+  const toUnit = () => {
+    setQty(Math.max(0, Math.round((grams / gPerUnit) * 100) / 100) || 1);
+    setMode("unit");
+  };
+  const toGrams = () => {
+    setGrams(Math.round(qty * gPerUnit));
+    setMode("grams");
+  };
+  const unitName = food.unit?.name ?? "unit";
+  const gramQuick: [string, number][] = food.serving
     ? [["½", base * 0.5], ["1", base], ["2", base * 2]]
     : [["50", 50], ["100", 100], ["150", 150], ["200", 200]];
 
@@ -927,38 +951,58 @@ function PortionView({
           <div className="truncate text-[15.5px] font-bold text-bone">{food.name}</div>
           <div className="num text-[11px]" style={{ color: "#7e8a98" }}>
             {food.kcal} {t("kcal")} · {food.p}P {food.c}C {food.f}F {t("per 100g")}
+            {hasUnit ? ` · 1 ${unitName} ≈ ${r0(gPerUnit)} g` : ""}
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-2">
-        {dual ? (
+        {hasUnit && (
+          <div className="mb-3 flex rounded-full p-1 text-[12.5px]" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+            <button onClick={toUnit} className="flex-1 rounded-full py-1.5 font-semibold transition" style={mode === "unit" ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}>
+              {t("By the {unit}", { unit: unitName })}
+            </button>
+            <button onClick={toGrams} className="flex-1 rounded-full py-1.5 font-semibold transition" style={mode === "grams" ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}>
+              {t("Grams")}
+            </button>
+          </div>
+        )}
+
+        {mode === "unit" ? (
           <>
-            <DualPad label={youName ?? t("You")} color={youAcc ?? "#ef8136"} grams={youG} setGrams={setYouG} food={food} />
-            <DualPad label={partnerName ?? ""} color={partnerAcc ?? "#2dd1c0"} grams={partnerG} setGrams={setPartnerG} food={food} />
+            <QtyRow qty={qty} setQty={setQty} unitName={pluralizeUnit(unitName, qty)} />
+            <div className="mb-3 flex gap-2">
+              {[1, 2, 3].map((n) => (
+                <button key={n} onClick={() => setQty(n)} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <p className="mb-2 text-center text-[11px]" style={{ color: "#7c8696" }}>{t("= {n} g", { n: r0(effGrams) })}</p>
           </>
         ) : (
           <>
             <GramRow grams={grams} setGrams={setGrams} />
             <div className="mb-3 flex gap-2">
-              {quick.map(([lbl, g]) => (
-                <button key={lbl} onClick={() => setGrams(Math.round(g as number))} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
+              {gramQuick.map(([lbl, g]) => (
+                <button key={lbl} onClick={() => setGrams(Math.round(g))} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
                   {lbl}{food.serving ? "×" : "g"}
                 </button>
               ))}
             </div>
-            <div className="rounded-xl p-3" style={TILE}>
-              <div className="text-[11px]" style={{ color: "#7e8a98" }}>{t("This portion")}</div>
-              <div className="mt-1 flex items-baseline gap-3">
-                <span className="num text-[24px] font-bold text-bone">{r0(contribAt(grams).kcal)}</span>
-                <span className="text-[11px]" style={{ color: "#7e8a98" }}>{t("kcal")}</span>
-                <span className="num ml-auto text-[12px]" style={{ color: "#9aa6b2" }}>
-                  {r0(contribAt(grams).p)}P · {r0(contribAt(grams).c)}C · {r0(contribAt(grams).f)}F
-                </span>
-              </div>
-            </div>
           </>
         )}
+
+        <div className="rounded-xl p-3" style={TILE}>
+          <div className="stat-key" style={{ color: "#97a3b2" }}>{t("This portion")}</div>
+          <div className="mt-1 flex items-baseline gap-3">
+            <span className="stat text-[24px] text-bone">{r0(c.kcal)}</span>
+            <span className="text-[11px]" style={{ color: "#7e8a98" }}>{t("kcal")}</span>
+            <span className="num ml-auto text-[12px]" style={{ color: "#9aa6b2" }}>
+              {r0(c.p)}P · {r0(c.c)}C · {r0(c.f)}F
+            </span>
+          </div>
+        </div>
 
         {transient && (
           <button onClick={() => setSave((s) => !s)} className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px]" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
@@ -977,13 +1021,47 @@ function PortionView({
           </button>
         )}
         <button
-          onClick={() => (dual ? onConfirmDual(youG, partnerG, save) : onConfirmSingle(grams, save))}
+          onClick={() => onConfirm(amount(), save)}
           className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
           style={{ background: BRAND_GRADIENT }}
         >
           <Check size={16} /> {editing ? t("Save portion") : t("Add to meal")}
         </button>
       </div>
+    </div>
+  );
+}
+
+// decimal qty stepper (1, 1.5, 2 …) for unit-based entry
+function QtyRow({ qty, setQty, unitName }: { qty: number; setQty: (n: number) => void; unitName: string }) {
+  const [buf, setBuf] = useState(String(qty));
+  useEffect(() => {
+    if (parseFloat(buf || "0") !== qty) setBuf(String(Math.round(qty * 100) / 100));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qty]);
+  const step = (d: number) => setQty(Math.max(0, Math.min(99, Math.round((qty + d) * 100) / 100)));
+  return (
+    <div className="mb-3 mt-1 flex items-center justify-center gap-3">
+      <button onClick={() => step(-1)} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
+        <Minus size={18} />
+      </button>
+      <div className="flex items-baseline gap-1.5">
+        <input
+          value={buf}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^0-9.]/g, "");
+            setBuf(raw);
+            const n = parseFloat(raw);
+            setQty(Number.isFinite(n) ? Math.min(99, n) : 0);
+          }}
+          inputMode="decimal"
+          className="stat w-[72px] bg-transparent text-center text-[32px] text-bone outline-none"
+        />
+        <span className="text-[13px] font-semibold" style={{ color: "#7c8696" }}>{unitName}</span>
+      </div>
+      <button onClick={() => step(1)} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
+        <Plus size={18} />
+      </button>
     </div>
   );
 }
@@ -1044,35 +1122,6 @@ function GramRow({ grams, setGrams }: { grams: number; setGrams: (n: number) => 
       <button onClick={() => setGrams(Math.min(MAX_GRAMS, grams + 10))} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
         <Plus size={18} />
       </button>
-    </div>
-  );
-}
-
-function DualPad({ label, color, grams, setGrams, food }: { label: string; color: string; grams: number; setGrams: (n: number) => void; food: Food }) {
-  const k = grams / 100;
-  return (
-    <div className="mb-2.5 rounded-xl p-3" style={{ background: color + "12", border: `1px solid ${color}55` }}>
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[12.5px] font-semibold" style={{ color }}>{label}</span>
-        <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>
-          {r0(food.kcal * k)} {t("kcal")} · {r0(food.p * k)}P {r0(food.c * k)}C {r0(food.f * k)}F
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <button onClick={() => setGrams(Math.max(0, grams - 10))} className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "#1a2230", color: "#cbd5e1" }}>
-          <Minus size={15} />
-        </button>
-        <NumField
-          value={grams}
-          onChange={setGrams}
-          className="num flex-1 rounded-lg py-1.5 text-center text-[18px] font-bold text-bone outline-none"
-          style={{ background: "#0f141c" }}
-        />
-        <span className="text-[12px]" style={{ color: "#7e8a98" }}>g</span>
-        <button onClick={() => setGrams(Math.min(MAX_GRAMS, grams + 10))} className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "#1a2230", color: "#cbd5e1" }}>
-          <Plus size={15} />
-        </button>
-      </div>
     </div>
   );
 }
