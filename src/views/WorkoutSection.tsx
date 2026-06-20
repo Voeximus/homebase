@@ -15,7 +15,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { HEALTH_GRADIENT } from "../lib/catColor";
+import { HEALTH, HEALTH_GRADIENT, HEALTH_HERO } from "../lib/catColor";
 import { t } from "../lib/i18n";
 import {
   bestSet,
@@ -468,7 +468,7 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
   const vol = active ? workoutVolume(active) : 0;
   const sets = active ? totalSets(active) : 0;
   return (
-    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: HEALTH_GRADIENT }}>
+    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: HEALTH_HERO, border: "1px solid #232d3a", borderTop: `2px solid ${HEALTH}` }}>
       <div className="flex items-center justify-between text-[11.5px] opacity-90">
         <span>{t("{name}'s training", { name })}</span>
         <span>{t("this week")}</span>
@@ -482,7 +482,7 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
           {/* week dots */}
           <div className="flex gap-1.5">
             {Array.from({ length: WEEK_GOAL }, (_, i) => (
-              <span key={i} className="h-2 flex-1 rounded-full" style={{ background: i < weekCount ? "#ffffff" : "rgba(255,255,255,0.28)", transition: "background .3s" }} />
+              <span key={i} className="h-2 flex-1 rounded-full" style={{ background: i < weekCount ? HEALTH : "rgba(255,255,255,0.16)", transition: "background .3s" }} />
             ))}
           </div>
           <div className="mt-2 text-[11.5px] opacity-90">
@@ -522,8 +522,8 @@ function TogetherWorkout({ owner }: { owner: Person }) {
   return (
     <div className="flex flex-col gap-3">
       {/* shared weekly challenge */}
-      <div className="sticky z-30 rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ top: STICKY_TOP, background: HEALTH_GRADIENT }}>
-        <div className="flex items-center gap-1.5 text-[11.5px] opacity-90">
+      <div className="sticky z-30 rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ top: STICKY_TOP, background: HEALTH_HERO, border: "1px solid #232d3a", borderTop: `2px solid ${HEALTH}` }}>
+        <div className="flex items-center gap-1.5 text-[11.5px] opacity-90" style={{ color: HEALTH }}>
           <Flame size={14} /> {t("This week · together")}
         </div>
         <div className="mt-1.5 flex items-end gap-2">

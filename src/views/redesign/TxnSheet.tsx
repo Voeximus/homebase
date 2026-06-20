@@ -256,8 +256,10 @@ export function TxnSheet({
 }
 
 // ── Split editor ───────────────────────────────────────────────────────────────
-// Allocate a transaction's total across categories. Each row is a category + a
-// dollar amount; the running sum must land exactly on the total before it saves.
+// Allocate a transaction's total across categories. The app does the math: a
+// prominent "left to allocate" updates live as you type, each input is clamped so
+// the running total can never exceed the transaction total, and one tap fills the
+// remainder. The sum always lands exactly on the total before it saves.
 type SplitRow = { categoryId: string; amount: string };
 
 function SplitEditor({
@@ -271,35 +273,66 @@ function SplitEditor({
 }) {
   const total = txn.amount;
   const firstUnused = (used: string[]) => cats.find((c) => !used.includes(c.id))?.id ?? cats[0].id;
+  // Start from a FULL unallocated pool (empty rows) so "left to allocate" begins
+  // at the total and counts down — matching how a person allocates a receipt.
   const [rows, setRows] = useState<SplitRow[]>(() =>
     txn.splits && txn.splits.length > 1
       ? txn.splits.map((s) => ({ categoryId: s.categoryId, amount: s.amount.toFixed(2) }))
       : [
-          { categoryId: txn.categoryId, amount: total.toFixed(2) },
+          { categoryId: txn.categoryId, amount: "" },
           { categoryId: firstUnused([txn.categoryId]), amount: "" },
         ],
   );
 
   const amt = (r: SplitRow) => parseFloat(r.amount) || 0;
+  const sumExcept = (rs: SplitRow[], i: number) =>
+    rs.reduce((a, r, j) => (j === i ? a : a + amt(r)), 0);
   const sum = round2(rows.reduce((a, r) => a + amt(r), 0));
-  const diff = round2(total - sum);
+  const remaining = round2(total - sum); // clamping keeps this >= 0
   const positive = rows.filter((r) => amt(r) > 0);
-  // require >=2 DISTINCT categories — else two same-category rows pass validation
-  // then silently merge back to a single-category (non-split) on save.
   const distinctCats = new Set(positive.map((r) => r.categoryId)).size;
-  const valid = Math.abs(diff) < 0.005 && distinctCats >= 2;
+  const balanced = Math.abs(remaining) < 0.005;
+  const valid = balanced && distinctCats >= 2;
+  const pct = total > 0 ? Math.min(100, (sum / total) * 100) : 0;
 
-  const setRow = (i: number, patch: Partial<SplitRow>) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  // Set a row's amount, AUTO-CLAMPED to what's still available so the total can
+  // never be over-allocated — the remaining pool can't go negative.
+  const setAmount = (i: number, raw: string) =>
+    setRows((rs) => {
+      const cleaned = raw.replace(/[^0-9.]/g, "");
+      if (cleaned === "") return rs.map((r, j) => (j === i ? { ...r, amount: "" } : r));
+      const parsed = parseFloat(cleaned);
+      if (isNaN(parsed)) return rs.map((r, j) => (j === i ? { ...r, amount: cleaned } : r));
+      const avail = Math.max(0, round2(total - sumExcept(rs, i)));
+      const next = parsed > avail ? avail.toFixed(2) : cleaned; // snap to the cap if over
+      return rs.map((r, j) => (j === i ? { ...r, amount: next } : r));
+    });
+  const setCat = (i: number, categoryId: string) =>
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, categoryId } : r)));
   const addRow = () =>
     setRows((rs) => [...rs, { categoryId: firstUnused(rs.map((r) => r.categoryId)), amount: "" }]);
   const removeRow = (i: number) => setRows((rs) => (rs.length > 2 ? rs.filter((_, j) => j !== i) : rs));
-  // drop the remaining balance onto the row the user is filling
-  const fillRemainder = (i: number) => setRow(i, { amount: round2(amt(rows[i]) + diff).toFixed(2) });
+  // drop the whole remaining balance onto one row
+  const fillRow = (i: number) =>
+    setRows((rs) => {
+      const give = Math.max(0, round2(total - sumExcept(rs, i)));
+      return rs.map((r, j) => (j === i ? { ...r, amount: give.toFixed(2) } : r));
+    });
+  const fillRemaining = () => {
+    const idx = rows.findIndex((r) => amt(r) === 0);
+    fillRow(idx === -1 ? rows.length - 1 : idx);
+  };
+  const evenSplit = () =>
+    setRows((rs) => {
+      const each = Math.floor((total / rs.length) * 100) / 100;
+      return rs.map((r, j) => ({
+        ...r,
+        amount: (j === rs.length - 1 ? round2(total - each * (rs.length - 1)) : each).toFixed(2),
+      }));
+    });
 
   const save = () => {
     if (!valid) return;
-    // merge same-category rows, drop empties
     const merged = new Map<string, number>();
     for (const r of rows) {
       const a = amt(r);
@@ -310,20 +343,55 @@ function SplitEditor({
 
   return (
     <div>
-      <p className="mb-2.5 text-[12px]" style={{ color: "#8b97a6" }}>
-        {t("Allocate {total} across categories — for a mixed purchase.", { total: money2(total) })}
-      </p>
+      {/* the live "left to allocate" — the app does the math, always visible */}
+      <button
+        onClick={() => !balanced && fillRemaining()}
+        className="mb-3 w-full rounded-2xl px-4 py-3 text-left"
+        style={{
+          background: balanced ? "#102a1d" : "#0e1726",
+          border: `1px solid ${balanced ? "#1f6f47" : "#26344a"}`,
+        }}
+      >
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="stat-key" style={{ color: balanced ? "#46d18a" : "#88a0c2" }}>
+              {balanced ? t("All allocated") : t("Left to allocate")}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <span className="stat text-[27px]" style={{ color: balanced ? "#46d18a" : "#eaf1fa" }}>
+                {money2(balanced ? 0 : remaining)}
+              </span>
+              {balanced && <Check size={18} style={{ color: "#46d18a" }} />}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="num text-[13px] font-semibold text-bone">
+              {money2(sum)} <span style={{ color: "#6b7686", fontWeight: 400 }}>/ {money2(total)}</span>
+            </div>
+            {!balanced && remaining > 0 && (
+              <div className="mt-0.5 text-[10.5px] font-medium" style={{ color: "#34c5e8" }}>{t("tap to fill the rest")}</div>
+            )}
+          </div>
+        </div>
+        <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#1b2433" }}>
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${pct}%`, background: balanced ? "#46d18a" : "#34c5e8", transition: "width .2s ease" }}
+          />
+        </div>
+      </button>
 
       <div className="flex flex-col gap-2">
         {rows.map((r, i) => {
           const col = catColor(r.categoryId);
+          const rowAvail = Math.max(0, round2(total - sumExcept(rows, i)));
           return (
             <div key={i} className="flex items-center gap-2 rounded-xl p-2" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
               <span className="h-7 w-1.5 shrink-0 rounded-full" style={{ background: col }} />
               <div className="relative min-w-0 flex-1">
                 <select
                   value={r.categoryId}
-                  onChange={(e) => setRow(i, { categoryId: e.target.value })}
+                  onChange={(e) => setCat(i, e.target.value)}
                   className="w-full appearance-none rounded-lg bg-transparent py-1.5 pl-1 pr-5 text-[13px] font-medium text-bone outline-none"
                 >
                   {cats.map((c) => (
@@ -333,14 +401,25 @@ function SplitEditor({
                   ))}
                 </select>
               </div>
+              {/* one-tap: give this row the remaining balance */}
+              {remaining > 0.005 && rowAvail > 0.005 && (
+                <button
+                  onClick={() => fillRow(i)}
+                  className="shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-semibold"
+                  style={{ background: "#0e2230", color: "#34c5e8" }}
+                  aria-label="Fill remaining"
+                >
+                  +{money2(remaining)}
+                </button>
+              )}
               <div className="flex items-center gap-0.5 rounded-lg px-2 py-1.5" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
                 <span className="text-[12px]" style={{ color: "#5f6a78" }}>$</span>
                 <input
                   value={r.amount}
                   inputMode="decimal"
-                  onChange={(e) => setRow(i, { amount: e.target.value.replace(/[^0-9.]/g, "") })}
+                  onChange={(e) => setAmount(i, e.target.value)}
                   placeholder="0.00"
-                  className="num w-[62px] bg-transparent text-right text-[14px] font-semibold text-bone outline-none placeholder:text-[#5f6a78]"
+                  className="num w-[58px] bg-transparent text-right text-[14px] font-semibold text-bone outline-none placeholder:text-[#5f6a78]"
                 />
               </div>
               {rows.length > 2 && (
@@ -353,40 +432,23 @@ function SplitEditor({
         })}
       </div>
 
-      <button
-        onClick={addRow}
-        disabled={rows.length >= cats.length}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[12.5px] font-semibold transition"
-        style={{ background: "#141a24", border: "1px solid #232d3a", color: "#34c5e8", opacity: rows.length >= cats.length ? 0.4 : 1 }}
-      >
-        <Plus size={14} /> {t("Add category")}
-      </button>
-
-      {/* running total — green when it balances, amber/red while off */}
-      <button
-        onClick={() => {
-          if (Math.abs(diff) >= 0.005) {
-            const target = rows.findIndex((r) => amt(r) === 0);
-            fillRemainder(target === -1 ? rows.length - 1 : target);
-          }
-        }}
-        className="mt-3 flex w-full items-center justify-between rounded-xl px-3 py-2.5"
-        style={{
-          background: valid ? "#102a1d" : "#241a12",
-          border: `1px solid ${valid ? "#1f6f47" : "#5a4420"}`,
-        }}
-      >
-        <span className="text-[12px] font-medium" style={{ color: valid ? "#46d18a" : "#e0a64e" }}>
-          {valid
-            ? t("Balanced")
-            : diff > 0
-              ? t("{amt} left to assign — tap to fill", { amt: money2(diff) })
-              : t("{amt} over the total", { amt: money2(-diff) })}
-        </span>
-        <span className="num text-[13px] font-semibold" style={{ color: valid ? "#46d18a" : "#e0a64e" }}>
-          {money2(sum)} / {money2(total)}
-        </span>
-      </button>
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={addRow}
+          disabled={rows.length >= cats.length}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12.5px] font-semibold transition"
+          style={{ background: "#141a24", border: "1px solid #232d3a", color: "#34c5e8", opacity: rows.length >= cats.length ? 0.4 : 1 }}
+        >
+          <Plus size={14} /> {t("Add category")}
+        </button>
+        <button
+          onClick={evenSplit}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12.5px] font-semibold transition"
+          style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}
+        >
+          {t("Even split")}
+        </button>
+      </div>
 
       <button
         onClick={save}
@@ -394,7 +456,7 @@ function SplitEditor({
         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
         style={{ background: "linear-gradient(150deg,#10b981,#06b6d4)", opacity: valid ? 1 : 0.4 }}
       >
-        <Check size={16} /> {t("Save split")}
+        <Check size={16} /> {valid ? t("Save split") : !balanced ? t("Allocate all {amt} to save", { amt: money2(remaining) }) : t("Use 2+ categories")}
       </button>
     </div>
   );

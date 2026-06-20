@@ -64,9 +64,16 @@ export const BRAND_GRADIENT =
 
 // Health mode's brand wash — the rose→pink health gradient, so Health reads red
 // the way Finance reads green-cyan. Built on the `health` category rose (#fb7185).
+// Reserved for PRIMARY actions + key highlights (sparingly), NOT for filling
+// large hero cards — those use the neutral HEALTH_HERO surface below.
 export const HEALTH = "#fb7185";
 export const HEALTH_GRADIENT =
   "linear-gradient(150deg,#fb7185 0%,#fb6f92 52%,#f43f5e 100%)";
+// Neutral, professional hero surface for the big summary cards — a deep slate
+// wash that lets the colored content (rings, macro counters) stand out instead
+// of competing with a saturated red fill.
+export const HEALTH_HERO =
+  "linear-gradient(155deg,#1c2433 0%,#10151d 100%)";
 
 // Build a conic-gradient string from weighted segments (for the spending donut).
 export function conicFromSegments(

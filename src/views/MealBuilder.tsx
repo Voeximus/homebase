@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Flame,
   Minus,
   Plus,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { lookupBarcode } from "../lib/barcode";
-import { DAILY, type Food, type FoodRole, type FoodUnit } from "../lib/nutrition";
+import { DAILY, unitFor, type Food, type FoodRole, type FoodUnit } from "../lib/nutrition";
 import {
   amountLabel,
   buildLibrary,
@@ -36,7 +37,7 @@ import {
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
 import { adherenceStats, type DayStatus } from "../lib/adherence";
-import { HEALTH_GRADIENT } from "../lib/catColor";
+import { HEALTH, HEALTH_GRADIENT, HEALTH_HERO } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
 
@@ -165,6 +166,8 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const [addTo, setAddTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ mealId: string; item: LoggedItem } | null>(null);
   const [estimateOpen, setEstimateOpen] = useState(false);
+  // the meals collect into one collapsible "Today's Meals" container
+  const [mealsOpen, setMealsOpen] = useState(true);
 
   // adherence + the gentle 8 PM nudge (in-app)
   const snoozeKey = `hb-nudge-snooze-${person}-${today}`;
@@ -220,7 +223,8 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
       {/* the gentle 8 PM nudge */}
       {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
 
-      {/* meals — created dynamically, no fixed slots */}
+      {/* meals — collected into one labeled, collapsible container so the main
+          screen stays clean no matter how many get added */}
       {log.meals.length === 0 ? (
         <button
           onClick={startNewMeal}
@@ -232,26 +236,54 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           <span className="text-[12px]" style={{ color: "#7e8a98" }}>{t("Search a food or scan a barcode")}</span>
         </button>
       ) : (
-        log.meals.map((meal, i) => (
-          <MealCard
-            key={meal.id}
-            index={i}
-            meal={meal}
-            onAddFood={() => setAddTo(meal.id)}
-            onEditItem={(item) => setEditing({ mealId: meal.id, item })}
-            onRemoveMeal={() => removeMeal(meal.id)}
-          />
-        ))
-      )}
+        <section className="overflow-hidden rounded-[18px] border" style={TILE}>
+          <button
+            onClick={() => setMealsOpen((o) => !o)}
+            className="flex w-full items-center gap-2.5 p-4 text-left"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: HEALTH + "1f", color: HEALTH }}>
+              <UtensilsCrossed size={16} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-semibold text-bone">{t("Today's Meals")}</div>
+              <div className="num text-[11px]" style={{ color: "#8b97a6" }}>
+                {t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", {
+                  n: log.meals.length,
+                  kcal: r0(eaten.kcal),
+                })}
+              </div>
+            </div>
+            <ChevronDown
+              size={18}
+              style={{ color: "#6b7686", transform: mealsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
+            />
+          </button>
 
-      {log.meals.length > 0 && (
-        <button
-          onClick={startNewMeal}
-          className="flex items-center justify-center gap-2 rounded-[16px] border py-3 text-[13px] font-semibold text-bone transition active:scale-[0.99]"
-          style={{ borderColor: "#232d3a", background: "#0f141c" }}
-        >
-          <Plus size={16} /> {t("Add a meal")}
-        </button>
+          {mealsOpen && (
+            <div className="flex flex-col gap-2.5 px-3 pb-1">
+              {log.meals.map((meal, i) => (
+                <MealCard
+                  key={meal.id}
+                  index={i}
+                  meal={meal}
+                  onAddFood={() => setAddTo(meal.id)}
+                  onEditItem={(item) => setEditing({ mealId: meal.id, item })}
+                  onRemoveMeal={() => removeMeal(meal.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="p-3">
+            <button
+              onClick={startNewMeal}
+              className="flex w-full items-center justify-center gap-2 rounded-[12px] border py-2.5 text-[13px] font-semibold text-bone transition active:scale-[0.99]"
+              style={{ borderColor: "#2a3644", background: "#0f141c" }}
+            >
+              <Plus size={16} /> {t("Add a meal")}
+            </button>
+          </div>
+        </section>
       )}
 
       {/* adherence — streak + compliance over time */}
@@ -569,7 +601,12 @@ function DaySummary({ name, target, eaten }: { name: string; target: Macros; eat
   return (
     <div
       className="rounded-[26px] px-5 pb-4 pt-4 text-white"
-      style={{ background: HEALTH_GRADIENT, boxShadow: "0 12px 32px -14px rgba(2,12,24,.65)" }}
+      style={{
+        background: HEALTH_HERO,
+        border: "1px solid #232d3a",
+        borderTop: `2px solid ${HEALTH}`,
+        boxShadow: "0 12px 32px -14px rgba(2,12,24,.65)",
+      }}
     >
       <div className="flex items-center justify-between">
         <span className="stat-key" style={{ opacity: 0.92 }}>{t("{name}'s day", { name })}</span>
@@ -766,7 +803,7 @@ function AdherenceCard({ stats, acc }: { stats: ReturnType<typeof adherenceStats
 function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void }) {
   const tot = mealTotals(meal);
   return (
-    <section className="rounded-[18px] border p-4" style={TILE}>
+    <section className="rounded-[14px] border p-3.5" style={{ background: "#0f141c", borderColor: "#1f2937" }}>
       <div className="mb-2 flex items-center justify-between">
         <div>
           <div className="text-[14px] font-semibold text-bone">{t("Meal {n}", { n: index + 1 })}</div>
@@ -1033,8 +1070,10 @@ function PortionView({
   onRemove?: () => void;
   onConfirm: (amount: Amount, save: boolean) => void;
 }) {
-  const hasUnit = !!food.unit;
-  const gPerUnit = food.unit?.grams ?? (food.serving && food.serving > 0 ? food.serving : 100);
+  // explicit unit, or one inferred from the food's name (eggs, bagels, steaks…)
+  const unit = unitFor(food);
+  const hasUnit = !!unit;
+  const gPerUnit = unit?.grams ?? (food.serving && food.serving > 0 ? food.serving : 100);
   const base = food.serving && food.serving > 0 ? food.serving : 100;
   const startMode: "unit" | "grams" = initialAmount
     ? initialAmount.qty != null && initialAmount.unit
@@ -1056,7 +1095,7 @@ function PortionView({
     f: (food.f * effGrams) / 100,
   };
   const amount = (): Amount =>
-    mode === "unit" ? { grams: qty * gPerUnit, qty, unit: food.unit } : { grams };
+    mode === "unit" ? { grams: qty * gPerUnit, qty, unit } : { grams };
 
   const toUnit = () => {
     setQty(Math.max(0, Math.round((grams / gPerUnit) * 100) / 100) || 1);
@@ -1066,7 +1105,7 @@ function PortionView({
     setGrams(Math.round(qty * gPerUnit));
     setMode("grams");
   };
-  const unitName = food.unit?.name ?? "unit";
+  const unitName = unit?.name ?? "unit";
   const gramQuick: [string, number][] = food.serving
     ? [["½", base * 0.5], ["1", base], ["2", base * 2]]
     : [["50", 50], ["100", 100], ["150", 150], ["200", 200]];
@@ -1079,7 +1118,7 @@ function PortionView({
         </button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15.5px] font-bold text-bone">{food.name}</div>
-          <div className="num text-[11px]" style={{ color: "#7e8a98" }}>
+          <div className="num text-[11.5px]" style={{ color: "#9aa6b2" }}>
             {food.kcal} {t("kcal")} · {food.p}P {food.c}C {food.f}F {t("per 100g")}
             {hasUnit ? ` · 1 ${unitName} ≈ ${r0(gPerUnit)} g` : ""}
           </div>
@@ -1123,14 +1162,28 @@ function PortionView({
           </>
         )}
 
-        <div className="rounded-xl p-3" style={TILE}>
-          <div className="stat-key" style={{ color: "#97a3b2" }}>{t("This portion")}</div>
-          <div className="mt-1 flex items-baseline gap-3">
-            <span className="stat text-[24px] text-bone">{r0(c.kcal)}</span>
-            <span className="text-[11px]" style={{ color: "#7e8a98" }}>{t("kcal")}</span>
-            <span className="num ml-auto text-[12px]" style={{ color: "#9aa6b2" }}>
-              {r0(c.p)}P · {r0(c.c)}C · {r0(c.f)}F
+        <div className="rounded-xl p-3.5" style={TILE}>
+          <div className="flex items-center justify-between">
+            <span className="stat-key" style={{ color: "#b7c0cc" }}>{t("This portion")}</span>
+            <span className="flex items-baseline gap-1">
+              <span className="stat text-[26px] text-bone">{r0(c.kcal)}</span>
+              <span className="text-[11px] font-bold" style={{ color: "#97a3b2" }}>{t("kcal")}</span>
             </span>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              { k: t("Protein"), v: c.p, color: MACRO_BRIGHT.p },
+              { k: t("Carbs"), v: c.c, color: MACRO_BRIGHT.c },
+              { k: t("Fat"), v: c.f, color: MACRO_BRIGHT.f },
+            ].map((m) => (
+              <div key={m.k} className="rounded-lg px-2 py-2 text-center" style={{ background: "#0b0f17", border: "1px solid #1b232e" }}>
+                <div className="flex items-baseline justify-center gap-0.5">
+                  <span className="stat text-[19px]" style={{ color: m.color }}>{r0(m.v)}</span>
+                  <span className="text-[10px] font-bold" style={{ color: m.color, opacity: 0.65 }}>g</span>
+                </div>
+                <div className="stat-key mt-0.5" style={{ color: "#8b97a6" }}>{m.k}</div>
+              </div>
+            ))}
           </div>
         </div>
 

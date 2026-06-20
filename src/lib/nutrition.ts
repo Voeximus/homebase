@@ -55,16 +55,16 @@ export const SEED_FOODS: Food[] = [
   { id: "salmon", name: "Salmon", role: "protein", kcal: 206, p: 22, c: 0, f: 13, note: "cooked" },
   { id: "shrimp", name: "Shrimp", role: "protein", kcal: 99, p: 24, c: 0, f: 0.3, note: "cooked" },
   { id: "tofu-firm", name: "Firm tofu", role: "protein", kcal: 144, p: 16, c: 3, f: 8 },
-  { id: "eggs", name: "Eggs", role: "protein", kcal: 143, p: 13, c: 1, f: 10, note: "~2 eggs/100g" },
-  { id: "whey", name: "Whey protein", role: "protein", kcal: 400, p: 80, c: 8, f: 6, serving: 30, note: "powder · 1 scoop ≈ 30g" },
+  { id: "eggs", name: "Eggs", role: "protein", kcal: 143, p: 13, c: 1, f: 10, serving: 50, unit: { name: "egg", grams: 50 }, note: "1 large ≈ 50g" },
+  { id: "whey", name: "Whey protein", role: "protein", kcal: 400, p: 80, c: 8, f: 6, serving: 30, unit: { name: "scoop", grams: 30 }, note: "powder · 1 scoop ≈ 30g" },
   // carb
   { id: "white-rice", name: "White rice", role: "carb", kcal: 130, p: 2.7, c: 28, f: 0.3, note: "cooked" },
   { id: "jasmine-rice", name: "Jasmine rice", role: "carb", kcal: 130, p: 2.7, c: 28, f: 0.3, note: "cooked" },
   { id: "rice-noodles", name: "Rice noodles", role: "carb", kcal: 110, p: 2, c: 25, f: 0.3, note: "cooked" },
   { id: "udon", name: "Udon noodles", role: "carb", kcal: 130, p: 4, c: 27, f: 0.5, note: "cooked" },
-  { id: "potato", name: "Potato", role: "carb", kcal: 87, p: 1.9, c: 20, f: 0.1, note: "cooked" },
+  { id: "potato", name: "Potato", role: "carb", kcal: 87, p: 1.9, c: 20, f: 0.1, serving: 170, unit: { name: "potato", grams: 170 }, note: "cooked · 1 medium" },
   { id: "oats", name: "Oats", role: "carb", kcal: 379, p: 13, c: 67, f: 7, note: "dry" },
-  { id: "banana", name: "Banana", role: "carb", kcal: 89, p: 1.1, c: 23, f: 0.3, serving: 120 },
+  { id: "banana", name: "Banana", role: "carb", kcal: 89, p: 1.1, c: 23, f: 0.3, serving: 118, unit: { name: "banana", grams: 118 } },
   // veg (fixed portion, basically free volume)
   { id: "broccoli", name: "Broccoli", role: "veg", kcal: 35, p: 2.4, c: 7, f: 0.4, serving: 150, note: "cooked" },
   { id: "bok-choy", name: "Bok choy", role: "veg", kcal: 13, p: 1.5, c: 2.2, f: 0.2, serving: 150 },
@@ -189,4 +189,38 @@ export function clearCustomFoods(): void {
 }
 export function loadLibrary(): Food[] {
   return [...SEED_FOODS, ...loadCustomFoods()];
+}
+
+// ── natural-unit inference ────────────────────────────────────────────────────
+// Most countable bundled foods already carry a `unit`. For the rest — a custom
+// food, a scanned product, or a bundled entry that slipped through — guess the
+// most natural countable unit from the NAME so the portion sheet can still offer
+// "by the each". Conservative: skip anything that reads as a mass/liquid/dish,
+// and a wrong guess is harmless (the user can flip to grams; macros are per-100g).
+const UNIT_RULES: { rx: RegExp; unit: FoodUnit }[] = [
+  { rx: /\bbagel/i, unit: { name: "bagel", grams: 95 } },
+  { rx: /\bsteak\b/i, unit: { name: "steak", grams: 200 } },
+  { rx: /\b(instant|ramen|cup noodle|packet|package)\b/i, unit: { name: "package", grams: 85 } },
+  { rx: /\btortillas?\b/i, unit: { name: "tortilla", grams: 45 } },
+  { rx: /\b(pancakes?|waffles?)\b/i, unit: { name: "piece", grams: 50 } },
+  { rx: /\b(sausages?|hot ?dogs?|bratwursts?)\b/i, unit: { name: "link", grams: 75 } },
+  { rx: /\bbananas?\b/i, unit: { name: "banana", grams: 118 } },
+  { rx: /\bapples?\b/i, unit: { name: "apple", grams: 180 } },
+  { rx: /\boranges?\b/i, unit: { name: "orange", grams: 140 } },
+  { rx: /\bpotatoe?s?\b/i, unit: { name: "potato", grams: 170 } },
+  { rx: /\btomatoe?s?\b/i, unit: { name: "tomato", grams: 120 } },
+  { rx: /\beggs?\b/i, unit: { name: "egg", grams: 50 } },
+  { rx: /\b(slice|toast)\b/i, unit: { name: "slice", grams: 28 } },
+];
+// names that look countable by keyword but are really a mass / liquid / dish
+const NON_COUNTABLE =
+  /soup|sauce|paste|powder|oil|juice|chips|fries|dried|flour|ground|minced|roll|drop|salad|fried|spread|butter|milk|smoothie|puree|mashed|noodle|gravy|dressing|batter|crumbs?/i;
+
+/** The food's explicit unit, or a name-inferred one, or undefined (gram-only). */
+export function unitFor(food: Food): FoodUnit | undefined {
+  if (food.unit) return food.unit;
+  const n = food.name;
+  if (NON_COUNTABLE.test(n)) return undefined;
+  for (const r of UNIT_RULES) if (r.rx.test(n)) return r.unit;
+  return undefined;
 }

@@ -507,6 +507,17 @@ const SEED: Record<string, string> = {
   "Reset weight history?": "重置体重记录？",
   "Deletes all {n} weigh-ins. Your trend and averages reset. This can't be undone.":
     "删除全部 {n} 次称重。趋势和平均值会重置。此操作无法撤销。",
+
+  // ── Health UI refinements (2026-06-20h): meal container, split auto-math ──
+  "Today's Meals": "今天的餐",
+  "{n} meals · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
+  "{n} meal · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
+  // transaction split — live allocation
+  "Left to allocate": "待分配",
+  "All allocated": "已全部分配",
+  "tap to fill the rest": "点击填入剩余",
+  "Allocate all {amt} to save": "分配完 {amt} 才能保存",
+  "Use 2+ categories": "至少用 2 个分类",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.
