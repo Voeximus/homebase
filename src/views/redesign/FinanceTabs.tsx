@@ -35,6 +35,7 @@ import {
   planMath,
   orderedDebts,
   payoffSchedule,
+  variableSpentThisMonth,
   PAY_DAYS,
   SAVINGS_SPLIT,
   type BudgetLine,
@@ -155,14 +156,21 @@ export function FinanceTabs({
     ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
     settingsOpen || markSentOpen || billsOpen || !!payBillEntry || !!txnId;
 
-  // The snowball plan (for the attack ladder + the mark-sent slip).
+  // The snowball plan (for the attack ladder + the mark-sent slip). Firepower is
+  // reduced by this month's overspend EXACTLY as buildVMs does, so the slip's
+  // send amounts and the ladder's clear-dates match the Home/Insights debt-free
+  // date instead of diverging whenever the budget is overspent.
   const debtPlan = useMemo(() => {
+    const now = new Date();
+    const mKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const target = sumTargets(LEAN_VARIABLE);
     const math = planMath(data.recurring, data.debts, target);
+    const overspend = Math.max(0, variableSpentThisMonth(data.transactions, mKey) - target);
+    const firepower = Math.max(0, math.firepower - overspend);
     const ordered = orderedDebts(data.debts);
-    const schedule = payoffSchedule(ordered, math.firepower, new Date(), PAY_DAYS, SAVINGS_SPLIT);
+    const schedule = payoffSchedule(ordered, firepower, now, PAY_DAYS, SAVINGS_SPLIT);
     return { ordered, schedule, next: schedule[0] ?? null, totalDebt: math.totalDebt };
-  }, [data.recurring, data.debts]);
+  }, [data.recurring, data.debts, data.transactions]);
 
   const vms = useMemo(
     () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
@@ -220,29 +228,40 @@ export function FinanceTabs({
     : undefined;
   const envVM: EnvelopeVM | null = useMemo(() => {
     if (!envLine) return null;
-    const txns = data.transactions.filter(
-      (t) =>
-        t.type === "expense" &&
-        t.date.slice(0, 7) === monthKey &&
-        !t.appliesTo &&
-        envLine.cats.includes(t.categoryId),
-    );
+    const inLine = (catId: string) => envLine.cats.includes(catId);
+    // Split-aware, so the drill-in total equals the split-aware budget bar: a
+    // split txn contributes only the slices in this line (at their slice amount),
+    // an unsplit txn its full amount. Same partition as spentByCategory.
+    const rows: { id: string; name: string; date: string; amount: number }[] = [];
+    let spent = 0;
+    for (const t of data.transactions) {
+      if (t.type !== "expense" || t.date.slice(0, 7) !== monthKey || t.appliesTo) continue;
+      const amt =
+        t.splits && t.splits.length
+          ? t.splits.filter((s) => inLine(s.categoryId)).reduce((s, x) => s + x.amount, 0)
+          : inLine(t.categoryId)
+            ? t.amount
+            : 0;
+      if (amt <= 0) continue;
+      spent += amt;
+      rows.push({ id: t.id, name: t.description || t.categoryId, date: t.date, amount: amt });
+    }
     return {
       label: envLine.label,
       catId: envLine.cats[0],
-      spent: txns.reduce((s, t) => s + t.amount, 0),
+      spent,
       target: envLine.target,
-      txns: txns
+      txns: rows
         .sort((a, b) => b.date.localeCompare(a.date))
-        .map((t) => ({
-          id: t.id,
-          name: t.description || t.categoryId,
-          dateLabel: new Date(t.date + "T00:00:00").toLocaleDateString("en-US", {
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          dateLabel: new Date(r.date + "T00:00:00").toLocaleDateString("en-US", {
             weekday: "short",
             month: "short",
             day: "numeric",
           }),
-          amount: t.amount,
+          amount: r.amount,
         })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

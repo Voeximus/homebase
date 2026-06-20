@@ -501,8 +501,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
       const debtApplied = debt ? Math.min(ev.amount, debt.balance) : 0;
 
+      // Stamp the RESOLVED debtId (a bill's `at` carries only recurringId; the
+      // debt is resolved from the recurring's linkedDebtId above). Without it the
+      // reverse RPC's `applies_to ? 'debtId'` check never fires for a bill payment,
+      // so deleting it would restore the debt in the UI but never in the DB.
       const appliesTo: AppliesTo | undefined =
-        at && debt ? { ...at, appliedAmount: debtApplied } : at;
+        at && debt ? { ...at, debtId, appliedAmount: debtApplied } : at;
 
       const { data: row, error } = await supabase.rpc("apply_money_event", {
         p_date: date,

@@ -19,6 +19,7 @@ import type { BodyWeight } from "../lib/weightLog";
 const dayKey = (p: string, d: string) => `${p}|${d}`;
 const mdDirty = (p: string, d: string) => `md|${p}|${d}`;
 const wDirty = (id: string) => `w|${id}`;
+const wtDirty = (p: string, d: string) => `wt|${p}|${d}`;
 
 function mapDay(r: any): DayLog {
   return {
@@ -115,7 +116,17 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     async function reloadWeights() {
       const { data: rows, error } = await supabase.from("body_weights").select("*").order("date", { ascending: true });
       if (error || !active) return;
-      setState((s) => ({ ...s, weights: (rows ?? []).map(mapWeight) }));
+      setState((s) => {
+        const remote = (rows ?? []).map(mapWeight);
+        // A refetch (often triggered by the OTHER device's write) must not clobber
+        // an in-flight local edit/delete: for any dirty (person+date) the LOCAL
+        // state is truth — keep its value, or its ABSENCE (a pending delete isn't
+        // resurrected). Clean keys come from remote. Mirrors the meal/workout guard.
+        const isDirty = (p: string, d: string) => dirty.current.has(wtDirty(p, d));
+        const cleanRemote = remote.filter((w) => !isDirty(w.person, w.date));
+        const localDirty = s.weights.filter((w) => isDirty(w.person, w.date));
+        return { ...s, weights: [...cleanRemote, ...localDirty] };
+      });
     }
 
     async function migrateLocal() {
@@ -296,7 +307,10 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         supabase.from("workout_routines").delete().eq("id", id).then(({ error }) => error && console.error(error));
       },
       setWeight(person, date, weight) {
-        // one entry per day → optimistic replace + immediate upsert (no debounce)
+        // one entry per day → optimistic replace + immediate upsert (no debounce).
+        // dirty-guard the key so a concurrent refetch can't revert it mid-write.
+        const key = wtDirty(person, date);
+        dirty.current.add(key);
         setState((s) => ({
           ...s,
           weights: [...s.weights.filter((w) => !(w.person === person && w.date === date)), { person, date, weight }],
@@ -304,10 +318,16 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         supabase
           .from("body_weights")
           .upsert({ person, date, weight, updated_at: new Date().toISOString() }, { onConflict: "person,date" })
-          .then(({ error }) => error && console.error("body_weights upsert", error));
+          .then(({ error }) => {
+            dirty.current.delete(key);
+            if (error) console.error("body_weights upsert", error);
+          });
       },
       deleteWeight(person, date) {
-        // optimistic remove of one weigh-in; the trend/averages recompute from state
+        // optimistic remove of one weigh-in; the trend/averages recompute from state.
+        // dirty-guard so a refetch mid-delete can't resurrect the row.
+        const key = wtDirty(person, date);
+        dirty.current.add(key);
         setState((s) => ({
           ...s,
           weights: s.weights.filter((w) => !(w.person === person && w.date === date)),
@@ -317,16 +337,25 @@ export function HealthProvider({ children }: { children: ReactNode }) {
           .delete()
           .eq("person", person)
           .eq("date", date)
-          .then(({ error }) => error && console.error("body_weights delete", error));
+          .then(({ error }) => {
+            dirty.current.delete(key);
+            if (error) console.error("body_weights delete", error);
+          });
       },
       clearWeights(person) {
-        // wipe this person's whole weigh-in history (the other person's stays)
+        // wipe this person's whole weigh-in history (the other person's stays).
+        // dirty-guard every in-flight key so a refetch can't restore deleted rows.
+        const keys = dataRef.current.weights.filter((w) => w.person === person).map((w) => wtDirty(w.person, w.date));
+        keys.forEach((k) => dirty.current.add(k));
         setState((s) => ({ ...s, weights: s.weights.filter((w) => w.person !== person) }));
         supabase
           .from("body_weights")
           .delete()
           .eq("person", person)
-          .then(({ error }) => error && console.error("body_weights clear", error));
+          .then(({ error }) => {
+            keys.forEach((k) => dirty.current.delete(k));
+            if (error) console.error("body_weights clear", error);
+          });
       },
     };
   }, []);

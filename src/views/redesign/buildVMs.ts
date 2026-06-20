@@ -273,7 +273,10 @@ export function buildFinanceVMs(
     firepower,
     overspent: overspend,
     debtFreeBy,
-    nextAmount: next ? next.total : 0,
+    // the "Send X at the debt" tile is the DEBT portion only — in the final
+    // payoff phase `total` also includes the savings skim (surfaced separately in
+    // the slip), so using toDebt keeps the label honest.
+    nextAmount: next ? next.toDebt : 0,
     nextDate: next ? fmtDay(next.date) : "—",
     cash,
     cashAccounts: cashAcctCount,

@@ -284,7 +284,10 @@ function SplitEditor({
   const sum = round2(rows.reduce((a, r) => a + amt(r), 0));
   const diff = round2(total - sum);
   const positive = rows.filter((r) => amt(r) > 0);
-  const valid = Math.abs(diff) < 0.005 && positive.length >= 2;
+  // require >=2 DISTINCT categories — else two same-category rows pass validation
+  // then silently merge back to a single-category (non-split) on save.
+  const distinctCats = new Set(positive.map((r) => r.categoryId)).size;
+  const valid = Math.abs(diff) < 0.005 && distinctCats >= 2;
 
   const setRow = (i: number, patch: Partial<SplitRow>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
