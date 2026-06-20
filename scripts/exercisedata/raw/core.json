@@ -1,0 +1,134 @@
+[
+  {
+    "name": "Plank",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Side plank",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Forearm plank with shoulder tap",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Hanging leg raise",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Hanging knee raise",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Cable crunch",
+    "muscle": "core",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Ab-wheel rollout",
+    "muscle": "core",
+    "equipment": "other",
+    "type": "isolation"
+  },
+  {
+    "name": "Russian twist",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Weighted Russian twist",
+    "muscle": "core",
+    "equipment": "dumbbell",
+    "type": "isolation"
+  },
+  {
+    "name": "Bicycle crunch",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Sit-up",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Dead bug",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Hollow hold",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Mountain climber",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Pallof press",
+    "muscle": "core",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Decline crunch",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "V-up",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Crunch",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Flutter kick",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Toe touch",
+    "muscle": "core",
+    "equipment": "bodyweight",
+    "type": "isolation"
+  },
+  {
+    "name": "Cable woodchopper",
+    "muscle": "core",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Machine ab crunch",
+    "muscle": "core",
+    "equipment": "machine",
+    "type": "isolation"
+  }
+]

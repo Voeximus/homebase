@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Treadmill running",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Outdoor running",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Jogging",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Incline treadmill walking",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Walking",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Stationary cycling",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Spin bike",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Rowing machine",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Elliptical trainer",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Stair climber",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Assault bike",
+    "muscle": "cardio",
+    "equipment": "machine",
+    "type": "cardio"
+  },
+  {
+    "name": "Jump rope",
+    "muscle": "cardio",
+    "equipment": "other",
+    "type": "cardio"
+  },
+  {
+    "name": "Swimming",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "HIIT intervals",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Hiking",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Burpees",
+    "muscle": "cardio",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  }
+]

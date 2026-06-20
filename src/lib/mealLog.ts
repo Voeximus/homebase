@@ -39,8 +39,7 @@ export interface Meal {
 export interface DayLog {
   date: string; // YYYY-MM-DD (local)
   person: Person;
-  plannedMeals: number; // meals you intend to eat today — the allowance divisor
-  meals: Meal[];
+  meals: Meal[]; // created dynamically as you eat — no fixed slots
 }
 
 // ── macro math ───────────────────────────────────────────────────────────────
@@ -85,26 +84,6 @@ export function remaining(target: Macros, eaten: Macros): Macros {
   };
 }
 
-/** Meals that already carry food — they've "spent" their slice of the day. */
-export function mealsLogged(log: DayLog): number {
-  return log.meals.filter((m) => m.items.length > 0).length;
-}
-
-/**
- * The "next move": what's left, split across the meals still ahead. On your last
- * planned meal the divisor floors at 1, so the allowance is simply everything
- * left — eat the rest. This is firepower ÷ remaining paydays, for food.
- */
-export function nextMealAllowance(log: DayLog, target: Macros): Macros {
-  const rem = remaining(target, dayTotals(log));
-  const ahead = Math.max(1, log.plannedMeals - mealsLogged(log));
-  return { kcal: rem.kcal / ahead, p: rem.p / ahead, c: rem.c / ahead, f: rem.f / ahead };
-}
-
-export function mealsAhead(log: DayLog): number {
-  return Math.max(1, log.plannedMeals - mealsLogged(log));
-}
-
 // ── persistence (local-first; Supabase sync is a later upgrade like foods) ─────
 const dayKey = (person: Person, date: string) => `hb-meallog-${person}-${date}`;
 
@@ -121,13 +100,13 @@ export function loadDay(person: Person, date: string): DayLog {
       const parsed = JSON.parse(raw) as DayLog;
       // Defend against an older/partial shape.
       if (Array.isArray(parsed.meals)) {
-        return { date, person, plannedMeals: parsed.plannedMeals ?? 3, meals: parsed.meals };
+        return { date, person, meals: parsed.meals };
       }
     }
   } catch {
     /* fall through to a fresh day */
   }
-  return { date, person, plannedMeals: 3, meals: [] };
+  return { date, person, meals: [] };
 }
 
 export function saveDay(log: DayLog): void {

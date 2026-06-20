@@ -1,0 +1,170 @@
+[
+  {
+    "name": "Conventional deadlift",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Romanian deadlift",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Sumo deadlift",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Trap bar deadlift",
+    "muscle": "back",
+    "equipment": "other",
+    "type": "compound"
+  },
+  {
+    "name": "Rack pull",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Deficit deadlift",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Pull-up",
+    "muscle": "back",
+    "equipment": "bodyweight",
+    "type": "compound"
+  },
+  {
+    "name": "Chin-up",
+    "muscle": "back",
+    "equipment": "bodyweight",
+    "type": "compound"
+  },
+  {
+    "name": "Wide-grip pull-up",
+    "muscle": "back",
+    "equipment": "bodyweight",
+    "type": "compound"
+  },
+  {
+    "name": "Neutral-grip pull-up",
+    "muscle": "back",
+    "equipment": "bodyweight",
+    "type": "compound"
+  },
+  {
+    "name": "Assisted pull-up",
+    "muscle": "back",
+    "equipment": "machine",
+    "type": "compound"
+  },
+  {
+    "name": "Lat pulldown",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "Close-grip lat pulldown",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "Wide-grip lat pulldown",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "Reverse-grip lat pulldown",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "Barbell bent-over row",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Pendlay row",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Yates row",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "One-arm dumbbell row",
+    "muscle": "back",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Chest-supported dumbbell row",
+    "muscle": "back",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Seated cable row",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "Wide-grip seated cable row",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "T-bar row",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Chest-supported T-bar row",
+    "muscle": "back",
+    "equipment": "machine",
+    "type": "compound"
+  },
+  {
+    "name": "Machine row",
+    "muscle": "back",
+    "equipment": "machine",
+    "type": "compound"
+  },
+  {
+    "name": "Face pull",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Straight-arm pulldown",
+    "muscle": "back",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Barbell shrug",
+    "muscle": "back",
+    "equipment": "barbell",
+    "type": "isolation"
+  }
+]

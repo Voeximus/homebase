@@ -1,0 +1,134 @@
+[
+  {
+    "name": "Barbell overhead press",
+    "muscle": "shoulders",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Seated barbell military press",
+    "muscle": "shoulders",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Dumbbell shoulder press",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Seated dumbbell shoulder press",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Arnold press",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Machine shoulder press",
+    "muscle": "shoulders",
+    "equipment": "machine",
+    "type": "compound"
+  },
+  {
+    "name": "Landmine press",
+    "muscle": "shoulders",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Push press",
+    "muscle": "shoulders",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Dumbbell lateral raise",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "isolation"
+  },
+  {
+    "name": "Cable lateral raise",
+    "muscle": "shoulders",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Machine lateral raise",
+    "muscle": "shoulders",
+    "equipment": "machine",
+    "type": "isolation"
+  },
+  {
+    "name": "Dumbbell front raise",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "isolation"
+  },
+  {
+    "name": "Cable front raise",
+    "muscle": "shoulders",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Barbell front raise",
+    "muscle": "shoulders",
+    "equipment": "barbell",
+    "type": "isolation"
+  },
+  {
+    "name": "Dumbbell rear-delt fly",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "isolation"
+  },
+  {
+    "name": "Reverse pec-deck fly",
+    "muscle": "shoulders",
+    "equipment": "machine",
+    "type": "isolation"
+  },
+  {
+    "name": "Cable rear-delt fly",
+    "muscle": "shoulders",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Barbell upright row",
+    "muscle": "shoulders",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Dumbbell upright row",
+    "muscle": "shoulders",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Cable upright row",
+    "muscle": "shoulders",
+    "equipment": "cable",
+    "type": "compound"
+  },
+  {
+    "name": "Cable Y-raise",
+    "muscle": "shoulders",
+    "equipment": "cable",
+    "type": "isolation"
+  },
+  {
+    "name": "Kettlebell overhead press",
+    "muscle": "shoulders",
+    "equipment": "kettlebell",
+    "type": "compound"
+  }
+]

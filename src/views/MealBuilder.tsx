@@ -6,7 +6,6 @@ import {
   Plus,
   ScanLine,
   Search,
-  Target,
   Trash2,
   User,
   Users,
@@ -21,10 +20,7 @@ import {
   contribution,
   dayTotals,
   loadDay,
-  mealsAhead,
   mealTotals,
-  nextMealAllowance,
-  remaining,
   rowId,
   saveDay,
   searchFoods,
@@ -37,7 +33,12 @@ import {
 } from "../lib/mealLog";
 import { useStore } from "../store/FinanceStore";
 import { BRAND_GRADIENT } from "../lib/catColor";
+import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
+
+// The Daily Macro Summary pins to the top of the scroll (the Health header is
+// non-sticky now) so it's the always-visible, most-important element.
+const STICKY_TOP = "calc(env(safe-area-inset-top, 0px) + 6px)";
 
 // ── palette ───────────────────────────────────────────────────────────────────
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
@@ -47,8 +48,8 @@ const TILE = { background: "#141a24", borderColor: "#232d3a" } as const;
 
 const r0 = (n: number) => Math.round(n);
 const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
-const MEAL_LABELS = ["Breakfast", "Lunch", "Dinner"];
-const defaultMealName = (i: number) => MEAL_LABELS[i] ?? "Snack";
+// Meals are generic + dynamic — displayed by position so deletes renumber.
+const mealName = (i: number) => `Meal ${i + 1}`;
 
 const macroOf = (f: Food): Macros => ({ kcal: f.kcal, p: f.p, c: f.c, f: f.f });
 const toItem = (f: Food, grams: number): LoggedItem => ({
@@ -142,13 +143,10 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const [editing, setEditing] = useState<{ mealId: string; item: LoggedItem } | null>(null);
 
   const eaten = dayTotals(log);
-  const rem = remaining(target, eaten);
-  const allow = nextMealAllowance(log, target);
-  const ahead = mealsAhead(log);
 
   const addMeal = (): string => {
     const id = rowId();
-    setLog((l) => ({ ...l, meals: [...l.meals, { id, name: defaultMealName(l.meals.length), items: [] }] }));
+    setLog((l) => ({ ...l, meals: [...l.meals, { id, name: mealName(l.meals.length), items: [] }] }));
     return id;
   };
   const startNewMeal = () => setAddTo(addMeal());
@@ -177,38 +175,15 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
     }));
   const removeMeal = (mealId: string) =>
     setLog((l) => ({ ...l, meals: l.meals.filter((m) => m.id !== mealId) }));
-  const setPlanned = (n: number) =>
-    setLog((l) => ({ ...l, plannedMeals: Math.max(1, Math.min(8, n)) }));
 
   return (
-    <>
-      {/* hero — calories left today */}
-      <DayHero name={PERSON_NAME[person]} target={target} eaten={eaten} />
-
-      {/* macro grid */}
-      <div className="grid grid-cols-3 gap-3">
-        <MacroTile label={t("Protein")} unit="g" rem={rem.p} eaten={eaten.p} target={target.p} color={MACRO.p} />
-        <MacroTile label={t("Carbs")} unit="g" rem={rem.c} eaten={eaten.c} target={target.c} color={MACRO.c} />
-        <MacroTile label={t("Fat")} unit="g" rem={rem.f} eaten={eaten.f} target={target.f} color={MACRO.f} />
+    <div className="flex flex-col gap-3">
+      {/* sticky, always-visible Daily Macro Summary */}
+      <div className="sticky z-30" style={{ top: STICKY_TOP }}>
+        <DaySummary name={PERSON_NAME[person]} target={target} eaten={eaten} />
       </div>
 
-      {/* next-meal allowance */}
-      <div className="rounded-[18px] p-4 text-white" style={{ background: "linear-gradient(150deg,#0e7490,#1d4ed8)" }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[11.5px] opacity-90">
-            <Target size={14} /> {t("Your next meal · {n} of {planned} left", { n: ahead, planned: log.plannedMeals })}
-          </div>
-          <Stepper value={log.plannedMeals} onDec={() => setPlanned(log.plannedMeals - 1)} onInc={() => setPlanned(log.plannedMeals + 1)} suffix={t("meals/day")} light />
-        </div>
-        <div className="mt-1.5 text-[19px] font-bold">
-          ≈ {r0(allow.kcal)} {t("kcal")}
-          <span className="ml-2 text-[13px] font-semibold opacity-90">
-            {r0(allow.p)}P · {r0(allow.c)}C · {r0(allow.f)}F
-          </span>
-        </div>
-      </div>
-
-      {/* meals */}
+      {/* meals — created dynamically, no fixed slots */}
       {log.meals.length === 0 ? (
         <button
           onClick={startNewMeal}
@@ -216,13 +191,14 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           style={{ borderColor: "#2a3644", background: "#0f141c" }}
         >
           <UtensilsCrossed size={22} style={{ color: "#46d18a" }} />
-          <span className="text-[14px] font-semibold text-bone">{t("Start your first meal")}</span>
+          <span className="text-[14px] font-semibold text-bone">{t("Add your first meal")}</span>
           <span className="text-[12px]" style={{ color: "#7e8a98" }}>{t("Search a food or scan a barcode")}</span>
         </button>
       ) : (
-        log.meals.map((meal) => (
+        log.meals.map((meal, i) => (
           <MealCard
             key={meal.id}
+            index={i}
             meal={meal}
             onAddFood={() => setAddTo(meal.id)}
             onEditItem={(item) => setEditing({ mealId: meal.id, item })}
@@ -240,6 +216,9 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           <Plus size={16} /> {t("Add a meal")}
         </button>
       )}
+
+      {/* calibration — does the macro budget still fit the weekly scale? */}
+      <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
 
       {/* add a food to a meal */}
       <FoodSearchSheet
@@ -276,7 +255,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           if (editing) removeItem(editing.mealId, editing.item.id);
         }}
       />
-    </>
+    </div>
   );
 }
 
@@ -320,7 +299,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
       const items = shared.filter((s) => s.g[p] > 0).map((s) => toItem(s.food, s.g[p]));
       if (!items.length) continue;
       const log = next[p];
-      const meal: Meal = { id: rowId(), name: defaultMealName(log.meals.length), items };
+      const meal: Meal = { id: rowId(), name: mealName(log.meals.length), items };
       const updated = { ...log, meals: [...log.meals, meal] };
       saveDay(updated);
       next[p] = updated;
@@ -332,14 +311,14 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   };
 
   return (
-    <>
-      {/* two remaining panels, side by side (shared meal previewed on top) */}
-      <div className="grid grid-cols-2 gap-3">
+    <div className="flex flex-col gap-3">
+      {/* sticky dual Daily Macro Summary — live preview of the shared meal on top */}
+      <div className="sticky z-30 grid grid-cols-2 gap-3" style={{ top: STICKY_TOP }}>
         {order.map((p) => {
           const live = dayTotals(logs[p]);
           const sh = sharedTotals(p);
           const totalEaten = { kcal: live.kcal + sh.kcal, p: live.p + sh.p, c: live.c + sh.c, f: live.f + sh.f };
-          return <PersonRemain key={p} person={p} you={p === you} target={targets[p]} eaten={totalEaten} />;
+          return <PersonSummary key={p} person={p} you={p === you} target={targets[p]} eaten={totalEaten} />;
         })}
       </div>
 
@@ -428,74 +407,134 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
         partnerAcc={PERSON_ACC[partner]}
         onAddDual={(food, youG, partnerG) => addShared(food, youG, partnerG)}
       />
-    </>
+    </div>
   );
 }
 
 // ── presentational pieces ────────────────────────────────────────────────────
-function DayHero({ name, target, eaten }: { name: string; target: Macros; eaten: Macros }) {
-  const rem = target.kcal - eaten.kcal;
-  const over = rem < 0;
-  const pct = target.kcal > 0 ? Math.min(100, (eaten.kcal / target.kcal) * 100) : 0;
+// An animated progress ring (SVG). The arc eases to its new length on every
+// change, so adding a food visibly fills it.
+function Ring({
+  pct,
+  over,
+  size,
+  stroke,
+  color = "#ffffff",
+  track = "rgba(255,255,255,0.25)",
+  overColor = "#ffd1d1",
+  children,
+}: {
+  pct: number;
+  over: boolean;
+  size: number;
+  stroke: number;
+  color?: string;
+  track?: string;
+  overColor?: string;
+  children: ReactNode;
+}) {
+  const r = (size - stroke) / 2;
+  const C = 2 * Math.PI * r;
+  const off = C * (1 - Math.max(0, Math.min(1, pct)));
+  const half = size / 2;
   return (
-    <div style={{ background: BRAND_GRADIENT }} className="rounded-[24px] px-5 pb-5 pt-4 text-white">
-      <div className="flex items-center justify-between text-[12px] opacity-90">
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={half} cy={half} r={r} fill="none" stroke={track} strokeWidth={stroke} />
+        <circle
+          cx={half}
+          cy={half}
+          r={r}
+          fill="none"
+          stroke={over ? overColor : color}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={C}
+          strokeDashoffset={off}
+          style={{ transition: "stroke-dashoffset .55s cubic-bezier(.3,.85,.3,1)" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{children}</div>
+    </div>
+  );
+}
+
+// The always-visible Daily Macro Summary — calorie ring + the three macros, each
+// burning down live. The number pops on every change (the delta feedback).
+function DaySummary({ name, target, eaten }: { name: string; target: Macros; eaten: Macros }) {
+  const remK = target.kcal - eaten.kcal;
+  const over = remK < 0;
+  const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
+  const macros = [
+    { k: "P", color: MACRO.p, e: eaten.p, tg: target.p },
+    { k: "C", color: MACRO.c, e: eaten.c, tg: target.c },
+    { k: "F", color: MACRO.f, e: eaten.f, tg: target.f },
+  ];
+  return (
+    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: BRAND_GRADIENT }}>
+      <div className="flex items-center justify-between text-[11.5px] opacity-90">
         <span>{t("{name}'s day", { name })}</span>
         <span>{t("today")}</span>
       </div>
-      <div className="mt-0.5 flex items-end justify-between">
-        <div className="text-[40px] font-bold leading-none tracking-tight">{r0(Math.abs(rem))}</div>
-        <div className="pb-1 text-right text-[12px] opacity-90">
-          <div>{t("{eaten} of {target}", { eaten: r0(eaten.kcal), target: r0(target.kcal) })}</div>
-          <div>{t("kcal")}</div>
+      <div className="mt-2 flex items-center gap-4">
+        <Ring pct={pct} over={over} size={88} stroke={9}>
+          <span key={r0(remK)} className="pop num text-[23px] font-bold leading-none">{r0(Math.abs(remK))}</span>
+          <span className="text-[9px] font-semibold uppercase tracking-wide opacity-90">{over ? t("over") : t("left")}</span>
+        </Ring>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-baseline justify-between text-[10.5px] opacity-90">
+            <span className="font-semibold uppercase tracking-wide">{t("kcal")}</span>
+            <span className="num">{t("{eaten} of {target}", { eaten: r0(eaten.kcal), target: r0(target.kcal) })}</span>
+          </div>
+          {macros.map((m) => {
+            const d = m.tg - m.e; // remaining; negative = over
+            const mp = m.tg > 0 ? Math.min(100, (m.e / m.tg) * 100) : 0;
+            return (
+              <div key={m.k}>
+                <div className="flex items-baseline justify-between text-[10.5px]">
+                  <span className="font-bold" style={{ color: m.color }}>{m.k}</span>
+                  <span key={r0(d)} className="num pop" style={{ color: d < 0 ? "#ffdada" : "rgba(255,255,255,0.95)" }}>{r0(d)}g</span>
+                </div>
+                <div className="mt-0.5 h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.25)" }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${mp}%`, background: d < 0 ? "#ffd1d1" : "#ffffff", transition: "width .45s cubic-bezier(.3,.85,.3,1)" }}
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-      <div className="mt-1 text-[12px] font-semibold opacity-95">
-        {over ? t("kcal over today") : t("kcal left to eat today")}
-      </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.22)" }}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: over ? "#ffd1d1" : "#ffffff" }} />
-      </div>
     </div>
   );
 }
 
-function MacroTile({ label, unit, rem, eaten, target, color }: { label: string; unit: string; rem: number; eaten: number; target: number; color: string }) {
-  const over = rem < 0;
-  const pct = target > 0 ? Math.min(100, (eaten / target) * 100) : 0;
-  return (
-    <div className="rounded-[18px] border p-3.5" style={TILE}>
-      <div className="text-[11.5px] font-medium" style={{ color }}>{label}</div>
-      <div className="mt-1 text-[20px] font-bold leading-none text-bone">
-        {r0(Math.abs(rem))}
-        <span className="text-[11px] font-normal" style={{ color: "#7e8a98" }}>{unit}</span>
-      </div>
-      <div className="mt-0.5 text-[10px]" style={{ color: over ? "#f0556e" : "#7e8a98" }}>
-        {over ? t("over") : t("left")}
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: over ? "#f0556e" : color }} />
-      </div>
-    </div>
-  );
-}
-
-function PersonRemain({ person, you, target, eaten }: { person: Person; you: boolean; target: Macros; eaten: Macros }) {
+// Compact per-person summary for Together mode — a small accent ring + macros,
+// previewing the shared meal on top of that person's day. Updates live.
+function PersonSummary({ person, you, target, eaten }: { person: Person; you: boolean; target: Macros; eaten: Macros }) {
   const acc = PERSON_ACC[person];
-  const rem = target.kcal - eaten.kcal;
-  const over = rem < 0;
+  const remK = target.kcal - eaten.kcal;
+  const over = remK < 0;
+  const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
   return (
-    <div className="rounded-[18px] border p-3.5" style={{ background: acc + "12", borderColor: acc + "55" }}>
+    <div className="rounded-[18px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
       <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: acc }}>
         <span>{person === "gino" ? "▲" : "▼"}</span>
         {you ? t("You") : PERSON_NAME[person]}
       </div>
-      <div className="mt-1.5 text-[24px] font-bold leading-none text-bone">{r0(Math.abs(rem))}</div>
-      <div className="text-[10.5px]" style={{ color: over ? "#f0556e" : "#7e8a98" }}>
-        {over ? t("kcal over") : t("kcal left")}
-      </div>
-      <div className="mt-2 num text-[10.5px]" style={{ color: "#9aa6b2" }}>
-        {r0(Math.max(0, target.p - eaten.p))}P · {r0(Math.max(0, target.c - eaten.c))}C · {r0(Math.max(0, target.f - eaten.f))}F {t("left")}
+      <div className="mt-2 flex items-center gap-2.5">
+        <Ring pct={pct} over={over} size={58} stroke={6} color={acc} track="#222b38" overColor="#f0556e">
+          <span key={r0(remK)} className="pop num text-[15px] font-bold leading-none text-bone">{r0(Math.abs(remK))}</span>
+        </Ring>
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px]" style={{ color: over ? "#f0556e" : "#7e8a98" }}>
+            {over ? t("kcal over") : t("kcal left")}
+          </div>
+          <div className="num mt-1 text-[10.5px] leading-tight" style={{ color: "#9aa6b2" }}>
+            {r0(target.p - eaten.p)}P · {r0(target.c - eaten.c)}C · {r0(target.f - eaten.f)}F
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -522,13 +561,13 @@ function BreakdownCard({ person, you, totals, target, eaten }: { person: Person;
   );
 }
 
-function MealCard({ meal, onAddFood, onEditItem, onRemoveMeal }: { meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void }) {
+function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void }) {
   const tot = mealTotals(meal);
   return (
     <section className="rounded-[18px] border p-4" style={TILE}>
       <div className="mb-2 flex items-center justify-between">
         <div>
-          <div className="text-[14px] font-semibold text-bone">{t(meal.name)}</div>
+          <div className="text-[14px] font-semibold text-bone">{t("Meal {n}", { n: index + 1 })}</div>
           <div className="num text-[11px]" style={{ color: "#7e8a98" }}>
             {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
           </div>
@@ -573,23 +612,6 @@ function MealCard({ meal, onAddFood, onEditItem, onRemoveMeal }: { meal: Meal; o
 }
 
 // ── small controls ─────────────────────────────────────────────────────────────
-function Stepper({ value, onDec, onInc, suffix, light }: { value: number; onDec: () => void; onInc: () => void; suffix?: string; light?: boolean }) {
-  const col = light ? "rgba(255,255,255,0.22)" : "#222b38";
-  const txt = light ? "#ffffff" : "#e6edf3";
-  return (
-    <span className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: txt }}>
-      <button onClick={onDec} className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: col }}>
-        <Minus size={13} />
-      </button>
-      <span className="num min-w-[14px] text-center">{value}</span>
-      <button onClick={onInc} className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: col }}>
-        <Plus size={13} />
-      </button>
-      {suffix && <span className="text-[10px] font-normal opacity-80">{suffix}</span>}
-    </span>
-  );
-}
-
 // a compact grams editor used in the shared-meal rows (tap number to type)
 function GramPill({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
   return (

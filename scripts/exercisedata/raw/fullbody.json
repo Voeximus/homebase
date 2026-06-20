@@ -1,0 +1,122 @@
+[
+  {
+    "name": "Power clean",
+    "muscle": "fullbody",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Hang clean",
+    "muscle": "fullbody",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Barbell snatch",
+    "muscle": "fullbody",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Clean and jerk",
+    "muscle": "fullbody",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Barbell thruster",
+    "muscle": "fullbody",
+    "equipment": "barbell",
+    "type": "compound"
+  },
+  {
+    "name": "Kettlebell swing",
+    "muscle": "fullbody",
+    "equipment": "kettlebell",
+    "type": "compound"
+  },
+  {
+    "name": "Kettlebell clean and press",
+    "muscle": "fullbody",
+    "equipment": "kettlebell",
+    "type": "compound"
+  },
+  {
+    "name": "Turkish get-up",
+    "muscle": "fullbody",
+    "equipment": "kettlebell",
+    "type": "compound"
+  },
+  {
+    "name": "Kettlebell snatch",
+    "muscle": "fullbody",
+    "equipment": "kettlebell",
+    "type": "compound"
+  },
+  {
+    "name": "Burpee",
+    "muscle": "fullbody",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Box jump",
+    "muscle": "fullbody",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Mountain climber",
+    "muscle": "fullbody",
+    "equipment": "bodyweight",
+    "type": "cardio"
+  },
+  {
+    "name": "Bear crawl",
+    "muscle": "fullbody",
+    "equipment": "bodyweight",
+    "type": "compound"
+  },
+  {
+    "name": "Farmer carry",
+    "muscle": "fullbody",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Dumbbell devil press",
+    "muscle": "fullbody",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Dumbbell man maker",
+    "muscle": "fullbody",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Dumbbell thruster",
+    "muscle": "fullbody",
+    "equipment": "dumbbell",
+    "type": "compound"
+  },
+  {
+    "name": "Wall ball",
+    "muscle": "fullbody",
+    "equipment": "other",
+    "type": "compound"
+  },
+  {
+    "name": "Medicine ball slam",
+    "muscle": "fullbody",
+    "equipment": "other",
+    "type": "compound"
+  },
+  {
+    "name": "Sled push",
+    "muscle": "fullbody",
+    "equipment": "other",
+    "type": "compound"
+  }
+]
