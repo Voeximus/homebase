@@ -95,6 +95,7 @@ const ENV: EnvelopeVM = {
 // ── Mock data = Gino's real figures, so the look is verifiable without a login.
 const HOME: HomeVM = {
   firepower: 1983,
+  overspent: 0,
   debtFreeBy: "Oct '26",
   nextAmount: 991,
   nextDate: "Jun 30",

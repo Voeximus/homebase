@@ -76,11 +76,20 @@ export function buildFinanceVMs(
   );
   const myAccounts = personal ? ownAccounts(data.accounts, owner) : data.accounts;
 
-  // ── core plan math (identical to OnePager) ──
+  // ── core plan math ──
   const target = sumTargets(LEAN_VARIABLE);
   const math = planMath(data.recurring, data.debts, target);
+  const spent = variableSpentThisMonth(data.transactions, monthKey);
+  const byCat = spentByCategory(data.transactions, monthKey);
+  // Overspending the lean budget is real cash that can NO LONGER go at the debt
+  // this month, so it reduces firepower live as you spend. (Under-spending does
+  // NOT inflate firepower — the budget stays reserved, and a mid-month "under" is
+  // just the month not being over yet.) This flows into the payoff schedule, the
+  // hero number, and the "Next move", so they all reflect real available cash.
+  const overspend = Math.max(0, spent - target);
+  const firepower = Math.max(0, math.firepower - overspend);
   const ordered = orderedDebts(data.debts);
-  const schedule = payoffSchedule(ordered, math.firepower, now, PAY_DAYS, SAVINGS_SPLIT);
+  const schedule = payoffSchedule(ordered, firepower, now, PAY_DAYS, SAVINGS_SPLIT);
   const next = schedule[0] ?? null;
   const payoffDate = schedule.length ? schedule[schedule.length - 1].date : null;
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
@@ -88,8 +97,6 @@ export function buildFinanceVMs(
   const cleared = totalOriginal - math.totalDebt;
   const clearedPct = totalOriginal > 0 ? (cleared / totalOriginal) * 100 : 0;
   const commit = commitmentProgress(now);
-  const spent = variableSpentThisMonth(data.transactions, monthKey);
-  const byCat = spentByCategory(data.transactions, monthKey);
 
   // ── cash (lens-aware) ──
   const totalCash = totalBalance(data.accounts);
@@ -263,7 +270,8 @@ export function buildFinanceVMs(
   };
 
   const home: HomeVM = {
-    firepower: math.firepower,
+    firepower,
+    overspent: overspend,
     debtFreeBy,
     nextAmount: next ? next.total : 0,
     nextDate: next ? fmtDay(next.date) : "—",
@@ -309,7 +317,7 @@ export function buildFinanceVMs(
     income: math.income,
     living: math.fixedNonDebt,
     variable: math.variable,
-    atDebt: math.firepower,
+    atDebt: firepower,
     debtFreeBy,
     monthsToGo,
     interest: totalInterest,

@@ -13,7 +13,8 @@ export interface RecentRow {
 }
 
 export interface HomeVM {
-  firepower: number; // $/mo free to fire at debt
+  firepower: number; // $/mo free to fire at debt (already net of budget overspend)
+  overspent: number; // $ over the lean budget this month (0 = on/under budget) — reduces firepower
   debtFreeBy: string; // "Oct '26"
   nextAmount: number; // next payday send
   nextDate: string; // "Jun 30"

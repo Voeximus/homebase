@@ -328,6 +328,7 @@ const SEED: Record<string, string> = {
   "Refreshing…": "刷新中…",
   Updated: "已更新",
   "Nothing here yet.": "暂无记录。",
+  "−{amount} · over budget this month": "−{amount} · 本月超支",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.

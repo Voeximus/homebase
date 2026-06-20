@@ -36,6 +36,14 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           </div>
           <div className="pb-1 text-[12px] opacity-90">{t("debt-free {date}", { date: vm.debtFreeBy })}</div>
         </div>
+        {vm.overspent > 0 && (
+          <div
+            className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ background: "rgba(0,0,0,0.18)", color: "#ffe0c2" }}
+          >
+            {t("−{amount} · over budget this month", { amount: money(vm.overspent) })}
+          </div>
+        )}
       </div>
 
       {/* ── Bento grid ── */}
