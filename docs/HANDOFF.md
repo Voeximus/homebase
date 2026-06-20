@@ -6,6 +6,16 @@ _Last updated: 2026-06-19 (LIVE BANK FEED). This is the regrounding doc for resu
 >
 > **⚠️ This repo is PUBLIC — never commit credentials, secrets, or the financial-data backup.**
 
+> **⭐⭐ 2026-06-19 — FINANCE MODE WAS FULLY RESKINNED + RESTRUCTURED (shipped as the DEFAULT, live). Much of the "Mission Control one-pager" language below is now HISTORICAL.**
+> Finance mode is now a bright **4-tab bento app: Home · Insights · Activity · Profile**, in `src/views/redesign/`:
+> - `FinanceTabs.tsx` — the container (`useStore` → builds view-models via `buildVMs.ts`; a working Finance/Health + Mine/Household top bar; renders the 4 tabs + all the sheets).
+> - Presentational tabs `HomeTab` / `InsightsTab` / `ActivityTab` / `ProfileTab`; bento sheets `BillsSheet` / `CategorySheet` / `TxnSheet`; palette `lib/catColor.ts` (`catColor`/`catIcon`/`BRAND_GRADIENT`/`conicFromSegments`).
+> - `App.tsx FinanceGate` renders `FinanceTabs` by **default**; **`?oldui`** falls back to the original `OnePager` (kept ONLY because the new UI imports its exported sheets: SprintSheet/MarkSentSheet/PayBillSheet/AccountsSheet/SettingsSheet; the standalone LedgerSheet/AddTransactionSheet/ImportSheet are reused too). `?lab` = the no-login design lab (`DesignLab.tsx`, mock data) for verifying the new UI without auth.
+> - **Bills** now live on the Home tab (a tile → `BillsSheet`: upcoming list + "X paid" + a tappable money calendar; tap a bill → `PayBillSheet`).
+> - Budget = **7 lines** now (added a **Pets** category): Groceries500/Gas250/Dining150/Household90/Health110/Pets100/Subs50 = $1,250.
+> - **⭐ NEXT TASK: fix the FUZZY BILL-MATCHING** so a real bank bill-payment auto-flips the correct recurring bill (edit the Plaid edge fn categorizer's recurring-name match → normalized/fuzzy via `merchantKey` + learned `merchant_rules` bill rules). Then: repaint the reused OnePager sheet *interiors* bento; wire feed-income recording.
+> - Categories are **code-driven** (`src/lib/seed.ts DEFAULT_CATEGORIES`, not a DB table). Verification gotcha: `preview_screenshot`/async `preview_eval` **time out** (Vite HMR socket blocks network-idle) — use **synchronous** `preview_eval` DOM reads, and split click→read across separate eval calls so React flushes. The authed app can't be lab-verified (no login in preview) → typecheck+build guard those.
+
 ---
 
 ## What it is
