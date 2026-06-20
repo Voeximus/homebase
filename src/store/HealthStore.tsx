@@ -177,7 +177,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   type Actions = Omit<HealthStore, "loading" | "mealDays" | "workouts" | "routines">;
   const store = useMemo<Actions>(() => {
     // Debounce a write by key; remember the write fn so unmount can flush it.
-    const scheduleWrite = (key: string, doWrite: () => Promise<void>) => {
+    const scheduleWrite = (key: string, doWrite: () => Promise<void>, delay = 700) => {
       const prev = timers.current.get(key);
       if (prev) clearTimeout(prev);
       pending.current.set(key, doWrite);
@@ -187,34 +187,51 @@ export function HealthProvider({ children }: { children: ReactNode }) {
           timers.current.delete(key);
           pending.current.delete(key);
           void doWrite();
-        }, 700),
+        }, delay),
       );
     };
-    const flushDay = (person: string, date: string) => {
+    // On a failed write, RE-SCHEDULE with backoff so a dirty key always has a
+    // live timer and self-heals when connectivity / RLS recovers — never stuck
+    // local-only with no retry (which would also wedge the Realtime refetch).
+    // After a few attempts give up and clear dirty so the row can re-sync from
+    // the authoritative remote copy. `done()` runs the success/give-up path.
+    const onWriteResult = (key: string, error: unknown, attempt: number, retry: (n: number) => void) => {
+      if (!error) {
+        dirty.current.delete(key);
+        return;
+      }
+      console.error("health write failed", key, error);
+      if (attempt < 6) scheduleWrite(key, () => Promise.resolve(retry(attempt + 1)), Math.min(30000, 1000 * 2 ** attempt));
+      else dirty.current.delete(key); // gave up — next refetch re-syncs from remote
+    };
+
+    const writeDay = async (person: string, date: string, attempt = 0): Promise<void> => {
       const key = mdDirty(person, date);
-      scheduleWrite(key, async () => {
-        const day = dataRef.current.mealDays[dayKey(person, date)];
-        if (!day) return;
-        const { error } = await supabase
-          .from("meal_days")
-          .upsert({ person, date, meals: day.meals, updated_at: new Date().toISOString() }, { onConflict: "person,date" });
-        if (!error) dirty.current.delete(key);
-        else console.error("meal_days upsert", error);
-      });
+      const day = dataRef.current.mealDays[dayKey(person, date)];
+      if (!day) {
+        dirty.current.delete(key);
+        return;
+      }
+      const { error } = await supabase
+        .from("meal_days")
+        .upsert({ person, date, meals: day.meals, updated_at: new Date().toISOString() }, { onConflict: "person,date" });
+      onWriteResult(key, error, attempt, (n) => void writeDay(person, date, n));
     };
-    const flushWorkout = (id: string) => {
+    const writeWorkout = async (id: string, attempt = 0): Promise<void> => {
       const key = wDirty(id);
-      scheduleWrite(key, async () => {
-        const w = dataRef.current.workouts.find((x) => x.id === id);
-        if (!w) return;
-        const { error } = await supabase.from("workouts").upsert(
-          { id: w.id, person: w.person, date: w.date, name: w.name, notes: w.notes, exercises: w.exercises, done: w.done, updated_at: new Date().toISOString() },
-          { onConflict: "id" },
-        );
-        if (!error) dirty.current.delete(key);
-        else console.error("workouts upsert", error);
-      });
+      const w = dataRef.current.workouts.find((x) => x.id === id);
+      if (!w) {
+        dirty.current.delete(key);
+        return;
+      }
+      const { error } = await supabase.from("workouts").upsert(
+        { id: w.id, person: w.person, date: w.date, name: w.name, notes: w.notes, exercises: w.exercises, done: w.done, updated_at: new Date().toISOString() },
+        { onConflict: "id" },
+      );
+      onWriteResult(key, error, attempt, (n) => void writeWorkout(id, n));
     };
+    const flushDay = (person: string, date: string) => scheduleWrite(mdDirty(person, date), () => writeDay(person, date));
+    const flushWorkout = (id: string) => scheduleWrite(wDirty(id), () => writeWorkout(id));
 
     return {
       getDay(person, date) {
