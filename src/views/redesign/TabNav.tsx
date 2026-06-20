@@ -1,4 +1,5 @@
 import { Home, PieChart, LayoutGrid, User, type LucideIcon } from "lucide-react";
+import { t } from "../../lib/i18n";
 
 export type TabKey = "home" | "insights" | "activity" | "profile";
 
@@ -29,7 +30,7 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
             style={{ color: on ? "#34c5e8" : "#6b7686" }}
           >
             <Icon size={21} />
-            {label}
+            {t(label)}
           </button>
         );
       })}

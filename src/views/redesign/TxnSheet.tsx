@@ -3,6 +3,7 @@ import { X, Trash2, Check } from "lucide-react";
 import { useStore } from "../../store/FinanceStore";
 import { catColor, catIcon } from "../../lib/catColor";
 import { merchantKey } from "../../lib/categorize";
+import { t } from "../../lib/i18n";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -66,7 +67,7 @@ export function TxnSheet({
 
         <div className="mb-1.5 flex items-center justify-between">
           <span className="eyebrow" style={{ color: "#8b97a6" }}>
-            Category
+            {t("Category")}
           </span>
           <button
             onClick={() => setRemember((r) => !r)}
@@ -77,7 +78,7 @@ export function TxnSheet({
                 : { background: "#1b232e", color: "#7e8a98" }
             }
           >
-            {remember ? "✓ Remember merchant" : "Just this one"}
+            {remember ? t("✓ Remember merchant") : t("Just this one")}
           </button>
         </div>
         <div className="grid grid-cols-4 gap-2">
@@ -114,14 +115,14 @@ export function TxnSheet({
         </div>
         {!remember && (
           <p className="mt-1.5 text-[11px]" style={{ color: "#6b7686" }}>
-            Sets only this charge — other charges from this merchant stay as they are.
+            {t("Sets only this charge — other charges from this merchant stay as they are.")}
           </p>
         )}
 
         <div className="mt-3.5 rounded-xl p-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
-          <p className="text-[12px] font-semibold text-bone">Repeats every month or year?</p>
+          <p className="text-[12px] font-semibold text-bone">{t("Repeats every month or year?")}</p>
           <p className="mb-2 text-[11px]" style={{ color: "#8b97a6" }}>
-            Make it a bill — it joins your calendar and leaves variable spend.
+            {t("Make it a bill — it joins your calendar and leaves variable spend.")}
           </p>
           <div className="flex gap-2">
             <button
@@ -132,7 +133,7 @@ export function TxnSheet({
               className="flex-1 rounded-lg py-2 text-[12.5px] font-semibold"
               style={{ background: "#0e2230", color: "#34c5e8" }}
             >
-              Monthly
+              {t("Monthly")}
             </button>
             <button
               onClick={async () => {
@@ -142,7 +143,7 @@ export function TxnSheet({
               className="flex-1 rounded-lg py-2 text-[12.5px] font-semibold"
               style={{ background: "#0e2230", color: "#34c5e8" }}
             >
-              Yearly
+              {t("Yearly")}
             </button>
           </div>
         </div>
@@ -156,7 +157,7 @@ export function TxnSheet({
           className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-medium"
           style={{ background: "#161c26", color: "#8b97a6" }}
         >
-          <Check size={15} /> Not living spend — skip & exclude
+          <Check size={15} /> {t("Not living spend — skip & exclude")}
         </button>
         <button
           onClick={async () => {
@@ -166,7 +167,7 @@ export function TxnSheet({
           className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold"
           style={{ background: "#2a1518", color: "#f0556e" }}
         >
-          <Trash2 size={16} /> Delete transaction
+          <Trash2 size={16} /> {t("Delete transaction")}
         </button>
       </div>
     </div>

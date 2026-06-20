@@ -1,5 +1,6 @@
 import { ChevronDown, CircleCheck, Flame } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
+import { t } from "../../lib/i18n";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -36,11 +37,11 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
         className="flex items-end justify-between rounded-b-[24px] px-6 py-4 text-white"
       >
         <div>
-          <div className="text-[12px] opacity-90">where the money goes</div>
-          <div className="text-[26px] font-bold leading-none tracking-tight">Insights</div>
+          <div className="text-[12px] opacity-90">{t("where the money goes")}</div>
+          <div className="text-[26px] font-bold leading-none tracking-tight">{t("Insights")}</div>
         </div>
         <div className="flex items-center gap-1 pb-1 text-[13px] font-medium opacity-90">
-          June <ChevronDown size={15} />
+          {t("June")} <ChevronDown size={15} />
         </div>
       </div>
 
@@ -61,7 +62,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
             >
               <span className="text-[20px] font-bold text-bone">{money(vm.budgetSpent)}</span>
               <span className="text-[11px]" style={{ color: "#8b97a6" }}>
-                of {money(vm.budgetTarget)}
+                {t("of {amount}", { amount: money(vm.budgetTarget) })}
               </span>
             </div>
           </div>
@@ -70,17 +71,17 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
               className="text-[10.5px] font-semibold uppercase"
               style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
             >
-              Spent this month
+              {t("Spent this month")}
             </div>
             <div
               className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"
               style={{ color: onTrack ? "#46d18a" : "#f0556e" }}
             >
               {onTrack && <CircleCheck size={16} />}
-              {onTrack ? "On track" : "Over"}
+              {onTrack ? t("On track") : t("Over")}
             </div>
             <div className="mt-1 text-[12px]" style={{ color: "#8b97a6" }}>
-              {money(leftInBudget)} left in the lean budget
+              {t("{amount} left in the lean budget", { amount: money(leftInBudget) })}
             </div>
           </div>
         </div>
@@ -94,7 +95,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
             className="mb-3 text-[10.5px] font-semibold uppercase"
             style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
           >
-            Lean budget · plan vs actual
+            {t("Lean budget · plan vs actual")}
           </div>
           <div className="flex flex-col gap-3.5">
             {vm.categories.map((c) => {
@@ -140,33 +141,33 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
             className="mb-3 text-[10.5px] font-semibold uppercase"
             style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
           >
-            Where every dollar goes
+            {t("Where every dollar goes")}
           </div>
           <div className="flex h-[30px] overflow-hidden rounded-[8px]">
             <div
               className="flex items-center justify-center text-[10px] font-medium text-white"
               style={{ width: "45.9%", background: "#5b82b3" }}
             >
-              Living
+              {t("Living")}
             </div>
             <div
               className="flex items-center justify-center text-[10px] font-medium"
               style={{ width: "20.9%", background: "#e3b341", color: "#1a1407" }}
             >
-              Variable
+              {t("Variable")}
             </div>
             <div
               className="flex items-center justify-center text-[10px] font-medium"
               style={{ width: "33.2%", background: "#34c5e8", color: "#06222b" }}
             >
-              Debt
+              {t("Debt")}
             </div>
           </div>
           <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-            <Stat label="Income" value={money(vm.income)} color="#46d18a" />
-            <Stat label="Living" value={money(vm.living)} color="#e6edf3" />
-            <Stat label="Variable" value={money(vm.variable)} color="#e6edf3" />
-            <Stat label="At debt" value={money(vm.atDebt)} color="#34c5e8" />
+            <Stat label={t("Income")} value={money(vm.income)} color="#46d18a" />
+            <Stat label={t("Living")} value={money(vm.living)} color="#e6edf3" />
+            <Stat label={t("Variable")} value={money(vm.variable)} color="#e6edf3" />
+            <Stat label={t("At debt")} value={money(vm.atDebt)} color="#34c5e8" />
           </div>
         </div>
 
@@ -176,12 +177,12 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
           style={{ background: "linear-gradient(135deg,#5b21b6,#1d4ed8)" }}
         >
           <div>
-            <div className="text-[11.5px] opacity-90">debt-free</div>
+            <div className="text-[11.5px] opacity-90">{t("debt-free")}</div>
             <div className="text-[26px] font-bold leading-none tracking-tight">{vm.debtFreeBy}</div>
-            <div className="mt-1 text-[12px] opacity-90">~{vm.monthsToGo} months to go</div>
+            <div className="mt-1 text-[12px] opacity-90">{t("~{n} months to go", { n: vm.monthsToGo })}</div>
           </div>
           <div className="text-right">
-            <div className="text-[11.5px] opacity-90">interest you'll pay</div>
+            <div className="text-[11.5px] opacity-90">{t("interest you'll pay")}</div>
             <div className="text-[20px] font-bold">~{money(vm.interest)}</div>
           </div>
         </div>
@@ -193,9 +194,9 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
         >
           <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-bone">
             <Flame size={16} style={{ color: "#fb923c" }} />
-            Attack ladder
+            {t("Attack ladder")}
             <span className="text-[12px] font-normal" style={{ color: "#8b97a6" }}>
-              · smallest first
+              {t("· smallest first")}
             </span>
           </div>
           <div className="flex flex-col gap-2">
@@ -234,7 +235,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                         className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
                         style={{ background: "#46d18a26", color: "#46d18a" }}
                       >
-                        live
+                        {t("live")}
                       </span>
                     )}
                   </div>

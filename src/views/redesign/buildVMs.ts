@@ -23,6 +23,7 @@ import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { merchantKey } from "../../lib/categorize";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
+import { t } from "../../lib/i18n";
 import type { HomeVM, BillsVM } from "./vm";
 import type { InsightsVM } from "./InsightsTab";
 import type { ActivityVM, ActivityRow, ActivityFate } from "./ActivityTab";
@@ -43,7 +44,7 @@ const OWNER_DOT: Record<string, string> = {
 
 const shortDebt = (n: string) => {
   const m = n.match(/…(\d{4})/);
-  return m ? `Card …${m[1]}` : n;
+  return m ? t("Card …{last4}", { last4: m[1] }) : n;
 };
 
 export interface VMExtras {
@@ -129,10 +130,10 @@ export function buildFinanceVMs(
     LEAN_VARIABLE.find((l) => l.cats.includes(catId))?.label ?? catName(catId);
 
   const relDay = (date: string) => {
-    if (date === todayKey) return "today";
+    if (date === todayKey) return t("today");
     const d = new Date(date + "T00:00:00");
     const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    if (dateKeyOf(d) === dateKeyOf(y)) return "yesterday";
+    if (dateKeyOf(d) === dateKeyOf(y)) return t("yesterday");
     return fmtDay(d);
   };
 
@@ -207,10 +208,10 @@ export function buildFinanceVMs(
   const recCatOf = (recId?: string) =>
     data.recurring.find((r) => r.id === recId)?.categoryId ?? "other";
   const relLabelOf = (day: number) => {
-    if (day === todayNum) return "today";
-    if (day === todayNum + 1) return "tomorrow";
-    if (day < todayNum) return "overdue";
-    return `in ${day - todayNum} days`;
+    if (day === todayNum) return t("today");
+    if (day === todayNum + 1) return t("tomorrow");
+    if (day < todayNum) return t("overdue");
+    return t("in {n} days", { n: day - todayNum });
   };
   const dayDate = (day: number) =>
     new Date(now.getFullYear(), now.getMonth(), Math.min(day, daysInMonth));
@@ -315,14 +316,17 @@ export function buildFinanceVMs(
 
   // ── Activity (this-month + recent rows, fate-badged) ──
   const fateOf = (tx: Transaction): { fate: ActivityFate; badge: string } => {
-    if (tx.type === "income") return { fate: "income", badge: "Income · not in budget" };
+    if (tx.type === "income") return { fate: "income", badge: t("Income · not in budget") };
     if (tx.appliesTo) {
       const k = tx.appliesTo.kind;
-      return { fate: "skip", badge: `${k[0].toUpperCase()}${k.slice(1)} · not in budget` };
+      return {
+        fate: "skip",
+        badge: t("{Kind} · not in budget", { Kind: `${k[0].toUpperCase()}${k.slice(1)}` }),
+      };
     }
     if (tx.categoryId === "other" || !hasRule(tx.description))
-      return { fate: "review", badge: "Needs review" };
-    return { fate: "envelope", badge: `→ ${envLabel(tx.categoryId)}` };
+      return { fate: "review", badge: t("Needs review") };
+    return { fate: "envelope", badge: t("→ {label}", { label: envLabel(tx.categoryId) }) };
   };
   const rows: ActivityRow[] = visible.slice(0, 30).map((tx) => {
     const f = fateOf(tx);
@@ -358,11 +362,13 @@ export function buildFinanceVMs(
     ownerName: OWNER_NAME[owner],
     ownerColor: OWNER_COLOR[owner],
     email: extra.email,
-    bankName: connected ? "Bank of America" : "Connect a bank",
-    bankSub: connected ? `Connected · ${connected} accounts` : "Tap to connect",
+    bankName: connected ? "Bank of America" : t("Connect a bank"),
+    bankSub: connected
+      ? t("Connected · {n} accounts", { n: connected })
+      : t("Tap to connect"),
     cardsSub: linkedCards.length
-      ? `${linkedCards.join(" + ")} linked · auto-syncs`
-      : "Track a card as debt",
+      ? t("{cards} linked · auto-syncs", { cards: linkedCards.join(" + ") })
+      : t("Track a card as debt"),
     accounts: cashAccounts(profileAccounts).map((a) => ({
       name: `${a.name} …${a.last4 ?? ""}`,
       owner: a.owner,
@@ -377,7 +383,7 @@ export function buildFinanceVMs(
         id: r.id,
         name: r.name,
         icon: /electric|srp/i.test(r.name) ? ("electric" as const) : ("phone" as const),
-        est: `~$${billExpected(r, data.transactions).toFixed(2)} · est. from last 3`,
+        est: t("~${x} · est. from last 3", { x: billExpected(r, data.transactions).toFixed(2) }),
         on: true,
       })),
   };

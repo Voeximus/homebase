@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { BRAND_GRADIENT } from "../../lib/catColor";
+import { t } from "../../lib/i18n";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -108,7 +109,7 @@ export function ProfileTab({
           <div className="truncate text-[12px] opacity-90">{vm.email}</div>
           <div className="mt-1 flex items-center gap-1.5 text-[11px] opacity-90">
             <span className="h-2 w-2 rounded-full" style={{ background: "#46d18a" }} />
-            Synced · this device is {vm.ownerName}
+            {t("Synced · this device is {name}", { name: vm.ownerName })}
           </div>
         </div>
         <button
@@ -122,7 +123,7 @@ export function ProfileTab({
 
       <div className="flex flex-col gap-5 p-4">
         {/* ── Connections ── */}
-        <Group label="Connections">
+        <Group label={t("Connections")}>
           <button
             onClick={taps.onBank}
             className="flex w-full items-center gap-3 border-b p-4 text-left transition active:scale-[0.99]"
@@ -155,7 +156,7 @@ export function ProfileTab({
               <CreditCard size={17} />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-medium text-bone">Cards as debt</div>
+              <div className="text-[14px] font-medium text-bone">{t("Cards as debt")}</div>
               <div className="text-[12px]" style={{ color: "#8b97a6" }}>
                 {vm.cardsSub}
               </div>
@@ -174,14 +175,14 @@ export function ProfileTab({
               <FileUp size={17} />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-medium text-bone">Import a statement</div>
+              <div className="text-[14px] font-medium text-bone">{t("Import a statement")}</div>
             </div>
             <ChevronRight size={18} style={{ color: "#6b7686" }} />
           </button>
         </Group>
 
         {/* ── Accounts ── */}
-        <Group label="Accounts">
+        <Group label={t("Accounts")}>
           {vm.accounts.map((a, i) => (
             <div
               key={a.name + i}
@@ -205,7 +206,7 @@ export function ProfileTab({
         </Group>
 
         {/* ── Preferences ── */}
-        <Group label="Preferences">
+        <Group label={t("Preferences")}>
           <div
             className="flex items-center gap-3 border-b p-4"
             style={{ borderColor: ROW_BORDER }}
@@ -216,7 +217,7 @@ export function ProfileTab({
             >
               <Languages size={17} />
             </span>
-            <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">Language</div>
+            <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Language")}</div>
             <Segmented
               options={[
                 { key: "en", label: "EN" },
@@ -237,11 +238,11 @@ export function ProfileTab({
             >
               <Users size={17} />
             </span>
-            <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">Default view</div>
+            <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Default view")}</div>
             <Segmented
               options={[
-                { key: "me", label: "Mine" },
-                { key: "all", label: "Household" },
+                { key: "me", label: t("Mine") },
+                { key: "all", label: t("Household") },
               ]}
               active={vm.lens}
               onSelect={taps.onLens}
@@ -258,13 +259,13 @@ export function ProfileTab({
             >
               <HeartPulse size={17} />
             </span>
-            <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">Health mode</div>
+            <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Health mode")}</div>
             <ChevronRight size={18} style={{ color: "#6b7686" }} />
           </button>
         </Group>
 
         {/* ── Variable bills ── */}
-        <Group label="Variable Bills">
+        <Group label={t("Variable Bills")}>
           {vm.variableBills.map((b, i) => {
             const Icon = b.icon === "electric" ? Zap : Smartphone;
             return (
@@ -308,7 +309,7 @@ export function ProfileTab({
           className="flex items-center justify-center gap-2 rounded-[16px] border p-4 text-[14px] font-medium transition active:scale-[0.99]"
           style={{ borderColor: "#232d3a", color: "#8b97a6" }}
         >
-          <LogOut size={17} /> Sign out
+          <LogOut size={17} /> {t("Sign out")}
         </button>
 
         {/* ── Advanced ── */}
@@ -318,7 +319,7 @@ export function ProfileTab({
           style={{ color: "#6b7686" }}
         >
           <AlertTriangle size={15} />
-          <span className="flex-1 text-left">Advanced · re-seed, clear all data</span>
+          <span className="flex-1 text-left">{t("Advanced · re-seed, clear all data")}</span>
           <ChevronDown size={16} />
         </button>
       </div>
@@ -358,7 +359,7 @@ function Segmented<T extends string>({
                 : { color: "#8b97a6" }
             }
           >
-            {o.label}
+            {t(o.label)}
           </button>
         );
       })}

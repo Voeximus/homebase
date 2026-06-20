@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RefreshCw, Plus, ArrowDownLeft, HelpCircle } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon } from "../../lib/catColor";
+import { t } from "../../lib/i18n";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -110,9 +111,9 @@ export function ActivityTab({
         className="flex items-start justify-between rounded-b-[24px] px-6 py-4 text-white"
       >
         <div>
-          <div className="text-[26px] font-bold leading-none tracking-tight">Activity</div>
+          <div className="text-[26px] font-bold leading-none tracking-tight">{t("Activity")}</div>
           <div className="mt-1.5 text-[12px] opacity-90">
-            spent {money(vm.sinceMonday)} since Monday
+            {t("spent {amount} since Monday", { amount: money(vm.sinceMonday) })}
           </div>
         </div>
         <button
@@ -123,7 +124,7 @@ export function ActivityTab({
             border: "1px solid rgba(255,255,255,.3)",
           }}
         >
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {t("Refresh")}
         </button>
       </div>
 
@@ -133,16 +134,16 @@ export function ActivityTab({
           className="flex gap-1 rounded-[13px] p-1"
           style={{ background: "#141a24", border: "1px solid #232d3a" }}
         >
-          {chip("all", "All")}
-          {chip("budget", "In budget")}
-          {chip("review", "Needs review", vm.needsReview)}
+          {chip("all", t("All"))}
+          {chip("budget", t("In budget"))}
+          {chip("review", t("Needs review"), vm.needsReview)}
         </div>
 
         {/* ── Month group ── */}
         <div>
           <div className="mb-2 flex items-baseline justify-between">
             <span className="text-[13.5px] font-semibold text-bone">{vm.monthLabel}</span>
-            <span className="text-[12px] text-taupe">{money(vm.counted)} counted</span>
+            <span className="text-[12px] text-taupe">{t("{amount} counted", { amount: money(vm.counted) })}</span>
           </div>
 
           <div

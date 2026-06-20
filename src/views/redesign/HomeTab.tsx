@@ -1,5 +1,6 @@
 import { ChevronRight, ArrowRight, Flame, Wallet, Target, Receipt } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
+import { t } from "../../lib/i18n";
 import type { HomeVM } from "./vm";
 
 const money = (n: number) =>
@@ -28,13 +29,13 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         className="rounded-b-[26px] px-6 pb-5 pt-4 text-white"
       >
         <div className="flex items-center gap-1.5 text-[12px] opacity-90">
-          free to fire at debt · this month
+          {t("free to fire at debt · this month")}
         </div>
         <div className="mt-0.5 flex items-end justify-between">
           <div className="text-[40px] font-bold leading-none tracking-tight">
             {money(vm.firepower)}
           </div>
-          <div className="pb-1 text-[12px] opacity-90">debt-free {vm.debtFreeBy}</div>
+          <div className="pb-1 text-[12px] opacity-90">{t("debt-free {date}", { date: vm.debtFreeBy })}</div>
         </div>
       </div>
 
@@ -47,16 +48,16 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           style={{ background: "#13211a", borderColor: "#1f3a2c" }}
         >
           <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#46d18a" }}>
-            <Wallet size={14} /> Cash
+            <Wallet size={14} /> {t("Cash")}
           </div>
           <div className="mt-1.5 text-[22px] font-bold text-bone">{money(vm.cash)}</div>
           {vm.processing > 0 ? (
             <div className="mt-0.5 text-[11px] font-medium" style={{ color: "#d9a441" }}>
-              ~{money2(vm.processing)} settling
+              {t("~{amount} settling", { amount: money2(vm.processing) })}
             </div>
           ) : (
             <div className="mt-0.5 text-[11px]" style={{ color: "#7e8a98" }}>
-              {vm.cashAccounts} accounts
+              {t("{n} accounts", { n: vm.cashAccounts })}
             </div>
           )}
         </button>
@@ -68,7 +69,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           style={{ background: "#15172b", borderColor: "#282a4a" }}
         >
           <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#818cf8" }}>
-            <Flame size={14} /> Debt left
+            <Flame size={14} /> {t("Debt left")}
           </div>
           <div className="mt-1.5 text-[22px] font-bold text-bone">{money(vm.debtLeft)}</div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
@@ -101,12 +102,12 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
             </div>
           </div>
           <div>
-            <div className="text-[11.5px] text-taupe">Budget</div>
+            <div className="text-[11.5px] text-taupe">{t("Budget")}</div>
             <div className="mt-0.5 text-[13px] font-semibold text-bone">
-              of {money(vm.budgetTarget)}
+              {t("of {amount}", { amount: money(vm.budgetTarget) })}
             </div>
             <div className="mt-0.5 text-[11px]" style={{ color: "#46d18a" }}>
-              {vm.budgetSpent <= vm.budgetTarget ? "on track" : "over"}
+              {vm.budgetSpent <= vm.budgetTarget ? t("on track") : t("over")}
             </div>
           </div>
         </button>
@@ -129,14 +130,14 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
               style={{ background: "#141a24" }}
             >
               <span className="text-[15px] font-bold text-bone">{vm.streakDay}</span>
-              <span className="text-[9px] text-taupe">of {vm.streakTotal}</span>
+              <span className="text-[9px] text-taupe">{t("of {n}", { n: vm.streakTotal })}</span>
             </div>
           </div>
           <div>
-            <div className="text-[11.5px] text-taupe">Streak</div>
-            <div className="mt-0.5 text-[13px] font-semibold text-bone">90-day sprint</div>
+            <div className="text-[11.5px] text-taupe">{t("Streak")}</div>
+            <div className="mt-0.5 text-[13px] font-semibold text-bone">{t("90-day sprint")}</div>
             <div className="mt-0.5 text-[11px]" style={{ color: "#f59e0b" }}>
-              good habits
+              {t("good habits")}
             </div>
           </div>
         </button>
@@ -149,10 +150,10 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         >
           <div>
             <div className="flex items-center gap-1.5 text-[11.5px] opacity-90">
-              <Target size={14} /> Next move · {vm.nextDate} payday
+              <Target size={14} /> {t("Next move · {date} payday", { date: vm.nextDate })}
             </div>
             <div className="mt-1.5 text-[22px] font-bold">
-              Send {money(vm.nextAmount)} at the debt
+              {t("Send {amount} at the debt", { amount: money(vm.nextAmount) })}
             </div>
           </div>
           <ArrowRight size={22} />
@@ -172,13 +173,13 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
-              <span className="text-[13.5px] font-semibold text-bone">Bills</span>
+              <span className="text-[13.5px] font-semibold text-bone">{t("Bills")}</span>
               <span className="text-[12px]" style={{ color: "#8b97a6" }}>
-                {money(vm.bills.left)} left
+                {t("{amount} left", { amount: money(vm.bills.left) })}
               </span>
             </div>
             <div className="truncate text-[11.5px]" style={{ color: "#7e8a98" }}>
-              next: {vm.bills.nextName} · {vm.bills.nextDate}
+              {t("next: {name} · {date}", { name: vm.bills.nextName, date: vm.bills.nextDate })}
             </div>
           </div>
           <ChevronRight size={18} style={{ color: "#6b7686" }} />
@@ -197,10 +198,10 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
             />
             <div className="flex-1">
               <div className="text-[13px] font-semibold" style={{ color: "#f4a6b6" }}>
-                Unusual purchases
+                {t("Unusual purchases")}
               </div>
               <div className="text-[12px]" style={{ color: "#9aa6b2" }}>
-                {vm.anomalyCount} buys ran higher than usual
+                {t("{n} buys ran higher than usual", { n: vm.anomalyCount })}
               </div>
             </div>
             <ChevronRight size={18} style={{ color: "#6b7686" }} />
@@ -214,9 +215,9 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
           <div className="mb-2 flex items-baseline justify-between">
-            <span className="eyebrow text-taupe">Recent</span>
+            <span className="eyebrow text-taupe">{t("Recent")}</span>
             <span className="text-[12px]" style={{ color: "#9aa6b2" }}>
-              {money(vm.sinceMonday)} since Mon
+              {t("{amount} since Mon", { amount: money(vm.sinceMonday) })}
             </span>
           </div>
           <div className="flex flex-col gap-2.5">

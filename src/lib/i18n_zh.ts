@@ -215,6 +215,113 @@ const SEED: Record<string, string> = {
   "Already have one?": "已有账户？",
   "Working…": "处理中…",
   "Setting up…": "设置中…",
+
+  // ── bento reskin: nav / Home ──
+  Home: "主页",
+  Insights: "洞察",
+  Profile: "我的",
+  "free to fire at debt · this month": "本月可用于还债",
+  "debt-free {date}": "{date} 无债",
+  "~{amount} settling": "~{amount} 入账中",
+  "Debt left": "剩余债务",
+  over: "超支",
+  "of {n}": "共 {n}",
+  Streak: "连续打卡",
+  "90-day sprint": "90 天冲刺",
+  "good habits": "好习惯",
+  "Next move · {date} payday": "下一步 · {date} 发薪日",
+  "Send {amount} at the debt": "还款 {amount}",
+  "{amount} left": "剩 {amount}",
+  "next: {name} · {date}": "下一笔：{name} · {date}",
+  "Unusual purchases": "异常消费",
+  "{n} buys ran higher than usual": "{n} 笔消费高于平常",
+  Recent: "近期",
+  "{amount} since Mon": "周一以来 {amount}",
+
+  // ── bento reskin: Insights ──
+  "where the money goes": "钱都花在哪",
+  June: "六月",
+  "On track": "进度正常",
+  Over: "超支",
+  "{amount} left in the lean budget": "精简预算还剩 {amount}",
+  "Lean budget · plan vs actual": "精简预算 · 计划与实际",
+  "Where every dollar goes": "每一块钱的去向",
+  Living: "生活开支",
+  Variable: "浮动开支",
+  Income: "收入",
+  "At debt": "还债",
+  "debt-free": "无债之日",
+  "~{n} months to go": "约还剩 {n} 个月",
+  "interest you'll pay": "将支付的利息",
+  "Attack ladder": "还债顺序",
+  "· smallest first": "· 从最小开始",
+
+  // ── bento reskin: Activity ──
+  "spent {amount} since Monday": "本周一以来已花费 {amount}",
+  Refresh: "刷新",
+  "In budget": "已计入预算",
+  "Needs review": "待核对",
+  "{amount} counted": "已计入 {amount}",
+
+  // ── bento reskin: Profile ──
+  "Synced · this device is {name}": "已同步 · 本设备为 {name}",
+  Connections: "连接",
+  "Import a statement": "导入对账单",
+  Accounts: "账户",
+  Preferences: "偏好设置",
+  Language: "语言",
+  "Default view": "默认视图",
+  "Health mode": "健康模式",
+  "Variable Bills": "浮动账单",
+  "Sign out": "退出登录",
+  "Advanced · re-seed, clear all data": "高级 · 重新初始化、清除所有数据",
+
+  // ── bento reskin: Bills sheet + calendar ──
+  "S M T W T F S": "日 一 二 三 四 五 六",
+  "{mon} {day}": "{mon} {day}日",
+  "Nothing due this day.": "当天没有到期账单。",
+  Payday: "发薪日",
+  "Bill due": "账单到期",
+  "Back to the list": "返回列表",
+  " · ~est": " · ~预估",
+  "{n} paid this month": "本月已付 {n} 笔",
+  "Open the money calendar": "打开收支日历",
+
+  // ── bento reskin: Category sheet ──
+  "{pct}% used": "已用 {pct}%",
+  "{amount} over": "超支 {amount}",
+  "Nothing in this category yet.": "此类别暂无记录。",
+  "tap to recategorize": "点按重新归类",
+
+  // ── bento reskin: Txn sheet ──
+  Category: "类别",
+  "✓ Remember merchant": "✓ 记住此商家",
+  "Just this one": "仅此一笔",
+  "Sets only this charge — other charges from this merchant stay as they are.":
+    "仅设置这笔交易——该商家的其他交易保持不变。",
+  "Repeats every month or year?": "每月或每年重复？",
+  "Make it a bill — it joins your calendar and leaves variable spend.":
+    "设为账单——它会加入你的日历并移出浮动支出。",
+  Monthly: "每月",
+  Yearly: "每年",
+  "Not living spend — skip & exclude": "非生活支出——跳过并排除",
+
+  // ── bento reskin: VM-built strings (buildVMs) ──
+  today: "今天",
+  yesterday: "昨天",
+  tomorrow: "明天",
+  overdue: "已逾期",
+  "in {n} days": "{n}天后",
+  "Income · not in budget": "收入 · 不计入预算",
+  "{Kind} · not in budget": "{Kind} · 不计入预算",
+  "→ {label}": "→ {label}",
+  "Connect a bank": "连接银行",
+  "Connected · {n} accounts": "已连接 · {n}个账户",
+  "Tap to connect": "点击连接",
+  "{cards} linked · auto-syncs": "{cards} 已关联 · 自动同步",
+  "Track a card as debt": "将信用卡记为债务",
+  "~${x} · est. from last 3": "约${x} · 按最近3次估算",
+  "Card …{last4}": "卡 …{last4}",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.

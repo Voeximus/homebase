@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Receipt, X, CircleCheck, CalendarDays, ArrowLeft, Check } from "lucide-react";
 import { catColor, catIcon } from "../../lib/catColor";
+import { t } from "../../lib/i18n";
 import type { BillsVM, BillRow } from "./vm";
 
 const money2 = (n: number) =>
@@ -55,10 +56,10 @@ export function BillsSheet({
           >
             <Receipt size={18} />
           </span>
-          <div className="flex-1 text-[18px] font-bold text-bone">Bills</div>
+          <div className="flex-1 text-[18px] font-bold text-bone">{t("Bills")}</div>
           {!showCal && (
             <span className="text-[12px]" style={{ color: "#8b97a6" }}>
-              {money0(vm.leftThisMonth)} left
+              {t("{amount} left", { amount: money0(vm.leftThisMonth) })}
             </span>
           )}
           <button onClick={onClose} style={{ color: "#6b7686" }}>
@@ -69,7 +70,9 @@ export function BillsSheet({
         {showCal ? (
           <>
             <div className="mb-2 grid grid-cols-7 gap-px">
-              {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+              {/* one key for the whole row — per-letter t() would mistranslate the
+                  duplicate S (Sun/Sat) and T (Tue/Thu) in 中文 (position-specific). */}
+              {t("S M T W T F S").split(" ").map((d, i) => (
                 <div key={i} className="text-center text-[10px]" style={{ color: "#5f6a78" }}>
                   {d}
                 </div>
@@ -112,11 +115,11 @@ export function BillsSheet({
             {selectedDay && (
               <div className="mt-3 border-t pt-3" style={{ borderColor: "#1b232e" }}>
                 <div className="mb-2 text-[12px] font-semibold text-bone">
-                  {mon} {selectedDay}
+                  {t("{mon} {day}", { mon, day: selectedDay })}
                 </div>
                 {dayBills.length === 0 ? (
                   <p className="text-[12px]" style={{ color: "#7e8a98" }}>
-                    Nothing due this day.
+                    {t("Nothing due this day.")}
                   </p>
                 ) : (
                   dayBills.map((b) => {
@@ -159,10 +162,10 @@ export function BillsSheet({
             )}
             <div className="mt-3 flex gap-3.5 border-t pt-3" style={{ borderColor: "#1b232e" }}>
               <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#46d18a" }} /> Payday
+                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#46d18a" }} /> {t("Payday")}
               </span>
               <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#fb923c" }} /> Bill due
+                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#fb923c" }} /> {t("Bill due")}
               </span>
             </div>
             <button
@@ -170,14 +173,14 @@ export function BillsSheet({
               className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[13px] font-semibold"
               style={{ background: "#161c26", color: "#8b97a6" }}
             >
-              <ArrowLeft size={16} /> Back to the list
+              <ArrowLeft size={16} /> {t("Back to the list")}
             </button>
           </>
         ) : (
           <>
             {vm.upcoming.length === 0 ? (
               <p className="py-6 text-center text-[13px]" style={{ color: "#7e8a98" }}>
-                All bills paid this month.
+                {t("All bills paid this month.")}
               </p>
             ) : (
               <div className="flex flex-col">
@@ -201,7 +204,7 @@ export function BillsSheet({
                       <div className="truncate text-[13.5px] font-medium text-bone">{b.name}</div>
                       <div className="text-[11px]" style={{ color: "#7e8a98" }}>
                         {b.relLabel}
-                        {b.variable ? " · ~est" : ""}
+                        {b.variable ? t(" · ~est") : ""}
                       </div>
                     </div>
                     <span className="text-[13.5px] font-semibold text-bone">
@@ -220,7 +223,7 @@ export function BillsSheet({
               >
                 <CircleCheck size={17} style={{ color: "#46d18a" }} />
                 <span className="flex-1 text-[12.5px]" style={{ color: "#9fe3c0" }}>
-                  {vm.paidCount} paid this month
+                  {t("{n} paid this month", { n: vm.paidCount })}
                 </span>
                 <span className="text-[12.5px] font-semibold" style={{ color: "#46d18a" }}>
                   {money0(vm.paidTotal)}
@@ -233,7 +236,7 @@ export function BillsSheet({
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[13px] font-semibold"
               style={{ background: "#0e2230", border: "1px solid #1d5066", color: "#34c5e8" }}
             >
-              <CalendarDays size={16} /> Open the money calendar
+              <CalendarDays size={16} /> {t("Open the money calendar")}
             </button>
           </>
         )}

@@ -3,7 +3,7 @@ import { Wallet, HeartPulse, User, Users } from "lucide-react";
 import { useStore } from "../../store/FinanceStore";
 import { useAuth } from "../../auth/AuthProvider";
 import { useLang } from "../../components/LanguageProvider";
-import { getLang } from "../../lib/i18n";
+import { getLang, t } from "../../lib/i18n";
 import { syncNow } from "../../lib/plaidClient";
 import type { AppMode } from "../../components/ModeToggle";
 import type { Owner } from "../../lib/owner";
@@ -82,10 +82,10 @@ function TopBar({
         style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <Seg active={mode === "finance"} onClick={() => onMode("finance")}>
-          <Wallet size={14} /> Finance
+          <Wallet size={14} /> {t("Finance")}
         </Seg>
         <Seg active={mode === "health"} onClick={() => onMode("health")}>
-          <HeartPulse size={14} /> Health
+          <HeartPulse size={14} /> {t("Health")}
         </Seg>
       </span>
       <span
@@ -93,10 +93,10 @@ function TopBar({
         style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <Seg active={lens === "me"} onClick={() => onLens("me")}>
-          <User size={14} /> Mine
+          <User size={14} /> {t("Mine")}
         </Seg>
         <Seg active={lens === "all"} onClick={() => onLens("all")}>
-          <Users size={14} /> All
+          <Users size={14} /> {t("All")}
         </Seg>
       </span>
     </div>
