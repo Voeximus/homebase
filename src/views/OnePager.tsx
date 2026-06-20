@@ -323,6 +323,7 @@ export function OnePager({
         return false;
       const days = recDaysByRec[e.recurringId!] ?? [e.day];
       const rd = t.appliesTo.day;
+      if (rd == null) return days.length === 1; // no day to snap → only the unambiguous single-installment
       const nearest = days.reduce((b, d) => (Math.abs(d - rd) < Math.abs(b - rd) ? d : b), days[0]);
       return nearest === e.day;
     });
