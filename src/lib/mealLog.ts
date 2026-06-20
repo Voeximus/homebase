@@ -62,6 +62,10 @@ export interface DayLog {
   date: string; // YYYY-MM-DD (local)
   person: Person;
   meals: Meal[]; // created dynamically as you eat — no fixed slots
+  // macro-plan adherence (the 8 PM nudge). A day with meals is "followed"
+  // implicitly; these mark a day with NO logged meals.
+  status?: "estimated" | "skipped";
+  note?: string; // the rough "what did you eat" description for an estimated day
 }
 
 // ── macro math ───────────────────────────────────────────────────────────────

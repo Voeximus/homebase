@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import {
   ArrowLeft,
   Check,
+  Flame,
   Minus,
   Plus,
   ScanLine,
@@ -34,6 +35,7 @@ import {
 } from "../lib/mealLog";
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
+import { adherenceStats, type DayStatus } from "../lib/adherence";
 import { BRAND_GRADIENT } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
@@ -155,13 +157,24 @@ function ModePill({
 function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const today = todayStr();
   const target = DAILY[person] as Macros;
-  const { getDay, setDay } = useHealth();
+  const { getDay, setDay, mealDays } = useHealth();
   const log = getDay(person, today);
   const update = (fn: (l: DayLog) => DayLog) => setDay(fn(getDay(person, today)));
 
   // sheet state: adding a food to a meal, or editing an existing item
   const [addTo, setAddTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ mealId: string; item: LoggedItem } | null>(null);
+  const [estimateOpen, setEstimateOpen] = useState(false);
+
+  // adherence + the gentle 8 PM nudge (in-app)
+  const snoozeKey = `hb-nudge-snooze-${person}-${today}`;
+  const [snoozed, setSnoozed] = useState(() => !!localStorage.getItem(snoozeKey));
+  const afterEvening = new Date().getHours() >= 20;
+  const showNudge = afterEvening && log.meals.length === 0 && !log.status && !snoozed;
+  const stats = useMemo(() => adherenceStats(new Map(Object.entries(mealDays)), person, today), [mealDays, person, today]);
+  const markSkipped = () => update((l) => ({ ...l, status: "skipped" }));
+  const markEstimated = (note: string) => update((l) => ({ ...l, status: "estimated", note: note.trim() || undefined }));
+  const snooze = () => { localStorage.setItem(snoozeKey, "1"); setSnoozed(true); };
 
   const eaten = dayTotals(log);
 
@@ -204,6 +217,9 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         <DaySummary name={PERSON_NAME[person]} target={target} eaten={eaten} />
       </div>
 
+      {/* the gentle 8 PM nudge */}
+      {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
+
       {/* meals — created dynamically, no fixed slots */}
       {log.meals.length === 0 ? (
         <button
@@ -237,6 +253,9 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           <Plus size={16} /> {t("Add a meal")}
         </button>
       )}
+
+      {/* adherence — streak + compliance over time */}
+      <AdherenceCard stats={stats} acc={PERSON_ACC[person]} />
 
       {/* calibration — does the macro budget still fit the weekly scale? */}
       <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
@@ -276,6 +295,12 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         onRemove={() => {
           if (editing) removeItem(editing.mealId, editing.item.id);
         }}
+      />
+
+      <EstimateSheet
+        open={estimateOpen}
+        onClose={() => setEstimateOpen(false)}
+        onLog={(note) => { markEstimated(note); setEstimateOpen(false); }}
       />
     </div>
   );
@@ -630,6 +655,111 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
         </div>
       </div>
     </div>
+  );
+}
+
+// ── adherence: the gentle 8 PM nudge, the estimate sheet, the history card ──────
+function NudgeCard({ onYes, onNo, onLater }: { onYes: () => void; onNo: () => void; onLater: () => void }) {
+  return (
+    <div className="rounded-[18px] border p-4" style={{ background: "#161a2e", borderColor: "#2a2f55" }}>
+      <div className="flex items-start gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: "#2a2416", color: "#f6c453" }}>
+          <Flame size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-semibold text-bone">{t("Did you follow the meal plan today?")}</p>
+          <p className="mt-0.5 text-[12px]" style={{ color: "#97a3b2" }}>{t("Nothing's logged yet — a quick check-in keeps your history honest.")}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button onClick={onYes} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold text-white transition active:scale-[0.98]" style={{ background: BRAND_GRADIENT }}>
+          {t("Yes, I did")}
+        </button>
+        <button onClick={onNo} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold transition active:scale-[0.98]" style={{ background: "rgba(240,85,110,0.12)", color: "#f0556e" }}>
+          {t("No, off-plan")}
+        </button>
+        <button onClick={onLater} className="px-2 text-[12px] font-medium" style={{ color: "#6b7686" }}>
+          {t("Later")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EstimateSheet({ open, onClose, onLog }: { open: boolean; onClose: () => void; onLog: (note: string) => void }) {
+  const [note, setNote] = useState("");
+  useEffect(() => { if (open) setNote(""); }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
+      <div className="w-full max-w-[420px] overflow-hidden" style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #46d18a", borderRadius: "22px", padding: "16px" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 text-[16px] font-bold text-bone">{t("Nice — roughly what did you eat?")}</div>
+          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={20} /></button>
+        </div>
+        <p className="mt-1 text-[12px]" style={{ color: "#97a3b2" }}>{t("A quick note is enough. Today gets marked followed (estimated, ~on target).")}</p>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          autoFocus
+          rows={3}
+          placeholder={t("e.g. chicken + rice + veg, a shake, a banana…")}
+          className="mt-3 w-full resize-none rounded-xl px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
+          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        />
+        <button
+          onClick={() => onLog(note)}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+          style={{ background: BRAND_GRADIENT }}
+        >
+          <Check size={16} /> {t("Log as followed")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const STATUS_COLOR: Record<DayStatus, string> = {
+  logged: "#46d18a",
+  estimated: "#e3b341",
+  skipped: "#f0556e",
+  none: "#222b38",
+};
+function AdherenceCard({ stats, acc }: { stats: ReturnType<typeof adherenceStats>; acc: string }) {
+  const pct = stats.compliancePct;
+  const pctColor = pct == null ? "#7c8696" : pct >= 80 ? "#46d18a" : pct >= 50 ? "#e3b341" : "#f0556e";
+  return (
+    <section className="rounded-[18px] border p-4" style={TILE}>
+      <div className="flex items-center justify-between">
+        <p className="stat-key" style={{ color: acc }}>{t("Plan adherence")}</p>
+        <div className="text-right">
+          <span className="stat text-[20px]" style={{ color: pctColor }}>{pct == null ? "—" : `${pct}%`}</span>
+          <span className="ml-1 stat-key" style={{ color: "#7c8696" }}>{t("on plan")}</span>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-1.5">
+        <Flame size={15} style={{ color: stats.streak > 0 ? "#fb923c" : "#5f6a78" }} />
+        <span className="text-[13px] font-semibold text-bone">
+          {stats.streak > 0 ? t("{n}-day streak", { n: stats.streak }) : t("Log a day to start a streak")}
+        </span>
+      </div>
+      <div className="mt-3 flex gap-1">
+        {stats.recent.map((d, i) => (
+          <span
+            key={d.date}
+            className="h-5 flex-1 rounded-[3px]"
+            style={{ background: STATUS_COLOR[d.status], boxShadow: i === stats.recent.length - 1 ? `0 0 0 1.5px ${acc}` : "none" }}
+          />
+        ))}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "#7c8696" }}>
+        {([["logged", t("on plan")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
+          <span key={k} className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-[2px]" style={{ background: STATUS_COLOR[k] }} /> {label}
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }
 

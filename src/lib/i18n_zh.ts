@@ -467,6 +467,23 @@ const SEED: Record<string, string> = {
   "{name}'s bowl": "{name} 的碗",
   "{n} over after": "之后超出 {n}",
   "Log both bowls": "记录两个碗",
+
+  // ── Adherence + the 8 PM nudge (2026-06-20f) ──
+  "Did you follow the meal plan today?": "今天按计划吃了吗？",
+  "Nothing's logged yet — a quick check-in keeps your history honest.": "还没有记录 — 简单确认一下，记录更真实。",
+  "Yes, I did": "是的",
+  "No, off-plan": "没有，偏离了",
+  Later: "稍后",
+  "Nice — roughly what did you eat?": "不错 — 大概吃了什么？",
+  "A quick note is enough. Today gets marked followed (estimated, ~on target).": "简单写几句就行。今天会标记为已遵循（估算，约达标）。",
+  "e.g. chicken + rice + veg, a shake, a banana…": "例如 鸡肉 + 米饭 + 蔬菜，一杯蛋白粉，一根香蕉…",
+  "Log as followed": "记为已遵循",
+  "Plan adherence": "计划遵循度",
+  "on plan": "达标",
+  "{n}-day streak": "连续 {n} 天",
+  "Log a day to start a streak": "记录一天，开启连击",
+  estimated: "估算",
+  "off plan": "偏离",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.

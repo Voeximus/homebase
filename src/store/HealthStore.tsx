@@ -21,7 +21,13 @@ const mdDirty = (p: string, d: string) => `md|${p}|${d}`;
 const wDirty = (id: string) => `w|${id}`;
 
 function mapDay(r: any): DayLog {
-  return { date: r.date, person: r.person, meals: Array.isArray(r.meals) ? r.meals : [] };
+  return {
+    date: r.date,
+    person: r.person,
+    meals: Array.isArray(r.meals) ? r.meals : [],
+    status: r.status ?? undefined,
+    note: r.note ?? undefined,
+  };
 }
 function mapWorkout(r: any): Workout {
   return {
@@ -227,7 +233,10 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       }
       const { error } = await supabase
         .from("meal_days")
-        .upsert({ person, date, meals: day.meals, updated_at: new Date().toISOString() }, { onConflict: "person,date" });
+        .upsert(
+          { person, date, meals: day.meals, status: day.status ?? null, note: day.note ?? null, updated_at: new Date().toISOString() },
+          { onConflict: "person,date" },
+        );
       onWriteResult(key, error, attempt, (n) => void writeDay(person, date, n));
     };
     const writeWorkout = async (id: string, attempt = 0): Promise<void> => {
