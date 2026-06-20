@@ -13,6 +13,7 @@ import {
   User,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 import { BRAND_GRADIENT } from "../lib/catColor";
 import { t } from "../lib/i18n";
@@ -25,6 +26,7 @@ import {
   thisWeekCount,
   todayStr,
   totalSets,
+  workoutDuration,
   workoutVolume,
   type Exercise,
   type ExerciseEntry,
@@ -35,6 +37,11 @@ import {
 import { useHealth } from "../store/HealthStore";
 
 const newId = () => crypto.randomUUID();
+// "30 min" for a time-based quick log, else "N sets"
+const sessionStat = (w: Workout) =>
+  workoutDuration(w) > 0 && totalSets(w) === 0
+    ? t("{n} min", { n: workoutDuration(w) })
+    : t("{n} sets", { n: totalSets(w) });
 
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -98,6 +105,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
   const today = todayStr();
   const { workouts: allWorkouts, routines: allRoutines, upsertWorkout, deleteWorkout, addRoutine, deleteRoutine: storeDeleteRoutine } = useHealth();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   const mine = useMemo(() => allWorkouts.filter((w) => w.person === person), [allWorkouts, person]);
@@ -171,6 +179,24 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
     });
   };
   const deleteRoutine = (id: string) => storeDeleteRoutine(id);
+  // Quick log → a one-exercise session, marked done immediately. Counts toward
+  // the week + history, never asks you to build a routine.
+  const quickLog = (
+    a: { name: string; muscle: string; exerciseId: string },
+    payload: { duration?: number; sets?: number; reps?: number; weight?: number },
+  ) => {
+    const ex: ExerciseEntry =
+      payload.duration != null
+        ? { id: rowId(), exerciseId: a.exerciseId, name: a.name, muscle: a.muscle, sets: [], duration: payload.duration }
+        : {
+            id: rowId(),
+            exerciseId: a.exerciseId,
+            name: a.name,
+            muscle: a.muscle,
+            sets: Array.from({ length: Math.max(1, payload.sets ?? 1) }, () => ({ reps: payload.reps ?? 0, weight: payload.weight ?? 0 })),
+          };
+    upsertWorkout({ id: newId(), date: today, person, name: a.name, notes: "", exercises: [ex], done: true });
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -192,13 +218,22 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
           onSaveRoutine={saveAsRoutine}
         />
       ) : (
-        <button
-          onClick={startBlank}
-          className="flex items-center justify-center gap-2 rounded-[18px] py-4 text-[15px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: BRAND_GRADIENT }}
-        >
-          <Play size={17} /> {t("Start a workout")}
-        </button>
+        <>
+          <button
+            onClick={startBlank}
+            className="flex items-center justify-center gap-2 rounded-[18px] py-4 text-[15px] font-semibold text-white transition active:scale-[0.98]"
+            style={{ background: BRAND_GRADIENT }}
+          >
+            <Play size={17} /> {t("Start a workout")}
+          </button>
+          <button
+            onClick={() => setQuickOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-[16px] border py-3 text-[13.5px] font-semibold transition active:scale-[0.98]"
+            style={{ borderColor: "#2dd1c055", background: "rgba(45,209,192,0.10)", color: "#2dd1c0" }}
+          >
+            <Zap size={16} /> {t("Quick log — just an activity")}
+          </button>
+        </>
       )}
 
       {/* routines */}
@@ -280,7 +315,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                     <div className="text-[10.5px]" style={{ color: "#7e8a98" }}>{w.date}</div>
                   </div>
                   <div className="num shrink-0 text-right text-[11px]" style={{ color: "#9aa6b2" }}>
-                    {t("{n} sets", { n: totalSets(w) })}
+                    {sessionStat(w)}
                     {workoutVolume(w) > 0 ? ` · ${r0(workoutVolume(w)).toLocaleString()} ${t("vol")}` : ""}
                   </div>
                 </div>
@@ -291,6 +326,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
       )}
 
       <ExerciseSearchSheet open={searchOpen} onClose={() => setSearchOpen(false)} library={library} onPick={(ex) => addExercise(ex)} />
+      <QuickLogSheet open={quickOpen} onClose={() => setQuickOpen(false)} library={library} onLog={quickLog} />
     </div>
   );
 }
@@ -531,7 +567,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
                     </div>
                     <div className="text-[10.5px]" style={{ color: "#7e8a98" }}>{w.date}</div>
                   </div>
-                  <div className="num text-[11px]" style={{ color: "#9aa6b2" }}>{t("{n} sets", { n: totalSets(w) })}</div>
+                  <div className="num text-[11px]" style={{ color: "#9aa6b2" }}>{sessionStat(w)}</div>
                 </div>
               );
             })}
@@ -673,6 +709,177 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
               style={{ background: BRAND_GRADIENT, opacity: customMuscle ? 1 : 0.45 }}
             >
               <Plus size={14} /> {t("Add custom exercise")}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Quick log — the low-friction path: pick an activity, log time or sets ───────
+const QUICK_PICKS: { name: string; muscle: string }[] = [
+  { name: "Walk", muscle: "cardio" },
+  { name: "Treadmill", muscle: "cardio" },
+  { name: "Run", muscle: "cardio" },
+  { name: "Cycling", muscle: "cardio" },
+  { name: "Leg press", muscle: "legs" },
+  { name: "Stretching", muscle: "fullbody" },
+];
+
+function QuickLogSheet({
+  open,
+  onClose,
+  library,
+  onLog,
+}: {
+  open: boolean;
+  onClose: () => void;
+  library: Exercise[];
+  onLog: (
+    a: { name: string; muscle: string; exerciseId: string },
+    payload: { duration?: number; sets?: number; reps?: number; weight?: number },
+  ) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<{ name: string; muscle: string; exerciseId: string } | null>(null);
+  const [mode, setMode] = useState<"time" | "sets">("time");
+  const [mins, setMins] = useState(30);
+  const [sets, setSets] = useState(3);
+  const [reps, setReps] = useState(10);
+  const [weight, setWeight] = useState(0);
+  const results = useMemo(() => searchExercises(q, library, 24), [q, library]);
+
+  useEffect(() => {
+    if (open) {
+      setQ("");
+      setPicked(null);
+      setMode("time");
+      setMins(30);
+      setSets(3);
+      setReps(10);
+      setWeight(0);
+    }
+  }, [open]);
+
+  if (!open) return null;
+  const pick = (a: { name: string; muscle: string; exerciseId: string }) => {
+    setPicked(a);
+    setMode(a.muscle === "cardio" ? "time" : "sets");
+  };
+  const log = () => {
+    if (!picked) return;
+    onLog(picked, mode === "time" ? { duration: mins } : { sets, reps, weight });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
+      <div
+        className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
+        style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #2dd1c0", borderRadius: "22px" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 p-4 pb-2">
+          <Zap size={17} style={{ color: "#2dd1c0" }} />
+          <div className="flex-1 text-[16px] font-bold text-bone">{t("Quick log")}</div>
+          <button onClick={onClose} style={{ color: "#6b7686" }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {!picked ? (
+          <div className="flex-1 overflow-y-auto px-4 pb-3">
+            <p className="mb-2 text-[11px]" style={{ color: "#97a3b2" }}>{t("Common")}</p>
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {QUICK_PICKS.map((p) => (
+                <button
+                  key={p.name}
+                  onClick={() => pick({ name: p.name, muscle: p.muscle, exerciseId: "" })}
+                  className="rounded-full px-3 py-1.5 text-[12.5px] font-semibold"
+                  style={{ background: muscleColor(p.muscle) + "1f", color: muscleColor(p.muscle) }}
+                >
+                  {t(p.name)}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 rounded-xl px-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+              <Search size={16} style={{ color: "#6b7686" }} />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={t("or search an exercise…")}
+                className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
+              />
+            </div>
+            <div className="mt-1.5">
+              {results.map((e) => (
+                <button
+                  key={e.id}
+                  onClick={() => pick({ name: e.name, muscle: e.muscle, exerciseId: e.id })}
+                  className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition active:bg-[#141a24]"
+                >
+                  <span className="h-6 w-1.5 shrink-0 rounded-full" style={{ background: muscleColor(e.muscle) }} />
+                  <span className="flex-1 truncate text-[13.5px] text-bone">{e.name}</span>
+                  <Plus size={15} style={{ color: "#46d18a" }} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col overflow-y-auto px-4 pb-2">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[15.5px] font-bold text-bone">{picked.name}</span>
+              <button onClick={() => setPicked(null)} className="text-[12px]" style={{ color: "#34c5e8" }}>{t("change")}</button>
+            </div>
+
+            <div className="mb-3 flex rounded-full p-1 text-[12.5px]" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+              {(["time", "sets"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className="flex-1 rounded-full py-1.5 font-semibold transition"
+                  style={mode === m ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}
+                >
+                  {m === "time" ? t("Duration") : t("Sets & reps")}
+                </button>
+              ))}
+            </div>
+
+            {mode === "time" ? (
+              <>
+                <NumIn value={mins} onChange={setMins} max={600} suffix="min" />
+                <div className="mt-2 flex gap-2">
+                  {[15, 30, 45, 60].map((m) => (
+                    <button key={m} onClick={() => setMins(m)} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-end gap-2">
+                <label className="flex-1">
+                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "#7c8696" }}>{t("Sets")}</span>
+                  <NumIn value={sets} onChange={setSets} max={20} />
+                </label>
+                <label className="flex-1">
+                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "#7c8696" }}>{t("Reps")}</span>
+                  <NumIn value={reps} onChange={setReps} max={100} />
+                </label>
+                <label className="flex-1">
+                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "#7c8696" }}>{t("Weight")}</span>
+                  <NumIn value={weight} onChange={setWeight} max={2000} suffix="lb" />
+                </label>
+              </div>
+            )}
+
+            <button
+              onClick={log}
+              className="mt-4 flex items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+              style={{ background: BRAND_GRADIENT }}
+            >
+              <Check size={16} /> {t("Log it")}
             </button>
           </div>
         )}

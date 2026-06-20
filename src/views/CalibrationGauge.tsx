@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { Check } from "lucide-react";
 import { t } from "../lib/i18n";
+import { todayStr } from "../lib/mealLog";
+import { useHealth } from "../store/HealthStore";
+import { currentWeekAvg, latestWeight, ratePerWeek } from "../lib/weightLog";
 
-// ── The signature calibration instrument ─────────────────────────────────────
-// "Are you moving at the right rate?" — enter your 7-day-average weight + weeks
-// on plan, read the trend against a target band, get one verdict. The macro
-// targets are a guess; the weekly scale is the measurement. Lives at the bottom
-// of the Meal Builder now (it calibrates the macro budget, so it belongs here).
+// ── Weight & trend — fully automatic calibration ─────────────────────────────
+// You log ONE number a day. The app computes the weekly average, the lb/week
+// trend (least-squares, so daily noise doesn't matter), and the verdict — no
+// "weeks on plan", no manual calibration. The scale is the measurement.
 
 export type Person = "gino" | "xinyan";
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
@@ -19,15 +22,12 @@ type GaugeCfg = {
   bandHi: number;
   unit: string;
   signed: boolean;
-  rate: (cur: number, wk: number) => number;
   verdict: (r: number) => [string, boolean];
 };
 
 const GAUGE: Record<Person, GaugeCfg> = {
   gino: {
-    start: 143, min: -0.25, max: 1.0, bandLo: 0.25, bandHi: 0.5,
-    unit: "lb / week", signed: true,
-    rate: (cur, wk) => (cur - 143) / wk,
+    start: 143, min: -0.25, max: 1.0, bandLo: 0.25, bandHi: 0.5, unit: "lb / week", signed: true,
     verdict: (r) =>
       r < 0 ? [t("Dropping — you're under maintenance. Add ~250 kcal."), false]
       : r < 0.05 ? [t("Flat — add ~200 kcal/day to get moving."), false]
@@ -37,9 +37,7 @@ const GAUGE: Record<Person, GaugeCfg> = {
       : [t("Gaining too fast — trim ~150 kcal to keep it muscle."), false],
   },
   xinyan: {
-    start: 149, goal: 118, min: 0, max: 2.0, bandLo: 0.5, bandHi: 1.0,
-    unit: "lb / week loss", signed: false,
-    rate: (cur, wk) => (149 - cur) / wk,
+    start: 149, goal: 118, min: 0, max: 2.0, bandLo: 0.5, bandHi: 1.0, unit: "lb / week loss", signed: false,
     verdict: (r) =>
       r < 0 ? [t("Up this week — tighten portions, cut ~100 kcal."), false]
       : r < 0.25 ? [t("Stalled — add steps first, then trim ~100 kcal."), false]
@@ -52,71 +50,100 @@ const GAUGE: Record<Person, GaugeCfg> = {
 
 export function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
   const cfg = GAUGE[person];
-  const [w, setW] = useState(() => localStorage.getItem(`hb-h-${person}-w`) ?? "");
-  const [k, setK] = useState(() => localStorage.getItem(`hb-h-${person}-k`) ?? "");
-  useEffect(() => localStorage.setItem(`hb-h-${person}-w`, w), [w, person]);
-  useEffect(() => localStorage.setItem(`hb-h-${person}-k`, k), [k, person]);
+  const { weights, setWeight } = useHealth();
+  const today = todayStr();
+  const mine = useMemo(
+    () => weights.filter((w) => w.person === person).sort((a, b) => a.date.localeCompare(b.date)),
+    [weights, person],
+  );
+  const todayEntry = mine.find((w) => w.date === today);
+  const [draft, setDraft] = useState("");
 
-  const cur = parseFloat(w);
-  const wk = parseFloat(k);
-  const valid = !!cur && !!wk && wk > 0;
-  const r = valid ? cfg.rate(cur, wk) : 0;
+  const weekInfo = currentWeekAvg(mine, today);
+  const cur = weekInfo ? weekInfo.avg : latestWeight(mine);
+  const raw = ratePerWeek(mine); // lb/week, negative = losing
+  const valid = raw != null && mine.length >= 2;
+  const r = raw == null ? 0 : person === "gino" ? raw : -raw; // signed for THIS person's goal
+  const [verdictText, verdictOn] = valid
+    ? cfg.verdict(r)
+    : [t("Log your weight a few days and your trend appears here — automatically."), false];
+  const shown = valid ? (cfg.signed && r >= 0 ? "+" : "") + r.toFixed(2) : "—";
+
   const pctOf = (v: number) => clamp(((v - cfg.min) / (cfg.max - cfg.min)) * 100, 0, 100);
   const lo = pctOf(cfg.bandLo);
   const hi = pctOf(cfg.bandHi);
-  const [verdictText, verdictOn] = valid
-    ? cfg.verdict(r)
-    : [t("Enter your numbers to read the trend."), false];
-  const shown = valid ? (cfg.signed && r >= 0 ? "+" : "") + r.toFixed(2) : "—";
 
-  const toGo = cfg.goal && valid ? Math.max(0, cur - cfg.goal) : null;
-  const donePct =
-    cfg.goal && valid ? clamp(((cfg.start - cur) / (cfg.start - cfg.goal)) * 100, 0, 100) : 0;
+  const last = latestWeight(mine);
+  const toGo = cfg.goal && last != null ? Math.max(0, last - cfg.goal) : null;
+  const donePct = cfg.goal && last != null ? clamp(((cfg.start - last) / (cfg.start - cfg.goal)) * 100, 0, 100) : 0;
+
+  const save = () => {
+    const v = parseFloat(draft);
+    if (!v || v <= 0 || v > 1000) return;
+    setWeight(person, today, Math.round(v * 10) / 10);
+    setDraft("");
+  };
 
   return (
     <section className="rounded-[18px] border p-4" style={{ background: "#0f141c", borderColor: "#232d3a" }}>
-      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: acc }}>
-        {t("Calibration check")}
-      </p>
-      <p className="mt-1 text-[15px] font-semibold text-bone">
+      <p className="stat-key" style={{ color: acc }}>{t("Weight & trend")}</p>
+      <p className="mt-1 h-title text-[15px] text-bone">
         {person === "gino" ? t("Are you gaining at the right rate?") : t("Are you losing at the right rate?")}
       </p>
-      <p className="mb-3.5 mt-0.5 text-[11px]" style={{ color: "#7e8a98" }}>
-        {t("enter your 7-day average — the scale is the measurement")}
+      <p className="mb-3.5 mt-0.5 text-[11.5px]" style={{ color: "#97a3b2" }}>
+        {t("Log your weight daily — the rest is automatic.")}
       </p>
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5">
-        <label className="block">
-          <span className="text-[10.5px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>
-            {t("Current weight (lb)")}
-          </span>
+      {/* daily weigh-in */}
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 items-center gap-1 rounded-lg px-3 py-2.5" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
           <input
-            type="number"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.replace(/[^0-9.]/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && save()}
             inputMode="decimal"
-            value={w}
-            onChange={(e) => setW(e.target.value)}
-            placeholder={String(cfg.start)}
-            className="num mt-1.5 w-full rounded-lg px-3 py-2.5 text-[16px] font-semibold text-bone outline-none"
-            style={{ background: "#141a24", border: "1px solid #232d3a" }}
+            placeholder={todayEntry ? String(todayEntry.weight) : t("today's weight")}
+            className="num w-full bg-transparent text-[16px] font-semibold text-bone outline-none placeholder:text-[#5f6a78] placeholder:font-normal"
           />
-        </label>
-        <label className="block">
-          <span className="text-[10.5px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>
-            {t("Weeks on plan")}
-          </span>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={k}
-            onChange={(e) => setK(e.target.value)}
-            placeholder="3"
-            className="num mt-1.5 w-full rounded-lg px-3 py-2.5 text-[16px] font-semibold text-bone outline-none"
-            style={{ background: "#141a24", border: "1px solid #232d3a" }}
-          />
-        </label>
+          <span className="text-[11px]" style={{ color: "#5f6a78" }}>{t("lb")}</span>
+        </div>
+        <button
+          onClick={save}
+          className="rounded-lg px-4 py-2.5 text-[13px] font-semibold"
+          style={{ background: acc, color: "#0a0d12" }}
+        >
+          {todayEntry ? t("Update") : t("Log")}
+        </button>
+      </div>
+      {todayEntry && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11.5px]" style={{ color: "#46d18a" }}>
+          <Check size={13} /> {t("Logged today: {w} lb", { w: todayEntry.weight })}
+        </p>
+      )}
+
+      {/* weekly average + trend */}
+      <div className="mt-4 flex items-end gap-5">
+        <div>
+          <div className="stat-key" style={{ color: "#97a3b2" }}>{t("This week's avg")}</div>
+          <div className="mt-1 flex items-baseline gap-1">
+            <span className="stat text-[26px] text-bone">{cur != null ? cur.toFixed(1) : "—"}</span>
+            <span className="text-[12px] font-semibold" style={{ color: "#7c8696" }}>{t("lb")}</span>
+          </div>
+          {weekInfo && (
+            <div className="text-[10.5px]" style={{ color: "#7c8696" }}>{t("{n}-day average", { n: weekInfo.count })}</div>
+          )}
+        </div>
+        <div className="flex-1">
+          <div className="stat-key" style={{ color: "#97a3b2" }}>{t("Trend")}</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="stat text-[26px]" style={{ color: verdictOn ? "#46d18a" : valid ? acc : "#7c8696" }}>{shown}</span>
+            <span className="text-[11px]" style={{ color: "#7c8696" }}>{t(cfg.unit)}</span>
+          </div>
+        </div>
       </div>
 
-      <div className="relative my-2 h-[42px]">
+      {/* the band */}
+      <div className="relative my-3 h-[40px]">
         <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full" style={{ background: "#222b38" }} />
         <div className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full" style={{ left: `${lo}%`, width: `${hi - lo}%`, background: acc, opacity: 0.5 }} />
         <div className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2" style={{ left: `${lo}%`, background: acc }} />
@@ -128,22 +155,18 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
           />
         )}
       </div>
-      <div className="flex justify-between text-[10px]" style={{ color: "#7e8a98" }}>
+      <div className="flex justify-between text-[10px]" style={{ color: "#7c8696" }}>
         <span>{t("too slow")}</span>
         <span style={{ color: acc }}>{t("target band")}</span>
         <span>{t("too fast")}</span>
       </div>
 
-      <div className="mt-3.5 flex items-baseline gap-2">
-        <span className="num text-[30px] font-bold leading-none text-bone">{shown}</span>
-        <span className="text-[12px]" style={{ color: "#7e8a98" }}>{t(cfg.unit)}</span>
-      </div>
-      <p className="mt-2 text-[13.5px] leading-snug" style={{ color: verdictOn ? "#fff" : "#9aa6b2" }}>
+      <p className="mt-3 text-[13.5px] leading-snug" style={{ color: verdictOn ? "#fff" : "#97a3b2" }}>
         {verdictText}
       </p>
 
-      {cfg.goal != null && valid && (
-        <div className="mt-3.5 border-t pt-3 text-[11.5px]" style={{ borderColor: "#1b232e", color: "#7e8a98" }}>
+      {cfg.goal != null && last != null && (
+        <div className="mt-3.5 border-t pt-3 text-[11.5px]" style={{ borderColor: "#1b232e", color: "#97a3b2" }}>
           <span>
             {t("Progress to {goal}:", { goal: cfg.goal })}{" "}
             <b className="text-bone">

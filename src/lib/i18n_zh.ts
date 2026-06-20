@@ -425,6 +425,31 @@ const SEED: Record<string, string> = {
   // muscle groups + equipment (search results / chips)
   chest: "胸", back: "背", legs: "腿", shoulders: "肩", arms: "手臂", core: "核心", fullbody: "全身", cardio: "有氧",
   barbell: "杠铃", dumbbell: "哑铃", machine: "器械", cable: "拉索", bodyweight: "自重", kettlebell: "壶铃", band: "弹力带",
+
+  // ── Weight tracking + quick log + macro emphasis (2026-06-20d) ──
+  calories: "热量",
+  "Weight & trend": "体重与趋势",
+  "Log your weight daily — the rest is automatic.": "每天记录体重 — 其余的自动完成。",
+  "Log your weight a few days and your trend appears here — automatically.": "记录几天体重，趋势会自动显示在这里。",
+  "today's weight": "今天的体重",
+  lb: "磅",
+  Log: "记录",
+  Update: "更新",
+  "Logged today: {w} lb": "今天已记录：{w} 磅",
+  "This week's avg": "本周平均",
+  "{n}-day average": "{n} 天平均",
+  Trend: "趋势",
+  // quick log
+  "Quick log": "快速记录",
+  "Quick log — just an activity": "快速记录 — 只记一个活动",
+  Common: "常用",
+  "or search an exercise…": "或搜索动作…",
+  change: "更改",
+  Duration: "时长",
+  "Sets & reps": "组数与次数",
+  Sets: "组数",
+  "Log it": "记一笔",
+  "{n} min": "{n} 分钟",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.

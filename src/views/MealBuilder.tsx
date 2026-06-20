@@ -42,7 +42,8 @@ const STICKY_TOP = "calc(env(safe-area-inset-top, 0px) + 6px)";
 // ── palette ───────────────────────────────────────────────────────────────────
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
-const MACRO = { p: "#fb7185", c: "#38bdf8", f: "#f6c453" }; // protein / carb / fat
+const MACRO = { p: "#fb7185", c: "#38bdf8", f: "#f6c453" }; // protein / carb / fat (dots + bars)
+const MACRO_BRIGHT = { p: "#ff90a4", c: "#69c6ff", f: "#ffd66b" }; // higher-contrast for numbers on dark
 const TILE = { background: "#141a24", borderColor: "#232d3a" } as const;
 
 const r0 = (n: number) => Math.round(n);
@@ -461,45 +462,63 @@ function DaySummary({ name, target, eaten }: { name: string; target: Macros; eat
   const over = remK < 0;
   const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
   const macros = [
-    { k: "P", color: MACRO.p, e: eaten.p, tg: target.p },
-    { k: "C", color: MACRO.c, e: eaten.c, tg: target.c },
-    { k: "F", color: MACRO.f, e: eaten.f, tg: target.f },
+    { k: t("Protein"), e: eaten.p, tg: target.p, color: MACRO.p, bright: MACRO_BRIGHT.p },
+    { k: t("Carbs"), e: eaten.c, tg: target.c, color: MACRO.c, bright: MACRO_BRIGHT.c },
+    { k: t("Fat"), e: eaten.f, tg: target.f, color: MACRO.f, bright: MACRO_BRIGHT.f },
   ];
   return (
-    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: BRAND_GRADIENT }}>
-      <div className="flex items-center justify-between text-[11.5px] opacity-90">
-        <span>{t("{name}'s day", { name })}</span>
-        <span>{t("today")}</span>
+    <div
+      className="rounded-[26px] px-5 pb-4 pt-4 text-white"
+      style={{ background: BRAND_GRADIENT, boxShadow: "0 12px 32px -14px rgba(2,12,24,.65)" }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="stat-key" style={{ opacity: 0.92 }}>{t("{name}'s day", { name })}</span>
+        <span className="stat-key" style={{ opacity: 0.78 }}>{t("today")}</span>
       </div>
-      <div className="mt-2 flex items-center gap-4">
-        <Ring pct={pct} over={over} size={88} stroke={9}>
-          <span key={r0(remK)} className="pop num text-[23px] font-bold leading-none">{r0(Math.abs(remK))}</span>
-          <span className="text-[9px] font-semibold uppercase tracking-wide opacity-90">{over ? t("over") : t("left")}</span>
+
+      <div className="mt-2.5 flex items-center gap-4">
+        <Ring pct={pct} over={over} size={96} stroke={10}>
+          <span key={r0(remK)} className="bump stat text-[30px]">{r0(Math.abs(remK))}</span>
+          <span className="stat-key mt-1" style={{ opacity: 0.9 }}>{over ? t("over") : t("left")}</span>
         </Ring>
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex items-baseline justify-between text-[10.5px] opacity-90">
-            <span className="font-semibold uppercase tracking-wide">{t("kcal")}</span>
-            <span className="num">{t("{eaten} of {target}", { eaten: r0(eaten.kcal), target: r0(target.kcal) })}</span>
+        <div className="min-w-0 flex-1">
+          <div className="stat-key" style={{ opacity: 0.82 }}>{t("calories")}</div>
+          <div className="mt-1 num text-[17px] font-bold">
+            {r0(eaten.kcal)}
+            <span className="text-[13px] font-medium" style={{ opacity: 0.7 }}> / {r0(target.kcal)}</span>
           </div>
-          {macros.map((m) => {
-            const d = m.tg - m.e; // remaining; negative = over
-            const mp = m.tg > 0 ? Math.min(100, (m.e / m.tg) * 100) : 0;
-            return (
-              <div key={m.k}>
-                <div className="flex items-baseline justify-between text-[10.5px]">
-                  <span className="font-bold" style={{ color: m.color }}>{m.k}</span>
-                  <span key={r0(d)} className="num pop" style={{ color: d < 0 ? "#ffdada" : "rgba(255,255,255,0.95)" }}>{r0(d)}g</span>
-                </div>
-                <div className="mt-0.5 h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.25)" }}>
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${mp}%`, background: d < 0 ? "#ffd1d1" : "#ffffff", transition: "width .45s cubic-bezier(.3,.85,.3,1)" }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.22)" }}>
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${Math.min(100, pct * 100)}%`, background: over ? "#ffd1d1" : "#ffffff", transition: "width .45s cubic-bezier(.3,.85,.3,1)" }}
+            />
+          </div>
         </div>
+      </div>
+
+      {/* dark inset so the macro colors pop — the high-contrast counters */}
+      <div className="mt-3.5 grid grid-cols-3 gap-2 rounded-[18px] p-2.5" style={{ background: "rgba(3,10,20,0.30)" }}>
+        {macros.map((m) => {
+          const d = m.tg - m.e; // remaining; negative = over
+          const mp = m.tg > 0 ? Math.min(100, (m.e / m.tg) * 100) : 0;
+          const dOver = d < 0;
+          return (
+            <div key={m.k} className="px-1">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: m.color }} />
+                <span className="stat-key" style={{ color: m.bright }}>{m.k}</span>
+              </div>
+              <div key={r0(d)} className="bump mt-1.5 flex items-baseline gap-[3px]">
+                <span className="stat text-[20px]" style={{ color: dOver ? "#ff9aa6" : m.bright }}>{r0(Math.abs(d))}</span>
+                <span className="text-[11px] font-semibold" style={{ color: dOver ? "#ff9aa6" : m.bright, opacity: 0.55 }}>g</span>
+              </div>
+              <div className="stat-key mt-1" style={{ opacity: 0.5 }}>{dOver ? t("over") : t("left")}</div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.13)" }}>
+                <div className="h-full rounded-full" style={{ width: `${mp}%`, background: dOver ? "#ff6b7e" : m.color, transition: "width .45s cubic-bezier(.3,.85,.3,1)" }} />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -519,15 +538,19 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
         {you ? t("You") : PERSON_NAME[person]}
       </div>
       <div className="mt-2 flex items-center gap-2.5">
-        <Ring pct={pct} over={over} size={58} stroke={6} color={acc} track="#222b38" overColor="#f0556e">
-          <span key={r0(remK)} className="pop num text-[15px] font-bold leading-none text-bone">{r0(Math.abs(remK))}</span>
+        <Ring pct={pct} over={over} size={60} stroke={7} color={acc} track="#222b38" overColor="#f0556e">
+          <span key={r0(remK)} className="bump stat text-[16px] text-bone">{r0(Math.abs(remK))}</span>
         </Ring>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px]" style={{ color: over ? "#f0556e" : "#7e8a98" }}>
+          <div className="stat-key" style={{ color: over ? "#f0556e" : "#97a3b2" }}>
             {over ? t("kcal over") : t("kcal left")}
           </div>
-          <div className="num mt-1 text-[10.5px] leading-tight" style={{ color: "#9aa6b2" }}>
-            {r0(target.p - eaten.p)}P · {r0(target.c - eaten.c)}C · {r0(target.f - eaten.f)}F
+          <div className="num mt-1 text-[11px] font-semibold leading-tight">
+            <span style={{ color: MACRO_BRIGHT.p }}>{r0(target.p - eaten.p)}P</span>
+            <span style={{ color: "#6b7686" }}> · </span>
+            <span style={{ color: MACRO_BRIGHT.c }}>{r0(target.c - eaten.c)}C</span>
+            <span style={{ color: "#6b7686" }}> · </span>
+            <span style={{ color: MACRO_BRIGHT.f }}>{r0(target.f - eaten.f)}F</span>
           </div>
         </div>
       </div>

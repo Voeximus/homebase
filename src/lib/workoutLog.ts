@@ -20,6 +20,7 @@ export interface ExerciseEntry {
   name: string;
   muscle: string;
   sets: SetEntry[];
+  duration?: number; // minutes — for cardio / time-based quick logs (no sets)
 }
 export interface Workout {
   id: string;
@@ -56,6 +57,10 @@ export function workoutVolume(w: Workout): number {
 }
 export function totalSets(w: Workout): number {
   return w.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+}
+/** Total minutes of time-based (cardio / quick) work in a session. */
+export function workoutDuration(w: Workout): number {
+  return w.exercises.reduce((n, ex) => n + (ex.duration ?? 0), 0);
 }
 /** Epley estimated 1-rep max — the fair way to compare sets at different reps. */
 export function e1RM(weight: number, reps: number): number {

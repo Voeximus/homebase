@@ -19,10 +19,12 @@
   --color-gold: #e3b341; /* amber — the 90-day streak ring, near-limit */
   --color-ember: #e5544e; /* red — ONLY the …4728 card + over-limit bars */
 
-  --color-bone: #e6edf3; /* cool off-white — readouts + headlines */
-  --color-taupe: #8b97a6; /* labels, captions */
-  --color-faint: #687180; /* tertiary hints, last4 */
+  --color-bone: #eef2f7; /* cool off-white — readouts + headlines (brightened) */
+  --color-taupe: #97a3b2; /* labels, captions (brightened for contrast) */
+  --color-faint: #7c8696; /* tertiary hints, last4 (was #687180 — too dim) */
 
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
     "Roboto Mono", Menlo, Consolas, monospace;
 }
@@ -39,11 +41,14 @@ body,
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: -0.006em; /* a hair tighter — reads more deliberate at UI sizes */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #e6edf3;
+  text-rendering: optimizeLegibility;
+  color: var(--color-bone);
   background-color: #0a0d12;
   /* faint blueprint grid + one cool signal glow up top */
   background-image:
@@ -108,8 +113,9 @@ input[type="number"] {
 .eyebrow {
   font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
   font-size: 10.5px;
+  font-weight: 600;
   line-height: 1.3;
 }
 
@@ -118,6 +124,29 @@ input[type="number"] {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+}
+
+/* ── Type scale — a consistent, premium hierarchy for headline surfaces ─────── */
+/* Big hero stat (the macro counters). PROPORTIONAL bold with tabular figures —
+   even digit widths for alignment, but real letter spacing so it never crams. */
+.stat {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+/* A small all-caps key over a stat (PROTEIN, KCAL LEFT) */
+.stat-key {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+/* Section / card titles — proportional, confident weight */
+.h-title {
+  font-weight: 650;
+  letter-spacing: -0.011em;
 }
 
 /* ── Motion — all CSS, all gated behind reduced-motion ─────────────────────── */
@@ -132,6 +161,22 @@ input[type="number"] {
     }
     60% {
       transform: scale(1.18);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  /* Subtle pulse for a LIVE-updating number (macro deltas) — never disappears */
+  .bump {
+    animation: bump 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+  @keyframes bump {
+    0% {
+      transform: scale(1);
+    }
+    45% {
+      transform: scale(1.11);
     }
     100% {
       transform: scale(1);

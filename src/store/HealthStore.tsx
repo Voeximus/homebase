@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { supabase } from "../lib/supabase";
 import type { DayLog, Person } from "../lib/mealLog";
 import type { Routine, Workout } from "../lib/workoutLog";
+import type { BodyWeight } from "../lib/weightLog";
 
 // ── The Health store ─────────────────────────────────────────────────────────
 // One shared source of truth for the meal + workout logs, synced to Supabase so
@@ -31,11 +32,15 @@ function mapWorkout(r: any): Workout {
 function mapRoutine(r: any): Routine {
   return { id: r.id, person: r.person, name: r.name, meta: r.meta ?? "", exercises: Array.isArray(r.exercises) ? r.exercises : [] };
 }
+function mapWeight(r: any): BodyWeight {
+  return { person: r.person, date: r.date, weight: Number(r.weight) };
+}
 
 interface HealthState {
   mealDays: Record<string, DayLog>;
   workouts: Workout[];
   routines: Routine[]; // custom only; the components add the code-defined seeds
+  weights: BodyWeight[];
 }
 
 export interface HealthStore {
@@ -44,18 +49,20 @@ export interface HealthStore {
   mealDays: Record<string, DayLog>;
   workouts: Workout[];
   routines: Routine[]; // custom only
+  weights: BodyWeight[];
   getDay: (person: Person, date: string) => DayLog;
   setDay: (day: DayLog) => void;
   upsertWorkout: (w: Workout) => void;
   deleteWorkout: (id: string) => void;
   addRoutine: (r: Routine) => void;
   deleteRoutine: (id: string) => void;
+  setWeight: (person: Person, date: string, weight: number) => void;
 }
 
 const Ctx = createContext<HealthStore | null>(null);
 
 export function HealthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<HealthState>({ mealDays: {}, workouts: [], routines: [] });
+  const [state, setState] = useState<HealthState>({ mealDays: {}, workouts: [], routines: [], weights: [] });
   const [loading, setLoading] = useState(true);
 
   const dataRef = useRef(state);
@@ -96,6 +103,11 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       const { data: rows, error } = await supabase.from("workout_routines").select("*");
       if (error || !active) return;
       setState((s) => ({ ...s, routines: (rows ?? []).map(mapRoutine) }));
+    }
+    async function reloadWeights() {
+      const { data: rows, error } = await supabase.from("body_weights").select("*").order("date", { ascending: true });
+      if (error || !active) return;
+      setState((s) => ({ ...s, weights: (rows ?? []).map(mapWeight) }));
     }
 
     async function migrateLocal() {
@@ -140,10 +152,10 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       }
       localStorage.setItem("hb-health-migrated", "1");
       migrated.current = true;
-      await Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines()]);
+      await Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines(), reloadWeights()]);
     }
 
-    Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines()])
+    Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines(), reloadWeights()])
       .then(() => migrateLocal())
       .finally(() => active && setLoading(false));
 
@@ -152,6 +164,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "meal_days" }, () => reloadMealDays())
       .on("postgres_changes", { event: "*", schema: "public", table: "workouts" }, () => reloadWorkouts())
       .on("postgres_changes", { event: "*", schema: "public", table: "workout_routines" }, () => reloadRoutines())
+      .on("postgres_changes", { event: "*", schema: "public", table: "body_weights" }, () => reloadWeights())
       .subscribe();
 
     const timersMap = timers.current;
@@ -174,7 +187,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  type Actions = Omit<HealthStore, "loading" | "mealDays" | "workouts" | "routines">;
+  type Actions = Omit<HealthStore, "loading" | "mealDays" | "workouts" | "routines" | "weights">;
   const store = useMemo<Actions>(() => {
     // Debounce a write by key; remember the write fn so unmount can flush it.
     const scheduleWrite = (key: string, doWrite: () => Promise<void>, delay = 700) => {
@@ -271,6 +284,17 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         setState((s) => ({ ...s, routines: s.routines.filter((x) => x.id !== id) }));
         supabase.from("workout_routines").delete().eq("id", id).then(({ error }) => error && console.error(error));
       },
+      setWeight(person, date, weight) {
+        // one entry per day → optimistic replace + immediate upsert (no debounce)
+        setState((s) => ({
+          ...s,
+          weights: [...s.weights.filter((w) => !(w.person === person && w.date === date)), { person, date, weight }],
+        }));
+        supabase
+          .from("body_weights")
+          .upsert({ person, date, weight, updated_at: new Date().toISOString() }, { onConflict: "person,date" })
+          .then(({ error }) => error && console.error("body_weights upsert", error));
+      },
     };
   }, []);
 
@@ -280,6 +304,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     mealDays: state.mealDays,
     workouts: state.workouts,
     routines: state.routines,
+    weights: state.weights,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
