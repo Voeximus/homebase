@@ -133,7 +133,7 @@ export function HealthView({
 
       <main className="mx-auto max-w-[640px] px-4 pb-16 pt-4">
         {sub === "kitchen" ? (
-          <MealBuilder />
+          <MealBuilder owner={owner} person={person} />
         ) : personal ? (
           /* ── PERSONAL · curated dashboard ── */
           <div className="space-y-3">

@@ -19,6 +19,9 @@ import { FinanceTabs } from "./views/redesign/FinanceTabs";
 const DesignLab = import.meta.env.DEV
   ? lazy(() => import("./views/redesign/DesignLab").then((m) => ({ default: m.DesignLab })))
   : null;
+const MealLab = import.meta.env.DEV
+  ? lazy(() => import("./views/redesign/MealLab").then((m) => ({ default: m.MealLab })))
+  : null;
 
 export default function App() {
   if (
@@ -30,6 +33,18 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <DesignLab />
+      </Suspense>
+    );
+  }
+  if (
+    import.meta.env.DEV &&
+    MealLab &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("meallab")
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <MealLab />
       </Suspense>
     );
   }

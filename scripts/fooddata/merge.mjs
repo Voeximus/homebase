@@ -1,0 +1,166 @@
+// Merge the per-category raw food JSON (written by the health-food-dataset
+// workflow) into src/lib/foodData.ts. Validates macro sanity, dedupes by name,
+// assigns stable slug ids. Re-runnable: overwrites foodData.ts each time.
+//
+//   node scripts/fooddata/merge.mjs
+
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const RAW = join(here, "raw");
+const OUT = join(here, "..", "..", "src", "lib", "foodData.ts");
+
+const ROLES = new Set(["protein", "carb", "veg", "fat", "other"]);
+const r1 = (n) => Math.round(n * 10) / 10;
+
+// Beverages may legitimately diverge from 4·4·9 (alcohol = 7 kcal/g), so the
+// consistency gate is relaxed for that file.
+const files = readdirSync(RAW).filter((f) => f.endsWith(".json"));
+
+let raw = [];
+const fileStats = [];
+for (const f of files) {
+  let arr;
+  try {
+    arr = JSON.parse(readFileSync(join(RAW, f), "utf8"));
+  } catch (e) {
+    console.error(`✗ ${f}: JSON parse failed — ${e.message}`);
+    fileStats.push([f, "PARSE FAIL"]);
+    continue;
+  }
+  if (!Array.isArray(arr)) {
+    console.error(`✗ ${f}: not an array`);
+    fileStats.push([f, "NOT ARRAY"]);
+    continue;
+  }
+  const cat = f.replace(/\.json$/, "");
+  for (const o of arr) raw.push({ ...o, _cat: cat, _bev: cat === "beverages" });
+  fileStats.push([f, `${arr.length} rows`]);
+}
+
+// ── validate + normalize ─────────────────────────────────────────────────────
+const rejects = [];
+const warns = [];
+const clean = [];
+const seenName = new Set();
+const seenId = new Set();
+
+const slug = (name) =>
+  "fdc-" +
+  name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const num = (v) => {
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  return Number.isFinite(n) ? n : NaN;
+};
+
+for (const o of raw) {
+  const name = typeof o.name === "string" ? o.name.trim() : "";
+  if (!name) {
+    rejects.push([o._cat, JSON.stringify(o).slice(0, 60), "no name"]);
+    continue;
+  }
+  const kcal = num(o.kcal);
+  const p = num(o.p);
+  const c = num(o.c);
+  const f = num(o.f);
+  if ([kcal, p, c, f].some((x) => Number.isNaN(x))) {
+    rejects.push([o._cat, name, "non-numeric macro"]);
+    continue;
+  }
+  // plausibility ranges (per 100 g)
+  if (kcal < 0 || kcal > 950 || p < 0 || p > 100 || c < 0 || c > 100 || f < 0 || f > 100) {
+    rejects.push([o._cat, name, `out of range k${kcal} p${p} c${c} f${f}`]);
+    continue;
+  }
+  // 4·4·9 consistency — reject only gross errors; warn on moderate drift.
+  const pred = 4 * p + 4 * c + 9 * f;
+  const drift = Math.abs(pred - kcal);
+  if (!o._bev) {
+    if (drift > Math.max(70, 0.6 * kcal)) {
+      rejects.push([o._cat, name, `kcal ${kcal} vs 4·4·9 ${Math.round(pred)}`]);
+      continue;
+    }
+    if (drift > Math.max(25, 0.2 * kcal)) {
+      warns.push([o._cat, name, `kcal ${kcal} vs ${Math.round(pred)}`]);
+    }
+  }
+
+  const key = name.toLowerCase().replace(/\s+/g, " ");
+  if (seenName.has(key)) continue; // first occurrence wins (category file order)
+  seenName.add(key);
+
+  const role = ROLES.has(o.role) ? o.role : "other";
+  let id = slug(name);
+  if (!id || id === "fdc-") id = "fdc-x";
+  let uid = id;
+  let i = 2;
+  while (seenId.has(uid)) uid = `${id}-${i++}`;
+  seenId.add(uid);
+
+  const food = { id: uid, name, role, kcal: Math.round(kcal), p: r1(p), c: r1(c), f: r1(f) };
+  const serving = num(o.serving);
+  if (Number.isFinite(serving) && serving > 0 && serving < 2000) food.serving = Math.round(serving);
+  if (typeof o.note === "string" && o.note.trim()) food.note = o.note.trim().slice(0, 24);
+  clean.push(food);
+}
+
+clean.sort((a, b) => a.name.localeCompare(b.name));
+
+// ── emit TS ──────────────────────────────────────────────────────────────────
+const body = clean
+  .map((f) => {
+    const parts = [
+      `id: ${JSON.stringify(f.id)}`,
+      `name: ${JSON.stringify(f.name)}`,
+      `role: ${JSON.stringify(f.role)}`,
+      `kcal: ${f.kcal}`,
+      `p: ${f.p}`,
+      `c: ${f.c}`,
+      `f: ${f.f}`,
+    ];
+    if (f.serving != null) parts.push(`serving: ${f.serving}`);
+    if (f.note != null) parts.push(`note: ${JSON.stringify(f.note)}`);
+    return `  { ${parts.join(", ")} },`;
+  })
+  .join("\n");
+
+const out = `import type { Food } from "./nutrition";
+
+// ── The hidden offline food library ──────────────────────────────────────────
+// A generated per-100g macro table (USDA-standard reference values) covering the
+// common foods a household actually searches — fruits, vegetables, proteins,
+// grains, dairy, prepared + Chinese/Asian dishes. It is NEVER shown as a list;
+// the meal builder only surfaces items through search / barcode. Lazy-imported
+// (import("./foodData")) so this payload stays out of the finance-mode bundle.
+//
+// GENERATED by scripts/fooddata/merge.mjs — do not hand-edit. ${clean.length} foods.
+
+export const BUNDLED_FOODS: Food[] = [
+${body}
+];
+`;
+
+writeFileSync(OUT, out, "utf8");
+
+// ── report ───────────────────────────────────────────────────────────────────
+console.log("── files ──");
+for (const [f, s] of fileStats) console.log(`  ${f.padEnd(24)} ${s}`);
+console.log(`\nkept ${clean.length} foods · rejected ${rejects.length} · warnings ${warns.length}`);
+if (rejects.length) {
+  console.log("\n── rejects ──");
+  for (const [cat, name, why] of rejects.slice(0, 40)) console.log(`  [${cat}] ${name} — ${why}`);
+  if (rejects.length > 40) console.log(`  …+${rejects.length - 40} more`);
+}
+if (warns.length) {
+  console.log("\n── macro-drift warnings (kept) ──");
+  for (const [cat, name, why] of warns.slice(0, 25)) console.log(`  [${cat}] ${name} — ${why}`);
+  if (warns.length > 25) console.log(`  …+${warns.length - 25} more`);
+}
+console.log(`\n→ wrote ${OUT}`);
