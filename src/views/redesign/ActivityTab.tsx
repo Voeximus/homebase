@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, Plus, ArrowDownLeft, HelpCircle } from "lucide-react";
+import { RefreshCw, Check, Plus, ArrowDownLeft, HelpCircle } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 
@@ -30,7 +30,7 @@ export interface ActivityVM {
 
 interface ActivityTaps {
   onRow?: (id: string) => void;
-  onRefresh?: () => void;
+  onRefresh?: () => void | Promise<void>;
   onAdd?: () => void;
 }
 
@@ -77,6 +77,26 @@ export function ActivityTab({
   taps?: ActivityTaps;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const [justRefreshed, setJustRefreshed] = useState(false);
+
+  const doRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await taps.onRefresh?.();
+    } finally {
+      setRefreshing(false);
+      setJustRefreshed(true);
+      setTimeout(() => setJustRefreshed(false), 2200);
+    }
+  };
+
+  // The filter chips actually filter now: "In budget" = counted living spend,
+  // "Needs review" = uncategorized, "All" = everything.
+  const shown = vm.rows.filter((r) =>
+    filter === "all" ? true : filter === "budget" ? r.fate === "envelope" : r.fate === "review",
+  );
 
   const chip = (key: FilterKey, label: string, badge?: number) => {
     const active = filter === key;
@@ -117,14 +137,24 @@ export function ActivityTab({
           </div>
         </div>
         <button
-          onClick={taps.onRefresh}
+          onClick={doRefresh}
+          disabled={refreshing}
           className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-[0.97]"
           style={{
-            background: "rgba(255,255,255,.2)",
-            border: "1px solid rgba(255,255,255,.3)",
+            background: justRefreshed ? "rgba(70,209,138,.25)" : "rgba(255,255,255,.2)",
+            border: justRefreshed ? "1px solid rgba(70,209,138,.5)" : "1px solid rgba(255,255,255,.3)",
           }}
         >
-          <RefreshCw size={14} /> {t("Refresh")}
+          {justRefreshed ? (
+            <>
+              <Check size={14} /> {t("Updated")}
+            </>
+          ) : (
+            <>
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
+              {refreshing ? t("Refreshing…") : t("Refresh")}
+            </>
+          )}
         </button>
       </div>
 
@@ -150,7 +180,12 @@ export function ActivityTab({
             className="flex flex-col rounded-[16px] border"
             style={{ background: "#141a24", borderColor: "#232d3a" }}
           >
-            {vm.rows.map((r, i) => {
+            {shown.length === 0 && (
+              <p className="px-4 py-8 text-center text-[13px]" style={{ color: "#7e8a98" }}>
+                {t("Nothing here yet.")}
+              </p>
+            )}
+            {shown.map((r, i) => {
               const income = r.fate === "income";
               const review = r.fate === "review";
               const c = income ? "#34c5e8" : catColor(r.catId);

@@ -131,15 +131,12 @@ export function SprintSheet({
   schedule: ReturnType<typeof payoffSchedule>;
   totalDebt: number;
 }) {
-  const { payDebtExtra, data } = useStore();
-  const [payFor, setPayFor] = useState<Debt | null>(null);
   const clearDateOf = (id: string) => {
     const ev = schedule.find((e) => e.payments.some((p) => p.debtId === id && p.clears));
     return ev ? ev.date : null;
   };
   return (
-    <>
-      <Sheet open={open} onClose={onClose} title={t("The attack ladder")}>
+    <Sheet open={open} onClose={onClose} title={t("The attack ladder")}>
         <div className="space-y-2.5">
           <p className="text-xs text-taupe">{t("Snowball order · smallest first")}</p>
           {ordered.map((d, i) => {
@@ -184,15 +181,9 @@ export function SprintSheet({
                     {done ? t("Cleared") : formatMoney(d.balance)}
                   </span>
                 </div>
-                {!done && (
+                {!done && pct > 0 && (
                   <div className="mt-2">
-                    {pct > 0 && <ProgressBar value={pct} color={d.color} />}
-                    <button
-                      onClick={() => setPayFor(d)}
-                      className={`w-full rounded-lg bg-accent/15 py-2 text-xs font-semibold text-accent transition hover:bg-accent/25 ${pct > 0 ? "mt-2" : ""}`}
-                    >
-                      {t("Make a payment")}
-                    </button>
+                    <ProgressBar value={pct} color={d.color} />
                   </div>
                 )}
               </div>
@@ -203,91 +194,6 @@ export function SprintSheet({
             <span className="font-bold text-bone">{formatMoney(totalDebt)}</span>
           </div>
         </div>
-      </Sheet>
-      <PaymentSheet
-        debt={payFor}
-        accounts={data.accounts}
-        onClose={() => setPayFor(null)}
-        onPay={payDebtExtra}
-      />
-    </>
-  );
-}
-
-function PaymentSheet({
-  debt,
-  accounts,
-  onClose,
-  onPay,
-}: {
-  debt: Debt | null;
-  accounts: Account[];
-  onClose: () => void;
-  onPay: (id: string, amount: number, fromAccountId?: string) => Promise<void>;
-}) {
-  const [amount, setAmount] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const amt = parseFloat(amount);
-  const valid = amt > 0 && !!accountId;
-  useEffect(() => {
-    if (debt) setAccountId((p) => p || accounts[0]?.id || "");
-  }, [debt, accounts]);
-  return (
-    <Sheet
-      open={!!debt}
-      onClose={() => {
-        setAmount("");
-        onClose();
-      }}
-      title={debt ? t("Pay {name}", { name: debt.name }) : t("Payment")}
-    >
-      {debt && (
-        <div className="space-y-4">
-          <p className="text-sm text-taupe">
-            {t("Balance:")} <span className="font-semibold text-bone">{formatMoney(debt.balance)}</span>
-          </p>
-          <div>
-            <label className={labelClass}>{t("Payment amount")}</label>
-            <input
-              className={inputClass}
-              type="number"
-              inputMode="decimal"
-              placeholder="0.00"
-              autoFocus
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </div>
-          {accounts.length > 0 && (
-            <div>
-              <label className={labelClass}>{t("From account")}</label>
-              <select
-                className={inputClass}
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id} className="bg-tile">
-                    {a.name} ····{a.last4}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <Button
-            onClick={async () => {
-              if (!debt || !valid) return;
-              await onPay(debt.id, amt, accountId);
-              setAmount("");
-              onClose();
-            }}
-            disabled={!valid}
-            className="w-full"
-          >
-            {t("Apply payment")}
-          </Button>
-        </div>
-      )}
     </Sheet>
   );
 }

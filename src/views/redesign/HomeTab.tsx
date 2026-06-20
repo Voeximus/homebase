@@ -12,7 +12,6 @@ interface Taps {
   onCash?: () => void;
   onDebt?: () => void;
   onBudget?: () => void;
-  onStreak?: () => void;
   onNext?: () => void;
   onBills?: () => void;
   onAnomaly?: () => void;
@@ -53,7 +52,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           <div className="mt-1.5 text-[22px] font-bold text-bone">{money(vm.cash)}</div>
           {vm.processing > 0 ? (
             <div className="mt-0.5 text-[11px] font-medium" style={{ color: "#d9a441" }}>
-              {t("~{amount} settling", { amount: money2(vm.processing) })}
+              {t("~{amount} waiting to post", { amount: money2(vm.processing) })}
             </div>
           ) : (
             <div className="mt-0.5 text-[11px]" style={{ color: "#7e8a98" }}>
@@ -83,63 +82,53 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           </div>
         </button>
 
-        {/* Budget donut */}
+        {/* Budget — full-width container (donut + spend-vs-target bar) */}
         <button
           onClick={taps.onBudget}
-          className="flex items-center gap-3 rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
+          className="col-span-2 flex items-center gap-4 rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
           style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
-          <div className="relative h-[62px] w-[62px] shrink-0">
+          <div className="relative h-16 w-16 shrink-0">
             <div
-              className="h-[62px] w-[62px] rounded-full"
+              className="h-16 w-16 rounded-full"
               style={{ background: conicFromSegments(donutSegs) }}
             />
             <div
-              className="absolute inset-[9px] flex items-center justify-center rounded-full"
+              className="absolute inset-[10px] flex items-center justify-center rounded-full"
               style={{ background: "#141a24" }}
             >
-              <span className="text-[12px] font-bold text-bone">{money(vm.budgetSpent)}</span>
+              <span className="text-[13px] font-bold text-bone">{money(vm.budgetSpent)}</span>
             </div>
           </div>
-          <div>
-            <div className="text-[11.5px] text-taupe">{t("Budget")}</div>
-            <div className="mt-0.5 text-[13px] font-semibold text-bone">
-              {t("of {amount}", { amount: money(vm.budgetTarget) })}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[13.5px] font-semibold text-bone">{t("Budget")}</span>
+              <span className="text-[11.5px] text-taupe">
+                {t("of {amount}", { amount: money(vm.budgetTarget) })}
+              </span>
             </div>
-            <div className="mt-0.5 text-[11px]" style={{ color: "#46d18a" }}>
-              {vm.budgetSpent <= vm.budgetTarget ? t("on track") : t("over")}
+            <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.min(100, (vm.budgetSpent / vm.budgetTarget) * 100)}%`,
+                  background:
+                    vm.budgetSpent <= vm.budgetTarget
+                      ? "linear-gradient(90deg,#22c55e,#46d18a)"
+                      : "#f0556e",
+                }}
+              />
             </div>
-          </div>
-        </button>
-
-        {/* Streak ring */}
-        <button
-          onClick={taps.onStreak}
-          className="flex items-center gap-3 rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
-        >
-          <div className="relative h-[62px] w-[62px] shrink-0">
-            <div
-              className="h-[62px] w-[62px] rounded-full"
-              style={{
-                background: `conic-gradient(from -90deg, #f59e0b ${(vm.streakDay / vm.streakTotal) * 100}%, #222b38 0)`,
-              }}
-            />
-            <div
-              className="absolute inset-[9px] flex flex-col items-center justify-center rounded-full"
-              style={{ background: "#141a24" }}
-            >
-              <span className="text-[15px] font-bold text-bone">{vm.streakDay}</span>
-              <span className="text-[9px] text-taupe">{t("of {n}", { n: vm.streakTotal })}</span>
+            <div className="mt-1.5 flex items-baseline justify-between text-[11.5px]">
+              <span style={{ color: vm.budgetSpent <= vm.budgetTarget ? "#46d18a" : "#f0556e" }}>
+                {vm.budgetSpent <= vm.budgetTarget ? t("on track") : t("over")}
+              </span>
+              <span className="text-taupe">
+                {t("{amount} left", { amount: money(Math.max(0, vm.budgetTarget - vm.budgetSpent)) })}
+              </span>
             </div>
           </div>
-          <div>
-            <div className="text-[11.5px] text-taupe">{t("Streak")}</div>
-            <div className="mt-0.5 text-[13px] font-semibold text-bone">{t("90-day sprint")}</div>
-            <div className="mt-0.5 text-[11px]" style={{ color: "#f59e0b" }}>
-              {t("good habits")}
-            </div>
-          </div>
+          <ChevronRight size={18} style={{ color: "#6b7686" }} />
         </button>
 
         {/* Next move (full width, gradient) */}

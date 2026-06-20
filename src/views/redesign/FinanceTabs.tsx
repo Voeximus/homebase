@@ -264,7 +264,6 @@ export function FinanceTabs({
             taps={{
               onCash: () => setAccountsOpen(true),
               onDebt: () => setSprintOpen(true),
-              onStreak: () => setSprintOpen(true),
               onBudget: () => setTab("insights"),
               onNext: () => setMarkSentOpen(true),
               onBills: () => setBillsOpen(true),

@@ -322,6 +322,12 @@ const SEED: Record<string, string> = {
   "Track a card as debt": "将信用卡记为债务",
   "~${x} · est. from last 3": "约${x} · 按最近3次估算",
   "Card …{last4}": "卡 …{last4}",
+
+  // ── 2026-06-20 UI tweaks ──
+  "~{amount} waiting to post": "~{amount} 待入账",
+  "Refreshing…": "刷新中…",
+  Updated: "已更新",
+  "Nothing here yet.": "暂无记录。",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.
