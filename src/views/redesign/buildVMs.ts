@@ -147,16 +147,18 @@ export function buildFinanceVMs(
     income: tx.type === "income",
   }));
 
-  // ── "spent since Monday" ──
+  // ── "spent since Monday" — lens-filtered (matches the lists, not the household) ──
   const dow = now.getDay();
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((dow + 6) % 7));
   const mondayKey = dateKeyOf(monday);
-  const sinceMonday = data.transactions
-    .filter((t) => t.type === "expense" && !t.appliesTo?.settled && t.date >= mondayKey)
+  const sinceMonday = visible
+    .filter((t) => t.type === "expense" && t.date >= mondayKey)
     .reduce((s, t) => s + t.amount, 0);
 
-  // ── simple anomaly count: a free-form charge > 2.5× its category's monthly mean ──
-  const monthFree = data.transactions.filter(
+  // ── simple anomaly count: a free-form charge > 2.5× its category's monthly mean.
+  //    From `visible` (lens-filtered) so the count matches what the list can show —
+  //    otherwise a spouse's anomaly counts here but opens to an empty lens-filtered list.
+  const monthFree = visible.filter(
     (t) => t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo,
   );
   const byCatAmts: Record<string, number[]> = {};
@@ -328,7 +330,11 @@ export function buildFinanceVMs(
       return { fate: "review", badge: t("Needs review") };
     return { fate: "envelope", badge: t("→ {label}", { label: envLabel(tx.categoryId) }) };
   };
-  const rows: ActivityRow[] = visible.slice(0, 30).map((tx) => {
+  // The Activity tab is THIS month (matches the "June 2026" header) and is NOT
+  // capped — so the "Needs review" badge count equals what the filter shows, and
+  // every reviewable charge is reachable (the all-time triage bench is LedgerSheet).
+  const monthVisible = visible.filter((tx) => tx.date.slice(0, 7) === monthKey);
+  const rows: ActivityRow[] = monthVisible.map((tx) => {
     const f = fateOf(tx);
     return {
       id: tx.id,
@@ -340,7 +346,7 @@ export function buildFinanceVMs(
       badgeLabel: f.badge,
     };
   });
-  const needsReview = visible.filter((tx) => fateOf(tx).fate === "review").length;
+  const needsReview = monthVisible.filter((tx) => fateOf(tx).fate === "review").length;
   const activity: ActivityVM = {
     sinceMonday,
     needsReview,
