@@ -236,31 +236,36 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           <span className="text-[12px]" style={{ color: "#7e8a98" }}>{t("Search a food or scan a barcode")}</span>
         </button>
       ) : (
-        <section className="overflow-hidden rounded-[18px] border" style={TILE}>
-          <button
-            onClick={() => setMealsOpen((o) => !o)}
-            className="flex w-full items-center gap-2.5 p-4 text-left"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: HEALTH + "1f", color: HEALTH }}>
-              <UtensilsCrossed size={16} />
+        <section className="overflow-hidden rounded-[16px] border" style={TILE}>
+          {/* slim bar — stays small when collapsed */}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ background: HEALTH + "1f", color: HEALTH }}>
+              <UtensilsCrossed size={13} />
             </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-semibold text-bone">{t("Today's Meals")}</div>
-              <div className="num text-[11px]" style={{ color: "#8b97a6" }}>
+            <button onClick={() => setMealsOpen((o) => !o)} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
+              <span className="text-[13px] font-semibold text-bone">{t("Today's Meals")}</span>
+              <span className="num text-[11px]" style={{ color: "#7e8a98" }}>
                 {t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", {
                   n: log.meals.length,
                   kcal: r0(eaten.kcal),
                 })}
-              </div>
-            </div>
-            <ChevronDown
-              size={18}
-              style={{ color: "#6b7686", transform: mealsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
-            />
-          </button>
+              </span>
+            </button>
+            <button
+              onClick={startNewMeal}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition active:scale-90"
+              style={{ background: "rgba(52,197,232,0.14)", color: "#34c5e8" }}
+              aria-label="Add a meal"
+            >
+              <Plus size={16} />
+            </button>
+            <button onClick={() => setMealsOpen((o) => !o)} className="shrink-0 p-1" aria-label="Toggle meals">
+              <ChevronDown size={17} style={{ color: "#6b7686", transform: mealsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+            </button>
+          </div>
 
           {mealsOpen && (
-            <div className="flex flex-col gap-2.5 px-3 pb-1">
+            <div className="flex flex-col gap-2.5 px-3 pb-3">
               {log.meals.map((meal, i) => (
                 <MealCard
                   key={meal.id}
@@ -273,16 +278,6 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
               ))}
             </div>
           )}
-
-          <div className="p-3">
-            <button
-              onClick={startNewMeal}
-              className="flex w-full items-center justify-center gap-2 rounded-[12px] border py-2.5 text-[13px] font-semibold text-bone transition active:scale-[0.99]"
-              style={{ borderColor: "#2a3644", background: "#0f141c" }}
-            >
-              <Plus size={16} /> {t("Add a meal")}
-            </button>
-          </div>
         </section>
       )}
 
@@ -1118,10 +1113,21 @@ function PortionView({
         </button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15.5px] font-bold text-bone">{food.name}</div>
-          <div className="num text-[11.5px]" style={{ color: "#9aa6b2" }}>
-            {food.kcal} {t("kcal")} · {food.p}P {food.c}C {food.f}F {t("per 100g")}
-            {hasUnit ? ` · 1 ${unitName} ≈ ${r0(gPerUnit)} g` : ""}
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="num text-[13px] font-bold text-bone">
+              {food.kcal}
+              <span className="ml-0.5 text-[10px] font-semibold" style={{ color: "#8b97a6" }}>{t("kcal")}</span>
+            </span>
+            <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.p }}>{food.p}P</span>
+            <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.c }}>{food.c}C</span>
+            <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.f }}>{food.f}F</span>
+            <span className="text-[10px]" style={{ color: "#7e8a98" }}>{t("per 100g")}</span>
           </div>
+          {hasUnit && (
+            <div className="num mt-0.5 text-[11px]" style={{ color: "#9aa6b2" }}>
+              {t("1 {unit} ≈ {g} g", { unit: unitName, g: r0(gPerUnit) })}
+            </div>
+          )}
         </div>
       </div>
 

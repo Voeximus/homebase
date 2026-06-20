@@ -512,6 +512,13 @@ const SEED: Record<string, string> = {
   "Today's Meals": "今天的餐",
   "{n} meals · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
   "{n} meal · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
+  "1 {unit} ≈ {g} g": "1 {unit} ≈ {g} 克",
+  // workout history edit
+  "Edit workout": "编辑训练",
+  "Save changes": "保存更改",
+  "Delete workout": "删除训练",
+  Notes: "备注",
+  optional: "可选",
   // transaction split — live allocation
   "Left to allocate": "待分配",
   "All allocated": "已全部分配",

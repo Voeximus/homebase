@@ -5,6 +5,7 @@ import {
   Dumbbell,
   Flame,
   Minus,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -107,6 +108,8 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
 
   const mine = useMemo(() => allWorkouts.filter((w) => w.person === person), [allWorkouts, person]);
   const routines = useMemo(
@@ -117,6 +120,8 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
   const done = useMemo(() => mine.filter((w) => w.done).sort((a, b) => b.date.localeCompare(a.date)), [mine]);
   const prs = useMemo(() => personalRecords(done), [done]);
   const weekCount = thisWeekCount(done, today);
+  // a past workout opened for editing (history is fully manageable, not rigid)
+  const editingWorkout = useMemo(() => done.find((w) => w.id === editId) ?? null, [done, editId]);
 
   const setActive = (fn: (w: Workout) => Workout) => {
     if (active) upsertWorkout(fn(active));
@@ -310,14 +315,39 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
             <div className="mt-2 flex flex-col">
               {done.slice(0, 12).map((w) => (
                 <div key={w.id} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "#1b232e" }}>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] text-bone">{t(w.name)}</div>
-                    <div className="text-[10.5px]" style={{ color: "#7e8a98" }}>{w.date}</div>
-                  </div>
-                  <div className="num shrink-0 text-right text-[11px]" style={{ color: "#9aa6b2" }}>
-                    {sessionStat(w)}
-                    {workoutVolume(w) > 0 ? ` · ${r0(workoutVolume(w)).toLocaleString()} ${t("vol")}` : ""}
-                  </div>
+                  <button onClick={() => setEditId(w.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] text-bone">{t(w.name)}</div>
+                      <div className="text-[10.5px]" style={{ color: "#7e8a98" }}>{w.date}</div>
+                    </div>
+                    <div className="num shrink-0 text-right text-[11px]" style={{ color: "#9aa6b2" }}>
+                      {sessionStat(w)}
+                      {workoutVolume(w) > 0 ? ` · ${r0(workoutVolume(w)).toLocaleString()} ${t("vol")}` : ""}
+                    </div>
+                  </button>
+                  {confirmDelId === w.id ? (
+                    <span className="flex shrink-0 items-center gap-1">
+                      <button
+                        onClick={() => { deleteWorkout(w.id); setConfirmDelId(null); }}
+                        className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                        style={{ background: "#2a1518", color: "#f0556e" }}
+                      >
+                        {t("Delete")}
+                      </button>
+                      <button onClick={() => setConfirmDelId(null)} className="px-1 text-[11px]" style={{ color: "#7c8696" }}>
+                        {t("Cancel")}
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button onClick={() => setEditId(w.id)} style={{ color: "#5f6a78" }} aria-label="Edit workout">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => setConfirmDelId(w.id)} style={{ color: "#5f6a78" }} aria-label="Delete workout">
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -327,6 +357,15 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
 
       <ExerciseSearchSheet open={searchOpen} onClose={() => setSearchOpen(false)} library={library} onPick={(ex) => addExercise(ex)} />
       <QuickLogSheet open={quickOpen} onClose={() => setQuickOpen(false)} library={library} onLog={quickLog} />
+      {editingWorkout && (
+        <EditWorkoutSheet
+          workout={editingWorkout}
+          library={library}
+          onClose={() => setEditId(null)}
+          onSave={(w) => { upsertWorkout(w); setEditId(null); }}
+          onDelete={() => { deleteWorkout(editingWorkout.id); setEditId(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -459,6 +498,151 @@ function ExerciseBlock({
       <button onClick={onAddSet} className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "#34c5e8" }}>
         <Plus size={12} /> {t("Add set")}
       </button>
+    </div>
+  );
+}
+
+// ── edit a PAST workout (history is manageable, not rigid) ──────────────────────
+// A local draft of the session: rename, edit/add/remove exercises + sets, change a
+// cardio duration, edit notes, or delete. Save upserts it back (stays in history);
+// the week count / PRs / volume all recompute from the live list automatically.
+function EditWorkoutSheet({
+  workout,
+  library,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  workout: Workout;
+  library: Exercise[];
+  onClose: () => void;
+  onSave: (w: Workout) => void;
+  onDelete: () => void;
+}) {
+  const [draft, setDraft] = useState<Workout>(workout);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  useEffect(() => {
+    setDraft(workout);
+    setConfirmDel(false);
+  }, [workout]);
+
+  const upd = (exId: string, fn: (e: ExerciseEntry) => ExerciseEntry) =>
+    setDraft((w) => ({ ...w, exercises: w.exercises.map((e) => (e.id === exId ? fn(e) : e)) }));
+  const addSet = (exId: string) =>
+    upd(exId, (e) => ({ ...e, sets: [...e.sets, e.sets.length ? { ...e.sets[e.sets.length - 1] } : { reps: 0, weight: 0 }] }));
+  const setSet = (exId: string, i: number, patch: { reps?: number; weight?: number }) =>
+    upd(exId, (e) => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
+  const removeSet = (exId: string, i: number) => upd(exId, (e) => ({ ...e, sets: e.sets.filter((_, j) => j !== i) }));
+  const setDur = (exId: string, d: number) => upd(exId, (e) => ({ ...e, duration: d }));
+  const removeExercise = (exId: string) => setDraft((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== exId) }));
+  const addExercise = (ex: { name: string; muscle: string; exerciseId: string }) =>
+    setDraft((w) => ({ ...w, exercises: [...w.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [{ reps: 0, weight: 0 }] }] }));
+
+  const inpStyle = { background: "#141a24", border: "1px solid #232d3a" } as const;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
+        <div
+          className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
+          style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #34c5e8", borderRadius: "22px" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-2 p-4 pb-2">
+            <Dumbbell size={16} style={{ color: "#34c5e8" }} />
+            <div className="flex-1 text-[16px] font-bold text-bone">{t("Edit workout")}</div>
+            <button onClick={onClose} style={{ color: "#6b7686" }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 pb-2">
+            <label className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("Name")}</label>
+            <input
+              value={draft.name}
+              onChange={(e) => setDraft((w) => ({ ...w, name: e.target.value }))}
+              className="w-full rounded-lg px-3 py-2 text-[14px] text-bone outline-none"
+              style={inpStyle}
+            />
+            <div className="mb-3 mt-1 text-[10.5px]" style={{ color: "#7e8a98" }}>{draft.date}</div>
+
+            {draft.exercises.map((ex) =>
+              ex.duration != null && ex.sets.length === 0 ? (
+                <DurationBlock key={ex.id} ex={ex} onChange={(d) => setDur(ex.id, d)} onRemove={() => removeExercise(ex.id)} />
+              ) : (
+                <ExerciseBlock
+                  key={ex.id}
+                  ex={ex}
+                  onAddSet={() => addSet(ex.id)}
+                  onSetChange={(i, p) => setSet(ex.id, i, p)}
+                  onRemoveSet={(i) => removeSet(ex.id, i)}
+                  onRemove={() => removeExercise(ex.id)}
+                />
+              ),
+            )}
+
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
+              style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+            >
+              <Plus size={15} /> {t("Add exercise")}
+            </button>
+
+            <label className="mb-1 mt-3 block text-[10px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("Notes")}</label>
+            <textarea
+              value={draft.notes}
+              onChange={(e) => setDraft((w) => ({ ...w, notes: e.target.value }))}
+              rows={2}
+              placeholder={t("optional")}
+              className="w-full resize-none rounded-lg px-3 py-2 text-[13px] text-bone outline-none placeholder:text-[#5f6a78]"
+              style={inpStyle}
+            />
+          </div>
+
+          <div className="flex gap-2 p-4 pt-2">
+            {confirmDel ? (
+              <>
+                <button onClick={() => setConfirmDel(false)} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "#161c26", color: "#b7c0cc" }}>
+                  {t("Cancel")}
+                </button>
+                <button onClick={onDelete} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "#f0556e", color: "#0a0d12" }}>
+                  {t("Delete workout")}
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setConfirmDel(true)} className="flex items-center justify-center rounded-[12px] px-4 py-2.5" style={{ background: "rgba(240,85,110,0.13)", color: "#f0556e" }} aria-label="Delete workout">
+                  <Trash2 size={16} />
+                </button>
+                <button
+                  onClick={() => onSave(draft)}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+                  style={{ background: HEALTH_GRADIENT }}
+                >
+                  <Check size={16} /> {t("Save changes")}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <ExerciseSearchSheet open={searchOpen} onClose={() => setSearchOpen(false)} library={library} onPick={addExercise} />
+    </>
+  );
+}
+
+function DurationBlock({ ex, onChange, onRemove }: { ex: ExerciseEntry; onChange: (d: number) => void; onRemove: () => void }) {
+  return (
+    <div className="mb-2.5 rounded-[12px] p-3" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
+      <div className="mb-1.5 flex items-center justify-between">
+        <div className="min-w-0 truncate text-[13.5px] font-medium text-bone">{ex.name}</div>
+        <button onClick={onRemove} style={{ color: "#6b7686" }} aria-label="Remove exercise">
+          <X size={15} />
+        </button>
+      </div>
+      <NumIn value={ex.duration ?? 0} onChange={onChange} max={600} suffix="min" />
     </div>
   );
 }
