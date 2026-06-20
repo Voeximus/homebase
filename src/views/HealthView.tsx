@@ -6,6 +6,7 @@ import { ModeToggle, type AppMode } from "../components/ModeToggle";
 import { LangToggle } from "../components/LanguageProvider";
 import type { Lens } from "../lib/lens";
 import type { Owner } from "../lib/owner";
+import { HealthProvider } from "../store/HealthStore";
 import { MealBuilder } from "./MealBuilder";
 import { WorkoutSection } from "./WorkoutSection";
 
@@ -35,6 +36,7 @@ export function HealthView({
   const who = owner;
 
   return (
+    <HealthProvider>
     <div className="min-h-screen">
       {/* slim, non-sticky header — the macro summary inside each section pins instead */}
       <div className="safe-top border-b border-edge">
@@ -82,5 +84,6 @@ export function HealthView({
         )}
       </main>
     </div>
+    </HealthProvider>
   );
 }

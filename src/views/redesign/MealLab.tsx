@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FinanceProvider } from "../../store/FinanceStore";
+import { HealthProvider } from "../../store/HealthStore";
 import { LanguageProvider } from "../../components/LanguageProvider";
 import { MealBuilder } from "../MealBuilder";
 import { WorkoutSection } from "../WorkoutSection";
@@ -14,6 +15,7 @@ export function MealLab() {
   return (
     <LanguageProvider>
       <FinanceProvider>
+        <HealthProvider>
         <div className="min-h-screen" style={{ background: "#0b0f17" }}>
           <div className="mx-auto max-w-[640px] px-4 py-5">
             <div className="mb-3 flex gap-2">
@@ -27,6 +29,7 @@ export function MealLab() {
             )}
           </div>
         </div>
+        </HealthProvider>
       </FinanceProvider>
     </LanguageProvider>
   );

@@ -18,13 +18,10 @@ import { BRAND_GRADIENT } from "../lib/catColor";
 import { t } from "../lib/i18n";
 import {
   bestSet,
-  loadRoutines,
-  loadWorkouts,
   personalRecords,
   rowId,
-  saveRoutines,
-  saveWorkouts,
   searchExercises,
+  SEED_ROUTINES,
   thisWeekCount,
   todayStr,
   totalSets,
@@ -35,6 +32,9 @@ import {
   type Routine,
   type Workout,
 } from "../lib/workoutLog";
+import { useHealth } from "../store/HealthStore";
+
+const newId = () => crypto.randomUUID();
 
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -96,25 +96,27 @@ function ModePill({ on, onClick, icon, children }: { on: boolean; onClick: () =>
 // ── SOLO — log a session, routines, PRs, history ────────────────────────────────
 function SoloWorkout({ person, library }: { person: Person; library: Exercise[] }) {
   const today = todayStr();
-  const [workouts, setWorkouts] = useState<Workout[]>(() => loadWorkouts(person));
-  const [routines, setRoutines] = useState<Routine[]>(() => loadRoutines(person));
+  const { workouts: allWorkouts, routines: allRoutines, upsertWorkout, deleteWorkout, addRoutine, deleteRoutine: storeDeleteRoutine } = useHealth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  useEffect(() => saveWorkouts(person, workouts), [workouts, person]);
-  useEffect(() => saveRoutines(person, routines), [routines, person]);
-
-  const active = workouts.find((w) => !w.done) ?? null;
-  const done = useMemo(() => workouts.filter((w) => w.done).sort((a, b) => b.date.localeCompare(a.date)), [workouts]);
+  const mine = useMemo(() => allWorkouts.filter((w) => w.person === person), [allWorkouts, person]);
+  const routines = useMemo(
+    () => [...SEED_ROUTINES[person], ...allRoutines.filter((r) => r.person === person)],
+    [allRoutines, person],
+  );
+  const active = mine.find((w) => !w.done) ?? null;
+  const done = useMemo(() => mine.filter((w) => w.done).sort((a, b) => b.date.localeCompare(a.date)), [mine]);
   const prs = useMemo(() => personalRecords(done), [done]);
   const weekCount = thisWeekCount(done, today);
 
-  const setActive = (fn: (w: Workout) => Workout) =>
-    setWorkouts((ws) => ws.map((w) => (!w.done ? fn(w) : w)));
+  const setActive = (fn: (w: Workout) => Workout) => {
+    if (active) upsertWorkout(fn(active));
+  };
 
   const startBlank = () => {
     if (active) return;
-    setWorkouts((ws) => [{ id: rowId(), date: today, person, name: t("Workout"), notes: "", exercises: [], done: false }, ...ws]);
+    upsertWorkout({ id: newId(), date: today, person, name: t("Workout"), notes: "", exercises: [], done: false });
   };
   const startFromRoutine = (r: Routine) => {
     if (active) return;
@@ -125,7 +127,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
       muscle: re.muscle,
       sets: Array.from({ length: Math.max(1, re.sets) }, () => ({ reps: 0, weight: 0 })),
     }));
-    setWorkouts((ws) => [{ id: rowId(), date: today, person, name: r.name, notes: "", exercises, done: false }, ...ws]);
+    upsertWorkout({ id: newId(), date: today, person, name: r.name, notes: "", exercises, done: false });
   };
   const addExercise = (ex: { name: string; muscle: string; exerciseId: string }) =>
     setActive((w) => ({ ...w, exercises: [...w.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [{ reps: 0, weight: 0 }] }] }));
@@ -150,25 +152,25 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
   const finish = () => {
     if (!active) return;
     if (!active.exercises.length) {
-      // nothing logged → just discard the empty session
-      setWorkouts((ws) => ws.filter((w) => w.id !== active.id));
+      deleteWorkout(active.id); // nothing logged → discard the empty session
       return;
     }
-    setWorkouts((ws) => ws.map((w) => (w.id === active.id ? { ...w, done: true } : w)));
+    upsertWorkout({ ...active, done: true });
   };
-  const discard = () => active && setWorkouts((ws) => ws.filter((w) => w.id !== active.id));
+  const discard = () => {
+    if (active) deleteWorkout(active.id);
+  };
   const saveAsRoutine = () => {
     if (!active || !active.exercises.length) return;
-    const r: Routine = {
-      id: rowId(),
+    addRoutine({
+      id: newId(),
       person,
       name: active.name || t("My routine"),
       meta: t("saved {date}", { date: today.slice(5) }),
       exercises: active.exercises.map((e) => ({ name: e.name, muscle: e.muscle, sets: Math.max(1, e.sets.length), reps: "" })),
-    };
-    setRoutines((rs) => [...rs, r]);
+    });
   };
-  const deleteRoutine = (id: string) => setRoutines((rs) => rs.filter((r) => r.id !== id));
+  const deleteRoutine = (id: string) => storeDeleteRoutine(id);
 
   return (
     <div className="flex flex-col gap-3">
@@ -467,9 +469,10 @@ function TogetherWorkout({ owner }: { owner: Person }) {
   const partner = other(owner);
   const order: Person[] = [you, partner];
 
+  const { workouts } = useHealth();
   const all: Record<Person, Workout[]> = {
-    gino: loadWorkouts("gino").filter((w) => w.done),
-    xinyan: loadWorkouts("xinyan").filter((w) => w.done),
+    gino: workouts.filter((w) => w.person === "gino" && w.done),
+    xinyan: workouts.filter((w) => w.person === "xinyan" && w.done),
   };
   const week: Record<Person, number> = {
     gino: thisWeekCount(all.gino, today),

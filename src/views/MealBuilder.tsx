@@ -19,10 +19,8 @@ import {
   buildLibrary,
   contribution,
   dayTotals,
-  loadDay,
   mealTotals,
   rowId,
-  saveDay,
   searchFoods,
   todayStr,
   type DayLog,
@@ -32,6 +30,7 @@ import {
   type Person,
 } from "../lib/mealLog";
 import { useStore } from "../store/FinanceStore";
+import { useHealth } from "../store/HealthStore";
 import { BRAND_GRADIENT } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
@@ -135,8 +134,9 @@ function ModePill({
 function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const today = todayStr();
   const target = DAILY[person] as Macros;
-  const [log, setLog] = useState<DayLog>(() => loadDay(person, today));
-  useEffect(() => saveDay(log), [log]);
+  const { getDay, setDay } = useHealth();
+  const log = getDay(person, today);
+  const update = (fn: (l: DayLog) => DayLog) => setDay(fn(getDay(person, today)));
 
   // sheet state: adding a food to a meal, or editing an existing item
   const [addTo, setAddTo] = useState<string | null>(null);
@@ -146,19 +146,19 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
 
   const addMeal = (): string => {
     const id = rowId();
-    setLog((l) => ({ ...l, meals: [...l.meals, { id, name: mealName(l.meals.length), items: [] }] }));
+    update((l) => ({ ...l, meals: [...l.meals, { id, name: mealName(l.meals.length), items: [] }] }));
     return id;
   };
   const startNewMeal = () => setAddTo(addMeal());
   const addItem = (mealId: string, food: Food, grams: number) =>
-    setLog((l) => ({
+    update((l) => ({
       ...l,
       meals: l.meals.map((m) =>
         m.id === mealId ? { ...m, items: [...m.items, toItem(food, grams)] } : m,
       ),
     }));
   const updateItem = (mealId: string, itemId: string, grams: number) =>
-    setLog((l) => ({
+    update((l) => ({
       ...l,
       meals: l.meals.map((m) =>
         m.id === mealId
@@ -167,14 +167,14 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
       ),
     }));
   const removeItem = (mealId: string, itemId: string) =>
-    setLog((l) => ({
+    update((l) => ({
       ...l,
       meals: l.meals.map((m) =>
         m.id === mealId ? { ...m, items: m.items.filter((it) => it.id !== itemId) } : m,
       ),
     }));
   const removeMeal = (mealId: string) =>
-    setLog((l) => ({ ...l, meals: l.meals.filter((m) => m.id !== mealId) }));
+    update((l) => ({ ...l, meals: l.meals.filter((m) => m.id !== mealId) }));
 
   return (
     <div className="flex flex-col gap-3">
@@ -272,11 +272,10 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const partner = other(owner);
   const order: Person[] = [you, partner];
 
-  // both day logs, so the shared meal can land on each person's real remaining
-  const [logs, setLogs] = useState<Record<Person, DayLog>>(() => ({
-    gino: loadDay("gino", today),
-    xinyan: loadDay("xinyan", today),
-  }));
+  // both day logs come from the shared store (single source of truth), so the
+  // shared meal lands on each person's REAL remaining and syncs to their phone.
+  const { getDay, setDay } = useHealth();
+  const logs: Record<Person, DayLog> = { gino: getDay("gino", today), xinyan: getDay("xinyan", today) };
   const [shared, setShared] = useState<SharedItem[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -294,17 +293,13 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
 
   const logForBoth = () => {
     if (!shared.length) return;
-    const next = { ...logs } as Record<Person, DayLog>;
     for (const p of ["gino", "xinyan"] as Person[]) {
       const items = shared.filter((s) => s.g[p] > 0).map((s) => toItem(s.food, s.g[p]));
       if (!items.length) continue;
-      const log = next[p];
+      const log = getDay(p, today);
       const meal: Meal = { id: rowId(), name: mealName(log.meals.length), items };
-      const updated = { ...log, meals: [...log.meals, meal] };
-      saveDay(updated);
-      next[p] = updated;
+      setDay({ ...log, meals: [...log.meals, meal] });
     }
-    setLogs(next);
     setShared([]);
     setToast(t("Logged for both 🍽️"));
     setTimeout(() => setToast(null), 2200);
