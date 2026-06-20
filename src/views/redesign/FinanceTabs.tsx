@@ -23,7 +23,7 @@ import {
   AccountsSheet,
   SettingsSheet,
   PayBillSheet,
-} from "../OnePager";
+} from "../sheets";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { BillsSheet } from "./BillsSheet";
 import { TxnSheet } from "./TxnSheet";

@@ -3,7 +3,6 @@ import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { LoginScreen } from "./auth/LoginScreen";
 import { FinanceProvider, useStore } from "./store/FinanceStore";
-import { OnePager } from "./views/OnePager";
 import { HealthView } from "./views/HealthView";
 import type { AppMode } from "./components/ModeToggle";
 import { LanguageProvider } from "./components/LanguageProvider";
@@ -133,14 +132,6 @@ function FinanceGate({
 }) {
   const { loading } = useStore();
   if (loading) return <FullScreenLoader />;
-  // The bento reskin is now the default. ?oldui falls back to the original
-  // graphite one-pager as a safety net during the transition.
-  const oldUI =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("oldui");
-  if (oldUI) {
-    return <OnePager mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />;
-  }
   return (
     <FinanceTabs mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
   );

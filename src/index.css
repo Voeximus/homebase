@@ -18,7 +18,6 @@
   --color-mint: #46d18a; /* green — good money: cash, cleared, on-track */
   --color-gold: #e3b341; /* amber — the 90-day streak ring, near-limit */
   --color-ember: #e5544e; /* red — ONLY the …4728 card + over-limit bars */
-  --color-steel: #5b82b3; /* blue-slate — neutral proportion segments */
 
   --color-bone: #e6edf3; /* cool off-white — readouts + headlines */
   --color-taupe: #8b97a6; /* labels, captions */
@@ -121,71 +120,8 @@ input[type="number"] {
   letter-spacing: -0.02em;
 }
 
-/* The hero next-move panel's 2px cyan→green top edge */
-.hero-bar {
-  position: relative;
-}
-.hero-bar::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  border-radius: 12px 12px 0 0;
-  background: linear-gradient(90deg, var(--color-accent), var(--color-mint));
-}
-
-/* The recessed "pressed-in slip" that holds the next move */
-.slip-recess {
-  background: var(--color-recessed);
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.55),
-    inset 0 0 0 1px rgba(52, 197, 232, 0.1);
-}
-
 /* ── Motion — all CSS, all gated behind reduced-motion ─────────────────────── */
-.reveal {
-  opacity: 1;
-  transform: none;
-}
 @media (prefers-reduced-motion: no-preference) {
-  .reveal {
-    opacity: 0;
-    transform: translateY(12px);
-    transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
-  }
-  .reveal.is-visible {
-    opacity: 1;
-    transform: none;
-  }
-
-  /* The primary "Mark sent" CTA breathes so it draws the daily glance */
-  .breathe {
-    animation: breathe 2.6s ease-in-out infinite;
-  }
-  @keyframes breathe {
-    0%,
-    100% {
-      box-shadow: 0 0 0 0 rgba(52, 197, 232, 0);
-    }
-    50% {
-      box-shadow: 0 0 18px 1px rgba(52, 197, 232, 0.3);
-    }
-  }
-
-  /* The streak ring's slow amber glow */
-  .ring-pulse {
-    animation: ringPulse 4s ease-in-out infinite;
-  }
-  @keyframes ringPulse {
-    0%,
-    100% {
-      opacity: 0.85;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-
   /* "Mark sent" confirmation pop */
   .pop {
     animation: pop 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
