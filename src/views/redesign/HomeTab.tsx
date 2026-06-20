@@ -50,9 +50,15 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
             <Wallet size={14} /> Cash
           </div>
           <div className="mt-1.5 text-[22px] font-bold text-bone">{money(vm.cash)}</div>
-          <div className="mt-0.5 text-[11px]" style={{ color: "#7e8a98" }}>
-            {vm.cashAccounts} accounts
-          </div>
+          {vm.processing > 0 ? (
+            <div className="mt-0.5 text-[11px] font-medium" style={{ color: "#d9a441" }}>
+              ~{money2(vm.processing)} settling
+            </div>
+          ) : (
+            <div className="mt-0.5 text-[11px]" style={{ color: "#7e8a98" }}>
+              {vm.cashAccounts} accounts
+            </div>
+          )}
         </button>
 
         {/* Debt */}

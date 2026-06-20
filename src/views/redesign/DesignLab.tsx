@@ -30,6 +30,7 @@ const HOME: HomeVM = {
   nextDate: "Jun 30",
   cash: 2322,
   cashAccounts: 3,
+  processing: 144.43,
   debtLeft: 5837,
   debtProgressPct: 31,
   budgetSpent: 719,

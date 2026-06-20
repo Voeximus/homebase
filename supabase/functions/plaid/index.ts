@@ -62,6 +62,18 @@ function pickBalance(a: any): number {
   return b.current ?? b.available ?? 0;
 }
 
+// The "still processing" hold: for a checking/savings account it's the gap
+// between the posted (current) and spendable (available) balance — i.e. the
+// pending debits the bank is holding but hasn't itemized to us yet. Cards put
+// pending charges straight into their current balance, so there's no separate
+// hold to surface there → 0.
+function pickHold(a: any): number {
+  const b = a.balances ?? {};
+  if (a.type !== "depository") return 0;
+  if (b.current == null || b.available == null) return 0;
+  return Math.max(0, Number(b.current) - Number(b.available));
+}
+
 // Resolve a bill payment to its idempotent appliesTo (mirror of buildImportPlan):
 // snap the posted day to the recurring's nearest scheduled due day, so the feed
 // row lines up with a calendar-marked installment and dedups.
@@ -203,7 +215,11 @@ async function syncConnection(connId: string, force = false) {
     // fresh balances + our account map
     const accResp = await plaid("/accounts/get", { access_token: token });
     const balByProv: Record<string, number> = {};
-    for (const a of accResp.accounts) balByProv[a.account_id] = pickBalance(a);
+    const holdByProv: Record<string, number> = {};
+    for (const a of accResp.accounts) {
+      balByProv[a.account_id] = pickBalance(a);
+      holdByProv[a.account_id] = pickHold(a);
+    }
 
     const { data: ourAccts } = await admin
       .from("accounts")
@@ -309,6 +325,11 @@ async function syncConnection(connId: string, force = false) {
         p_reverse: reverseSent ? [] : ops.reverse,
       });
       if (error) throw new Error("apply_bank_sync: " + error.message);
+      // display-only "still processing" hold (separate from the atomic money write)
+      await admin
+        .from("accounts")
+        .update({ pending_hold: holdByProv[provId] ?? 0 })
+        .eq("id", acctIdByProv[provId]);
       reverseSent = true;
     }
 

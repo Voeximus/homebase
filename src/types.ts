@@ -76,9 +76,10 @@ export interface Account {
   owner: AccountOwner;
   last4?: string;
   type: string; // "checking"
-  balance: number;
+  balance: number; // spendable (available) balance for checking; amount owed for cards
   sortOrder: number;
   providerAccountId?: string; // Plaid account_id, when bank-connected
+  pendingHold?: number; // ~$ still processing (current − available); display-only
   createdAt: string;
 }
 

@@ -18,7 +18,7 @@ import {
   commitmentProgress,
   billExpected,
 } from "../../lib/plan";
-import { totalBalance, cashAccounts } from "../../lib/recurring";
+import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { merchantKey } from "../../lib/categorize";
@@ -95,6 +95,10 @@ export function buildFinanceVMs(
   const jointCash = personal ? totalBalance(jointAccounts(data.accounts)) : 0;
   const cash = personal ? totalBalance(myAccounts) + jointCash : totalCash;
   const cashAcctCount = cashAccounts(personal ? myAccounts : data.accounts).length;
+  // "still processing" hold — mirror the cash lens (own + joint when personal)
+  const processing = personal
+    ? totalPendingHold(myAccounts) + totalPendingHold(jointAccounts(data.accounts))
+    : totalPendingHold(data.accounts);
 
   // ── per-line budget (the 6 lean envelopes) ──
   const lineRows = LEAN_VARIABLE.map((l) => ({
@@ -262,6 +266,7 @@ export function buildFinanceVMs(
     nextDate: next ? fmtDay(next.date) : "—",
     cash,
     cashAccounts: cashAcctCount,
+    processing,
     debtLeft: math.totalDebt,
     debtProgressPct: clearedPct,
     budgetSpent: spent,

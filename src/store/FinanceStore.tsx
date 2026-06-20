@@ -80,6 +80,7 @@ function mapAccount(r: any): Account {
     balance: Number(r.balance),
     sortOrder: r.sort_order ?? 0,
     providerAccountId: r.provider_account_id ?? undefined,
+    pendingHold: Number(r.pending_hold ?? 0),
     createdAt: r.created_at,
   };
 }

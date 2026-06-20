@@ -60,3 +60,10 @@ export function totalBalance(accounts: Account[]): number {
   // Credit cards are debt, not cash — keep them out of the cash total.
   return cashAccounts(accounts).reduce((s, a) => s + a.balance, 0);
 }
+
+/** Total "still processing" hold across the cash accounts — the bank's
+ *  current−available gap (pending debits not yet itemized to us). Display-only;
+ *  the cash balance is already net of it. */
+export function totalPendingHold(accounts: Account[]): number {
+  return cashAccounts(accounts).reduce((s, a) => s + (a.pendingHold ?? 0), 0);
+}

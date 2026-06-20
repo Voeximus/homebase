@@ -19,6 +19,7 @@ export interface HomeVM {
   nextDate: string; // "Jun 30"
   cash: number;
   cashAccounts: number;
+  processing: number; // ~$ still settling at the bank (0 = hide)
   debtLeft: number;
   debtProgressPct: number; // 0..100 cleared
   budgetSpent: number;
