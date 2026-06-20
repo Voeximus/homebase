@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "../lib/supabase";
-import type { DayLog, Person } from "../lib/mealLog";
+import type { DayLog, LoggedItem, Person, SavedMeal } from "../lib/mealLog";
 import type { Routine, Workout } from "../lib/workoutLog";
 import type { BodyWeight } from "../lib/weightLog";
 
@@ -42,12 +42,16 @@ function mapRoutine(r: any): Routine {
 function mapWeight(r: any): BodyWeight {
   return { person: r.person, date: r.date, weight: Number(r.weight) };
 }
+function mapSavedMeal(r: any): SavedMeal {
+  return { id: r.id, name: r.name ?? "", items: Array.isArray(r.items) ? r.items : [] };
+}
 
 interface HealthState {
   mealDays: Record<string, DayLog>;
   workouts: Workout[];
   routines: Routine[]; // custom only; the components add the code-defined seeds
   weights: BodyWeight[];
+  savedMeals: SavedMeal[]; // household-shared favorite meals
 }
 
 export interface HealthStore {
@@ -57,6 +61,7 @@ export interface HealthStore {
   workouts: Workout[];
   routines: Routine[]; // custom only
   weights: BodyWeight[];
+  savedMeals: SavedMeal[];
   getDay: (person: Person, date: string) => DayLog;
   setDay: (day: DayLog) => void;
   upsertWorkout: (w: Workout) => void;
@@ -66,12 +71,14 @@ export interface HealthStore {
   setWeight: (person: Person, date: string, weight: number) => void;
   deleteWeight: (person: Person, date: string) => void;
   clearWeights: (person: Person) => void;
+  addSavedMeal: (name: string, items: LoggedItem[]) => void;
+  deleteSavedMeal: (id: string) => void;
 }
 
 const Ctx = createContext<HealthStore | null>(null);
 
 export function HealthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<HealthState>({ mealDays: {}, workouts: [], routines: [], weights: [] });
+  const [state, setState] = useState<HealthState>({ mealDays: {}, workouts: [], routines: [], weights: [], savedMeals: [] });
   const [loading, setLoading] = useState(true);
 
   const dataRef = useRef(state);
@@ -129,6 +136,12 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    async function reloadSavedMeals() {
+      const { data: rows, error } = await supabase.from("saved_meals").select("*").order("created_at", { ascending: true });
+      if (error || !active) return;
+      setState((s) => ({ ...s, savedMeals: (rows ?? []).map(mapSavedMeal) }));
+    }
+
     async function migrateLocal() {
       if (migrated.current || localStorage.getItem("hb-health-migrated")) {
         migrated.current = true;
@@ -174,7 +187,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       await Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines(), reloadWeights()]);
     }
 
-    Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines(), reloadWeights()])
+    Promise.all([reloadMealDays(), reloadWorkouts(), reloadRoutines(), reloadWeights(), reloadSavedMeals()])
       .then(() => migrateLocal())
       .finally(() => active && setLoading(false));
 
@@ -184,6 +197,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "workouts" }, () => reloadWorkouts())
       .on("postgres_changes", { event: "*", schema: "public", table: "workout_routines" }, () => reloadRoutines())
       .on("postgres_changes", { event: "*", schema: "public", table: "body_weights" }, () => reloadWeights())
+      .on("postgres_changes", { event: "*", schema: "public", table: "saved_meals" }, () => reloadSavedMeals())
       .subscribe();
 
     const timersMap = timers.current;
@@ -206,7 +220,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  type Actions = Omit<HealthStore, "loading" | "mealDays" | "workouts" | "routines" | "weights">;
+  type Actions = Omit<HealthStore, "loading" | "mealDays" | "workouts" | "routines" | "weights" | "savedMeals">;
   const store = useMemo<Actions>(() => {
     // Debounce a write by key; remember the write fn so unmount can flush it.
     const scheduleWrite = (key: string, doWrite: () => Promise<void>, delay = 700) => {
@@ -357,6 +371,19 @@ export function HealthProvider({ children }: { children: ReactNode }) {
             if (error) console.error("body_weights clear", error);
           });
       },
+      addSavedMeal(name, items) {
+        const id = crypto.randomUUID();
+        const meal: SavedMeal = { id, name: name.trim() || "Saved meal", items };
+        setState((s) => ({ ...s, savedMeals: [...s.savedMeals, meal] }));
+        supabase
+          .from("saved_meals")
+          .insert({ id: meal.id, name: meal.name, items: meal.items })
+          .then(({ error }) => error && console.error("saved_meals insert", error));
+      },
+      deleteSavedMeal(id) {
+        setState((s) => ({ ...s, savedMeals: s.savedMeals.filter((m) => m.id !== id) }));
+        supabase.from("saved_meals").delete().eq("id", id).then(({ error }) => error && console.error("saved_meals delete", error));
+      },
     };
   }, []);
 
@@ -367,6 +394,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     workouts: state.workouts,
     routines: state.routines,
     weights: state.weights,
+    savedMeals: state.savedMeals,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

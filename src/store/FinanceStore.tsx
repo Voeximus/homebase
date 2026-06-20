@@ -45,6 +45,7 @@ function mapTxn(r: any): Transaction {
     accountId: r.account_id ?? undefined,
     appliesTo: r.applies_to ?? undefined,
     splits: Array.isArray(r.splits) && r.splits.length ? r.splits : undefined,
+    anomalyAck: !!r.anomaly_ack,
     createdAt: r.created_at,
   };
 }
@@ -168,6 +169,8 @@ export interface FinanceStore {
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
   // Split one transaction across categories (or pass null to clear the split).
   setTransactionSplits: (id: string, splits: TxnSplit[] | null) => Promise<void>;
+  // Dismiss the "unusual purchase" flag for a transaction (it won't reappear).
+  acknowledgeAnomaly: (id: string) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
   makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
   setRecurringVariable: (id: string, variable: boolean) => Promise<void>;
@@ -804,6 +807,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const update: Record<string, unknown> = { splits: useSplits };
         if (primary) update.category_id = primary;
         const { error } = await supabase.from("transactions").update(update).eq("id", id);
+        if (error) console.error(error);
+      },
+      async acknowledgeAnomaly(id) {
+        // dismiss the unusual-purchase flag; optimistic + persisted so it never
+        // re-flags this charge (on this or the other phone).
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) => (t.id === id ? { ...t, anomalyAck: true } : t)),
+        }));
+        const { error } = await supabase.from("transactions").update({ anomaly_ack: true }).eq("id", id);
         if (error) console.error(error);
       },
       async excludeFromBudget(id) {

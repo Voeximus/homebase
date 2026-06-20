@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   ArrowLeft,
+  Bookmark,
   Check,
   ChevronDown,
   Flame,
@@ -33,6 +34,7 @@ import {
   type Macros,
   type Meal,
   type Person,
+  type SavedMeal,
 } from "../lib/mealLog";
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
@@ -158,7 +160,7 @@ function ModePill({
 function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const today = todayStr();
   const target = DAILY[person] as Macros;
-  const { getDay, setDay, mealDays } = useHealth();
+  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, deleteSavedMeal } = useHealth();
   const log = getDay(person, today);
   const update = (fn: (l: DayLog) => DayLog) => setDay(fn(getDay(person, today)));
 
@@ -166,15 +168,19 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const [addTo, setAddTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ mealId: string; item: LoggedItem } | null>(null);
   const [estimateOpen, setEstimateOpen] = useState(false);
-  // the meals collect into one collapsible "Today's Meals" container
-  const [mealsOpen, setMealsOpen] = useState(true);
+  const [savingMeal, setSavingMeal] = useState<Meal | null>(null); // meal pending "save as favorite"
+  // the meals collect into one collapsible "Today's Meals" container — its
+  // open/closed state persists (localStorage) so switching modes and coming back
+  // doesn't blow it open again.
+  const [mealsOpen, setMealsOpen] = useState(() => localStorage.getItem("hb-meals-open") !== "0");
+  useEffect(() => localStorage.setItem("hb-meals-open", mealsOpen ? "1" : "0"), [mealsOpen]);
 
   // adherence + the gentle 8 PM nudge (in-app)
   const snoozeKey = `hb-nudge-snooze-${person}-${today}`;
   const [snoozed, setSnoozed] = useState(() => !!localStorage.getItem(snoozeKey));
   const afterEvening = new Date().getHours() >= 20;
   const showNudge = afterEvening && log.meals.length === 0 && !log.status && !snoozed;
-  const stats = useMemo(() => adherenceStats(new Map(Object.entries(mealDays)), person, today), [mealDays, person, today]);
+  const stats = useMemo(() => adherenceStats(new Map(Object.entries(mealDays)), person, today, target), [mealDays, person, today, target]);
   const markSkipped = () => update((l) => ({ ...l, status: "skipped" }));
   const markEstimated = (note: string) => update((l) => ({ ...l, status: "estimated", note: note.trim() || undefined }));
   const snooze = () => { localStorage.setItem(snoozeKey, "1"); setSnoozed(true); };
@@ -212,6 +218,12 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
     }));
   const removeMeal = (mealId: string) =>
     update((l) => ({ ...l, meals: l.meals.filter((m) => m.id !== mealId) }));
+  // re-add a saved meal as a fresh meal today (clone items with new ids)
+  const addSavedToDay = (m: SavedMeal) =>
+    update((l) => ({
+      ...l,
+      meals: [...l.meals, { id: rowId(), name: mealName(l.meals.length), items: m.items.map((it) => ({ ...it, id: rowId() })) }],
+    }));
 
   return (
     <div className="flex flex-col gap-3">
@@ -222,6 +234,9 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
 
       {/* the gentle 8 PM nudge */}
       {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
+
+      {/* saved / favorite meals — one-tap re-add */}
+      <SavedMealsBar meals={savedMeals} onPick={addSavedToDay} onDelete={deleteSavedMeal} />
 
       {/* meals — collected into one labeled, collapsible container so the main
           screen stays clean no matter how many get added */}
@@ -274,6 +289,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
                   onAddFood={() => setAddTo(meal.id)}
                   onEditItem={(item) => setEditing({ mealId: meal.id, item })}
                   onRemoveMeal={() => removeMeal(meal.id)}
+                  onSave={() => setSavingMeal(meal)}
                 />
               ))}
             </div>
@@ -329,6 +345,13 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         onClose={() => setEstimateOpen(false)}
         onLog={(note) => { markEstimated(note); setEstimateOpen(false); }}
       />
+
+      <SaveMealSheet
+        open={savingMeal !== null}
+        defaultName={savingMeal ? savingMeal.items.map((it) => it.name).join(", ").slice(0, 40) : ""}
+        onClose={() => setSavingMeal(null)}
+        onSave={(name) => { if (savingMeal) addSavedMeal(name, savingMeal.items); setSavingMeal(null); }}
+      />
     </div>
   );
 }
@@ -348,13 +371,14 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const partner = other(owner);
   const order: Person[] = [you, partner];
 
-  const { getDay, setDay } = useHealth();
+  const { getDay, setDay, savedMeals, addSavedMeal, deleteSavedMeal } = useHealth();
   const logs: Record<Person, DayLog> = { gino: getDay("gino", today), xinyan: getDay("xinyan", today) };
   const [dish, setDish] = useState<DishItem[]>([]);
   const [bowls, setBowls] = useState<Record<Person, number> | null>(null); // null = even split
   const [searchOpen, setSearchOpen] = useState(false);
   const [editDish, setEditDish] = useState<DishItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [savingDish, setSavingDish] = useState(false);
 
   const targets: Record<Person, Macros> = { gino: DAILY.gino, xinyan: DAILY.xinyan };
   const dishItems = dish.map((d) => toItem(d.food, { grams: d.grams, qty: d.qty, unit: d.unit }));
@@ -378,6 +402,12 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const editDishItem = (rid: string, a: Amount) =>
     setDish((d) => d.map((x) => (x.rid === rid ? { ...x, grams: a.grams, qty: a.qty, unit: a.unit } : x)));
   const removeDish = (rid: string) => setDish((d) => d.filter((x) => x.rid !== rid));
+  // drop a saved meal's items into the shared dish (reconstruct Food from each)
+  const addSavedToDish = (m: SavedMeal) =>
+    setDish((d) => [
+      ...d,
+      ...m.items.map((it) => ({ rid: rowId(), food: foodFromItem(it), grams: it.grams, qty: it.qty, unit: it.unit })),
+    ]);
 
   const logForBoth = () => {
     if (!dish.length || dishGrams <= 0) return;
@@ -406,6 +436,9 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           return <PersonSummary key={p} person={p} you={p === you} target={targets[p]} eaten={totalEaten} />;
         })}
       </div>
+
+      {/* saved / favorite meals — tap to drop into the dish */}
+      <SavedMealsBar meals={savedMeals} onPick={addSavedToDish} onDelete={deleteSavedMeal} />
 
       {/* the shared dish */}
       <section className="rounded-[18px] border p-4" style={TILE}>
@@ -453,13 +486,24 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           </>
         )}
 
-        <button
-          onClick={() => setSearchOpen(true)}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-          style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
-        >
-          <Plus size={15} /> {t("Add ingredient")}
-        </button>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
+            style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+          >
+            <Plus size={15} /> {t("Add ingredient")}
+          </button>
+          {dish.length > 0 && (
+            <button
+              onClick={() => setSavingDish(true)}
+              className="flex items-center justify-center gap-1.5 rounded-[14px] px-4 py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
+              style={{ background: "#0f141c", border: "1px solid #232d3a", color: "#9aa6b2" }}
+            >
+              <Bookmark size={15} /> {t("Save")}
+            </button>
+          )}
+        </div>
       </section>
 
       {/* split into bowls */}
@@ -530,6 +574,13 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
         onAdd={(_food, amount) => { if (editDish) editDishItem(editDish.rid, amount); }}
         onRemove={() => { if (editDish) removeDish(editDish.rid); }}
       />
+
+      <SaveMealSheet
+        open={savingDish}
+        defaultName={dish.map((d) => d.food.name).join(", ").slice(0, 40)}
+        onClose={() => setSavingDish(false)}
+        onSave={(name) => { addSavedMeal(name, dishItems); setSavingDish(false); setToast(t("Saved ✓")); setTimeout(() => setToast(null), 1800); }}
+      />
     </div>
   );
 }
@@ -588,6 +639,10 @@ function DaySummary({ name, target, eaten }: { name: string; target: Macros; eat
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
+  // scale the big number to its digit count so 4-digit kcal (2800 / 1550) fit
+  // cleanly inside the 96px ring on iPhone instead of overflowing.
+  const remStr = String(r0(Math.abs(remK)));
+  const ringFont = remStr.length >= 5 ? 22 : remStr.length === 4 ? 26 : remStr.length === 3 ? 30 : 34;
   const macros = [
     { k: t("Protein"), e: eaten.p, tg: target.p, color: MACRO.p, bright: MACRO_BRIGHT.p },
     { k: t("Carbs"), e: eaten.c, tg: target.c, color: MACRO.c, bright: MACRO_BRIGHT.c },
@@ -610,7 +665,7 @@ function DaySummary({ name, target, eaten }: { name: string; target: Macros; eat
 
       <div className="mt-2.5 flex items-center gap-4">
         <Ring pct={pct} over={over} size={96} stroke={10}>
-          <span key={r0(remK)} className="bump stat text-[30px]">{r0(Math.abs(remK))}</span>
+          <span key={r0(remK)} className="bump stat" style={{ fontSize: ringFont, lineHeight: 1 }}>{remStr}</span>
           <span className="stat-key mt-1" style={{ opacity: 0.9 }}>{over ? t("over") : t("left")}</span>
         </Ring>
         <div className="min-w-0 flex-1">
@@ -663,6 +718,8 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
+  const remStr = String(r0(Math.abs(remK)));
+  const ringFont = remStr.length >= 4 ? 14 : remStr.length === 3 ? 16 : 18;
   return (
     <div className="rounded-[18px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
       <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: acc }}>
@@ -671,7 +728,7 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
       </div>
       <div className="mt-2 flex items-center gap-2.5">
         <Ring pct={pct} over={over} size={60} stroke={7} color={acc} track="#222b38" overColor="#f0556e">
-          <span key={r0(remK)} className="bump stat text-[16px] text-bone">{r0(Math.abs(remK))}</span>
+          <span key={r0(remK)} className="bump stat text-bone" style={{ fontSize: ringFont, lineHeight: 1 }}>{remStr}</span>
         </Ring>
         <div className="min-w-0 flex-1">
           <div className="stat-key" style={{ color: over ? "#f0556e" : "#97a3b2" }}>
@@ -753,6 +810,7 @@ function EstimateSheet({ open, onClose, onLog }: { open: boolean; onClose: () =>
 
 const STATUS_COLOR: Record<DayStatus, string> = {
   logged: "#46d18a",
+  partial: "#4f7ab0", // logged some, but not yet a meaningful day toward target
   estimated: "#e3b341",
   skipped: "#f0556e",
   none: "#222b38",
@@ -785,7 +843,7 @@ function AdherenceCard({ stats, acc }: { stats: ReturnType<typeof adherenceStats
         ))}
       </div>
       <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "#7c8696" }}>
-        {([["logged", t("on plan")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
+        {([["logged", t("on plan")], ["partial", t("partial")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
           <span key={k} className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-[2px]" style={{ background: STATUS_COLOR[k] }} /> {label}
           </span>
@@ -795,7 +853,81 @@ function AdherenceCard({ stats, acc }: { stats: ReturnType<typeof adherenceStats
   );
 }
 
-function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void }) {
+// ── saved / favorite meals ──────────────────────────────────────────────────
+// Reconstruct a Food shell from a logged item, so a saved meal can be re-added
+// to the Together dish (which works in Food + grams).
+const foodFromItem = (it: LoggedItem): Food => ({
+  id: it.foodId,
+  name: it.name,
+  role: it.role,
+  kcal: it.per100.kcal,
+  p: it.per100.p,
+  c: it.per100.c,
+  f: it.per100.f,
+  unit: it.unit,
+});
+
+// A row of saved-meal chips — tap to re-add, × to delete. Hidden when empty.
+function SavedMealsBar({ meals, onPick, onDelete }: { meals: SavedMeal[]; onPick: (m: SavedMeal) => void; onDelete: (id: string) => void }) {
+  if (!meals.length) return null;
+  return (
+    <section className="rounded-[16px] border p-3" style={TILE}>
+      <div className="mb-2 flex items-center gap-1.5">
+        <Bookmark size={13} style={{ color: HEALTH }} />
+        <p className="stat-key" style={{ color: "#97a3b2" }}>{t("Saved meals")}</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {meals.map((m) => (
+          <span key={m.id} className="flex items-center gap-1 rounded-full py-1 pl-3 pr-1" style={{ background: "#0f141c", border: "1px solid #2a3441" }}>
+            <button onClick={() => onPick(m)} className="flex items-center gap-1 text-[12.5px] font-medium text-bone">
+              <Plus size={12} style={{ color: "#34c5e8" }} /> {m.name}
+            </button>
+            <button onClick={() => onDelete(m.id)} className="px-0.5" style={{ color: "#5f6a78" }} aria-label="Delete saved meal">
+              <X size={13} />
+            </button>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// Name-this-meal prompt before saving a favorite.
+function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; defaultName: string; onClose: () => void; onSave: (name: string) => void }) {
+  const [name, setName] = useState(defaultName);
+  useEffect(() => { if (open) setName(defaultName); }, [open, defaultName]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
+      <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <Bookmark size={16} style={{ color: HEALTH }} />
+          <div className="flex-1 text-[15px] font-bold text-bone">{t("Save this meal")}</div>
+          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+        </div>
+        <p className="mt-1 text-[12px]" style={{ color: "#97a3b2" }}>{t("Reuse it any time with one tap.")}</p>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+          placeholder={t("Meal name")}
+          className="mt-3 w-full rounded-lg px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
+          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        />
+        <button
+          onClick={() => name.trim() && onSave(name.trim())}
+          disabled={!name.trim()}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+          style={{ background: HEALTH_GRADIENT, opacity: name.trim() ? 1 : 0.45 }}
+        >
+          <Check size={16} /> {t("Save meal")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void; onSave?: () => void }) {
   const tot = mealTotals(meal);
   return (
     <section className="rounded-[14px] border p-3.5" style={{ background: "#0f141c", borderColor: "#1f2937" }}>
@@ -806,9 +938,16 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal }: { index:
             {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
           </div>
         </div>
-        <button onClick={onRemoveMeal} className="p-1" style={{ color: "#6b7686" }} aria-label="Remove meal">
-          <Trash2 size={15} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {onSave && meal.items.length > 0 && (
+            <button onClick={onSave} className="p-1" style={{ color: "#6b7686" }} aria-label="Save meal">
+              <Bookmark size={15} />
+            </button>
+          )}
+          <button onClick={onRemoveMeal} className="p-1" style={{ color: "#6b7686" }} aria-label="Remove meal">
+            <Trash2 size={15} />
+          </button>
+        </div>
       </div>
 
       {meal.items.length > 0 &&

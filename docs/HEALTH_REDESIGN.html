@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Homebase Health — Redesign Direction</title>
+<style>
+  :root{
+    --bg:#0a0d12; --canvas:#0a0d12;
+    --surface:#151b24; --inset:#0e131a; --hair:#232c38;
+    --t1:#f2f5f9; --t2:#aeb8c6; --t3:#8b97a6; --t4:#6b7686;
+    --rose:#fb7185; --p:#f3899b; --c:#5fb0ef; --f:#f0c674;
+    --good:#46d18a; --warn:#e3b341; --over:#f0556e;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t1);
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.5;padding:0 0 80px}
+  .wrap{max-width:920px;margin:0 auto;padding:0 22px}
+  header.hero{padding:48px 22px 30px;border-bottom:1px solid var(--hair);margin-bottom:8px}
+  header.hero .wrap{padding:0}
+  .eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--rose)}
+  h1{font-size:30px;font-weight:800;letter-spacing:-.01em;margin:.35em 0 .15em}
+  h2{font-size:19px;font-weight:800;letter-spacing:-.01em;margin:0 0 4px}
+  .lead{color:var(--t2);font-size:15px;max-width:680px}
+  section{padding:34px 0;border-bottom:1px solid var(--hair)}
+  .snum{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--t4)}
+  .sub{color:var(--t3);font-size:13.5px;margin:2px 0 18px;max-width:680px}
+  .tabular{font-variant-numeric:tabular-nums}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px}
+  @media(max-width:680px){.pillars{grid-template-columns:1fr}}
+  .pillar{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:16px}
+  .pillar h3{margin:0 0 4px;font-size:14px;font-weight:800}
+  .pillar p{margin:0;color:var(--t3);font-size:12.5px}
+  .pillar i{display:inline-block;font-style:normal;font-size:18px;margin-bottom:8px;color:var(--rose)}
+  /* swatches */
+  .sw{display:flex;flex-wrap:wrap;gap:10px}
+  .chip{width:120px;border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--surface)}
+  .chip .col{height:46px}
+  .chip .meta{padding:7px 9px}
+  .chip .nm{font-size:11.5px;font-weight:700}
+  .chip .hex{font-family:var(--mono);font-size:10.5px;color:var(--t3)}
+  .rule{background:var(--inset);border:1px solid var(--hair);border-radius:12px;padding:12px 14px;color:var(--t2);font-size:13px;margin-top:14px}
+  .rule b{color:var(--rose);font-weight:800}
+  /* type scale */
+  .typerow{display:flex;align-items:baseline;gap:16px;padding:11px 0;border-bottom:1px solid var(--hair)}
+  .typerow:last-child{border-bottom:0}
+  .typespec{font-family:var(--mono);font-size:11px;color:var(--t3);min-width:150px}
+  /* tokens table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--hair)}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--t4);font-weight:800}
+  td.k{color:var(--t2)} td .v{font-family:var(--mono);color:var(--t1)}
+  td .note{color:var(--t3)}
+  /* mockups */
+  .phone{background:var(--canvas);border:1px solid var(--hair);border-radius:22px;padding:14px;width:100%;max-width:360px}
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media(max-width:680px){.ba{grid-template-columns:1fr}}
+  .ba .tag{font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+  .tag.before{color:var(--t4)} .tag.after{color:var(--good)}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:18px}
+  .lab{font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+  .num{font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.01em}
+  .ring{width:96px;height:96px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
+  .track{height:6px;border-radius:99px;background:#1b2433;overflow:hidden}
+  .track > i{display:block;height:100%;border-radius:99px}
+  .btn-ghost{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:9px;border-radius:11px;
+    background:transparent;border:1px dashed #2a3644;color:var(--t2);font-size:12.5px;font-weight:700}
+  .btn-text{background:transparent;border:0;color:var(--c);font-size:12.5px;font-weight:800;padding:6px 2px}
+  .seg{display:flex;background:var(--inset);border:1px solid var(--hair);border-radius:99px;padding:3px;gap:3px}
+  .seg > span{flex:1;text-align:center;font-size:12.5px;font-weight:700;padding:7px;border-radius:99px;color:var(--t3)}
+  .seg > span.on{background:var(--rose);color:#1a0c10}
+  .prio{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.prio{grid-template-columns:1fr}}
+  .prio ul{margin:8px 0 0;padding:0;list-style:none}
+  .prio li{padding:9px 0;border-bottom:1px solid var(--hair);font-size:13.5px;color:var(--t2);display:flex;gap:9px}
+  .prio li b{color:var(--t1);font-weight:700}
+  .prio li::before{content:"";width:7px;height:7px;border-radius:50%;margin-top:7px;flex-shrink:0}
+  .prio .qw li::before{background:var(--good)}
+  .prio .big li::before{background:var(--rose)}
+  .colhead{font-size:14px;font-weight:800;margin-bottom:2px}
+  .colhead.qw{color:var(--good)} .colhead.big{color:var(--rose)}
+  .small{font-size:12px;color:var(--t4);margin-top:24px}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Homebase · Health — design direction</div>
+    <h1>From functional to refined</h1>
+    <p class="lead">A calm, data-first treatment: one accent used with discipline, semantic macro colors as quiet
+    signals, a tight modular type scale, and editorial breathing room. The goal is Oura/Apple-Health restraint —
+    not gym-bro intensity — while every existing behavior (real-time macros, unit entry, meal containers, Just-me/Together)
+    stays exactly as it is.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="snum">01 · Overall direction</div>
+    <h2>Three pillars</h2>
+    <p class="sub">Each fixes a specific failure mode in the current screens.</p>
+    <div class="pillars">
+      <div class="pillar"><i class="">◐</i><h3>One accent, on purpose</h3><p>Rose appears only on the primary action and the single most important live number. Macros keep their own hues but as dots + values, never competing fills.</p></div>
+      <div class="pillar"><i class="">≣</i><h3>One progress system</h3><p>The macro card runs three today (ring + calorie bar + three mini-bars). Collapse to a single ring plus one thin track per macro. Less ink, clearer read.</p></div>
+      <div class="pillar"><i class="">⊞</i><h3>Editorial rhythm</h3><p>An 8-pt grid, consistent 20px card padding, and a 6-step type scale replace the ad-hoc sizes and cramped rows.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="snum">02 · Color system &amp; tone</div>
+    <h2>A calm charcoal base + disciplined accent</h2>
+    <p class="sub">Surfaces get cooler and quieter; the accent gets rarer. Macro hues are softened a touch so they read as signal, not alarm.</p>
+
+    <div style="margin-bottom:8px;font-size:12px;font-weight:800;color:var(--t3)">Surfaces &amp; text</div>
+    <div class="sw">
+      <div class="chip"><div class="col" style="background:#0a0d12"></div><div class="meta"><div class="nm">Canvas</div><div class="hex">#0a0d12</div></div></div>
+      <div class="chip"><div class="col" style="background:#151b24"></div><div class="meta"><div class="nm">Surface</div><div class="hex">#151b24</div></div></div>
+      <div class="chip"><div class="col" style="background:#0e131a"></div><div class="meta"><div class="nm">Inset</div><div class="hex">#0e131a</div></div></div>
+      <div class="chip"><div class="col" style="background:#232c38"></div><div class="meta"><div class="nm">Hairline</div><div class="hex">#232c38</div></div></div>
+      <div class="chip"><div class="col" style="background:#f2f5f9"></div><div class="meta"><div class="nm">Text 1</div><div class="hex">#f2f5f9</div></div></div>
+      <div class="chip"><div class="col" style="background:#aeb8c6"></div><div class="meta"><div class="nm">Text 2</div><div class="hex">#aeb8c6</div></div></div>
+      <div class="chip"><div class="col" style="background:#8b97a6"></div><div class="meta"><div class="nm">Text 3 (floor)</div><div class="hex">#8b97a6</div></div></div>
+    </div>
+
+    <div style="margin:20px 0 8px;font-size:12px;font-weight:800;color:var(--t3)">Accent &amp; semantic</div>
+    <div class="sw">
+      <div class="chip"><div class="col" style="background:#fb7185"></div><div class="meta"><div class="nm">Rose (accent)</div><div class="hex">#fb7185</div></div></div>
+      <div class="chip"><div class="col" style="background:#f3899b"></div><div class="meta"><div class="nm">Protein</div><div class="hex">#f3899b</div></div></div>
+      <div class="chip"><div class="col" style="background:#5fb0ef"></div><div class="meta"><div class="nm">Carbs</div><div class="hex">#5fb0ef</div></div></div>
+      <div class="chip"><div class="col" style="background:#f0c674"></div><div class="meta"><div class="nm">Fat</div><div class="hex">#f0c674</div></div></div>
+      <div class="chip"><div class="col" style="background:#46d18a"></div><div class="meta"><div class="nm">Good</div><div class="hex">#46d18a</div></div></div>
+      <div class="chip"><div class="col" style="background:#f0556e"></div><div class="meta"><div class="nm">Over</div><div class="hex">#f0556e</div></div></div>
+    </div>
+
+    <div class="rule"><b>Accent rule.</b> Rose is allowed on exactly three things: the primary CTA (Add a meal / Log it),
+    the calorie ring stroke, and active toggles. Everywhere else uses neutrals + the macro hues. Protein is shifted
+    off pure rose (#f3899b) so it never blurs into the accent.</div>
+  </section>
+
+  <section>
+    <div class="snum">03 · Typography</div>
+    <h2>A 6-step scale, tabular numbers, lifted contrast</h2>
+    <p class="sub">Numbers are the product — they get the weight and tabular figures. Labels and units get smaller, but never below the #8b97a6 contrast floor.</p>
+    <div class="typerow"><div class="typespec">Display · 40 / 800 / tab</div><div class="num tabular" style="font-size:40px">1956</div></div>
+    <div class="typerow"><div class="typespec">Stat-L · 26 / 800 / tab</div><div class="num tabular" style="font-size:26px">143.2</div></div>
+    <div class="typerow"><div class="typespec">Stat-M · 19 / 800 / tab</div><div class="num tabular" style="font-size:19px">130<span style="font-size:11px;font-weight:700;color:var(--t3)"> g</span></div></div>
+    <div class="typerow"><div class="typespec">Title · 15 / 600</div><div style="font-size:15px;font-weight:600">Today's Meals</div></div>
+    <div class="typerow"><div class="typespec">Body · 13.5 / 500</div><div style="font-size:13.5px;font-weight:500;color:var(--t2)">Eggs · 3 eggs · 215 kcal</div></div>
+    <div class="typerow"><div class="typespec">Label · 10.5 / 800 / caps</div><div class="lab" style="color:var(--t3)">Protein</div></div>
+    <div class="typerow"><div class="typespec">Micro · 11 / 600</div><div style="font-size:11px;font-weight:600;color:var(--t3)">kcal left</div></div>
+    <div class="rule"><b>Contrast fixes.</b> Today's dimmest labels (#7e8a98 / #5f6a78) drop below comfortable on dark.
+    Raise the secondary floor to <span class="tabular">#aeb8c6</span> and the label/unit floor to <span class="tabular">#8b97a6</span>.
+    The single biggest readability win is the cheapest one.</div>
+  </section>
+
+  <section>
+    <div class="snum">04 · Layout, spacing &amp; rhythm</div>
+    <h2>One grid, consistent padding, room to breathe</h2>
+    <p class="sub">Most "cramped" feeling comes from inconsistent values, not lack of space. Standardize to an 8-pt rhythm.</p>
+    <table>
+      <thead><tr><th>Token</th><th>Value</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Card radius</td><td><span class="v">24 / 18 / 14</span></td><td><span class="note">hero · card · inner item</span></td></tr>
+        <tr><td class="k">Card padding</td><td><span class="v">20</span></td><td><span class="note">16 only for dense list cards</span></td></tr>
+        <tr><td class="k">Inter-card gap</td><td><span class="v">14</span></td><td><span class="note">currently 12, slightly tight</span></td></tr>
+        <tr><td class="k">Eyebrow → content</td><td><span class="v">10–12</span></td><td><span class="note">consistent across every card</span></td></tr>
+        <tr><td class="k">List row padding (v)</td><td><span class="v">12</span></td><td><span class="note">up from 8–10 — the meals list fix</span></td></tr>
+        <tr><td class="k">Icon sizes</td><td><span class="v">16 / 18 / 20</span></td><td><span class="note">inline · action · sheet header</span></td></tr>
+        <tr><td class="k">Min tap target</td><td><span class="v">40 / 44</span></td><td><span class="note">secondary · primary buttons</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="snum">05 · Component — the macro card</div>
+    <h2>The hero, simplified</h2>
+    <p class="sub">Three progress systems become one ring + three calm rows. The card stops competing with its own contents.</p>
+    <div class="ba">
+      <div>
+        <div class="tag before">Before · three systems, crammed</div>
+        <div class="phone">
+          <div class="card" style="padding:16px;border-top:2px solid var(--rose)">
+            <div style="display:flex;justify-content:space-between"><span class="lab" style="color:var(--t4)">Gino's day</span><span class="lab" style="color:var(--t4)">Today</span></div>
+            <div style="display:flex;gap:14px;align-items:center;margin-top:10px">
+              <div class="ring" style="border:8px solid #2a3340;border-top-color:#fff"><span class="num" style="font-size:26px">1956</span><span class="lab" style="color:var(--t4)">left</span></div>
+              <div style="flex:1">
+                <div class="lab" style="color:var(--t4)">calories</div>
+                <div class="num" style="font-size:16px">844<span style="color:var(--t4);font-weight:500"> / 2800</span></div>
+                <div class="track" style="margin-top:8px"><i style="width:30%;background:#fff"></i></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:12px;background:rgba(3,10,20,.3);border-radius:14px;padding:8px">
+              <div style="flex:1"><div class="lab" style="color:var(--p)">Prot</div><div class="num" style="font-size:17px;color:var(--p)">130<span style="font-size:10px"> g</span></div><div class="track" style="margin-top:5px"><i style="width:20%;background:var(--p)"></i></div></div>
+              <div style="flex:1"><div class="lab" style="color:var(--c)">Carb</div><div class="num" style="font-size:17px;color:var(--c)">410<span style="font-size:10px"> g</span></div><div class="track" style="margin-top:5px"><i style="width:14%;background:var(--c)"></i></div></div>
+              <div style="flex:1"><div class="lab" style="color:var(--f)">Fat</div><div class="num" style="font-size:17px;color:var(--f)">70<span style="font-size:10px"> g</span></div><div class="track" style="margin-top:5px"><i style="width:18%;background:var(--f)"></i></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="tag after">After · one ring, three calm rows</div>
+        <div class="phone">
+          <div class="card" style="padding:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span class="lab" style="color:var(--t3)">Today</span><span style="font-size:11px;color:var(--t4)">Tue, Jun 24</span></div>
+            <div style="display:flex;gap:18px;align-items:center;margin:16px 0 6px">
+              <div class="ring" style="border:7px solid #1b2433;border-top-color:var(--rose);border-right-color:var(--rose)">
+                <span class="num" style="font-size:30px;color:var(--t1)">1956</span>
+                <span style="font-size:10.5px;font-weight:600;color:var(--t3);margin-top:1px">kcal left</span>
+              </div>
+              <div style="flex:1">
+                <div class="lab" style="color:var(--t3)">eaten</div>
+                <div class="num" style="font-size:19px;color:var(--t1)">844 <span style="font-size:12px;font-weight:600;color:var(--t4)">/ 2800</span></div>
+                <div style="margin-top:14px;display:flex;flex-direction:column;gap:13px">
+                  <div>
+                    <div style="display:flex;align-items:baseline;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:var(--p)"></span><span class="lab" style="color:var(--t3);flex:1">Protein</span><span class="num tabular" style="font-size:15px;color:var(--t1)">130<span style="font-size:10px;color:var(--t4);font-weight:600"> g left</span></span></div>
+                    <div class="track" style="margin-top:6px;height:4px"><i style="width:20%;background:var(--p)"></i></div>
+                  </div>
+                  <div>
+                    <div style="display:flex;align-items:baseline;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:var(--c)"></span><span class="lab" style="color:var(--t3);flex:1">Carbs</span><span class="num tabular" style="font-size:15px;color:var(--t1)">410<span style="font-size:10px;color:var(--t4);font-weight:600"> g left</span></span></div>
+                    <div class="track" style="margin-top:6px;height:4px"><i style="width:14%;background:var(--c)"></i></div>
+                  </div>
+                  <div>
+                    <div style="display:flex;align-items:baseline;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:var(--f)"></span><span class="lab" style="color:var(--t3);flex:1">Fat</span><span class="num tabular" style="font-size:15px;color:var(--t1)">70<span style="font-size:10px;color:var(--t4);font-weight:600"> g left</span></span></div>
+                    <div class="track" style="margin-top:6px;height:4px"><i style="width:18%;background:var(--f)"></i></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="rule">Why it's better: one progress metaphor instead of three, the ring is the only place rose lives,
+    macros read as a scannable left-aligned column (label left, value right, tabular), and removing the dark inset
+    lets the whole card share one surface. Same data, half the noise.</div>
+  </section>
+
+  <section>
+    <div class="snum">06 · Component — Today's Meals (expanded)</div>
+    <h2>Quieter grouping, lighter actions</h2>
+    <p class="sub">Reduce button-noise and give each food row room. The trash and "Add food" stop shouting.</p>
+    <div class="ba">
+      <div>
+        <div class="tag before">Before · loud buttons, tight rows</div>
+        <div class="phone">
+          <div class="card" style="padding:12px">
+            <div style="font-size:13px;font-weight:600">Meal 1</div>
+            <div style="font-size:10.5px;color:var(--t4);margin-bottom:6px">438 kcal · 30P 41C 14F</div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--hair);font-size:12.5px"><span>Eggs</span><span style="color:var(--t3)">21P 2C 15F</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px"><span>Bagel</span><span style="color:var(--t3)">10P 49C 2F</span></div>
+            <div style="margin-top:8px;background:rgba(52,197,232,.13);color:var(--c);border-radius:10px;text-align:center;padding:8px;font-size:12px;font-weight:700">+ Add food</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="tag after">After · airy rows, text action</div>
+        <div class="phone">
+          <div class="card" style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div><div style="font-size:13.5px;font-weight:700">Meal 1</div><div class="num" style="font-size:11px;color:var(--t3)">438 kcal · 30P 41C 14F</div></div>
+              <span style="color:var(--t4);font-size:16px">⋯</span>
+            </div>
+            <div style="margin-top:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--hair);font-size:13.5px"><span style="color:var(--t1)">Eggs <span style="color:var(--t4);font-size:11px">· 3 eggs</span></span><span class="num tabular" style="color:var(--t3);font-size:11.5px">21P 2C 15F</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--hair);font-size:13.5px"><span style="color:var(--t1)">Bagel <span style="color:var(--t4);font-size:11px">· 1 bagel</span></span><span class="num tabular" style="color:var(--t3);font-size:11.5px">10P 49C 2F</span></div>
+            </div>
+            <button class="btn-text" style="margin-top:6px">+ Add food</button>
+          </div>
+          <div style="height:12px"></div>
+          <button class="btn-ghost"><span>+</span> Add a meal</button>
+        </div>
+      </div>
+    </div>
+    <div class="rule">Moves: food rows get 12px vertical padding + hairline separators; macros sit right-aligned and tabular;
+    the per-meal action becomes a quiet text button (not a filled cyan slab); delete moves into the meal's <b>⋯</b>
+    overflow so it isn't 6 competing trash icons; "Add a meal" is one calm dashed button at the bottom.</div>
+  </section>
+
+  <section>
+    <div class="snum">07 · Component — Add food popup</div>
+    <h2>Cleaner toggle, stronger macro readout</h2>
+    <p class="sub">Unify the toggle to the accent, and make the breakdown the clearest thing on the sheet.</p>
+    <div style="max-width:360px">
+      <div class="tag after" style="color:var(--good)">After</div>
+      <div class="phone">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <div style="flex:1"><div style="font-size:15.5px;font-weight:800">Eggs</div>
+            <div class="num" style="font-size:12px;color:var(--t3)">143 kcal · <span style="color:var(--p)">13P</span> <span style="color:var(--c)">1C</span> <span style="color:var(--f)">10F</span></div>
+            <div class="num" style="font-size:11px;color:var(--t4)">1 egg ≈ 50 g</div>
+          </div>
+        </div>
+        <div class="seg" style="margin:12px 0"><span class="on">By the egg</span><span>Grams</span></div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin:14px 0">
+          <span style="width:38px;height:38px;border-radius:50%;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--t2)">−</span>
+          <span class="num" style="font-size:30px">3 <span style="font-size:13px;font-weight:700;color:var(--t3)">eggs</span></span>
+          <span style="width:38px;height:38px;border-radius:50%;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--t2)">+</span>
+        </div>
+        <div style="background:var(--inset);border:1px solid var(--hair);border-radius:14px;padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span class="lab" style="color:var(--t2)">This portion</span><span class="num" style="font-size:24px">215 <span style="font-size:11px;font-weight:700;color:var(--t3)">kcal</span></span></div>
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;text-align:center;background:var(--canvas);border:1px solid var(--hair);border-radius:10px;padding:9px"><div class="num" style="font-size:18px;color:var(--p)">21<span style="font-size:10px"> g</span></div><div class="lab" style="color:var(--t3);margin-top:2px">Protein</div></div>
+            <div style="flex:1;text-align:center;background:var(--canvas);border:1px solid var(--hair);border-radius:10px;padding:9px"><div class="num" style="font-size:18px;color:var(--c)">3<span style="font-size:10px"> g</span></div><div class="lab" style="color:var(--t3);margin-top:2px">Carbs</div></div>
+            <div style="flex:1;text-align:center;background:var(--canvas);border:1px solid var(--hair);border-radius:10px;padding:9px"><div class="num" style="font-size:18px;color:var(--f)">15<span style="font-size:10px"> g</span></div><div class="lab" style="color:var(--t3);margin-top:2px">Fat</div></div>
+          </div>
+        </div>
+        <div style="margin-top:12px;background:var(--rose);color:#1a0c10;border-radius:13px;text-align:center;padding:12px;font-size:14px;font-weight:800">Add to meal</div>
+      </div>
+    </div>
+    <div class="rule">The toggle moves from cyan to the accent (one toggle language app-wide). The reference line colors its
+    macros so 13P/1C/10F is instantly legible. The breakdown chips already landed — this just adds padding and keeps
+    kcal as the hero. Stepper buttons grow to 38–40px for thumbs.</div>
+  </section>
+
+  <section>
+    <div class="snum">08 · Adherence &amp; Weight cards</div>
+    <h2>Same language as everything else</h2>
+    <p class="sub">These read as cousins, not siblings, today. Align them to the shared scale + accent discipline.</p>
+    <ul style="margin:0;padding-left:18px;color:var(--t2);font-size:13.5px;line-height:1.9">
+      <li>Same eyebrow (Label, #8b97a6), same primary number (Stat-L, tabular) — adherence % and weekly-avg should be visually identical stat objects.</li>
+      <li>Adherence: lay streak + compliance as two aligned stats; make the 14-day strip cells a touch taller (h-6) with 3px radius and a hair of gap; keep green/amber/over semantic.</li>
+      <li>Weight: the trend number is the hero (Stat-L, green when on-band); the band track is neutral, the marker bone, the target band a quiet rose tint — same accent rule as the ring.</li>
+      <li>Both cards: 20px padding, the same hairline border, no per-card accent colors beyond the macro/semantic set.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="snum">09 · Prioritized</div>
+    <h2>What to do, in order</h2>
+    <p class="sub">Quick wins are a single styling pass each; the significant items are the real quality lever.</p>
+    <div class="prio">
+      <div>
+        <div class="colhead qw">Quick wins · hours</div>
+        <ul class="qw">
+          <li><b>Contrast pass</b> — raise the secondary/label text floors. Biggest read win, cheapest change.</li>
+          <li><b>Kill the redundant calorie bar</b> on the macro card — the ring already says it.</li>
+          <li><b>Standardize</b> padding (20), inter-card gap (14), radii (24/18/14), icon sizes (16/18/20).</li>
+          <li><b>Breathe the meals list</b> — row padding 8→12, meal gap 12, hairline separators.</li>
+          <li><b>Lighten per-meal "Add food"</b> from filled cyan slab to a quiet text button.</li>
+          <li><b>Trash treatment</b> — fold delete into a per-meal ⋯ overflow instead of many loud icons.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="colhead big">Significant · the quality lever</div>
+        <ul class="big">
+          <li><b>Restructure the macro card</b> — one ring + three calm rows; remove the dark mini-bar inset.</li>
+          <li><b>Tokenize palette + type scale</b> as shared CSS classes — the root cause of "inconsistent".</li>
+          <li><b>Unify toggles/segmented controls</b> to the rose accent (drop the cyan), app-wide.</li>
+          <li><b>Adherence &amp; weight pass</b> onto the shared stat objects + spacing.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <p class="small">Homebase · Health redesign direction — preserves all current behavior (real-time macros, unit/gram entry,
+  meal containers, Just-me / Together, adherence, auto weight averages). Hex + token values are starting points, tuned to the
+  existing app constants.</p>
+
+</div>
+</body>
+</html>

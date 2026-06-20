@@ -113,6 +113,7 @@ const HOME: HomeVM = {
   ],
   anomalyCount: 3,
   anomalyIds: [],
+  anomalies: [],
   streakDay: 4,
   streakTotal: 90,
   sinceMonday: 1136,

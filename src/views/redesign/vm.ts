@@ -28,6 +28,8 @@ export interface HomeVM {
   donut: { catId: string; amount: number }[];
   anomalyCount: number; // 0 = hide the alert
   anomalyIds: string[]; // the flagged transactions (for the focused view)
+  // the flagged charges with the reason, for the dedicated review/dismiss sheet
+  anomalies: { id: string; merchant: string; catId: string; catLabel: string; amount: number; ratio: number }[];
   streakDay: number;
   streakTotal: number;
   recent: RecentRow[];

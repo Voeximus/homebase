@@ -484,6 +484,7 @@ const SEED: Record<string, string> = {
   "Log a day to start a streak": "记录一天，开启连击",
   estimated: "估算",
   "off plan": "偏离",
+  partial: "部分",
 
   // ── Build finalization (2026-06-20g): splits, weight history, workouts ──
   Cancel: "取消",
@@ -509,10 +510,22 @@ const SEED: Record<string, string> = {
     "删除全部 {n} 次称重。趋势和平均值会重置。此操作无法撤销。",
 
   // ── Health UI refinements (2026-06-20h): meal container, split auto-math ──
+  "Saved meals": "已存餐",
+  "Save this meal": "保存这餐",
+  "Reuse it any time with one tap.": "随时一键再用。",
+  "Meal name": "餐名",
+  "Save meal": "保存餐",
+  "Saved ✓": "已保存 ✓",
   "Today's Meals": "今天的餐",
   "{n} meals · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
   "{n} meal · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
   "1 {unit} ≈ {g} g": "1 {unit} ≈ {g} 克",
+  // unusual-purchase review
+  "Bigger than your usual for the category. Review, then dismiss.": "比该分类的平时金额高。查看后可忽略。",
+  "All clear — nothing unusual.": "一切正常 — 没有异常。",
+  "{x}× your usual {cat}": "是平时 {cat} 的 {x} 倍",
+  Recategorize: "重新分类",
+  "Looks fine — dismiss": "没问题 — 忽略",
   // workout history edit
   "Edit workout": "编辑训练",
   "Save changes": "保存更改",

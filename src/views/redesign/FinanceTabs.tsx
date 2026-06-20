@@ -27,6 +27,7 @@ import {
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { BillsSheet } from "./BillsSheet";
 import { TxnSheet } from "./TxnSheet";
+import { AnomalySheet } from "./AnomalySheet";
 import type { ScheduleEntry } from "../../lib/schedule";
 import type { BillRow } from "./vm";
 import {
@@ -117,7 +118,7 @@ export function FinanceTabs({
   lens: Lens;
   onLens: (l: Lens) => void;
 }) {
-  const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable } = useStore();
+  const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable, acknowledgeAnomaly } = useStore();
   const { session, signOut } = useAuth();
   const { setLang } = useLang();
   // Persist the active tab so a language switch (which remounts the whole tree
@@ -151,10 +152,11 @@ export function FinanceTabs({
   const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
   const [txnId, setTxnId] = useState<string | null>(null);
   const [ledgerView, setLedgerView] = useState<"all" | "unusual">("all");
+  const [anomalyOpen, setAnomalyOpen] = useState(false);
 
   const anySheetOpen =
     ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
-    settingsOpen || markSentOpen || billsOpen || !!payBillEntry || !!txnId;
+    settingsOpen || markSentOpen || billsOpen || !!payBillEntry || !!txnId || anomalyOpen;
 
   // The snowball plan (for the attack ladder + the mark-sent slip). Firepower is
   // reduced by this month's overspend EXACTLY as buildVMs does, so the slip's
@@ -290,10 +292,7 @@ export function FinanceTabs({
                 setLedgerView("all");
                 setLedgerOpen(true);
               },
-              onAnomaly: () => {
-                setLedgerView("unusual");
-                setLedgerOpen(true);
-              },
+              onAnomaly: () => setAnomalyOpen(true),
             }}
           />
         ) : tab === "insights" ? (
@@ -390,6 +389,16 @@ export function FinanceTabs({
         onSetVariable={setRecurringVariable}
       />
       <TxnSheet txnId={txnId} open={!!txnId} onClose={() => setTxnId(null)} />
+      <AnomalySheet
+        open={anomalyOpen}
+        onClose={() => setAnomalyOpen(false)}
+        anomalies={vms.home.anomalies}
+        onDismiss={(id) => void acknowledgeAnomaly(id)}
+        onTxn={(id) => {
+          setAnomalyOpen(false);
+          setTxnId(id);
+        }}
+      />
     </div>
   );
 }

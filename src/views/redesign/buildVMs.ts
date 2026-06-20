@@ -170,15 +170,28 @@ export function buildFinanceVMs(
   );
   const byCatAmts: Record<string, number[]> = {};
   monthFree.forEach((t) => (byCatAmts[t.categoryId] ??= []).push(t.amount));
-  const anomalyIds = monthFree
+  const anomalies = monthFree
     .filter((t) => {
+      if (t.anomalyAck) return false; // user dismissed this flag → never resurface
       const arr = byCatAmts[t.categoryId];
       if (arr.length < 3 || t.amount <= 25) return false;
       const mean = arr.reduce((s, a) => s + a, 0) / arr.length;
       return t.amount > 2.5 * mean;
     })
-    .map((t) => t.id);
-  const anomalyCount = anomalyIds.length;
+    .map((t) => {
+      const arr = byCatAmts[t.categoryId];
+      const mean = arr.reduce((s, a) => s + a, 0) / arr.length;
+      return {
+        id: t.id,
+        merchant: t.description || catName(t.categoryId),
+        catId: t.categoryId,
+        catLabel: catName(t.categoryId),
+        amount: t.amount,
+        ratio: mean > 0 ? t.amount / mean : 0,
+      };
+    });
+  const anomalyIds = anomalies.map((a) => a.id);
+  const anomalyCount = anomalies.length;
 
   // ── bills + money calendar ──
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -288,6 +301,7 @@ export function buildFinanceVMs(
     donut,
     anomalyCount,
     anomalyIds,
+    anomalies,
     streakDay: commit.day,
     streakTotal: commit.total,
     recent,

@@ -54,6 +54,9 @@ export interface Transaction {
   // When present, the amount is allocated across these categories instead of the
   // single categoryId. Category totals/budgets read these; cash + the row stay one.
   splits?: TxnSplit[];
+  // The user dismissed the "unusual purchase" flag for this charge — it won't be
+  // surfaced as an anomaly again.
+  anomalyAck?: boolean;
   createdAt: string; // ISO timestamp
 }
 

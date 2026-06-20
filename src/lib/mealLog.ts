@@ -58,6 +58,14 @@ export interface Meal {
   items: LoggedItem[];
 }
 
+// A reusable meal the user saved (a "favorite") — a name + its logged items,
+// re-addable to any day (solo) or to the shared dish (together). Household-shared.
+export interface SavedMeal {
+  id: string;
+  name: string;
+  items: LoggedItem[];
+}
+
 export interface DayLog {
   date: string; // YYYY-MM-DD (local)
   person: Person;
