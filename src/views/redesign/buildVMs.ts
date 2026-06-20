@@ -346,6 +346,10 @@ export function buildFinanceVMs(
   };
 
   // ── Profile ──
+  // Same lens rule as the Cash sheet/total: own + joint in "me", all in "all".
+  const profileAccounts = personal
+    ? [...myAccounts, ...jointAccounts(data.accounts)]
+    : data.accounts;
   const connected = data.accounts.filter((a) => a.providerAccountId).length;
   const linkedCards = data.debts
     .filter((d) => d.providerAccountId)
@@ -359,7 +363,7 @@ export function buildFinanceVMs(
     cardsSub: linkedCards.length
       ? `${linkedCards.join(" + ")} linked · auto-syncs`
       : "Track a card as debt",
-    accounts: cashAccounts(data.accounts).map((a) => ({
+    accounts: cashAccounts(profileAccounts).map((a) => ({
       name: `${a.name} …${a.last4 ?? ""}`,
       owner: a.owner,
       balance: a.balance,

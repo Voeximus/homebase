@@ -200,6 +200,23 @@ async function syncConnection(connId: string, force = false) {
       .eq("active", true);
     // Only out-direction bills are payment targets (never match a paycheck/transfer).
     const outRecs = (recRows ?? []).filter((r: any) => r.direction === "out");
+
+    // Feed-tracked NON-bank debts (Affirm, Mom-China): a feed outflow whose
+    // description contains the debt's track_pattern is a payment on it. We record
+    // it (appliesTo=debt) and later recompute balance = baseline − sum(payments).
+    // select("*") so a deploy BEFORE schema_v14 just yields no track_pattern → the
+    // list is empty and tracking stays dormant (no broken query).
+    const { data: debtRows } = await admin.from("debts").select("*");
+    // Armed = pattern + a FIXED baseline + a since-date, and NOT a bank-linked card
+    // (those are owned by the v12 trigger). tracked_baseline must be present — never
+    // fall back to the live balance, or the recompute would re-subtract every sync.
+    const trackedDebts = (debtRows ?? []).filter(
+      (d: any) => d.track_pattern && d.tracked_baseline != null && !d.provider_account_id,
+    );
+    const matchTrackedDebt = (desc: string) => {
+      const up = (desc || "").toUpperCase();
+      return trackedDebts.find((d: any) => up.includes(String(d.track_pattern).toUpperCase()));
+    };
     const { data: paidRows } = await admin
       .from("transactions")
       .select("applies_to, provider_txn_id")
@@ -255,6 +272,25 @@ async function syncConnection(connId: string, force = false) {
     const postedByAcct: Record<string, any[]> = {};
     const billByAcct: Record<string, any[]> = {};
     for (const row of ops.upsertPosted) {
+      // A payment on a feed-tracked debt (Affirm / Mom-China via Remitly) wins
+      // over bill/variable/skip. Only OUTFLOWS (− in our sign convention) count —
+      // a refund must never reduce the debt. Recorded settled (out of the budget);
+      // the debt balance is recomputed from the sum of these below.
+      const td = row.amount < 0 ? matchTrackedDebt(row.description) : undefined;
+      if (td) {
+        (billByAcct[row.accountId] ??= []).push({
+          provider_txn_id: row.providerTxnId,
+          provider_account_id: row.accountId,
+          date: row.date,
+          amount: Math.abs(row.amount),
+          type: "expense",
+          category_id: "other",
+          description: row.description,
+          applies_to: { kind: "debt", debtId: td.id, settled: true },
+          needs_review: false,
+        });
+        continue;
+      }
       const c = classify(row.description, row.amount, learned);
       if (c.kind === "skip") continue;
       if (c.kind === "bill") {
@@ -331,6 +367,30 @@ async function syncConnection(connId: string, force = false) {
         .update({ pending_hold: holdByProv[provId] ?? 0 })
         .eq("id", acctIdByProv[provId]);
       reverseSent = true;
+    }
+
+    // Recompute each feed-tracked debt as baseline − sum(its recorded payments
+    // since tracked_since). A SET from a recompute (not a decrement) — idempotent
+    // across re-syncs and self-correcting if a payment is later reversed. Runs
+    // AFTER apply_bank_sync so the new debt-payment rows are already persisted.
+    // Skips bank-linked debts (those are owned by the card→debt trigger).
+    for (const d of trackedDebts) {
+      // Sum on applies_to->>debtId (the debt link), NOT ->>kind — a tracked-debt
+      // payment is recorded settled:true so the ledger/recategorize UI never shows
+      // it, but keying off the stable debtId means even a hypothetical edit can't
+      // silently drop it from the sum. For a tracked debt, only the feed writes a
+      // row with this debtId (manual payDebtExtra is guarded off), so this is exact.
+      const { data: pays } = await admin
+        .from("transactions")
+        .select("amount")
+        .eq("type", "expense")
+        .gte("date", d.tracked_since ?? "1970-01-01")
+        .filter("applies_to->>debtId", "eq", d.id);
+      const paid = (pays ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+      const newBal = Math.max(0, Number(d.tracked_baseline) - paid); // baseline guaranteed non-null
+      if (Number(d.balance) !== newBal) {
+        await admin.from("debts").update({ balance: newBal }).eq("id", d.id);
+      }
     }
 
     // maintain the display-only pending preview

@@ -55,6 +55,13 @@ export interface Debt {
   minPayment?: number;
   color: string; // hex
   providerAccountId?: string; // linked Plaid credit account — its balance drives this debt
+  // Feed auto-tracking for NON-bank debts (Affirm, Mom-China): a payment in the
+  // bank feed whose description contains `trackPattern` reduces this debt, computed
+  // as balance = trackedBaseline − sum(matched payments since trackedSince). A SET-
+  // from-baseline recompute (like the card trigger) → idempotent, no double-count.
+  trackPattern?: string; // e.g. "AFFIRM", "REMITLY" (case-insensitive substring)
+  trackedBaseline?: number; // the balance when auto-tracking began
+  trackedSince?: string; // ISO date; only payments on/after this count
   createdAt: string;
 }
 

@@ -7,7 +7,7 @@ import { getLang } from "../../lib/i18n";
 import { syncNow } from "../../lib/plaidClient";
 import type { AppMode } from "../../components/ModeToggle";
 import type { Owner } from "../../lib/owner";
-import type { Lens } from "../../lib/lens";
+import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { TabNav, type TabKey } from "./TabNav";
 import { HomeTab } from "./HomeTab";
 import { InsightsTab } from "./InsightsTab";
@@ -119,7 +119,24 @@ export function FinanceTabs({
   const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable } = useStore();
   const { session, signOut } = useAuth();
   const { setLang } = useLang();
-  const [tab, setTab] = useState<TabKey>("home");
+  // Persist the active tab so a language switch (which remounts the whole tree
+  // via LanguageProvider's key bump) doesn't throw you back to Home.
+  const [tab, setTabState] = useState<TabKey>(() => {
+    try {
+      const t = localStorage.getItem("hb-fin-tab");
+      return t === "insights" || t === "activity" || t === "profile" ? t : "home";
+    } catch {
+      return "home";
+    }
+  });
+  const setTab = (t: TabKey) => {
+    try {
+      localStorage.setItem("hb-fin-tab", t);
+    } catch {
+      /* ignore */
+    }
+    setTabState(t);
+  };
   const [, setSyncing] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -167,6 +184,16 @@ export function FinanceTabs({
     const set = new Set(data.merchantRules.map((r) => r.pattern));
     return (d: string) => set.has(merchantKey(d));
   }, [data.merchantRules]);
+  // The Cash account LIST follows the lens like the cash TOTAL does: own + joint
+  // in "Mine", everyone in "Household". (The total in buildVMs was already
+  // lens-aware; this brings the expandable list in line.)
+  const lensAccounts = useMemo(
+    () =>
+      personal
+        ? [...ownAccounts(data.accounts, owner), ...jointAccounts(data.accounts)]
+        : data.accounts,
+    [data.accounts, personal, owner],
+  );
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -316,8 +343,15 @@ export function FinanceTabs({
         next={debtPlan.next}
         accounts={data.accounts}
         onPay={payDebtExtra}
+        autoTracked={
+          !!debtPlan.next &&
+          debtPlan.next.payments.every((p) => {
+            const d = data.debts.find((x) => x.id === p.debtId);
+            return !!d && (!!d.providerAccountId || !!d.trackPattern);
+          })
+        }
       />
-      <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} />
+      <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={lensAccounts} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
       <BillsSheet vm={vms.bills} open={billsOpen} onClose={() => setBillsOpen(false)} onPay={openBillPay} />
       <PayBillSheet
@@ -326,6 +360,12 @@ export function FinanceTabs({
         accounts={data.accounts}
         defaultAccountId={payRec?.accountId}
         variable={payRec?.variable ?? false}
+        feedOwned={(() => {
+          const d = payRec?.linkedDebtId
+            ? data.debts.find((x) => x.id === payRec.linkedDebtId)
+            : undefined;
+          return !!d && (!!d.providerAccountId || !!d.trackPattern);
+        })()}
         onClose={() => setPayBillEntry(null)}
         onPay={payBill}
         onMarkPaid={markBillPaid}

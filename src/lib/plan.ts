@@ -50,8 +50,7 @@ export const RENTERS_INSURANCE = 10.59;
 // Debt attack order (Gino's snowball — smallest first; clears the Affirms,
 // Xinyan's card and the family debt fast, then crushes the 19.99% card).
 export const ATTACK_ORDER = [
-  "Affirm — Anthropic",
-  "Affirm — Amazon",
+  "Affirm",
   "Xinyan card (…6813)",
   "Mom (China)",
   "Credit card (…4728)",

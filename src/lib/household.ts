@@ -57,7 +57,8 @@ export const SEED_RECURRING: SeedRecurring[] = [
   { name: "Verizon", amount: 83, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Geo", owner: "Gino", dueDays: [17] },
   { name: "Spotify", amount: 14.04, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Geo", owner: "Gino", dueDays: [10] },
   { name: "Card payment (…4728)", amount: 135, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "min payment", dueDays: [15], linksDebtLast4: "4728" },
-  { name: "Affirm", amount: 200, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "winding down — attack via the ladder" },
+  // Affirm is now a feed-TRACKED debt (track_pattern "AFFIRM"), not a calendar
+  // bill — each "AFFIRM" payment in the bank feed auto-reduces the debt balance.
 
   // --- Xinyan personal (from Xinyan) ---
   { name: "Spot Pet insurance", amount: 99.93, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", dueDays: [4] },
@@ -69,8 +70,11 @@ export const SEED_RECURRING: SeedRecurring[] = [
 export const SEED_DEBTS: SeedDebt[] = [
   { name: "Credit card (…4728)", balance: 4156.78, apr: 26.49, minPayment: 135, color: "#ef4444" },
   { name: "Xinyan card (…6813)", balance: 591.09, minPayment: 35, color: "#f59e0b" },
-  { name: "Affirm — Anthropic", balance: 99.1, color: "#6366f1" },
-  { name: "Affirm — Amazon", balance: 189.68, color: "#8b5cf6" },
+  // Two Affirm loans lumped into one feed-tracked "Affirm" debt (the bank line
+  // only says "Affirm", not which loan). track_pattern "AFFIRM" on live data.
+  { name: "Affirm", balance: 288.78, color: "#6366f1" },
+  // Paid via Remitly → feed-tracked. BofA posts Remitly as "RMTLY" (not
+  // "REMITLY") → track_pattern "RMTLY" on live data.
   { name: "Mom (China)", balance: 800, color: "#ec4899" },
 ];
 

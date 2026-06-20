@@ -1001,6 +1001,13 @@ export function OnePager({
         next={next}
         accounts={data.accounts}
         onPay={payDebtExtra}
+        autoTracked={
+          !!next &&
+          next.payments.every((p) => {
+            const d = data.debts.find((x) => x.id === p.debtId);
+            return !!d && (!!d.providerAccountId || !!d.trackPattern);
+          })
+        }
       />
       <EnvelopeSheet
         line={envLine}
@@ -1233,14 +1240,22 @@ function MiniCalendar({
 }
 
 // ── sheets ───────────────────────────────────────────────────────────────────
-export function AccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AccountsSheet({
+  open,
+  onClose,
+  accounts,
+}: {
+  open: boolean;
+  onClose: () => void;
+  accounts?: Account[]; // lens-filtered list; falls back to the full household set
+}) {
   const { data, setAccountBalance } = useStore();
   const [edit, setEdit] = useState<Account | null>(null);
   const [val, setVal] = useState("");
   return (
     <Sheet open={open} onClose={onClose} title={t("Cash & accounts")}>
       <div className="space-y-2">
-        {cashAccounts(data.accounts).map((a) => {
+        {cashAccounts(accounts ?? data.accounts).map((a) => {
           const f = accountFlow(a.id, data.recurring);
           const editing = edit?.id === a.id;
           return (
@@ -1670,12 +1685,14 @@ export function MarkSentSheet({
   next,
   accounts,
   onPay,
+  autoTracked,
 }: {
   open: boolean;
   onClose: () => void;
   next: ReturnType<typeof payoffSchedule>[number] | null;
   accounts: Account[];
   onPay: (id: string, amount: number, fromAccountId?: string) => Promise<void>;
+  autoTracked?: boolean; // these debts update from the bank feed → reminder, not a manual record
 }) {
   const [accountId, setAccountId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1687,6 +1704,39 @@ export function MarkSentSheet({
     }
   }, [open, accounts]);
   if (!next) return null;
+  // When every debt in the slice auto-updates from the bank feed, this is a
+  // SEND REMINDER, not a manual recording — sending the money in your bank is
+  // all that's needed; the feed drops each balance and the plan on its own.
+  if (autoTracked) {
+    return (
+      <Sheet open={open} onClose={onClose} title={t("Send this payment")}>
+        <div className="space-y-4">
+          <p className="text-sm text-taupe">
+            {t("Send {amount} at your debt. Once it posts, your balance and the payoff plan update automatically — nothing to mark here.", { amount: formatMoney(next.payments.reduce((s, p) => s + p.amount, 0)) })}
+          </p>
+          <div className="space-y-1.5">
+            {next.payments.map((p, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-raised px-3 py-2 text-sm">
+                <span className="text-bone">{shortDebt(p.name)}</span>
+                <span className="font-semibold text-bone">{formatMoney(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+          {next.toSavings > 0 && (
+            <p className="rounded-lg bg-mint/10 px-3 py-2 text-[11px] text-mint">
+              {t("Plus {amount} to {target} — move that yourself in your bank.", {
+                amount: formatMoney(next.toSavings),
+                target: next.savingsKind === "emergency" ? t("your emergency fund") : t("investing"),
+              })}
+            </p>
+          )}
+          <Button className="w-full" onClick={onClose}>
+            {t("Got it")}
+          </Button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <Sheet open={open} onClose={onClose} title={t("Record this payment")}>
       {done ? (
@@ -1885,6 +1935,7 @@ export function PayBillSheet({
   accounts,
   defaultAccountId,
   variable,
+  feedOwned,
   onClose,
   onPay,
   onMarkPaid,
@@ -1895,6 +1946,7 @@ export function PayBillSheet({
   accounts: Account[];
   defaultAccountId?: string;
   variable: boolean;
+  feedOwned?: boolean; // a card-payment bill on a bank-linked debt → the feed moves the money; never call onPay (it no-ops)
   onClose: () => void;
   onPay: (
     recurringId: string,
@@ -1991,49 +2043,72 @@ export function PayBillSheet({
             </button>
           )}
 
-          <div>
-            <label className={labelClass}>{t("From account")}</label>
-            <select
-              className={inputClass}
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id} className="bg-tile">
-                  {a.name} ····{a.last4}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button
-            className="w-full"
-            disabled={!accountId || !amountValid || busy}
-            onClick={async () => {
-              if (!entry.recurringId || !accountId || !amountValid) return;
-              setBusy(true);
-              await onPay(entry.recurringId, monthKey, amount, entry.day, accountId);
-              setBusy(false);
-              onClose();
-            }}
-          >
-            {busy ? t("Working…") : t("Pay now — move the cash")}
-          </Button>
-          <button
-            onClick={async () => {
-              if (!entry.recurringId || !amountValid) return;
-              setBusy(true);
-              await onMarkPaid(entry.recurringId, monthKey, amount, entry.day);
-              setBusy(false);
-              onClose();
-            }}
-            disabled={busy || !amountValid}
-            className="w-full rounded-xl bg-raised py-3 text-sm font-semibold text-bone transition hover:brightness-110 disabled:opacity-40"
-          >
-            {t("Already paid — just mark it")}
-          </button>
-          <p className="text-[11px] text-faint">
-            {t("\"Pay now\" moves the cash (and drops the card for a card minimum). \"Already paid\" just marks it — for a bill already in your balance.")}
-          </p>
+          {feedOwned ? (
+            <>
+              <p className="rounded-lg bg-mint/10 px-3 py-2 text-[11px] text-mint">
+                {t("The bank records this payment automatically once it posts — your balance and the plan update on their own. This just flips the calendar.")}
+              </p>
+              <Button
+                className="w-full"
+                disabled={busy || !amountValid}
+                onClick={async () => {
+                  if (!entry.recurringId || !amountValid) return;
+                  setBusy(true);
+                  await onMarkPaid(entry.recurringId, monthKey, amount, entry.day);
+                  setBusy(false);
+                  onClose();
+                }}
+              >
+                {busy ? t("Working…") : t("Mark it paid")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className={labelClass}>{t("From account")}</label>
+                <select
+                  className={inputClass}
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id} className="bg-tile">
+                      {a.name} ····{a.last4}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                className="w-full"
+                disabled={!accountId || !amountValid || busy}
+                onClick={async () => {
+                  if (!entry.recurringId || !accountId || !amountValid) return;
+                  setBusy(true);
+                  await onPay(entry.recurringId, monthKey, amount, entry.day, accountId);
+                  setBusy(false);
+                  onClose();
+                }}
+              >
+                {busy ? t("Working…") : t("Pay now — move the cash")}
+              </Button>
+              <button
+                onClick={async () => {
+                  if (!entry.recurringId || !amountValid) return;
+                  setBusy(true);
+                  await onMarkPaid(entry.recurringId, monthKey, amount, entry.day);
+                  setBusy(false);
+                  onClose();
+                }}
+                disabled={busy || !amountValid}
+                className="w-full rounded-xl bg-raised py-3 text-sm font-semibold text-bone transition hover:brightness-110 disabled:opacity-40"
+              >
+                {t("Already paid — just mark it")}
+              </button>
+              <p className="text-[11px] text-faint">
+                {t("\"Pay now\" moves the cash (and drops the card for a card minimum). \"Already paid\" just marks it — for a bill already in your balance.")}
+              </p>
+            </>
+          )}
         </div>
       )}
     </Sheet>

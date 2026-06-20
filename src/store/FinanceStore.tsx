@@ -56,6 +56,9 @@ function mapDebt(r: any): Debt {
     minPayment: r.min_payment != null ? Number(r.min_payment) : undefined,
     color: r.color,
     providerAccountId: r.provider_account_id ?? undefined,
+    trackPattern: r.track_pattern ?? undefined,
+    trackedBaseline: r.tracked_baseline != null ? Number(r.tracked_baseline) : undefined,
+    trackedSince: r.tracked_since ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -481,6 +484,17 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const debt = debtId
         ? dataRef.current.debts.find((d) => d.id === debtId)
         : undefined;
+
+      // AUTO-TRACKED debts (a bank-linked card, or a feed-tracked debt like
+      // Affirm / Mom-China) update themselves from the bank feed — the card
+      // trigger SETs the balance, the feed recompute SETs the tracked ones, and
+      // the cash side comes from bank truth. Writing them optimistically here
+      // would double-count (debt decremented twice + cash double-debited), so
+      // this money event is a NO-OP: just let the feed do it.
+      if (debt && (debt.providerAccountId || debt.trackPattern)) {
+        return;
+      }
+
       const debtApplied = debt ? Math.min(ev.amount, debt.balance) : 0;
 
       const appliesTo: AppliesTo | undefined =

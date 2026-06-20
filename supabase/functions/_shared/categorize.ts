@@ -86,7 +86,7 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /SPOT PET/i, bill: "Spot Pet insurance" },
   { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
   { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
-  { re: /AFFIRM/i, bill: "Affirm" },
+  // Affirm is a feed-TRACKED debt now (debts.track_pattern "AFFIRM"), not a bill.
   { re: /ZELLE PAYMENT TO MON\b/i, bill: "Mom" },
 ];
 
