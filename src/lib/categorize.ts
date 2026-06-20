@@ -40,6 +40,40 @@ export function merchantKey(desc: string): string {
   return s.slice(0, 28);
 }
 
+/** Normalize a bill / recurring-row NAME for fuzzy matching: case-fold and drop
+ *  every non-alphanumeric char (spaces, punctuation, the "…" ellipsis) while
+ *  KEEPING digits, so the two "Card payment (…4728 / …6813)" rows stay distinct.
+ *  "Electric (SRP)" → "electricsrp", "T-Mobile" → "tmobile". */
+export function billKey(name: string): string {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** Resolve a categorizer billName to one of the recurring rows, tolerant of
+ *  punctuation / case / whitespace / ellipsis drift. Exact match first (fast,
+ *  unchanged behavior), then a normalized billKey match, then a merchantKey
+ *  match (shares the learned-rule key space). Returns the matched row, or null.
+ *  This is the fix for bills that didn't auto-flip to paid because the bank's
+ *  descriptor name didn't string-equal the modeled bill name. */
+export function matchRecurringName<T extends { name: string }>(
+  billName: string | undefined | null,
+  recurring: readonly T[],
+): T | null {
+  if (!billName) return null;
+  const exact = recurring.find((r) => r.name === billName);
+  if (exact) return exact;
+  const bk = billKey(billName);
+  if (bk) {
+    const norm = recurring.find((r) => billKey(r.name) === bk);
+    if (norm) return norm;
+  }
+  const mk = merchantKey(billName);
+  if (mk) {
+    const byMerchant = recurring.find((r) => merchantKey(r.name) === mk);
+    if (byMerchant) return byMerchant;
+  }
+  return null;
+}
+
 // A line that matches one of these IS a modeled recurring bill — mark it paid,
 // don't count it as variable spend. Names must match SEED_RECURRING exactly.
 const BILL_RULES: { re: RegExp; bill: string }[] = [

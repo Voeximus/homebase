@@ -15,7 +15,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { reconcile, type NormalRow, type PlaidTxn } from "../_shared/plaidSync.ts";
-import { classify, merchantKey, type LearnedRules } from "../_shared/categorize.ts";
+import { classify, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
 const PLAID_BASE = `https://${PLAID_ENV}.plaid.com`;
@@ -76,6 +76,37 @@ function billAppliesTo(rec: { id: string; dueDays?: number[] }, date: string) {
         )
       : postDay;
   return { kind: "bill", recurringId: rec.id, monthKey, day, settled: true } as const;
+}
+
+// Last-resort match for a payment the categorizer KNOWS is a bill (kind:"bill")
+// but whose descriptor name-matched no recurring row. Snap to an UNPAID out-bill
+// only when it's unambiguous: a scheduled due day within ±3 of the posted day AND
+// an amount within $15 (or 15%). If two bills could fit (e.g. similar amounts a
+// few days apart) we return null and let it fall to "needs review" rather than
+// risk attributing the payment to the wrong bill — false positives are costlier
+// than a one-tap fix on this live, no-sandbox ledger.
+function matchBillByDayAmount(
+  recs: any[],
+  date: string,
+  amount: number,
+  paidBill: Set<string>,
+): any | null {
+  const monthKey = date.slice(0, 7);
+  const postDay = parseInt(date.slice(8, 10), 10);
+  const candidates: any[] = [];
+  for (const r of recs) {
+    const days: number[] = Array.isArray(r.due_days) && r.due_days.length ? r.due_days : [];
+    if (!days.length) continue; // need a scheduled day — never auto-settle on amount alone
+    const nearest = days.reduce((b, d) => (Math.abs(d - postDay) < Math.abs(b - postDay) ? d : b), days[0]);
+    if (Math.abs(nearest - postDay) > 3) continue;
+    if (paidBill.has(`${r.id}|${monthKey}|${nearest}`)) continue;
+    if (typeof r.amount === "number" && r.amount > 0) {
+      const amtGap = Math.abs(amount - r.amount);
+      if (amtGap > 15 && amtGap > 0.15 * r.amount) continue;
+    }
+    candidates.push(r);
+  }
+  return candidates.length === 1 ? candidates[0] : null; // only when unambiguous
 }
 
 // --- actions ------------------------------------------------------------------
@@ -151,9 +182,12 @@ async function syncConnection(connId: string, force = false) {
 
     // active recurring bills (to match feed bill-payments to) + already-recorded
     // bill installments (so we never double-mark a manual / prior-import / re-sync one)
-    const { data: recRows } = await admin.from("recurring").select("id, name, due_days").eq("active", true);
-    const recByName: Record<string, { id: string; dueDays?: number[] }> = {};
-    for (const r of recRows ?? []) recByName[r.name] = { id: r.id, dueDays: r.due_days ?? undefined };
+    const { data: recRows } = await admin
+      .from("recurring")
+      .select("id, name, due_days, amount, direction")
+      .eq("active", true);
+    // Only out-direction bills are payment targets (never match a paycheck/transfer).
+    const outRecs = (recRows ?? []).filter((r: any) => r.direction === "out");
     const { data: paidRows } = await admin
       .from("transactions")
       .select("applies_to, provider_txn_id")
@@ -208,8 +242,15 @@ async function syncConnection(connId: string, force = false) {
       const c = classify(row.description, row.amount, learned);
       if (c.kind === "skip") continue;
       if (c.kind === "bill") {
-        const rec = c.billName ? recByName[c.billName] : undefined;
-        if (rec) {
+        // Resolve to a recurring row tolerant of name drift (normalized / merchant
+        // key), then fall back to a day+amount heuristic for bills the categorizer
+        // is sure about but couldn't name-match. This is what makes a real bank
+        // bill-payment auto-flip the CORRECT modeled bill to paid.
+        const matched =
+          matchRecurringName(c.billName, outRecs) ??
+          matchBillByDayAmount(outRecs, row.date, Math.abs(row.amount), paidBill);
+        if (matched) {
+          const rec = { id: matched.id as string, dueDays: (matched.due_days ?? undefined) as number[] | undefined };
           const at = billAppliesTo(rec, row.date);
           const key = `${rec.id}|${at.monthKey}|${at.day}`;
           // skip if this installment is already recorded (manual / prior import) —

@@ -172,16 +172,30 @@ export function buildFinanceVMs(
   const todayNum = now.getDate();
   const { entries } = monthlySchedule(data.recurring, monthKey, data.transactions);
   const outEntries = entries.filter((e) => e.direction === "out");
+  // The scheduled installment days for each recurring this month — used to snap a
+  // recorded payment to the right installment even if the feed logged the raw bank
+  // post-day (a row with no baked due_days records postDay, which can sit a day or
+  // two off the scheduled day). Without this, a real payment fails the exact
+  // day-equality check and the bill wrongly shows unpaid.
+  const recDaysByRec: Record<string, number[]> = {};
+  outEntries.forEach((e) => {
+    if (e.recurringId) (recDaysByRec[e.recurringId] ??= []).push(e.day);
+  });
   const recordedBill = (e: ScheduleEntry) =>
     e.recurringId
-      ? data.transactions.find(
-          (t) =>
-            t.type === "expense" &&
-            t.appliesTo?.kind === "bill" &&
-            t.appliesTo.recurringId === e.recurringId &&
-            t.appliesTo.monthKey === monthKey &&
-            t.appliesTo.day === e.day,
-        )
+      ? data.transactions.find((t) => {
+          if (t.type !== "expense" || t.appliesTo?.kind !== "bill") return false;
+          if (t.appliesTo.recurringId !== e.recurringId || t.appliesTo.monthKey !== monthKey)
+            return false;
+          // snap the recorded day to this recurring's nearest scheduled day, then
+          // require it to land on THIS entry — so single-installment bills flip on
+          // any near day, while multi-installment bills (e.g. Mom 15/30) still map
+          // each payment to the correct installment.
+          const days = recDaysByRec[e.recurringId!] ?? [e.day];
+          const rd = t.appliesTo.day;
+          const nearest = days.reduce((b, d) => (Math.abs(d - rd) < Math.abs(b - rd) ? d : b), days[0]);
+          return nearest === e.day;
+        })
       : undefined;
   const isBillPaid = (e: ScheduleEntry) =>
     e.recurringId ? !!recordedBill(e) : Math.min(e.day, daysInMonth) <= todayNum;

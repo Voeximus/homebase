@@ -308,16 +308,24 @@ export function OnePager({
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const firstWeekday = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
   const byDay = eventsForMonth(entries, daysInMonth);
+  // scheduled installment days per recurring — snap a recorded payment to the
+  // nearest one so single-installment bills flip on any near day while
+  // multi-installment bills still map each payment to its own installment.
+  const recDaysByRec: Record<string, number[]> = {};
+  outEntries.forEach((e) => {
+    if (e.recurringId) (recDaysByRec[e.recurringId] ??= []).push(e.day);
+  });
   function recordedTxn(e: ScheduleEntry): Transaction | undefined {
     if (!e.recurringId) return undefined;
-    return data.transactions.find(
-      (t) =>
-        t.type === "expense" &&
-        t.appliesTo?.kind === "bill" &&
-        t.appliesTo.recurringId === e.recurringId &&
-        t.appliesTo.monthKey === monthKey &&
-        t.appliesTo.day === e.day,
-    );
+    return data.transactions.find((t) => {
+      if (t.type !== "expense" || t.appliesTo?.kind !== "bill") return false;
+      if (t.appliesTo.recurringId !== e.recurringId || t.appliesTo.monthKey !== monthKey)
+        return false;
+      const days = recDaysByRec[e.recurringId!] ?? [e.day];
+      const rd = t.appliesTo.day;
+      const nearest = days.reduce((b, d) => (Math.abs(d - rd) < Math.abs(b - rd) ? d : b), days[0]);
+      return nearest === e.day;
+    });
   }
   function billPaid(e: ScheduleEntry): boolean {
     if (!e.recurringId) return Math.min(e.day, daysInMonth) <= todayNum;

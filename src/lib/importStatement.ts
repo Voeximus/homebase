@@ -4,7 +4,7 @@
 //   03/02/2026,"SAFEWAY #1717 ...","-19.57","1,900.96"
 
 import type { Recurring, Transaction } from "../types";
-import { classify, merchantKey, type LearnedRules } from "./categorize";
+import { classify, merchantKey, matchRecurringName, type LearnedRules } from "./categorize";
 
 export interface RawRow {
   date: string; // ISO YYYY-MM-DD
@@ -176,7 +176,7 @@ export function buildImportPlan(
     }
 
     if (c.kind === "bill" && c.billName) {
-      const rec = recurring.find((x) => x.name === c.billName);
+      const rec = matchRecurringName(c.billName, recurring);
       if (!rec) {
         // Bill rule matched but no such recurring row — treat as variable other.
         if (!seen.has(dupeKey(r.date, r.amount, r.description))) {
