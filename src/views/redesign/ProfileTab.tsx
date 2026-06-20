@@ -366,23 +366,3 @@ function Segmented<T extends string>({
     </span>
   );
 }
-
-export const MOCK_PROFILE: ProfileVM = {
-  ownerName: "Gino",
-  ownerColor: "#ef8136",
-  email: "ginocirino007@gmail.com",
-  bankName: "Bank of America",
-  bankSub: "Connected · 2 logins",
-  cardsSub: "…4728 + …6813 linked · auto-syncs",
-  accounts: [
-    { name: "Adv Plus …4662", owner: "Gino", balance: 1306.67, dot: "#5b82b3" },
-    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#687180" },
-    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#46d18a" },
-  ],
-  lang: "en",
-  lens: "me",
-  variableBills: [
-    { id: "electric", name: "Electric (SRP)", icon: "electric", est: "~$89.92 · est. from last 3", on: true },
-    { id: "verizon", name: "Verizon", icon: "phone", est: "~$82.83 · est. from last 3", on: true },
-  ],
-};

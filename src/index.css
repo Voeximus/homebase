@@ -105,15 +105,6 @@ input[type="number"] {
   border-radius: 9999px;
 }
 
-/* The jump-chip rail hides its scrollbar entirely */
-.hide-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.hide-scroll::-webkit-scrollbar {
-  display: none;
-}
-
 /* ── Technical mono label — the "instrument" voice for every eyebrow ───────── */
 .eyebrow {
   font-family: var(--font-mono);

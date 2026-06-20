@@ -22,14 +22,6 @@ export function saveOwner(o: Owner) {
   }
 }
 
-export function clearOwner() {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 export const OWNER_NAME: Record<Owner, string> = {
   gino: "Gino",
   xinyan: "Xinyan",

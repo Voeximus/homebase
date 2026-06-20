@@ -147,5 +147,3 @@ export interface AppData {
   merchantRules: MerchantRule[];
   foods: Food[]; // shared custom food library (meal builder)
 }
-
-export type Tab = "plan" | "budget" | "money";

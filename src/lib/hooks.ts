@@ -69,33 +69,6 @@ export function useScrolled(threshold = 120): boolean {
 }
 
 /**
- * Scroll-spy for the jump-chip rail: returns the id of the section currently
- * under the sticky header. One IntersectionObserver over all sections.
- */
-export function useActiveSection(ids: string[]): string {
-  const [active, setActive] = useState(ids[0] ?? "");
-  const key = ids.join(",");
-  useEffect(() => {
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActive((visible[0].target as HTMLElement).id);
-      },
-      { rootMargin: "-104px 0px -55% 0px", threshold: 0 },
-    );
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) obs.observe(el);
-    }
-    return () => obs.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return active;
-}
-
-/**
  * Fade-up-on-reveal. Returns a ref + the `is-visible` class state. Elements
  * already in view flip visible on the observer's first (async) callback, so the
  * first screenful animates in immediately. Reduced-motion → always visible.

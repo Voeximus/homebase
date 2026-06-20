@@ -2,12 +2,82 @@ import { useState } from "react";
 import { Wallet, HeartPulse } from "lucide-react";
 import { TabNav, type TabKey } from "./TabNav";
 import { HomeTab } from "./HomeTab";
-import { InsightsTab, MOCK_INSIGHTS } from "./InsightsTab";
-import { ActivityTab, MOCK_ACTIVITY } from "./ActivityTab";
-import { ProfileTab, MOCK_PROFILE } from "./ProfileTab";
+import { InsightsTab, type InsightsVM } from "./InsightsTab";
+import { ActivityTab, type ActivityVM } from "./ActivityTab";
+import { ProfileTab, type ProfileVM } from "./ProfileTab";
 import { BillsSheet } from "./BillsSheet";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import type { HomeVM, BillsVM } from "./vm";
+
+// ── Mock view-models. These live ONLY in this dev-only harness (App.tsx lazy-
+//    loads it behind import.meta.env.DEV), so they never ship to production —
+//    keeping the real email / bank / account masks out of the public bundle. ──
+const MOCK_INSIGHTS: InsightsVM = {
+  budgetSpent: 719,
+  budgetTarget: 1250,
+  donut: [
+    { catId: "groceries", amount: 392 },
+    { catId: "transport", amount: 83 },
+    { catId: "dining", amount: 84 },
+    { catId: "shopping", amount: 40 },
+    { catId: "health", amount: 30 },
+    { catId: "other", amount: 90 },
+  ],
+  categories: [
+    { catId: "groceries", label: "Groceries", spent: 392, target: 500 },
+    { catId: "transport", label: "Gas + convenience", spent: 83, target: 250 },
+    { catId: "dining", label: "Dining out", spent: 84, target: 150 },
+    { catId: "shopping", label: "Household + hygiene", spent: 40, target: 90 },
+    { catId: "health", label: "Health + grooming", spent: 30, target: 110 },
+    { catId: "other", label: "Dog · car · subs", spent: 90, target: 150 },
+  ],
+  income: 5975,
+  living: 2742,
+  variable: 1250,
+  atDebt: 1983,
+  debtFreeBy: "Oct '26",
+  monthsToGo: 4,
+  interest: 248,
+  ladder: [
+    { rank: 1, name: "Affirm", amount: 289, target: true },
+    { rank: 3, name: "Xinyan card …6813", amount: 591, live: true },
+    { rank: 5, name: "Card …4728", amount: 4157, live: true, apr: 26.49 },
+  ],
+};
+
+const MOCK_ACTIVITY: ActivityVM = {
+  sinceMonday: 1136,
+  needsReview: 4,
+  monthLabel: "June 2026",
+  counted: 719,
+  rows: [
+    { id: "r1", merchant: "Sam's Club", catId: "groceries", amount: 229.81, fate: "envelope", badgeLabel: "→ Groceries" },
+    { id: "r2", merchant: "QuikTrip", catId: "transport", amount: 9.07, fate: "envelope", badgeLabel: "→ Gas" },
+    { id: "r3", merchant: "Verizon", catId: "utilities", amount: 83.0, fate: "skip", badgeLabel: "Bill · not in budget" },
+    { id: "r4", merchant: "SQ *JOHNNY'S", catId: "other", amount: 18.4, fate: "review", badgeLabel: "Needs review" },
+    { id: "r5", merchant: "Payroll", catId: "salary", amount: 991.0, fate: "income", badgeLabel: "Income · not in budget" },
+  ],
+};
+
+const MOCK_PROFILE: ProfileVM = {
+  ownerName: "Demo",
+  ownerColor: "#ef8136",
+  email: "demo@example.com",
+  bankName: "Bank of America",
+  bankSub: "Connected · 2 logins",
+  cardsSub: "…4728 + …6813 linked · auto-syncs",
+  accounts: [
+    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#5b82b3" },
+    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#687180" },
+    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#46d18a" },
+  ],
+  lang: "en",
+  lens: "me",
+  variableBills: [
+    { id: "electric", name: "Electric (SRP)", icon: "electric", est: "~$89.92 · est. from last 3", on: true },
+    { id: "verizon", name: "Verizon", icon: "phone", est: "~$82.83 · est. from last 3", on: true },
+  ],
+};
 
 const ENV: EnvelopeVM = {
   label: "Groceries",

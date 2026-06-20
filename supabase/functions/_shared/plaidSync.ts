@@ -39,7 +39,6 @@ export interface NormalRow {
   description: string;
   amount: number; // signed, − = spend  (= −plaid.amount)
   pending: boolean;
-  plaidCategory?: string;
 }
 
 export function normalize(t: PlaidTxn): NormalRow {
@@ -50,7 +49,6 @@ export function normalize(t: PlaidTxn): NormalRow {
     description: t.merchant_name || t.name,
     amount: -t.amount, // flip Plaid's sign to ours
     pending: !!t.pending,
-    plaidCategory: t.personal_finance_category?.primary ?? undefined,
   };
 }
 

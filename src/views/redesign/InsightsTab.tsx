@@ -263,36 +263,3 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   );
 }
-
-export const MOCK_INSIGHTS: InsightsVM = {
-  budgetSpent: 719,
-  budgetTarget: 1250,
-  donut: [
-    { catId: "groceries", amount: 392 },
-    { catId: "transport", amount: 83 },
-    { catId: "dining", amount: 84 },
-    { catId: "shopping", amount: 40 },
-    { catId: "health", amount: 30 },
-    { catId: "other", amount: 90 },
-  ],
-  categories: [
-    { catId: "groceries", label: "Groceries", spent: 392, target: 500 },
-    { catId: "transport", label: "Gas + convenience", spent: 83, target: 250 },
-    { catId: "dining", label: "Dining out", spent: 84, target: 150 },
-    { catId: "shopping", label: "Household + hygiene", spent: 40, target: 90 },
-    { catId: "health", label: "Health + grooming", spent: 30, target: 110 },
-    { catId: "other", label: "Dog · car · subs", spent: 90, target: 150 },
-  ],
-  income: 5975,
-  living: 2742,
-  variable: 1250,
-  atDebt: 1983,
-  debtFreeBy: "Oct '26",
-  monthsToGo: 4,
-  interest: 248,
-  ladder: [
-    { rank: 1, name: "Affirm — Anthropic", amount: 99, target: true },
-    { rank: 3, name: "Xinyan card …6813", amount: 591, live: true },
-    { rank: 5, name: "Card …4728", amount: 4157, live: true, apr: 26.49 },
-  ],
-};

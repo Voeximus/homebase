@@ -240,15 +240,11 @@ async function syncConnection(connId: string, force = false) {
 
     const { data: ourAccts } = await admin
       .from("accounts")
-      .select("id, provider_account_id, owner")
+      .select("id, provider_account_id")
       .eq("connection_id", connId);
     const acctIdByProv: Record<string, string> = {};
-    const ownerByProv: Record<string, string> = {};
     for (const a of ourAccts ?? []) {
-      if (a.provider_account_id) {
-        acctIdByProv[a.provider_account_id] = a.id;
-        ownerByProv[a.provider_account_id] = a.owner;
-      }
+      if (a.provider_account_id) acctIdByProv[a.provider_account_id] = a.id;
     }
 
     // pull the sync delta from the stored cursor
@@ -393,35 +389,12 @@ async function syncConnection(connId: string, force = false) {
       }
     }
 
-    // maintain the display-only pending preview
-    if (ops.pendingRemove.length) {
-      await admin.from("pending_preview").delete().eq("provider", "plaid").in("provider_txn_id", ops.pendingRemove);
-    }
-    const pendRows = ops.pendingUpsert
-      .map((row) => {
-        const c = classify(row.description, row.amount, learned);
-        if (c.kind !== "variable") return null;
-        return {
-          connection_id: connId,
-          account_id: acctIdByProv[row.accountId] ?? null,
-          provider: "plaid",
-          provider_txn_id: row.providerTxnId,
-          provider_account_id: row.accountId,
-          date: row.date,
-          amount: row.amount,
-          description: row.description,
-          category_id: c.appCategory ?? "other",
-          owner: ownerByProv[row.accountId] ?? null,
-        };
-      })
-      .filter(Boolean);
-    if (pendRows.length) {
-      await admin.from("pending_preview").upsert(pendRows as any[], { onConflict: "provider,provider_txn_id" });
-    }
+    // (pending_preview retired — the "still processing" hold = current−available,
+    // schema_v13 — replaced the itemized in-flight pending rows nothing read.)
 
     await admin
       .from("bank_connections")
-      .update({ cursor, last_sync_at: new Date().toISOString(), status: "ok", last_error: null, consecutive_failures: 0 })
+      .update({ cursor, last_sync_at: new Date().toISOString(), status: "ok", last_error: null })
       .eq("id", connId);
 
     return { posted: ops.upsertPosted.length, pending: ops.pendingUpsert.length, reversed: ops.reverse.length };

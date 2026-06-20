@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { LoginScreen } from "./auth/LoginScreen";
@@ -12,17 +12,27 @@ import { getOwner, type Owner } from "./lib/owner";
 import { getLens, saveLens, type Lens } from "./lib/lens";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 import { syncNow } from "./lib/plaidClient";
-import { DesignLab } from "./views/redesign/DesignLab";
 import { FinanceTabs } from "./views/redesign/FinanceTabs";
 
+// ?lab — the bento design lab (mock data, no login). DEV-ONLY: lazy + gated on
+// import.meta.env.DEV so the harness AND its mock fixtures tree-shake entirely
+// out of the production bundle (nothing real ships to GitHub Pages).
+const DesignLab = import.meta.env.DEV
+  ? lazy(() => import("./views/redesign/DesignLab").then((m) => ({ default: m.DesignLab })))
+  : null;
+
 export default function App() {
-  // ?lab — the bento-reskin design lab: renders the new tabs with mock data,
-  // BEFORE the auth gate, so the look is verifiable without touching Supabase.
   if (
+    import.meta.env.DEV &&
+    DesignLab &&
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).has("lab")
   ) {
-    return <DesignLab />;
+    return (
+      <Suspense fallback={null}>
+        <DesignLab />
+      </Suspense>
+    );
   }
   return (
     <AuthProvider>

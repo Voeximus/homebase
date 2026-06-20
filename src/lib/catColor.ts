@@ -10,8 +10,6 @@ import {
   Pill,
   Package,
   Zap,
-  Smartphone,
-  CreditCard,
   Repeat,
   Clapperboard,
   Home,
@@ -59,9 +57,6 @@ const CAT_ICON: Record<string, LucideIcon> = {
 
 export const catIcon = (id?: string): LucideIcon =>
   (id && CAT_ICON[id]) || HelpCircle;
-
-export const phoneIcon = Smartphone;
-export const cardIcon = CreditCard;
 
 // The signature brand gradient — the green→cyan→blue wash on every hero.
 export const BRAND_GRADIENT =
