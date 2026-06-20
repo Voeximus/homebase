@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, ChevronDown, Trash2, X } from "lucide-react";
 import { t } from "../lib/i18n";
 import { todayStr } from "../lib/mealLog";
 import { useHealth } from "../store/HealthStore";
@@ -50,7 +50,7 @@ const GAUGE: Record<Person, GaugeCfg> = {
 
 export function CalibrationGauge({ person, acc }: { person: Person; acc: string }) {
   const cfg = GAUGE[person];
-  const { weights, setWeight } = useHealth();
+  const { weights, setWeight, deleteWeight, clearWeights } = useHealth();
   const today = todayStr();
   const mine = useMemo(
     () => weights.filter((w) => w.person === person).sort((a, b) => a.date.localeCompare(b.date)),
@@ -58,6 +58,13 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
   );
   const todayEntry = mine.find((w) => w.date === today);
   const [draft, setDraft] = useState("");
+  const [showHist, setShowHist] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null); // date pending delete
+  const [confirmReset, setConfirmReset] = useState(false);
+  // newest-first for the history list
+  const history = useMemo(() => [...mine].reverse(), [mine]);
+  const fmtHist = (d: string) =>
+    new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
   const weekInfo = currentWeekAvg(mine, today);
   const cur = weekInfo ? weekInfo.avg : latestWeight(mine);
@@ -177,6 +184,107 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
           </span>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
             <div className="h-full rounded-full" style={{ width: `${donePct}%`, background: acc, transition: "width .5s ease" }} />
+          </div>
+        </div>
+      )}
+
+      {/* weigh-in history — delete one, or reset the lot */}
+      {mine.length > 0 && (
+        <div className="mt-3.5 border-t pt-3" style={{ borderColor: "#1b232e" }}>
+          <button onClick={() => setShowHist((s) => !s)} className="flex w-full items-center justify-between">
+            <span className="stat-key" style={{ color: "#97a3b2" }}>{t("History · {n}", { n: mine.length })}</span>
+            <ChevronDown size={15} style={{ color: "#6b7686", transform: showHist ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+          </button>
+          {showHist && (
+            <div className="mt-2 flex flex-col">
+              {history.map((w) => (
+                <div key={w.date} className="flex items-center gap-2 border-b py-1.5 last:border-0" style={{ borderColor: "#161d27" }}>
+                  <span className="flex-1 text-[12px]" style={{ color: "#9aa6b2" }}>
+                    {fmtHist(w.date)}
+                    {w.date === today && <span style={{ color: acc }}> · {t("today")}</span>}
+                  </span>
+                  <span className="num text-[12.5px] font-semibold text-bone">{w.weight} {t("lb")}</span>
+                  {confirmDel === w.date ? (
+                    <span className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          deleteWeight(person, w.date);
+                          setConfirmDel(null);
+                        }}
+                        className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                        style={{ background: "#2a1518", color: "#f0556e" }}
+                      >
+                        {t("Delete")}
+                      </button>
+                      <button onClick={() => setConfirmDel(null)} className="px-1 text-[11px]" style={{ color: "#7c8696" }}>
+                        {t("Cancel")}
+                      </button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmDel(w.date)} style={{ color: "#5f6a78" }} aria-label="Delete weigh-in">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={() => setConfirmReset(true)}
+                className="mt-2.5 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-medium"
+                style={{ background: "#161c26", color: "#8b97a6" }}
+              >
+                <Trash2 size={13} /> {t("Reset weight history")}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* reset confirmation */}
+      {confirmReset && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,.6)" }}
+          onClick={() => setConfirmReset(false)}
+        >
+          <div
+            className="w-full max-w-[340px] rounded-[20px] p-5"
+            style={{ background: "#0f141c", border: "1px solid #232d3a" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: "#2a1518", color: "#f0556e" }}>
+                <Trash2 size={17} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[14.5px] font-bold text-bone">{t("Reset weight history?")}</p>
+                <p className="mt-1 text-[12px]" style={{ color: "#97a3b2" }}>
+                  {t("Deletes all {n} weigh-ins. Your trend and averages reset. This can't be undone.", { n: mine.length })}
+                </p>
+              </div>
+              <button onClick={() => setConfirmReset(false)} style={{ color: "#6b7686" }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
+                style={{ background: "#161c26", color: "#b7c0cc" }}
+              >
+                {t("Cancel")}
+              </button>
+              <button
+                onClick={() => {
+                  clearWeights(person);
+                  setConfirmReset(false);
+                  setShowHist(false);
+                }}
+                className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
+                style={{ background: "#f0556e", color: "#0a0d12" }}
+              >
+                {t("Delete all")}
+              </button>
+            </div>
           </div>
         </div>
       )}

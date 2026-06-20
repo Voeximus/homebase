@@ -18,6 +18,7 @@ import type {
   Recurring,
   SavingsGoal,
   Transaction,
+  TxnSplit,
 } from "../types";
 import { supabase } from "../lib/supabase";
 import { DEFAULT_CATEGORIES } from "../lib/seed";
@@ -43,6 +44,7 @@ function mapTxn(r: any): Transaction {
     account: r.account ?? undefined,
     accountId: r.account_id ?? undefined,
     appliesTo: r.applies_to ?? undefined,
+    splits: Array.isArray(r.splits) && r.splits.length ? r.splits : undefined,
     createdAt: r.created_at,
   };
 }
@@ -164,6 +166,8 @@ export interface FinanceStore {
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
+  // Split one transaction across categories (or pass null to clear the split).
+  setTransactionSplits: (id: string, splits: TxnSplit[] | null) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
   makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
   setRecurringVariable: (id: string, variable: boolean) => Promise<void>;
@@ -771,6 +775,31 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .from("transactions")
           .update({ category_id: categoryId })
           .eq("id", id);
+        if (error) console.error(error);
+      },
+      async setTransactionSplits(id, splits) {
+        // Allocate this charge across categories. The cash + amount don't change —
+        // only how budgets bucket it. Clearing (null) drops back to one category.
+        // The primary categoryId follows the largest slice so the row's color/icon
+        // stays sensible. A 1-slice split is just a normal single-category txn.
+        const clean = splits?.filter((s) => s.categoryId && s.amount > 0) ?? null;
+        const useSplits = clean && clean.length > 1 ? clean : null;
+        const primary = useSplits
+          ? [...useSplits].sort((a, b) => b.amount - a.amount)[0].categoryId
+          : clean && clean.length === 1
+            ? clean[0].categoryId
+            : undefined;
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === id
+              ? { ...t, splits: useSplits ?? undefined, categoryId: primary ?? t.categoryId }
+              : t,
+          ),
+        }));
+        const update: Record<string, unknown> = { splits: useSplits };
+        if (primary) update.category_id = primary;
+        const { error } = await supabase.from("transactions").update(update).eq("id", id);
         if (error) console.error(error);
       },
       async excludeFromBudget(id) {

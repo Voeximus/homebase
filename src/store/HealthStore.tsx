@@ -63,6 +63,8 @@ export interface HealthStore {
   addRoutine: (r: Routine) => void;
   deleteRoutine: (id: string) => void;
   setWeight: (person: Person, date: string, weight: number) => void;
+  deleteWeight: (person: Person, date: string) => void;
+  clearWeights: (person: Person) => void;
 }
 
 const Ctx = createContext<HealthStore | null>(null);
@@ -303,6 +305,28 @@ export function HealthProvider({ children }: { children: ReactNode }) {
           .from("body_weights")
           .upsert({ person, date, weight, updated_at: new Date().toISOString() }, { onConflict: "person,date" })
           .then(({ error }) => error && console.error("body_weights upsert", error));
+      },
+      deleteWeight(person, date) {
+        // optimistic remove of one weigh-in; the trend/averages recompute from state
+        setState((s) => ({
+          ...s,
+          weights: s.weights.filter((w) => !(w.person === person && w.date === date)),
+        }));
+        supabase
+          .from("body_weights")
+          .delete()
+          .eq("person", person)
+          .eq("date", date)
+          .then(({ error }) => error && console.error("body_weights delete", error));
+      },
+      clearWeights(person) {
+        // wipe this person's whole weigh-in history (the other person's stays)
+        setState((s) => ({ ...s, weights: s.weights.filter((w) => w.person !== person) }));
+        supabase
+          .from("body_weights")
+          .delete()
+          .eq("person", person)
+          .then(({ error }) => error && console.error("body_weights clear", error));
       },
     };
   }, []);

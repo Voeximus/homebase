@@ -62,6 +62,12 @@ export const catIcon = (id?: string): LucideIcon =>
 export const BRAND_GRADIENT =
   "linear-gradient(150deg,#10b981 0%,#06b6d4 52%,#3b82f6 100%)";
 
+// Health mode's brand wash — the rose→pink health gradient, so Health reads red
+// the way Finance reads green-cyan. Built on the `health` category rose (#fb7185).
+export const HEALTH = "#fb7185";
+export const HEALTH_GRADIENT =
+  "linear-gradient(150deg,#fb7185 0%,#fb6f92 52%,#f43f5e 100%)";
+
 // Build a conic-gradient string from weighted segments (for the spending donut).
 export function conicFromSegments(
   segs: { color: string; value: number }[],

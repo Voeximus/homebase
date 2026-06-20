@@ -36,7 +36,7 @@ import {
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
 import { adherenceStats, type DayStatus } from "../lib/adherence";
-import { BRAND_GRADIENT } from "../lib/catColor";
+import { HEALTH_GRADIENT } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
 
@@ -473,7 +473,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           <button
             onClick={logForBoth}
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-            style={{ background: BRAND_GRADIENT }}
+            style={{ background: HEALTH_GRADIENT }}
           >
             <Check size={16} /> {t("Log both bowls")}
           </button>
@@ -569,7 +569,7 @@ function DaySummary({ name, target, eaten }: { name: string; target: Macros; eat
   return (
     <div
       className="rounded-[26px] px-5 pb-4 pt-4 text-white"
-      style={{ background: BRAND_GRADIENT, boxShadow: "0 12px 32px -14px rgba(2,12,24,.65)" }}
+      style={{ background: HEALTH_GRADIENT, boxShadow: "0 12px 32px -14px rgba(2,12,24,.65)" }}
     >
       <div className="flex items-center justify-between">
         <span className="stat-key" style={{ opacity: 0.92 }}>{t("{name}'s day", { name })}</span>
@@ -672,7 +672,7 @@ function NudgeCard({ onYes, onNo, onLater }: { onYes: () => void; onNo: () => vo
         </div>
       </div>
       <div className="mt-3 flex items-center gap-2">
-        <button onClick={onYes} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold text-white transition active:scale-[0.98]" style={{ background: BRAND_GRADIENT }}>
+        <button onClick={onYes} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold text-white transition active:scale-[0.98]" style={{ background: HEALTH_GRADIENT }}>
           {t("Yes, I did")}
         </button>
         <button onClick={onNo} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold transition active:scale-[0.98]" style={{ background: "rgba(240,85,110,0.12)", color: "#f0556e" }}>
@@ -710,7 +710,7 @@ function EstimateSheet({ open, onClose, onLog }: { open: boolean; onClose: () =>
         <button
           onClick={() => onLog(note)}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: BRAND_GRADIENT }}
+          style={{ background: HEALTH_GRADIENT }}
         >
           <Check size={16} /> {t("Log as followed")}
         </button>
@@ -1153,7 +1153,7 @@ function PortionView({
         <button
           onClick={() => onConfirm(amount(), save)}
           className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: BRAND_GRADIENT }}
+          style={{ background: HEALTH_GRADIENT }}
         >
           <Check size={16} /> {editing ? t("Save portion") : t("Add to meal")}
         </button>
@@ -1351,7 +1351,7 @@ function CustomFoodForm({
           }}
           disabled={!valid}
           className="flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: BRAND_GRADIENT, opacity: valid ? 1 : 0.45 }}
+          style={{ background: HEALTH_GRADIENT, opacity: valid ? 1 : 0.45 }}
         >
           <Check size={16} /> {t("Save & use")}
         </button>

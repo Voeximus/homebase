@@ -7,6 +7,7 @@ import { LangToggle } from "../components/LanguageProvider";
 import type { Lens } from "../lib/lens";
 import type { Owner } from "../lib/owner";
 import { HealthProvider } from "../store/HealthStore";
+import { HEALTH } from "../lib/catColor";
 import { MealBuilder } from "./MealBuilder";
 import { WorkoutSection } from "./WorkoutSection";
 
@@ -65,8 +66,9 @@ export function HealthView({
                   key={k}
                   onClick={() => setSub(k)}
                   className={`flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold transition ${
-                    on ? "bg-bone text-bg" : "bg-tile text-taupe hover:text-bone"
+                    on ? "text-white" : "bg-tile text-taupe hover:text-bone"
                   }`}
+                  style={on ? { background: HEALTH } : undefined}
                 >
                   <Icon size={15} /> {label}
                 </button>

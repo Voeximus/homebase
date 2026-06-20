@@ -33,16 +33,27 @@ export interface AppliesTo {
   settled?: boolean; // a "already paid, already in my anchored balance" marker — moves no cash, touches no debt
 }
 
+// A slice of one transaction allocated to a category — for mixed purchases (a
+// grocery run that's part food, part household, part pet). One cash event, many
+// budget buckets. The sum of split amounts always equals the transaction amount.
+export interface TxnSplit {
+  categoryId: string;
+  amount: number; // positive dollars
+}
+
 export interface Transaction {
   id: string;
   date: string; // ISO date "YYYY-MM-DD"
   amount: number; // always positive; the sign comes from `type`
   type: TxnType;
-  categoryId: string;
+  categoryId: string; // the primary/dominant category (used for the row's color + icon)
   description: string;
   account?: string;
   accountId?: string; // which account this hit
   appliesTo?: AppliesTo; // what this entry satisfies (bill / debt / goal / …)
+  // When present, the amount is allocated across these categories instead of the
+  // single categoryId. Category totals/budgets read these; cash + the row stay one.
+  splits?: TxnSplit[];
   createdAt: string; // ISO timestamp
 }
 

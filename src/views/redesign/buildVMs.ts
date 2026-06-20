@@ -334,6 +334,8 @@ export function buildFinanceVMs(
         badge: t("{Kind} · not in budget", { Kind: `${k[0].toUpperCase()}${k.slice(1)}` }),
       };
     }
+    if (tx.splits && tx.splits.length > 1)
+      return { fate: "envelope", badge: t("Split · {n} ways", { n: tx.splits.length }) };
     if (tx.categoryId === "other" || !hasRule(tx.description))
       return { fate: "review", badge: t("Needs review") };
     return { fate: "envelope", badge: t("→ {label}", { label: envLabel(tx.categoryId) }) };

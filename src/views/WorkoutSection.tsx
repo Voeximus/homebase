@@ -15,7 +15,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { BRAND_GRADIENT } from "../lib/catColor";
+import { HEALTH_GRADIENT } from "../lib/catColor";
 import { t } from "../lib/i18n";
 import {
   bestSet,
@@ -222,9 +222,9 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
           <button
             onClick={startBlank}
             className="flex items-center justify-center gap-2 rounded-[18px] py-4 text-[15px] font-semibold text-white transition active:scale-[0.98]"
-            style={{ background: BRAND_GRADIENT }}
+            style={{ background: HEALTH_GRADIENT }}
           >
-            <Play size={17} /> {t("Start a workout")}
+            <Play size={17} /> {t("Add a workout")}
           </button>
           <button
             onClick={() => setQuickOpen(true)}
@@ -401,7 +401,7 @@ function ActiveWorkout({
         <button
           onClick={onFinish}
           className="flex flex-1 items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: BRAND_GRADIENT }}
+          style={{ background: HEALTH_GRADIENT }}
         >
           <Check size={16} /> {t("Finish workout")}
         </button>
@@ -468,7 +468,7 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
   const vol = active ? workoutVolume(active) : 0;
   const sets = active ? totalSets(active) : 0;
   return (
-    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: BRAND_GRADIENT }}>
+    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: HEALTH_GRADIENT }}>
       <div className="flex items-center justify-between text-[11.5px] opacity-90">
         <span>{t("{name}'s training", { name })}</span>
         <span>{t("this week")}</span>
@@ -522,7 +522,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
   return (
     <div className="flex flex-col gap-3">
       {/* shared weekly challenge */}
-      <div className="sticky z-30 rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ top: STICKY_TOP, background: BRAND_GRADIENT }}>
+      <div className="sticky z-30 rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ top: STICKY_TOP, background: HEALTH_GRADIENT }}>
         <div className="flex items-center gap-1.5 text-[11.5px] opacity-90">
           <Flame size={14} /> {t("This week · together")}
         </div>
@@ -706,7 +706,7 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
               disabled={!customMuscle}
               onClick={() => customMuscle && add({ name: q.trim(), muscle: customMuscle, exerciseId: "" })}
               className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold text-white transition active:scale-[0.98]"
-              style={{ background: BRAND_GRADIENT, opacity: customMuscle ? 1 : 0.45 }}
+              style={{ background: HEALTH_GRADIENT, opacity: customMuscle ? 1 : 0.45 }}
             >
               <Plus size={14} /> {t("Add custom exercise")}
             </button>
@@ -877,7 +877,7 @@ function QuickLogSheet({
             <button
               onClick={log}
               className="mt-4 flex items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-              style={{ background: BRAND_GRADIENT }}
+              style={{ background: HEALTH_GRADIENT }}
             >
               <Check size={16} /> {t("Log it")}
             </button>

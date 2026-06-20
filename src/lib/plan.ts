@@ -278,7 +278,9 @@ export function variableSpentThisMonth(
     .reduce((s, t) => s + t.amount, 0);
 }
 
-/** This month's free-form spend grouped by category id (for the budget bars). */
+/** This month's free-form spend grouped by category id (for the budget bars).
+ *  A split transaction fans its amount across its split categories; an unsplit
+ *  one lands wholly on its single category. The total is identical either way. */
 export function spentByCategory(
   transactions: Transaction[],
   monthKey: string,
@@ -286,7 +288,11 @@ export function spentByCategory(
   const out: Record<string, number> = {};
   for (const t of transactions) {
     if (t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo) {
-      out[t.categoryId] = (out[t.categoryId] ?? 0) + t.amount;
+      if (t.splits && t.splits.length) {
+        for (const s of t.splits) out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;
+      } else {
+        out[t.categoryId] = (out[t.categoryId] ?? 0) + t.amount;
+      }
     }
   }
   return out;

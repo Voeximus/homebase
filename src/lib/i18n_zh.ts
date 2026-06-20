@@ -484,6 +484,29 @@ const SEED: Record<string, string> = {
   "Log a day to start a streak": "记录一天，开启连击",
   estimated: "估算",
   "off plan": "偏离",
+
+  // ── Build finalization (2026-06-20g): splits, weight history, workouts ──
+  Cancel: "取消",
+  "Delete all": "全部删除",
+  "Add a workout": "添加训练",
+  // transaction splitting
+  "Split transaction": "拆分交易",
+  "Split across categories": "拆分到多个分类",
+  "Split across {n} categories": "拆分到 {n} 个分类",
+  "Remove split": "取消拆分",
+  "Edit split": "编辑拆分",
+  "Allocate {total} across categories — for a mixed purchase.": "把 {total} 分配到不同分类 — 适合混合购物。",
+  "Add category": "添加分类",
+  Balanced: "已平衡",
+  "{amt} left to assign — tap to fill": "还剩 {amt} 待分配 — 点击填入",
+  "{amt} over the total": "超出总额 {amt}",
+  "Save split": "保存拆分",
+  "Split · {n} ways": "拆分 · {n} 项",
+  // weight-log history + reset
+  "Reset weight history": "重置体重记录",
+  "Reset weight history?": "重置体重记录？",
+  "Deletes all {n} weigh-ins. Your trend and averages reset. This can't be undone.":
+    "删除全部 {n} 次称重。趋势和平均值会重置。此操作无法撤销。",
 };
 
 // Auto-generated translations first; hand-curated SEED wins on conflict.
