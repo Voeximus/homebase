@@ -29,7 +29,7 @@ export interface ProfileVM {
   accounts: { name: string; owner: string; balance: number; dot: string }[];
   lang: "en" | "zh";
   lens: "me" | "all";
-  variableBills: { name: string; icon: "electric" | "phone"; est: string; on: boolean }[];
+  variableBills: { id: string; name: string; icon: "electric" | "phone"; est: string; on: boolean }[];
 }
 
 interface ProfileTaps {
@@ -40,6 +40,9 @@ interface ProfileTaps {
   onHealth?: () => void;
   onSignOut?: () => void;
   onAdvanced?: () => void;
+  onLang?: (l: "en" | "zh") => void;
+  onLens?: (l: "me" | "all") => void;
+  onToggleVariableBill?: (id: string, on: boolean) => void;
 }
 
 // A grouped bento list: a mono eyebrow label above a divided card.
@@ -57,18 +60,23 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-// The small pill toggle (38x22), cyan when on, knob slides right.
-function Toggle({ on }: { on: boolean }) {
+// The small pill toggle (38x22), cyan when on, knob slides right. A button when
+// given onToggle, so it actually flips the underlying preference.
+function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
   return (
-    <span
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={!onToggle}
       className="relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
       style={{ background: on ? "#34c5e8" : "#2a3441" }}
+      aria-pressed={on}
     >
       <span
         className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all"
         style={{ left: on ? "19px" : "3px" }}
       />
-    </span>
+    </button>
   );
 }
 
@@ -215,6 +223,7 @@ export function ProfileTab({
                 { key: "zh", label: "中文" },
               ]}
               active={vm.lang}
+              onSelect={taps.onLang}
             />
           </div>
 
@@ -235,6 +244,7 @@ export function ProfileTab({
                 { key: "all", label: "Household" },
               ]}
               active={vm.lens}
+              onSelect={taps.onLens}
             />
           </div>
 
@@ -279,7 +289,14 @@ export function ProfileTab({
                     {b.est}
                   </div>
                 </div>
-                <Toggle on={b.on} />
+                <Toggle
+                  on={b.on}
+                  onToggle={
+                    taps.onToggleVariableBill
+                      ? () => taps.onToggleVariableBill!(b.id, !b.on)
+                      : undefined
+                  }
+                />
               </div>
             );
           })}
@@ -310,13 +327,16 @@ export function ProfileTab({
   );
 }
 
-// A small segmented pill control (display-only here — active key is highlighted).
+// A small segmented pill control. Tappable when given onSelect, so it actually
+// changes the preference (falls back to display-only highlight otherwise).
 function Segmented<T extends string>({
   options,
   active,
+  onSelect,
 }: {
   options: { key: T; label: string }[];
   active: T;
+  onSelect?: (key: T) => void;
 }) {
   return (
     <span
@@ -326,8 +346,11 @@ function Segmented<T extends string>({
       {options.map((o) => {
         const isOn = o.key === active;
         return (
-          <span
+          <button
             key={o.key}
+            type="button"
+            onClick={() => onSelect?.(o.key)}
+            disabled={!onSelect}
             className="rounded-full px-2.5 py-1 text-[12px] font-medium transition"
             style={
               isOn
@@ -336,7 +359,7 @@ function Segmented<T extends string>({
             }
           >
             {o.label}
-          </span>
+          </button>
         );
       })}
     </span>
@@ -358,7 +381,7 @@ export const MOCK_PROFILE: ProfileVM = {
   lang: "en",
   lens: "me",
   variableBills: [
-    { name: "Electric (SRP)", icon: "electric", est: "~$89.92 · est. from last 3", on: true },
-    { name: "Verizon", icon: "phone", est: "~$82.83 · est. from last 3", on: true },
+    { id: "electric", name: "Electric (SRP)", icon: "electric", est: "~$89.92 · est. from last 3", on: true },
+    { id: "verizon", name: "Verizon", icon: "phone", est: "~$82.83 · est. from last 3", on: true },
   ],
 };

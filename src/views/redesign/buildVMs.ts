@@ -364,6 +364,7 @@ export function buildFinanceVMs(
     variableBills: data.recurring
       .filter((r) => r.variable && r.active)
       .map((r) => ({
+        id: r.id,
         name: r.name,
         icon: /electric|srp/i.test(r.name) ? ("electric" as const) : ("phone" as const),
         est: `~$${billExpected(r, data.transactions).toFixed(2)} · est. from last 3`,

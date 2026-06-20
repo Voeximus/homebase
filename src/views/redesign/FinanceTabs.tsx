@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Wallet, HeartPulse, User, Users } from "lucide-react";
 import { useStore } from "../../store/FinanceStore";
 import { useAuth } from "../../auth/AuthProvider";
+import { useLang } from "../../components/LanguageProvider";
 import { getLang } from "../../lib/i18n";
 import { syncNow } from "../../lib/plaidClient";
 import type { AppMode } from "../../components/ModeToggle";
@@ -72,7 +73,10 @@ function TopBar({
   onLens: (l: Lens) => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "#0b0f17" }}>
+    <div
+      className="flex items-center justify-between px-4 pb-2.5"
+      style={{ background: "#0b0f17", paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
+    >
       <span
         className="flex rounded-full p-0.5"
         style={{ background: "#141a24", border: "1px solid #232d3a" }}
@@ -114,6 +118,7 @@ export function FinanceTabs({
 }) {
   const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable } = useStore();
   const { session, signOut } = useAuth();
+  const { setLang } = useLang();
   const [tab, setTab] = useState<TabKey>("home");
   const [, setSyncing] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
@@ -268,6 +273,9 @@ export function FinanceTabs({
               onBank: () => setSettingsOpen(true),
               onCards: () => setSettingsOpen(true),
               onAdvanced: () => setSettingsOpen(true),
+              onLang: (l) => setLang(l),
+              onLens,
+              onToggleVariableBill: (id, on) => void setRecurringVariable(id, on),
             }}
           />
         )}
