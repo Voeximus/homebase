@@ -97,7 +97,9 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   "Dining/Takeout": { kind: "variable", appCategory: "dining" },
   "Rideshare/Delivery": { kind: "variable", appCategory: "transport" },
   Shopping: { kind: "variable", appCategory: "shopping" },
-  "Health/Personal": { kind: "variable", appCategory: "health" },
+  // Health/Personal (grooming, pharmacy, personal care) folds into the merged
+  // Household + Hygiene category (`shopping`).
+  "Health/Personal": { kind: "variable", appCategory: "shopping" },
   Pets: { kind: "variable", appCategory: "other" },
   "Subscriptions/Digital": { kind: "variable", appCategory: "subscriptions" },
   "Travel/Other": { kind: "variable", appCategory: "other" },
@@ -126,7 +128,7 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
   { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAMS? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
   { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|PANDA|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
   { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
-  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "health" },
+  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "shopping" },
   { re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i, appCategory: "subscriptions" },
 ];
 

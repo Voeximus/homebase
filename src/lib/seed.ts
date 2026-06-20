@@ -14,8 +14,10 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: "transport", name: "Transport", icon: "⛽", color: "#f97316", type: "expense" },
   { id: "housing", name: "Housing", icon: "🏠", color: "#6366f1", type: "expense" },
   { id: "utilities", name: "Utilities", icon: "💡", color: "#eab308", type: "expense" },
-  { id: "health", name: "Health", icon: "💊", color: "#ef4444", type: "expense" },
-  { id: "shopping", name: "Shopping", icon: "🛍️", color: "#ec4899", type: "expense" },
+  // "shopping" = the single Household + Hygiene category (covers personal care /
+  // hygiene AND general household items). The old separate "health" (grooming)
+  // category was merged in — legacy `health` rows are migrated to this id.
+  { id: "shopping", name: "Household + Hygiene", icon: "🧴", color: "#f97316", type: "expense" },
   { id: "entertainment", name: "Entertainment", icon: "🎬", color: "#a855f7", type: "expense" },
   { id: "subscriptions", name: "Subscriptions", icon: "🔁", color: "#8b5cf6", type: "expense" },
   { id: "kids", name: "Kids", icon: "🧸", color: "#f472b6", type: "expense" },

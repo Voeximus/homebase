@@ -23,8 +23,9 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   { key: "groceries", label: "Groceries", icon: "🛒", target: 500, cats: ["groceries"], note: "measured food" },
   { key: "gas", label: "Gas + convenience", icon: "⛽", target: 250, cats: ["transport"], note: "commute · rideshare" },
   { key: "dining", label: "Dining out", icon: "🍽️", target: 150, cats: ["dining"], note: "a few times, to enjoy life" },
-  { key: "household", label: "Household + hygiene", icon: "🧴", target: 90, cats: ["shopping"], note: "supplies · hygiene" },
-  { key: "health", label: "Health + grooming", icon: "💊", target: 110, cats: ["health"], note: "supplements · haircut" },
+  // Household + Hygiene = the merged line (was separate "Household" + "Health/grooming").
+  // cats keeps the legacy "health" id so any un-migrated row still counts here.
+  { key: "household", label: "Household + Hygiene", icon: "🧴", target: 200, cats: ["shopping", "health"], note: "supplies · hygiene · grooming" },
   { key: "pets", label: "Dog / pets", icon: "🐾", target: 100, cats: ["pets"], note: "food · vet · toys" },
   { key: "subscriptions", label: "Subscriptions", icon: "🔁", target: 50, cats: ["subscriptions", "entertainment"], note: "streaming · apps" },
 ];
