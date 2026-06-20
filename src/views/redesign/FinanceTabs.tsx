@@ -127,6 +127,7 @@ export function FinanceTabs({
   const [billsOpen, setBillsOpen] = useState(false);
   const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
   const [txnId, setTxnId] = useState<string | null>(null);
+  const [ledgerView, setLedgerView] = useState<"all" | "unusual">("all");
 
   const anySheetOpen =
     ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
@@ -235,8 +236,14 @@ export function FinanceTabs({
               onBudget: () => setTab("insights"),
               onNext: () => setMarkSentOpen(true),
               onBills: () => setBillsOpen(true),
-              onRecent: () => setLedgerOpen(true),
-              onAnomaly: () => setLedgerOpen(true),
+              onRecent: () => {
+                setLedgerView("all");
+                setLedgerOpen(true);
+              },
+              onAnomaly: () => {
+                setLedgerView("unusual");
+                setLedgerOpen(true);
+              },
             }}
           />
         ) : tab === "insights" ? (
@@ -267,7 +274,16 @@ export function FinanceTabs({
       </div>
       <TabNav active={tab} onTab={setTab} />
 
-      <LedgerSheet open={ledgerOpen} onClose={() => setLedgerOpen(false)} txns={ledgerTxns} hasRule={hasRule} />
+      <LedgerSheet
+        open={ledgerOpen}
+        onClose={() => setLedgerOpen(false)}
+        txns={
+          ledgerView === "unusual"
+            ? ledgerTxns.filter((t) => vms.home.anomalyIds.includes(t.id))
+            : ledgerTxns
+        }
+        hasRule={hasRule}
+      />
       <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
       <CategorySheet

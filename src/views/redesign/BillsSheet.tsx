@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Receipt, X, CircleCheck, CalendarDays, ArrowLeft } from "lucide-react";
+import { Receipt, X, CircleCheck, CalendarDays, ArrowLeft, Check } from "lucide-react";
+import { catColor, catIcon } from "../../lib/catColor";
 import type { BillsVM, BillRow } from "./vm";
 
 const money2 = (n: number) =>
@@ -20,7 +21,9 @@ export function BillsSheet({
   onPay?: (b: BillRow) => void;
 }) {
   const [showCal, setShowCal] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
   if (!open) return null;
+  const dayBills = selectedDay ? vm.monthBills.filter((b) => b.day === selectedDay) : [];
   const mon = vm.monthLabel.slice(0, 3);
   const calBy = new Map(vm.calendar.map((c) => [c.day, c]));
   const cells: (number | null)[] = [];
@@ -77,8 +80,14 @@ export function BillsSheet({
                 if (d === null) return <div key={i} />;
                 const ev = calBy.get(d);
                 const isToday = d === vm.todayNum;
+                const isSel = d === selectedDay;
                 return (
-                  <div key={i} className="flex flex-col items-center justify-start py-1">
+                  <button
+                    key={i}
+                    onClick={() => setSelectedDay(d)}
+                    className="flex flex-col items-center justify-start rounded-lg py-1 transition"
+                    style={{ background: isSel ? "#1b2735" : "transparent" }}
+                  >
                     {isToday ? (
                       <span
                         className="flex h-6 w-6 items-center justify-center rounded-full font-bold"
@@ -95,10 +104,59 @@ export function BillsSheet({
                         style={{ background: ev.in ? "#46d18a" : "#fb923c" }}
                       />
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
+
+            {selectedDay && (
+              <div className="mt-3 border-t pt-3" style={{ borderColor: "#1b232e" }}>
+                <div className="mb-2 text-[12px] font-semibold text-bone">
+                  {mon} {selectedDay}
+                </div>
+                {dayBills.length === 0 ? (
+                  <p className="text-[12px]" style={{ color: "#7e8a98" }}>
+                    Nothing due this day.
+                  </p>
+                ) : (
+                  dayBills.map((b) => {
+                    const Icon = catIcon(b.catId);
+                    const col = catColor(b.catId);
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => !b.paid && onPay?.(b)}
+                        className="flex w-full items-center gap-2.5 py-1.5 text-left"
+                      >
+                        <span
+                          className="flex h-7 w-7 items-center justify-center rounded-lg"
+                          style={{ background: col + "26", color: col }}
+                        >
+                          <Icon size={14} />
+                        </span>
+                        <span
+                          className="flex-1 text-[13px]"
+                          style={{
+                            color: b.paid ? "#7e8a98" : "#e6edf3",
+                            textDecoration: b.paid ? "line-through" : "none",
+                          }}
+                        >
+                          {b.name}
+                        </span>
+                        {b.paid && <Check size={13} style={{ color: "#46d18a" }} />}
+                        <span
+                          className="text-[13px] font-semibold"
+                          style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}
+                        >
+                          {b.variable ? "~" : ""}
+                          {money2(b.amount)}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
             <div className="mt-3 flex gap-3.5 border-t pt-3" style={{ borderColor: "#1b232e" }}>
               <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
                 <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#46d18a" }} /> Payday

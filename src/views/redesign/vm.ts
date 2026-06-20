@@ -25,6 +25,7 @@ export interface HomeVM {
   budgetTarget: number;
   donut: { catId: string; amount: number }[];
   anomalyCount: number; // 0 = hide the alert
+  anomalyIds: string[]; // the flagged transactions (for the focused view)
   streakDay: number;
   streakTotal: number;
   recent: RecentRow[];
@@ -61,4 +62,5 @@ export interface BillsVM {
   daysInMonth: number;
   firstWeekday: number; // 0=Sun … the weekday of day 1
   calendar: CalDay[]; // days that carry a dot
+  monthBills: (BillRow & { paid: boolean })[]; // every bill this month (for day tap)
 }

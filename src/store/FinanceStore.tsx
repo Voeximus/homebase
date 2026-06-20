@@ -775,33 +775,43 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error) console.error(error);
       },
       async makeRecurringBill(txnId, cadence) {
-        // Promote a recurring subscription to a bill: create the recurring row,
-        // mark THIS transaction as its payment (so it leaves variable spend), and
-        // teach the categorizer that this merchant is a bill going forward.
+        // Promote a charge to a bill: mark THIS transaction as its payment (so it
+        // leaves variable spend) and teach the categorizer. DEDUPES — if a bill
+        // already exists for this merchant, reuse it instead of spawning a copy.
         const txn = dataRef.current.transactions.find((x) => x.id === txnId);
         if (!txn) return;
-        const name = (merchantKey(txn.description) || txn.description || "Subscription").slice(0, 40);
+        const key = merchantKey(txn.description);
         const day = parseInt(txn.date.slice(8, 10), 10) || 1;
-        const { data: rec, error: rErr } = await supabase
-          .from("recurring")
-          .insert({
-            name,
-            amount: txn.amount,
-            direction: "out",
-            cadence,
-            category_id: "subscriptions",
-            active: true,
-            due_days: [day],
-          })
-          .select("id")
-          .single();
-        if (rErr || !rec) return console.error(rErr);
-        const appliesTo: AppliesTo = {
-          kind: "bill",
-          recurringId: rec.id,
-          monthKey: txn.date.slice(0, 7),
-          day,
-        };
+        const monthKey = txn.date.slice(0, 7);
+        // A clean display name (the real merchant), not the normalized key.
+        const cleanName = (txn.description || "Subscription").trim().slice(0, 40);
+
+        // Reuse an existing active bill whose merchant matches (kills duplicates).
+        const existing = dataRef.current.recurring.find(
+          (r) => r.active && r.direction === "out" && merchantKey(r.name) === key,
+        );
+        let recId = existing?.id;
+        let billName = existing?.name ?? cleanName;
+        if (!recId) {
+          const { data: rec, error: rErr } = await supabase
+            .from("recurring")
+            .insert({
+              name: cleanName,
+              amount: txn.amount,
+              direction: "out",
+              cadence,
+              category_id: "subscriptions",
+              active: true,
+              due_days: [day],
+            })
+            .select("*")
+            .single();
+          if (rErr || !rec) return console.error(rErr);
+          recId = rec.id;
+          billName = rec.name;
+          setData((p) => ({ ...p, recurring: [...p.recurring, mapRecurring(rec)] }));
+        }
+        const appliesTo: AppliesTo = { kind: "bill", recurringId: recId, monthKey, day };
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -814,7 +824,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .eq("id", txnId);
         await supabase
           .from("merchant_rules")
-          .upsert({ pattern: name, kind: "bill", category_id: null, bill_name: name }, { onConflict: "pattern" });
+          .upsert({ pattern: key, kind: "bill", category_id: null, bill_name: billName }, { onConflict: "pattern" });
       },
       async setRecurringVariable(id, variable) {
         // Flag a bill as variable-amount — display/projection only, moves no money.

@@ -43,6 +43,7 @@ const HOME: HomeVM = {
     { catId: "health", amount: 30 },
   ],
   anomalyCount: 3,
+  anomalyIds: [],
   streakDay: 4,
   streakTotal: 90,
   sinceMonday: 1136,
@@ -72,6 +73,14 @@ const BILLS: BillsVM = {
     { day: 10, in: false, out: true }, { day: 13, in: false, out: true }, { day: 15, in: true, out: true },
     { day: 16, in: false, out: true }, { day: 17, in: false, out: true }, { day: 18, in: false, out: true },
     { day: 20, in: false, out: true }, { day: 29, in: true, out: true }, { day: 30, in: false, out: true },
+  ],
+  monthBills: [
+    { id: "rent@1", name: "Rent", catId: "housing", amount: 1232.44, day: 1, dateLabel: "Jun 1", relLabel: "overdue", variable: false, paid: true },
+    { id: "electric@13", name: "Electric (SRP)", catId: "utilities", amount: 85, day: 13, dateLabel: "Jun 13", relLabel: "overdue", variable: true, paid: true },
+    { id: "verizon@17", name: "Verizon", catId: "utilities", amount: 83, day: 17, dateLabel: "Jun 17", relLabel: "overdue", variable: true, paid: true },
+    { id: "claude@20", name: "Claude Pro", catId: "subscriptions", amount: 21.62, day: 20, dateLabel: "Jun 20", relLabel: "tomorrow", variable: false, paid: false },
+    { id: "tmobile@29", name: "T-Mobile", catId: "utilities", amount: 27.48, day: 29, dateLabel: "Jun 29", relLabel: "in 10 days", variable: false, paid: false },
+    { id: "mom@30", name: "Mom", catId: "other", amount: 400, day: 30, dateLabel: "Jun 30", relLabel: "in 11 days", variable: false, paid: false },
   ],
 };
 

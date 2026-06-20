@@ -156,12 +156,15 @@ export function buildFinanceVMs(
   );
   const byCatAmts: Record<string, number[]> = {};
   monthFree.forEach((t) => (byCatAmts[t.categoryId] ??= []).push(t.amount));
-  const anomalyCount = monthFree.filter((t) => {
-    const arr = byCatAmts[t.categoryId];
-    if (arr.length < 3 || t.amount <= 25) return false;
-    const mean = arr.reduce((s, a) => s + a, 0) / arr.length;
-    return t.amount > 2.5 * mean;
-  }).length;
+  const anomalyIds = monthFree
+    .filter((t) => {
+      const arr = byCatAmts[t.categoryId];
+      if (arr.length < 3 || t.amount <= 25) return false;
+      const mean = arr.reduce((s, a) => s + a, 0) / arr.length;
+      return t.amount > 2.5 * mean;
+    })
+    .map((t) => t.id);
+  const anomalyCount = anomalyIds.length;
 
   // ── bills + money calendar ──
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -223,6 +226,18 @@ export function buildFinanceVMs(
     daysInMonth,
     firstWeekday,
     calendar: Object.entries(calMap).map(([d, v]) => ({ day: +d, in: v.in, out: v.out })),
+    monthBills: outEntries.map((e) => ({
+      id: `${e.recurringId ?? e.label}@${e.day}`,
+      recurringId: e.recurringId,
+      name: e.label,
+      catId: recCatOf(e.recurringId),
+      amount: e.amount,
+      day: e.day,
+      dateLabel: fmtDay(dayDate(e.day)),
+      relLabel: relLabelOf(e.day),
+      variable: !!e.variable,
+      paid: isBillPaid(e),
+    })),
   };
 
   const home: HomeVM = {
@@ -238,6 +253,7 @@ export function buildFinanceVMs(
     budgetTarget: target,
     donut,
     anomalyCount,
+    anomalyIds,
     streakDay: commit.day,
     streakTotal: commit.total,
     recent,
