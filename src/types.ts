@@ -57,6 +57,10 @@ export interface Transaction {
   // The user dismissed the "unusual purchase" flag for this charge — it won't be
   // surfaced as an anomaly again.
   anomalyAck?: boolean;
+  // A still-processing bank charge (Plaid status='pending'). Shown immediately
+  // with a "processing" badge; EXCLUDED from budget/firepower/anomaly math until
+  // it posts (then the pending row is swapped for the posted one — no double-count).
+  pending?: boolean;
   createdAt: string; // ISO timestamp
 }
 

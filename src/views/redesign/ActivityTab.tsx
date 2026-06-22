@@ -18,6 +18,7 @@ export interface ActivityRow {
   amount: number; // positive; fate 'income' controls sign/color
   fate: ActivityFate;
   badgeLabel: string;
+  pending?: boolean; // still-processing bank charge
 }
 
 export interface ActivityVM {
@@ -38,6 +39,17 @@ type FilterKey = "all" | "budget" | "review";
 
 function FateBadge({ row }: { row: ActivityRow }) {
   const c = catColor(row.catId);
+  // a still-processing bank charge — a pulsing amber "Processing" pill
+  if (row.pending) {
+    return (
+      <span
+        className="bump rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+        style={{ background: "#2a2410", color: "#e3b341" }}
+      >
+        ◌ {row.badgeLabel}
+      </span>
+    );
+  }
   if (row.fate === "envelope") {
     return (
       <span

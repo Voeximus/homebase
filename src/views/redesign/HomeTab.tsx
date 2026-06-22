@@ -231,8 +231,9 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-bone">{r.merchant}</div>
-                    <div className="text-[11px]" style={{ color: "#7e8a98" }}>
-                      {r.sub}
+                    <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "#7e8a98" }}>
+                      {r.pending && <span className="font-semibold" style={{ color: "#e3b341" }}>◌ {t("Processing")}</span>}
+                      {r.pending ? "" : r.sub}
                     </div>
                   </div>
                   <span

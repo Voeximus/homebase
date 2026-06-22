@@ -389,8 +389,52 @@ async function syncConnection(connId: string, force = false) {
       }
     }
 
-    // (pending_preview retired — the "still processing" hold = current−available,
-    // schema_v13 — replaced the itemized in-flight pending rows nothing read.)
+    // --- pending (still-processing) charges -----------------------------------
+    // Show charges the instant Plaid sees them, before they post. status='pending'
+    // ledger rows: DISPLAY-ONLY (the balance stays bank-truth `available`, which
+    // already nets pending holds; the app excludes pending from budget/anomaly
+    // math). When a pending charge posts, Plaid links the posted txn to it via
+    // pending_transaction_id → reconcile puts that id in pendingRemove → we delete
+    // the pending row and the posted path inserts the real one (no double-count).
+    // No bill/debt matching here — that runs on the posted row.
+    //
+    // We delete-then-insert (avoids ON CONFLICT on the partial provider index).
+    // The delete is HARD-SCOPED to status='pending' so it can NEVER remove a real
+    // posted transaction.
+    const removeIds = [...new Set([...ops.pendingRemove, ...ops.pendingUpsert.map((r) => r.providerTxnId)])];
+    if (removeIds.length) {
+      await admin
+        .from("transactions")
+        .delete()
+        .eq("provider", "plaid")
+        .eq("status", "pending")
+        .in("provider_txn_id", removeIds);
+    }
+    const pendingRows: any[] = [];
+    for (const row of ops.pendingUpsert) {
+      const acctId = acctIdByProv[row.accountId];
+      if (!acctId) continue;
+      if (row.amount >= 0) continue; // outflows (spend) only — skip pending credits
+      const c = classify(row.description, row.amount, learned);
+      if (c.kind === "skip") continue;
+      pendingRows.push({
+        date: row.date,
+        amount: Math.abs(row.amount),
+        type: "expense",
+        category_id: c.appCategory ?? "other",
+        description: row.description,
+        account_id: acctId,
+        provider: "plaid",
+        provider_txn_id: row.providerTxnId,
+        provider_account_id: row.accountId,
+        status: "pending",
+        needs_review: c.confidence === "low",
+      });
+    }
+    if (pendingRows.length) {
+      const { error: pErr } = await admin.from("transactions").insert(pendingRows);
+      if (pErr) console.warn("pending insert:", pErr.message);
+    }
 
     await admin
       .from("bank_connections")

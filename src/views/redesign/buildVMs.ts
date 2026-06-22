@@ -152,6 +152,7 @@ export function buildFinanceVMs(
     sub: `${catName(tx.categoryId)} · ${relDay(tx.date)}`,
     amount: tx.amount,
     income: tx.type === "income",
+    pending: !!tx.pending,
   }));
 
   // ── "spent since Monday" — lens-filtered (matches the lists, not the household) ──
@@ -159,14 +160,14 @@ export function buildFinanceVMs(
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((dow + 6) % 7));
   const mondayKey = dateKeyOf(monday);
   const sinceMonday = visible
-    .filter((t) => t.type === "expense" && t.date >= mondayKey)
+    .filter((t) => t.type === "expense" && t.date >= mondayKey && !t.pending)
     .reduce((s, t) => s + t.amount, 0);
 
   // ── simple anomaly count: a free-form charge > 2.5× its category's monthly mean.
   //    From `visible` (lens-filtered) so the count matches what the list can show —
   //    otherwise a spouse's anomaly counts here but opens to an empty lens-filtered list.
   const monthFree = visible.filter(
-    (t) => t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo,
+    (t) => t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo && !t.pending,
   );
   const byCatAmts: Record<string, number[]> = {};
   monthFree.forEach((t) => (byCatAmts[t.categoryId] ??= []).push(t.amount));
@@ -370,7 +371,8 @@ export function buildFinanceVMs(
       sub: relDay(tx.date),
       amount: tx.amount,
       fate: f.fate,
-      badgeLabel: f.badge,
+      badgeLabel: tx.pending ? t("Processing") : f.badge,
+      pending: !!tx.pending,
     };
   });
   const needsReview = monthVisible.filter((tx) => fateOf(tx).fate === "review").length;

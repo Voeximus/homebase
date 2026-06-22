@@ -10,6 +10,7 @@ export interface RecentRow {
   sub: string; // "Groceries · today"
   amount: number; // positive; income flag controls sign/color
   income?: boolean;
+  pending?: boolean; // still-processing bank charge
 }
 
 export interface HomeVM {

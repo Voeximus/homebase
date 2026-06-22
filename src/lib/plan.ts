@@ -272,6 +272,7 @@ export function variableSpentThisMonth(
       (t) =>
         t.type === "expense" &&
         t.date.slice(0, 7) === monthKey &&
+        !t.pending && // still-processing charges don't count until they post
         // Free-form living spend only — anything with an appliesTo (a bill, a
         // debt payment, a goal contribution, …) is firepower/fixed, not variable.
         !t.appliesTo,
@@ -288,7 +289,7 @@ export function spentByCategory(
 ): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of transactions) {
-    if (t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo) {
+    if (t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo && !t.pending) {
       if (t.splits && t.splits.length) {
         for (const s of t.splits) out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;
       } else {

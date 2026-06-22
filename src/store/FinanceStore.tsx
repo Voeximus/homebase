@@ -46,6 +46,7 @@ function mapTxn(r: any): Transaction {
     appliesTo: r.applies_to ?? undefined,
     splits: Array.isArray(r.splits) && r.splits.length ? r.splits : undefined,
     anomalyAck: !!r.anomaly_ack,
+    pending: r.status === "pending",
     createdAt: r.created_at,
   };
 }

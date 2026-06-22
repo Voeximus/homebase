@@ -520,6 +520,7 @@ const SEED: Record<string, string> = {
   "{n} meals · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
   "{n} meal · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
   "1 {unit} ≈ {g} g": "1 {unit} ≈ {g} 克",
+  Processing: "处理中",
   // unusual-purchase review
   "Bigger than your usual for the category. Review, then dismiss.": "比该分类的平时金额高。查看后可忽略。",
   "All clear — nothing unusual.": "一切正常 — 没有异常。",
