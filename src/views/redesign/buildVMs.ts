@@ -382,6 +382,7 @@ export function buildFinanceVMs(
     monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
     counted: variableSpentThisMonth(visible, monthKey),
     rows,
+    processing,
   };
 
   // ── Profile ──

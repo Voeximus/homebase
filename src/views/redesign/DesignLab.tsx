@@ -55,6 +55,7 @@ const MOCK_ACTIVITY: ActivityVM = {
     { id: "r4", merchant: "SQ *JOHNNY'S", catId: "other", amount: 18.4, fate: "review", badgeLabel: "Needs review" },
     { id: "r5", merchant: "Payroll", catId: "salary", amount: 991.0, fate: "income", badgeLabel: "Income · not in budget" },
   ],
+  processing: 144.43,
 };
 
 const MOCK_PROFILE: ProfileVM = {

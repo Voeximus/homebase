@@ -27,6 +27,7 @@ export interface ActivityVM {
   monthLabel: string;
   counted: number;
   rows: ActivityRow[];
+  processing: number; // $ held at the bank but not yet itemized (BoA posts later)
 }
 
 interface ActivityTaps {
@@ -180,6 +181,22 @@ export function ActivityTab({
           {chip("budget", t("In budget"))}
           {chip("review", t("Needs review"), vm.needsReview)}
         </div>
+
+        {/* ── still-processing notice — BoA holds pending charges as a lump and
+              only itemizes each one when it posts, so explain where they are ── */}
+        {vm.processing > 0 && (
+          <div className="flex items-start gap-2.5 rounded-[13px] p-3" style={{ background: "#241f12", border: "1px solid #4a3f1c" }}>
+            <span className="bump mt-0.5 text-[15px] leading-none" style={{ color: "#e3b341" }}>◌</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-semibold" style={{ color: "#e3b341" }}>
+                {t("~{amount} processing", { amount: money(vm.processing) })}
+              </div>
+              <div className="mt-0.5 text-[11px]" style={{ color: "#9aa6b2" }}>
+                {t("Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They'll appear + notify you the moment they clear.")}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Month group ── */}
         <div>
