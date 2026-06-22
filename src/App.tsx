@@ -12,6 +12,7 @@ import { getLens, saveLens, type Lens } from "./lib/lens";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 import { syncNow } from "./lib/plaidClient";
 import { FinanceTabs } from "./views/redesign/FinanceTabs";
+import { UpdatePrompt } from "./components/UpdatePrompt";
 
 // ?lab — the bento design lab (mock data, no login). DEV-ONLY: lazy + gated on
 // import.meta.env.DEV so the harness AND its mock fixtures tree-shake entirely
@@ -49,9 +50,12 @@ export default function App() {
     );
   }
   return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
+    <>
+      <UpdatePrompt />
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
+    </>
   );
 }
 

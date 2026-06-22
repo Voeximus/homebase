@@ -521,6 +521,7 @@ const SEED: Record<string, string> = {
   "{n} meal · {kcal} kcal": "{n} 餐 · {kcal} 大卡",
   "1 {unit} ≈ {g} g": "1 {unit} ≈ {g} 克",
   Processing: "处理中",
+  "Update available — tap to refresh": "有更新 — 点击刷新",
   "~{amount} processing": "约 {amount} 处理中",
   "Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They'll appear + notify you the moment they clear.":
     "银行先把这些扣款挂起，等入账后才逐笔列出（通常 1–3 天）。一入账就会显示并通知你。",

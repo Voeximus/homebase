@@ -12,7 +12,13 @@ export default defineConfig(({ mode }) => ({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' (not autoUpdate): a new deploy surfaces an in-app "Update
+      // available" button instead of silently swapping the SW (which left the
+      // running page stale until you closed + reopened). injectRegister:false so
+      // the useRegisterSW() hook is the single registrar and its onNeedRefresh
+      // callback fires reliably.
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Homebase',
