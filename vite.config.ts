@@ -35,6 +35,9 @@ export default defineConfig(({ mode }) => ({
         // Precache the app shell so it opens instantly; Supabase API/realtime
         // calls are cross-origin and always hit the network (fresh data).
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // Pull our Web Push handlers (push / notificationclick) into the generated
+        // service worker so notifications work in the installed PWA.
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

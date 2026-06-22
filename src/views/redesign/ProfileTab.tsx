@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Pencil,
   Landmark,
@@ -9,6 +10,7 @@ import {
   Languages,
   Users,
   HeartPulse,
+  Bell,
   Zap,
   Smartphone,
   LogOut,
@@ -16,6 +18,7 @@ import {
 } from "lucide-react";
 import { BRAND_GRADIENT } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
+import { disablePush, enablePush, getPushStatus, type PushStatus } from "../../lib/push";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -83,6 +86,61 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
 
 // A horizontal divider matching the in-group row border.
 const ROW_BORDER = "#1d2530";
+
+// Phone push notifications — self-contained (reads/sets its own state via the
+// push lib). Subscribing once covers transaction + health + bill alerts.
+function PushRow() {
+  const [status, setStatus] = useState<PushStatus>("default");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getPushStatus().then(setStatus);
+  }, []);
+  const on = status === "subscribed";
+  const locked = status === "unsupported" || status === "denied";
+  const toggle = async () => {
+    if (busy || locked) return;
+    setBusy(true);
+    try {
+      if (on) {
+        await disablePush();
+        setStatus("default");
+      } else {
+        setStatus(await enablePush());
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sub =
+    status === "unsupported"
+      ? t("Add Homebase to your home screen to enable")
+      : status === "denied"
+        ? t("Blocked — allow notifications in your phone's settings")
+        : on
+          ? t("On — transaction & health alerts on this phone")
+          : t("Off — tap to get alerts on this phone");
+  return (
+    <div className="flex items-center gap-3 border-b p-4" style={{ borderColor: ROW_BORDER }}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#34c5e826", color: "#34c5e8" }}>
+        <Bell size={17} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-medium text-bone">{t("Notifications")}</div>
+        <div className="text-[11.5px]" style={{ color: "#8b97a6" }}>{sub}</div>
+      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy || locked}
+        className="relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
+        style={{ background: on ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
+        aria-pressed={on}
+      >
+        <span className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all" style={{ left: on ? "19px" : "3px" }} />
+      </button>
+    </div>
+  );
+}
 
 export function ProfileTab({
   vm,
@@ -248,6 +306,8 @@ export function ProfileTab({
               onSelect={taps.onLens}
             />
           </div>
+
+          <PushRow />
 
           <button
             onClick={taps.onHealth}
