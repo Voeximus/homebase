@@ -138,8 +138,33 @@ async function linkToken(p: any) {
     body.products = ["transactions"];
   }
   if (PLAID_REDIRECT_URI) body.redirect_uri = PLAID_REDIRECT_URI; // required for OAuth banks
+  const webhook = Deno.env.get("PLAID_WEBHOOK_URL");
+  if (webhook) body.webhook = webhook; // Plaid pings this on new transactions
   const r = await plaid("/link/token/create", body);
   return json({ link_token: r.link_token });
+}
+
+// Point every existing linked item at our webhook URL, so new charges trigger a
+// near-instant sync + push (idempotent — safe to re-run).
+async function setWebhook() {
+  const url = Deno.env.get("PLAID_WEBHOOK_URL");
+  if (!url) return json({ error: "PLAID_WEBHOOK_URL not set" }, 400);
+  const { data: conns } = await admin.from("bank_connections").select("id");
+  const out: Record<string, unknown>[] = [];
+  for (const c of conns ?? []) {
+    const { data: token } = await admin.rpc("get_connection_token", { p_conn_id: c.id });
+    if (!token) {
+      out.push({ id: c.id, error: "no token" });
+      continue;
+    }
+    try {
+      await plaid("/item/webhook/update", { access_token: token, webhook: url });
+      out.push({ id: c.id, ok: true });
+    } catch (e) {
+      out.push({ id: c.id, error: String((e as Error)?.message ?? e).slice(0, 150) });
+    }
+  }
+  return json({ set: out });
 }
 
 async function exchange(p: any) {
@@ -441,7 +466,15 @@ async function syncConnection(connId: string, force = false) {
       .update({ cursor, last_sync_at: new Date().toISOString(), status: "ok", last_error: null })
       .eq("id", connId);
 
-    return { posted: ops.upsertPosted.length, pending: ops.pendingUpsert.length, reversed: ops.reverse.length };
+    // Summary of what landed this sync — the webhook uses it to push a phone
+    // notification ("$X · Merchant"). Posted spend + bills + pending charges.
+    const newRows = [
+      ...Object.values(postedByAcct).flat(),
+      ...Object.values(billByAcct).flat(),
+      ...pendingRows,
+    ].map((r: any) => ({ description: r.description, amount: r.amount, pending: r.status === "pending" }));
+
+    return { posted: ops.upsertPosted.length, pending: ops.pendingUpsert.length, reversed: ops.reverse.length, newRows };
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
     await admin
@@ -488,6 +521,7 @@ Deno.serve(async (req) => {
       case "link_token": return await linkToken(payload);
       case "exchange": return await exchange(payload);
       case "sync": return await syncAll(payload);
+      case "set_webhook": return await setWebhook();
       case "disconnect": return await disconnect(payload);
       default: return json({ error: `unknown action: ${payload.action}` }, 400);
     }
