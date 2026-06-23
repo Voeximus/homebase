@@ -16,7 +16,8 @@ function paidKey(at: any) {
 }
 
 Deno.serve(async (req) => {
-  if (TOKEN && new URL(req.url).searchParams.get("token") !== TOKEN) {
+  // fail CLOSED: a missing/empty CRON_TOKEN denies everything (never disables auth)
+  if (!TOKEN || new URL(req.url).searchParams.get("token") !== TOKEN) {
     return new Response("forbidden", { status: 403 });
   }
   // Arizona local time (UTC-7, no DST) — meal_days/bills are keyed to local date.

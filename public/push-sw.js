@@ -22,7 +22,10 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/homebase/";
+  // SECURITY: only ever open an in-scope (same-origin) URL, so a notification can
+  // never deep-link the device to an external/attacker page.
+  const raw = (event.notification.data && event.notification.data.url) || self.registration.scope;
+  const url = typeof raw === "string" && raw.indexOf(self.registration.scope) === 0 ? raw : self.registration.scope;
   event.waitUntil(
     (async () => {
       const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

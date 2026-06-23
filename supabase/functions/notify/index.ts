@@ -22,9 +22,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const p = await req.json();
+    // only allow same-origin notification targets (defense-in-depth; the SW also
+    // clamps on click) so a push can't deep-link a device to an external page.
+    const app = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
+    const url = typeof p.url === "string" && p.url.startsWith(app) ? p.url : app;
     const res = await sendPush(
       admin,
-      { title: p.title ?? "Homebase", body: p.body ?? "", url: p.url, tag: p.tag },
+      { title: p.title ?? "Homebase", body: p.body ?? "", url, tag: p.tag },
       p.owner,
     );
     return json(res);

@@ -18,7 +18,8 @@ const TXN_CODES = ["SYNC_UPDATES_AVAILABLE", "DEFAULT_UPDATE", "INITIAL_UPDATE",
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  if (WEBHOOK_TOKEN && url.searchParams.get("token") !== WEBHOOK_TOKEN) {
+  // fail CLOSED: a missing/empty PLAID_WEBHOOK_TOKEN denies everything
+  if (!WEBHOOK_TOKEN || url.searchParams.get("token") !== WEBHOOK_TOKEN) {
     return new Response("forbidden", { status: 403 });
   }
   let body: Record<string, unknown> = {};
