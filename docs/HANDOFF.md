@@ -1,6 +1,11 @@
 # Homebase — Session Handoff / Current State
 
-_Last updated: 2026-06-20l (pending transactions + phone push notifications). This is the regrounding doc for resuming work on Homebase. Read this first, then `C:\Users\ginoc\.claude\projects\C--\memory\project_homebase.md` for the deep history._
+_Last updated: 2026-06-20m (previous-day macro edit, notification badge, update-ready alert). This is the regrounding doc for resuming work on Homebase. Read this first, then `C:\Users\ginoc\.claude\projects\C--\memory\project_homebase.md` for the deep history._
+
+> **⭐ 2026-06-20m — PREV-DAY MACROS + NOTIFICATION BADGE + UPDATE ALERT (shipped live, commit `93001f2`; deploy green).**
+> - **Previous-day view/edit (Meal Builder solo):** a date navigator in `DaySummary` (◀ / ▶ capped at today; tap label → jump to Today). `SoloMode` uses a `viewDate` state (default `today`); `getDay`/`update`/meals/summary all key off it, so any past day is fully editable (add/edit/remove). The 8 PM nudge + adherence streak stay tied to real `today` (`showNudge` gated on `isToday`). Meals container retitles to the date. Verified live (banana on Yesterday persisted, Today separate).
+> - **Notification badge (`public/notification-badge.png`):** Android renders the status-bar badge as a flat silhouette → a color icon showed as a white square. Generated a monochrome white house PNG (`scripts/gen-badge.mjs` + sharp) and set it as the push `badge` in `public/push-sw.js`; the big `icon` stays the full logo. (iOS uses the installed app icon for the notification regardless.)
+> - **Update-ready alert:** `UpdatePrompt`'s `useRegisterSW({ onNeedRefresh })` now also fires a local "⬆️ Homebase update ready" notification when a new version is detected AND the app is backgrounded (+ permission granted) — complements the in-app pill. Shows on device after the NEXT deploy.
 
 > **⭐ Homebase now has a LIVE Plaid bank feed.** Gino's real Bank of America accounts auto-sync (balances + categorized transactions). The old manual/reconciled data was wiped (full backup taken); **Plaid is now the source of truth.** See **"⭐ Live bank feed"** below. The pre-Plaid baseline is kept only for historical reference.
 >
