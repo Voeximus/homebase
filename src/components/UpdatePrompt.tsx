@@ -22,6 +22,28 @@ export function UpdatePrompt() {
         if (document.visibilityState === "visible") check();
       });
     },
+    onNeedRefresh() {
+      // When a new version is ready and the app ISN'T in front, drop a local
+      // notification so you know to update (the in-app pill covers the foreground).
+      try {
+        if (
+          document.visibilityState === "hidden" &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          navigator.serviceWorker.ready.then((reg) =>
+            reg.showNotification(t("⬆️ Homebase update ready"), {
+              body: t("A new version is ready — open Homebase and tap Update."),
+              icon: "/homebase/pwa-192x192.png",
+              badge: "/homebase/notification-badge.png",
+              tag: "app-update",
+            }),
+          );
+        }
+      } catch {
+        /* notifications optional */
+      }
+    },
   });
 
   if (!needRefresh) return null;

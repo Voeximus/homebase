@@ -522,6 +522,10 @@ const SEED: Record<string, string> = {
   "1 {unit} ≈ {g} g": "1 {unit} ≈ {g} 克",
   Processing: "处理中",
   "Update available — tap to refresh": "有更新 — 点击刷新",
+  "⬆️ Homebase update ready": "⬆️ Homebase 有更新",
+  "A new version is ready — open Homebase and tap Update.": "新版本已就绪 — 打开 Homebase 点击更新。",
+  Today: "今天",
+  Yesterday: "昨天",
   "~{amount} processing": "约 {amount} 处理中",
   "Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They'll appear + notify you the moment they clear.":
     "银行先把这些扣款挂起，等入账后才逐笔列出（通常 1–3 天）。一入账就会显示并通知你。",

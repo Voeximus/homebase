@@ -4,6 +4,8 @@ import {
   Bookmark,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Flame,
   Minus,
   Plus,
@@ -161,8 +163,22 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const today = todayStr();
   const target = DAILY[person] as Macros;
   const { getDay, setDay, mealDays, savedMeals, addSavedMeal, deleteSavedMeal } = useHealth();
-  const log = getDay(person, today);
-  const update = (fn: (l: DayLog) => DayLog) => setDay(fn(getDay(person, today)));
+  // which day you're viewing/editing — default today; ◀ ▶ navigate, capped at today.
+  const [viewDate, setViewDate] = useState(today);
+  const shiftDate = (d: string, by: number) => {
+    const dt = new Date(d + "T00:00:00");
+    dt.setDate(dt.getDate() + by);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  };
+  const isToday = viewDate === today;
+  const canNext = viewDate < today;
+  const dateLabel = isToday
+    ? t("Today")
+    : viewDate === shiftDate(today, -1)
+      ? t("Yesterday")
+      : new Date(viewDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const log = getDay(person, viewDate);
+  const update = (fn: (l: DayLog) => DayLog) => setDay(fn(getDay(person, viewDate)));
 
   // sheet state: adding a food to a meal, or editing an existing item
   const [addTo, setAddTo] = useState<string | null>(null);
@@ -179,7 +195,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const snoozeKey = `hb-nudge-snooze-${person}-${today}`;
   const [snoozed, setSnoozed] = useState(() => !!localStorage.getItem(snoozeKey));
   const afterEvening = new Date().getHours() >= 20;
-  const showNudge = afterEvening && log.meals.length === 0 && !log.status && !snoozed;
+  const showNudge = isToday && afterEvening && log.meals.length === 0 && !log.status && !snoozed;
   const stats = useMemo(() => adherenceStats(new Map(Object.entries(mealDays)), person, today, target), [mealDays, person, today, target]);
   const markSkipped = () => update((l) => ({ ...l, status: "skipped" }));
   const markEstimated = (note: string) => update((l) => ({ ...l, status: "estimated", note: note.trim() || undefined }));
@@ -229,7 +245,16 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
     <div className="flex flex-col gap-3">
       {/* sticky, always-visible Daily Macro Summary */}
       <div className="sticky z-30" style={{ top: STICKY_TOP }}>
-        <DaySummary name={PERSON_NAME[person]} target={target} eaten={eaten} />
+        <DaySummary
+          name={PERSON_NAME[person]}
+          target={target}
+          eaten={eaten}
+          dateLabel={dateLabel}
+          canNext={canNext}
+          onPrev={() => setViewDate((d) => shiftDate(d, -1))}
+          onNext={() => canNext && setViewDate((d) => shiftDate(d, 1))}
+          onToday={isToday ? undefined : () => setViewDate(today)}
+        />
       </div>
 
       {/* the gentle 8 PM nudge */}
@@ -258,7 +283,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
               <UtensilsCrossed size={13} />
             </span>
             <button onClick={() => setMealsOpen((o) => !o)} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
-              <span className="text-[13px] font-semibold text-bone">{t("Today's Meals")}</span>
+              <span className="text-[13px] font-semibold text-bone">{isToday ? t("Today's Meals") : dateLabel}</span>
               <span className="num text-[11px]" style={{ color: "#7e8a98" }}>
                 {t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", {
                   n: log.meals.length,
@@ -635,7 +660,25 @@ function Ring({
 
 // The always-visible Daily Macro Summary — calorie ring + the three macros, each
 // burning down live. The number pops on every change (the delta feedback).
-function DaySummary({ name, target, eaten }: { name: string; target: Macros; eaten: Macros }) {
+function DaySummary({
+  name,
+  target,
+  eaten,
+  dateLabel,
+  canNext,
+  onPrev,
+  onNext,
+  onToday,
+}: {
+  name: string;
+  target: Macros;
+  eaten: Macros;
+  dateLabel: string;
+  canNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday?: () => void;
+}) {
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
@@ -660,7 +703,18 @@ function DaySummary({ name, target, eaten }: { name: string; target: Macros; eat
     >
       <div className="flex items-center justify-between">
         <span className="stat-key" style={{ opacity: 0.92 }}>{t("{name}'s day", { name })}</span>
-        <span className="stat-key" style={{ opacity: 0.78 }}>{t("today")}</span>
+        {/* date navigator — ◀ / ▶ (capped at today), tap the label to jump to today */}
+        <div className="flex items-center gap-0.5">
+          <button onClick={onPrev} className="rounded-full p-1 transition active:scale-90" style={{ background: "rgba(255,255,255,0.14)" }} aria-label="Previous day">
+            <ChevronLeft size={15} />
+          </button>
+          <button onClick={onToday} disabled={!onToday} className="stat-key min-w-[62px] px-1 text-center" style={{ opacity: 0.92 }}>
+            {dateLabel}
+          </button>
+          <button onClick={onNext} disabled={!canNext} className="rounded-full p-1 transition active:scale-90" style={{ background: "rgba(255,255,255,0.14)", opacity: canNext ? 1 : 0.3 }} aria-label="Next day">
+            <ChevronRight size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="mt-2.5 flex items-center gap-4">

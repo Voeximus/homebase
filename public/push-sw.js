@@ -12,7 +12,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: data.body || "",
     icon: data.icon || "/homebase/pwa-192x192.png",
-    badge: data.badge || "/homebase/pwa-192x192.png",
+    badge: data.badge || "/homebase/notification-badge.png",
     tag: data.tag || undefined,
     renotify: !!data.tag,
     data: { url: data.url || "/homebase/" },
