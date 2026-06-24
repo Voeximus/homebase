@@ -36,46 +36,44 @@ export interface SeedDebt {
   color: string;
 }
 
+// NOTE: this is a GENERIC placeholder skeleton (zeroed amounts + masked last4s).
+// The household has already been seeded once and the live data is the source of
+// truth (seedHousehold is never re-run). The real reconciled baseline figures are
+// kept ONLY in the private ops docs — never in this public repo / client bundle.
 export const SEED_ACCOUNTS: SeedAccount[] = [
-  { name: "Geo", owner: "Gino", last4: "4662", type: "checking", balance: 1566.26, sortOrder: 0 },
-  { name: "Xinyan", owner: "Xinyan", last4: "0366", type: "checking", balance: 751.0, sortOrder: 1 },
-  { name: "Joint", owner: "Joint", last4: "1211", type: "checking", balance: 18.74, sortOrder: 2 },
+  { name: "Checking A", owner: "Gino", last4: "0000", type: "checking", balance: 0, sortOrder: 0 },
+  { name: "Checking B", owner: "Xinyan", last4: "0000", type: "checking", balance: 0, sortOrder: 1 },
+  { name: "Joint", owner: "Joint", last4: "0000", type: "checking", balance: 0, sortOrder: 2 },
 ];
 
 export const SEED_RECURRING: SeedRecurring[] = [
   // --- Income (lands on both paydays) ---
-  { name: "Gino paycheck", amount: 1800, direction: "in", cadence: "semimonthly", categoryId: "salary", account: "Geo", owner: "Gino", note: "semi-monthly — 15th + month-end (±2-3 days)", dueDays: [15, 31] },
-  { name: "Xinyan paycheck", amount: 1187.42, direction: "in", cadence: "biweekly", categoryId: "salary", account: "Xinyan", owner: "Xinyan", note: "ASU, fixed", dueDays: [15, 29] },
+  { name: "Income A", amount: 0, direction: "in", cadence: "semimonthly", categoryId: "salary", account: "Checking A", owner: "Gino", dueDays: [15, 31] },
+  { name: "Income B", amount: 0, direction: "in", cadence: "biweekly", categoryId: "salary", account: "Checking B", owner: "Xinyan", dueDays: [15, 29] },
 
-  // --- Shared (paid from Geo, split 60/40 via Xinyan's transfer in) ---
-  { name: "Rent", amount: 1715, direction: "out", cadence: "monthly", categoryId: "housing", account: "Geo", owner: "Shared", note: "Nollie — full rate from July (RentPlus removed)", dueDays: [1] },
-  { name: "Electric (SRP)", amount: 85, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Geo", owner: "Shared", note: "varies a little", dueDays: [13] },
-  { name: "Xinyan's 40% share", amount: 720, direction: "transfer", cadence: "monthly", account: "Xinyan", toAccount: "Geo", owner: "Xinyan", note: "40% of rent + electric", dueDays: [1] },
+  // --- Shared ---
+  { name: "Rent", amount: 0, direction: "out", cadence: "monthly", categoryId: "housing", account: "Checking A", owner: "Shared", dueDays: [1] },
+  { name: "Electric", amount: 0, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Checking A", owner: "Shared", dueDays: [13] },
+  { name: "Household share", amount: 0, direction: "transfer", cadence: "monthly", account: "Checking B", toAccount: "Checking A", owner: "Xinyan", dueDays: [1] },
 
-  // --- Gino personal (from Geo) ---
-  { name: "Mom", amount: 600, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "$300/check from July — her rent help + car insurance", dueDays: [15, 30] },
-  { name: "Verizon", amount: 83, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Geo", owner: "Gino", dueDays: [17] },
-  { name: "Spotify", amount: 14.04, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Geo", owner: "Gino", dueDays: [10] },
-  { name: "Card payment (…4728)", amount: 135, direction: "out", cadence: "monthly", categoryId: "other", account: "Geo", owner: "Gino", note: "min payment", dueDays: [15], linksDebtLast4: "4728" },
-  // Affirm is now a feed-TRACKED debt (track_pattern "AFFIRM"), not a calendar
-  // bill — each "AFFIRM" payment in the bank feed auto-reduces the debt balance.
+  // --- Personal A ---
+  { name: "Family support", amount: 0, direction: "out", cadence: "monthly", categoryId: "other", account: "Checking A", owner: "Gino", dueDays: [15, 30] },
+  { name: "Phone", amount: 0, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Checking A", owner: "Gino", dueDays: [17] },
+  { name: "Music", amount: 0, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Checking A", owner: "Gino", dueDays: [10] },
+  { name: "Card payment A", amount: 0, direction: "out", cadence: "monthly", categoryId: "other", account: "Checking A", owner: "Gino", dueDays: [15], linksDebtLast4: "0001" },
 
-  // --- Xinyan personal (from Xinyan) ---
-  { name: "Spot Pet insurance", amount: 99.93, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", dueDays: [4] },
-  { name: "T-Mobile", amount: 27.48, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Xinyan", owner: "Xinyan", dueDays: [29] },
-  { name: "Claude Pro", amount: 21.62, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Xinyan", owner: "Xinyan", dueDays: [20] },
-  { name: "Card payment (…6813)", amount: 35, direction: "out", cadence: "monthly", categoryId: "other", account: "Xinyan", owner: "Xinyan", note: "min payment (~$35; was $85 once for late fees)", dueDays: [8], linksDebtLast4: "6813" },
+  // --- Personal B ---
+  { name: "Pet insurance", amount: 0, direction: "out", cadence: "monthly", categoryId: "other", account: "Checking B", owner: "Xinyan", dueDays: [4] },
+  { name: "Mobile", amount: 0, direction: "out", cadence: "monthly", categoryId: "utilities", account: "Checking B", owner: "Xinyan", dueDays: [29] },
+  { name: "AI subscription", amount: 0, direction: "out", cadence: "monthly", categoryId: "subscriptions", account: "Checking B", owner: "Xinyan", dueDays: [20] },
+  { name: "Card payment B", amount: 0, direction: "out", cadence: "monthly", categoryId: "other", account: "Checking B", owner: "Xinyan", dueDays: [8], linksDebtLast4: "0002" },
 ];
 
 export const SEED_DEBTS: SeedDebt[] = [
-  { name: "Credit card (…4728)", balance: 4156.78, apr: 26.49, minPayment: 135, color: "#ef4444" },
-  { name: "Xinyan card (…6813)", balance: 591.09, minPayment: 35, color: "#f59e0b" },
-  // Two Affirm loans lumped into one feed-tracked "Affirm" debt (the bank line
-  // only says "Affirm", not which loan). track_pattern "AFFIRM" on live data.
-  { name: "Affirm", balance: 288.78, color: "#6366f1" },
-  // Paid via Remitly → feed-tracked. BofA posts Remitly as "RMTLY" (not
-  // "REMITLY") → track_pattern "RMTLY" on live data.
-  { name: "Mom (China)", balance: 800, color: "#ec4899" },
+  { name: "Card (…0001)", balance: 0, apr: 0, minPayment: 0, color: "#ef4444" },
+  { name: "Card (…0002)", balance: 0, minPayment: 0, color: "#f59e0b" },
+  { name: "Loan", balance: 0, color: "#6366f1" },
+  { name: "Family loan", balance: 0, color: "#ec4899" },
 ];
 
 // Cadence -> monthly multiplier. Biweekly uses ×2 (the conservative
