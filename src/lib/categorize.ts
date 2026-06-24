@@ -82,7 +82,6 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /VZ WIRELESS|VERIZON/i, bill: "Verizon" },
   { re: /TMOBILE|T-MOBILE/i, bill: "T-Mobile" },
   { re: /SPOTIFY/i, bill: "Spotify" },
-  { re: /CLAUDE\.AI/i, bill: "Claude Pro" },
   { re: /SPOT PET/i, bill: "Spot Pet insurance" },
   { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
   { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
@@ -154,6 +153,16 @@ export function classify(
     if (lr.kind === "skip")
       return { kind: "skip", reason: "you taught it", confidence: "high" };
     return { kind: "variable", appCategory: lr.categoryId, reason: "you taught it", confidence: "high" };
+  }
+
+  // Anthropic/Claude: the bank descriptor is identical ("Anthropic", "Claude.ai",
+  // "Claude Sub Anthropic…") for BOTH a Pro seat (~$21.62) and a Max seat (~$87),
+  // so the text alone can't name the bill — route by PRICE. The names resolve to
+  // the modeled "Claude Pro" / "Claude Max" recurring rows via matchRecurringName,
+  // so this works on both the live feed and CSV import (no fragile day+amount guess).
+  if (/CLAUDE|ANTHROPIC/i.test(desc)) {
+    const billName = Math.abs(amount) < 45 ? "Claude Pro" : "Claude Max";
+    return { kind: "bill", billName, appCategory: "subscriptions", reason: `matched bill: ${billName}`, confidence: "high" };
   }
 
   for (const r of BILL_RULES) {

@@ -82,7 +82,6 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /VZ WIRELESS|VERIZON/i, bill: "Verizon" },
   { re: /TMOBILE|T-MOBILE/i, bill: "T-Mobile" },
   { re: /SPOTIFY/i, bill: "Spotify" },
-  { re: /CLAUDE\.AI/i, bill: "Claude Pro" },
   { re: /SPOT PET/i, bill: "Spot Pet insurance" },
   { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
   { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
@@ -97,7 +96,9 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   "Dining/Takeout": { kind: "variable", appCategory: "dining" },
   "Rideshare/Delivery": { kind: "variable", appCategory: "transport" },
   Shopping: { kind: "variable", appCategory: "shopping" },
-  "Health/Personal": { kind: "variable", appCategory: "health" },
+  // Health/Personal (grooming, pharmacy, personal care) folds into the merged
+  // Household + Hygiene category (`shopping`).
+  "Health/Personal": { kind: "variable", appCategory: "shopping" },
   Pets: { kind: "variable", appCategory: "other" },
   "Subscriptions/Digital": { kind: "variable", appCategory: "subscriptions" },
   "Travel/Other": { kind: "variable", appCategory: "other" },
@@ -126,7 +127,7 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
   { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAMS? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
   { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|PANDA|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
   { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
-  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "health" },
+  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "shopping" },
   { re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i, appCategory: "subscriptions" },
 ];
 
@@ -152,6 +153,16 @@ export function classify(
     if (lr.kind === "skip")
       return { kind: "skip", reason: "you taught it", confidence: "high" };
     return { kind: "variable", appCategory: lr.categoryId, reason: "you taught it", confidence: "high" };
+  }
+
+  // Anthropic/Claude: the bank descriptor is identical ("Anthropic", "Claude.ai",
+  // "Claude Sub Anthropic…") for BOTH a Pro seat (~$21.62) and a Max seat (~$87),
+  // so the text alone can't name the bill — route by PRICE. The names resolve to
+  // the modeled "Claude Pro" / "Claude Max" recurring rows via matchRecurringName,
+  // so this works on both the live feed and CSV import (no fragile day+amount guess).
+  if (/CLAUDE|ANTHROPIC/i.test(desc)) {
+    const billName = Math.abs(amount) < 45 ? "Claude Pro" : "Claude Max";
+    return { kind: "bill", billName, appCategory: "subscriptions", reason: `matched bill: ${billName}`, confidence: "high" };
   }
 
   for (const r of BILL_RULES) {
