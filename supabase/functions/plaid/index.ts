@@ -15,7 +15,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { reconcile, type NormalRow, type PlaidTxn } from "../_shared/plaidSync.ts";
-import { classify, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import { classify, classifyCredit, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
 const PLAID_BASE = `https://${PLAID_ENV}.plaid.com`;
@@ -298,6 +298,24 @@ async function syncConnection(connId: string, force = false) {
     const postedByAcct: Record<string, any[]> = {};
     const billByAcct: Record<string, any[]> = {};
     for (const row of ops.upsertPosted) {
+      // Incoming money: capture real income so it's VISIBLE and a reimbursement
+      // payback can be matched against it. Internal transfers between our OWN
+      // accounts are the same dollars moving (not new money) → drop. Balance comes
+      // from the bank's reported figure, so inserting income never distorts it.
+      if (row.amount > 0) {
+        if (classifyCredit(row.description) === "transfer") continue;
+        (postedByAcct[row.accountId] ??= []).push({
+          provider_txn_id: row.providerTxnId,
+          provider_account_id: row.accountId,
+          date: row.date,
+          amount: Math.abs(row.amount),
+          type: "income",
+          category_id: "other-income",
+          description: row.description,
+          needs_review: false,
+        });
+        continue;
+      }
       // A payment on a feed-tracked debt (Affirm / Mom-China via Remitly) wins
       // over bill/variable/skip. Only OUTFLOWS (− in our sign convention) count —
       // a refund must never reduce the debt. Recorded settled (out of the budget);

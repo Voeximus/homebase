@@ -107,6 +107,16 @@ function hisLookup(key: string): string | undefined {
   return best;
 }
 
+/** For an INCOMING credit (positive amount): is it real income — to surface and to
+ *  match reimbursement paybacks against — or just an internal transfer between the
+ *  household's OWN accounts (same dollars moving, not new money → stays hidden)?
+ *  Paychecks, refunds, cashback, and money people send you all read as income;
+ *  only "Internal:" history labels (account-to-account, spouse shuffle) are transfers. */
+export function classifyCredit(desc: string): "income" | "transfer" {
+  const his = hisLookup(merchantKey(desc));
+  return his && his.startsWith("Internal:") ? "transfer" : "income";
+}
+
 // A line that matches one of these IS a modeled recurring bill — mark it paid,
 // don't count it as variable spend. Names must match SEED_RECURRING exactly.
 const BILL_RULES: { re: RegExp; bill: string }[] = [

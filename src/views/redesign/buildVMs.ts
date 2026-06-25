@@ -292,13 +292,27 @@ export function buildFinanceVMs(
     .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
     .sort((a, b) => b.date.localeCompare(a.date));
   const owedToYou = owed.reduce((s, tx) => s + tx.amount, 0);
-  const owedList = owed.map((tx) => ({
-    id: tx.id,
-    merchant: tx.description || catName(tx.categoryId),
-    amount: tx.amount,
-    dateLabel: relDay(tx.date),
-    note: tx.appliesTo?.note,
-  }));
+  // Candidate paybacks: real income not yet linked to a set-aside. Surface a single
+  // UNAMBIGUOUS deposit (exact amount, landing on/within 60 days after the spend) as
+  // the one-tap "is this the payback?" confirm. Zero or 2+ matches → no guess.
+  const DAY = 864e5;
+  const creditPool = data.transactions.filter((tx) => tx.type === "income" && !tx.appliesTo);
+  const owedList = owed.map((tx) => {
+    const spent = new Date(tx.date + "T00:00:00").getTime();
+    const cands = creditPool.filter((c) => {
+      if (Math.abs(c.amount - tx.amount) > 0.01) return false;
+      const got = new Date(c.date + "T00:00:00").getTime();
+      return got >= spent && got - spent <= 60 * DAY;
+    });
+    return {
+      id: tx.id,
+      merchant: tx.description || catName(tx.categoryId),
+      amount: tx.amount,
+      dateLabel: relDay(tx.date),
+      note: tx.appliesTo?.note,
+      ...(cands.length === 1 ? { suggestedCreditId: cands[0].id } : {}),
+    };
+  });
 
   const home: HomeVM = {
     firepower,
