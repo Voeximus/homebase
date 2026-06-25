@@ -7,6 +7,7 @@ import { ActivityTab, type ActivityVM } from "./ActivityTab";
 import { ProfileTab, type ProfileVM } from "./ProfileTab";
 import { BillsSheet } from "./BillsSheet";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
+import { OwedSheet } from "./OwedSheet";
 import type { HomeVM, BillsVM } from "./vm";
 
 // ── Mock view-models. These live ONLY in this dev-only harness (App.tsx lazy-
@@ -124,6 +125,10 @@ const HOME: HomeVM = {
     { id: "3", merchant: "Verizon", catId: "utilities", sub: "Bill · Jun 17", amount: 83 },
   ],
   bills: { left: 449, nextName: "Claude Pro", nextDate: "Jun 20" },
+  owedToYou: 64.5,
+  owedList: [
+    { id: "o1", merchant: "Costco — Jay's half", amount: 64.5, dateLabel: "Tue, Jun 16", note: "group order" },
+  ],
 };
 
 const BILLS: BillsVM = {
@@ -197,6 +202,7 @@ export function DesignLab() {
   const [tab, setTab] = useState<TabKey>("home");
   const [billsOpen, setBillsOpen] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
+  const [owedOpen, setOwedOpen] = useState(false);
   return (
     <div
       className="mx-auto flex min-h-screen max-w-[440px] flex-col"
@@ -205,7 +211,7 @@ export function DesignLab() {
       <TopBar />
       <div className="flex-1 overflow-y-auto">
         {tab === "home" ? (
-          <HomeTab vm={HOME} taps={{ onBills: () => setBillsOpen(true) }} />
+          <HomeTab vm={HOME} taps={{ onBills: () => setBillsOpen(true), onOwed: () => setOwedOpen(true) }} />
         ) : tab === "insights" ? (
           <InsightsTab vm={MOCK_INSIGHTS} taps={{ onCategory: () => setEnvOpen(true) }} />
         ) : tab === "activity" ? (
@@ -217,6 +223,7 @@ export function DesignLab() {
       <TabNav active={tab} onTab={setTab} />
       <BillsSheet vm={BILLS} open={billsOpen} onClose={() => setBillsOpen(false)} />
       <CategorySheet vm={ENV} open={envOpen} onClose={() => setEnvOpen(false)} />
+      <OwedSheet open={owedOpen} onClose={() => setOwedOpen(false)} owed={HOME.owedList} onSettle={() => setOwedOpen(false)} />
     </div>
   );
 }

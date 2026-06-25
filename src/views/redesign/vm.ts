@@ -36,6 +36,10 @@ export interface HomeVM {
   recent: RecentRow[];
   sinceMonday: number; // "spent $X since Monday"
   bills: { left: number; nextName: string; nextDate: string }; // the Home Bills tile
+  owedToYou: number; // sum of unsettled reimbursable set-asides (0 = hide the tile)
+  // the reimbursables still owed back, for the "Owed to you" sheet. suggestedCreditId
+  // is set (Phase B) when a matching payback deposit is found → one-tap settle.
+  owedList: { id: string; merchant: string; amount: number; dateLabel: string; note?: string; suggestedCreditId?: string }[];
 }
 
 // ── Bills surface (Option A list + calendar on tap) ──

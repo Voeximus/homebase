@@ -29,7 +29,7 @@ export function TxnSheet({
     setTransactionSplits,
     saveMerchantRule,
     makeRecurringBill,
-    excludeFromBudget,
+    setAsideTransaction,
     deleteTransaction,
   } = useStore();
   const [remember, setRemember] = useState(true);
@@ -227,17 +227,30 @@ export function TxnSheet({
               </div>
             </div>
 
-            <button
-              onClick={async () => {
-                await excludeFromBudget(txn.id);
-                if (remember) await saveMerchantRule({ pattern: merchantKey(txn.description), kind: "skip" });
-                onClose();
-              }}
-              className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-medium"
-              style={{ background: "#161c26", color: "#8b97a6" }}
-            >
-              <Check size={15} /> {t("Not living spend — skip & exclude")}
-            </button>
+            {/* Set aside — real money out, kept OUT of the variable budget but still
+                VISIBLE in totals/history. A real merchant can never just vanish. */}
+            <div className="mt-2.5 flex gap-2">
+              <button
+                onClick={async () => {
+                  await setAsideTransaction(txn.id, "excluded");
+                  onClose();
+                }}
+                className="flex-1 rounded-xl py-2.5 text-[12px] font-medium"
+                style={{ background: "#161c26", color: "#8b97a6" }}
+              >
+                {t("Set aside · not my budget")}
+              </button>
+              <button
+                onClick={async () => {
+                  await setAsideTransaction(txn.id, "reimbursable");
+                  onClose();
+                }}
+                className="flex-1 rounded-xl py-2.5 text-[12px] font-semibold"
+                style={{ background: "#16241b", color: "#7fbf6a" }}
+              >
+                {t("Set aside · owed back to me")}
+              </button>
+            </div>
             <button
               onClick={async () => {
                 await deleteTransaction(txn.id);

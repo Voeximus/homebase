@@ -20,6 +20,7 @@ export type AppliesToKind =
   | "income" // a paycheck/check landing
   | "goal" // a savings-goal contribution
   | "transfer" // an internal account-to-account move
+  | "setaside" // real money out, kept OUT of the variable budget but VISIBLE (excluded | reimbursable)
   | "reconcile"; // a bank-anchor adjusting entry
 
 export interface AppliesTo {
@@ -30,7 +31,14 @@ export interface AppliesTo {
   monthKey?: string; // "YYYY-MM", for bills
   day?: number; // which installment (day-of-month) — distinguishes Mom's 15th vs 30th
   appliedAmount?: number; // what actually came off the linked debt (≤ amount when it cleared) — so deleting reverses exactly
-  settled?: boolean; // a "already paid, already in my anchored balance" marker — moves no cash, touches no debt
+  // For bill/debt: "already paid, already in my anchored balance" (moves no cash).
+  // For a setaside+reimbursable row: "the money was paid back to me".
+  settled?: boolean;
+  // --- set-aside (kind:"setaside") only ---
+  reason?: "excluded" | "reimbursable"; // excluded = not my budget; reimbursable = owed back to me
+  settledByTxnId?: string; // the credit row that paid a reimbursable back (and the back-link on that credit)
+  settledAt?: string; // ISO timestamp the reimbursement settled
+  note?: string; // free-text "who / why"
 }
 
 // A slice of one transaction allocated to a category — for mixed purchases (a

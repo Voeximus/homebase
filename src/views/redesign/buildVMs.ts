@@ -125,6 +125,9 @@ export function buildFinanceVMs(
   // ── lens-filtered ledger (same predicate as OnePager `recent`/`ledgerTxns`) ──
   const visible = data.transactions
     .filter((tx) => !tx.appliesTo?.settled)
+    // "Set aside · excluded" drops out of the active ledger (like a transfer);
+    // "set aside · reimbursable" stays VISIBLE until settled (it's owed to you).
+    .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
     .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
     .sort((a, b) =>
       a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date),
@@ -283,9 +286,25 @@ export function buildFinanceVMs(
     })),
   };
 
+  // ── "Owed to you" — unsettled reimbursable set-asides (real cash out until repaid) ──
+  const owed = data.transactions
+    .filter((tx) => tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "reimbursable" && !tx.appliesTo.settled)
+    .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const owedToYou = owed.reduce((s, tx) => s + tx.amount, 0);
+  const owedList = owed.map((tx) => ({
+    id: tx.id,
+    merchant: tx.description || catName(tx.categoryId),
+    amount: tx.amount,
+    dateLabel: relDay(tx.date),
+    note: tx.appliesTo?.note,
+  }));
+
   const home: HomeVM = {
     firepower,
     overspent: overspend,
+    owedToYou,
+    owedList,
     debtFreeBy,
     // the "Send X at the debt" tile is the DEBT portion only — in the final
     // payoff phase `total` also includes the savings skim (surfaced separately in
@@ -345,6 +364,11 @@ export function buildFinanceVMs(
   // ── Activity (this-month + recent rows, fate-badged) ──
   const fateOf = (tx: Transaction): { fate: ActivityFate; badge: string } => {
     if (tx.type === "income") return { fate: "income", badge: t("Income · not in budget") };
+    if (tx.appliesTo?.kind === "setaside") {
+      return tx.appliesTo.reason === "reimbursable"
+        ? { fate: "setaside", badge: t("Set aside · owed back to you") }
+        : { fate: "setaside", badge: t("Set aside") };
+    }
     if (tx.appliesTo) {
       const k = tx.appliesTo.kind;
       return {

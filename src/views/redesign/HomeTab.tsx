@@ -16,6 +16,7 @@ interface Taps {
   onBills?: () => void;
   onAnomaly?: () => void;
   onRecent?: () => void;
+  onOwed?: () => void;
 }
 
 export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
@@ -45,6 +46,23 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           </div>
         )}
       </div>
+
+      {/* ── Owed to you (reimbursable set-asides still outstanding) ── */}
+      {vm.owedToYou > 0 && (
+        <button
+          onClick={taps.onOwed}
+          className="mx-4 mt-3 flex items-center justify-between rounded-[16px] border px-4 py-3 text-left transition active:scale-[0.99]"
+          style={{ background: "#13211a", borderColor: "#1f3a2c" }}
+        >
+          <span className="text-[12.5px] font-medium" style={{ color: "#7fbf6a" }}>
+            {t("Owed to you")}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[18px] font-bold text-bone">{money2(vm.owedToYou)}</span>
+            <ChevronRight size={16} style={{ color: "#7e8a98" }} />
+          </span>
+        </button>
+      )}
 
       {/* ── Bento grid ── */}
       <div className="grid grid-cols-2 gap-3 p-4">

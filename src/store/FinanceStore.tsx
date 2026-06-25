@@ -173,6 +173,12 @@ export interface FinanceStore {
   // Dismiss the "unusual purchase" flag for a transaction (it won't reappear).
   acknowledgeAnomaly: (id: string) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
+  // Set a real purchase aside: visible in totals/history but out of the variable
+  // budget. "reimbursable" is tracked as owed-back-to-you until a credit settles it.
+  setAsideTransaction: (id: string, reason: "excluded" | "reimbursable", note?: string) => Promise<void>;
+  // Mark a reimbursable as paid back — clears the "owed to you" marker. Pass the
+  // payback credit's id to link the two (auto-suggest); omit for a manual "got it back".
+  settleReimbursable: (reimbursableId: string, creditTxnId?: string) => Promise<void>;
   makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
   setRecurringVariable: (id: string, variable: boolean) => Promise<void>;
   setAccountBalance: (accountId: string, balance: number) => Promise<void>;
@@ -835,6 +841,53 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .update({ applies_to: { kind: "transfer" } })
           .eq("id", id);
         if (error) console.error(error);
+      },
+      async setAsideTransaction(id, reason, note) {
+        // A real purchase set aside: out of the variable budget but VISIBLE in
+        // totals/history. A marker only — moves no cash (the expense already
+        // posted). "reimbursable" stays in the "owed to you" ledger until settled.
+        const at: AppliesTo = { kind: "setaside", reason, settled: false, ...(note ? { note } : {}) };
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) => (t.id === id ? { ...t, appliesTo: at } : t)),
+        }));
+        const { error } = await supabase.from("transactions").update({ applies_to: at }).eq("id", id);
+        if (error) console.error(error);
+      },
+      async settleReimbursable(reimbursableId, creditTxnId) {
+        // Mark a reimbursable paid back: clears the "owed to you" marker. If a
+        // payback credit is given (auto-suggest), link the two and tag the credit
+        // so it drops out of budget noise + the match is idempotent. Moves no cash —
+        // both the spend and any deposit posted independently; this records the pair.
+        const now = new Date().toISOString();
+        const reimb = dataRef.current.transactions.find((t) => t.id === reimbursableId);
+        const reimbAt: AppliesTo = {
+          ...(reimb?.appliesTo ?? { kind: "setaside", reason: "reimbursable" }),
+          kind: "setaside",
+          reason: "reimbursable",
+          settled: true,
+          settledAt: now,
+          ...(creditTxnId ? { settledByTxnId: creditTxnId } : {}),
+        };
+        const creditAt: AppliesTo = {
+          kind: "setaside",
+          reason: "reimbursable",
+          settled: true,
+          settledByTxnId: reimbursableId,
+          settledAt: now,
+        };
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === reimbursableId ? { ...t, appliesTo: reimbAt } : creditTxnId && t.id === creditTxnId ? { ...t, appliesTo: creditAt } : t,
+          ),
+        }));
+        const e1 = await supabase.from("transactions").update({ applies_to: reimbAt }).eq("id", reimbursableId);
+        if (e1.error) console.error(e1.error);
+        if (creditTxnId) {
+          const e2 = await supabase.from("transactions").update({ applies_to: creditAt }).eq("id", creditTxnId);
+          if (e2.error) console.error(e2.error);
+        }
       },
       async makeRecurringBill(txnId, cadence) {
         // Promote a charge to a bill: mark THIS transaction as its payment (so it

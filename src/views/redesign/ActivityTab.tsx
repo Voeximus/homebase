@@ -8,7 +8,7 @@ const money = (n: number) =>
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export type ActivityFate = "envelope" | "skip" | "review" | "income";
+export type ActivityFate = "envelope" | "skip" | "review" | "income" | "setaside";
 
 export interface ActivityRow {
   id: string;
@@ -66,6 +66,17 @@ function FateBadge({ row }: { row: ActivityRow }) {
       <span
         className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
         style={{ background: "#2a2410", color: "#e3b341" }}
+      >
+        {row.badgeLabel}
+      </span>
+    );
+  }
+  // set aside — soft green (owed back to you reads as money returning)
+  if (row.fate === "setaside") {
+    return (
+      <span
+        className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
+        style={{ background: "#16241b", color: "#7fbf6a" }}
       >
         {row.badgeLabel}
       </span>
