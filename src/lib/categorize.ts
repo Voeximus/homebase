@@ -83,8 +83,8 @@ export function stripStatementNoise(desc: string): string {
   let s = " " + desc.toUpperCase() + " ";
   s = s.replace(/\b(MOBILE PURCHASE|CHECKCARD PURCHASE|CHECKCARD|POS PURCHASE|POS DEBIT|DEBIT CARD PURCHASE|RECURRING PAYMENT|MOBILE PAYMENT|PURCHASE)\b/g, " ");
   s = s.replace(/\b\d{2}\/\d{2}\b/g, " "); // MM/DD
-  s = s.replace(/\s\d{4}\s/g, " "); // a lone MMDD date token
-  s = s.replace(/\bX{3,}[0-9X]*/g, " "); // masked card number
+  s = s.replace(/\s\d{4}(?=\s)/g, " "); // MMDD date token(s) — keep the trailing space so adjacent tokens both clear
+  s = s.replace(/\bX{3,}[0-9X.…]*/g, " "); // masked card number (incl. a dotted tail)
   s = s.replace(/\bRECURRING\b/g, " ");
   return s.replace(/\s{2,}/g, " ").trim();
 }
@@ -173,7 +173,7 @@ export function classify(
   amount: number,
   learned?: LearnedRules,
 ): Classification {
-  if (amount >= 0) {
+  if (!Number.isFinite(amount) || amount >= 0) {
     return { kind: "skip", reason: "credit / deposit", confidence: "high" };
   }
 
@@ -190,13 +190,20 @@ export function classify(
   }
 
   // Anthropic/Claude: the bank descriptor is identical ("Anthropic", "Claude.ai",
-  // "Claude Sub Anthropic…") for BOTH a Pro seat (~$21.62) and a Max seat (~$87),
-  // so the text alone can't name the bill — route by PRICE. The names resolve to
-  // the modeled "Claude Pro" / "Claude Max" recurring rows via matchRecurringName,
-  // so this works on both the live feed and CSV import (no fragile day+amount guess).
-  if (/CLAUDE|ANTHROPIC/i.test(desc)) {
-    const billName = Math.abs(amount) < 45 ? "Claude Pro" : "Claude Max";
-    return { kind: "bill", billName, appCategory: "subscriptions", reason: `matched bill: ${billName}`, confidence: "high" };
+  // "Claude Sub Anthropic…") for BOTH a Pro seat (~$21.62) and a Max seat (~$108),
+  // so the text alone can't name the bill — route by PRICE BAND. Names resolve to
+  // the modeled "Claude Pro" / "Claude Max" rows via matchRecurringName (both the
+  // live feed and CSV import). A charge OUTSIDE both seat bands (API/console
+  // pay-as-you-go, a proration, a refund) is NOT a seat → keep it as variable
+  // subscription spend, flagged low-confidence for a one-tap check. The pattern is
+  // anchored so "Saint Claude Bistro" / "Claude Monet" can't trip it.
+  if (/\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b/i.test(desc)) {
+    const mag = Math.abs(amount);
+    if (mag >= 15 && mag <= 35)
+      return { kind: "bill", billName: "Claude Pro", appCategory: "subscriptions", reason: "matched bill: Claude Pro", confidence: "high" };
+    if (mag >= 70 && mag <= 140)
+      return { kind: "bill", billName: "Claude Max", appCategory: "subscriptions", reason: "matched bill: Claude Max", confidence: "high" };
+    return { kind: "variable", appCategory: "subscriptions", reason: "Anthropic (non-seat amount) — confirm", confidence: "low" };
   }
 
   for (const r of BILL_RULES) {

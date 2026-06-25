@@ -113,14 +113,14 @@ function matchBillByDayAmount(
     if (Math.abs(nearest - postDay) > 3) continue;
     if (paidBill.has(`${r.id}|${monthKey}|${nearest}`)) continue;
     // Coerce the DB numeric (arrives as a string) so the amount filter actually
-    // runs. Fixed bills must match tightly — a $21.62 sub can't absorb a $10.59
-    // one — while variable bills (electric, etc.) keep generous slack.
+    // runs. NEVER auto-settle on day proximity alone — a bill with no modeled
+    // amount (0/null) is skipped. Fixed bills must match tightly — a $21.62 sub
+    // can't absorb a $10.59 one — while variable bills keep generous slack.
     const ramt = Number(r.amount);
-    if (ramt > 0) {
-      const amtGap = Math.abs(amount - ramt);
-      const tol = r.variable ? Math.max(15, 0.15 * ramt) : Math.max(2, 0.03 * ramt);
-      if (amtGap > tol) continue;
-    }
+    if (!(ramt > 0)) continue;
+    const amtGap = Math.abs(amount - ramt);
+    const tol = r.variable ? Math.max(15, 0.15 * ramt) : Math.max(2, 0.03 * ramt);
+    if (amtGap > tol) continue;
     candidates.push(r);
   }
   return candidates.length === 1 ? candidates[0] : null; // only when unambiguous
@@ -321,12 +321,13 @@ async function syncConnection(connId: string, force = false) {
       if (c.kind === "skip") continue;
       if (c.kind === "bill") {
         // Resolve to a recurring row tolerant of name drift (normalized / merchant
-        // key), then fall back to a day+amount heuristic for bills the categorizer
-        // is sure about but couldn't name-match. This is what makes a real bank
-        // bill-payment auto-flip the CORRECT modeled bill to paid.
+        // key). If the categorizer NAMED a bill but it doesn't resolve to a row,
+        // that's a modeling gap → fall through to needs_review (below) rather than
+        // risk the blind day+amount heuristic auto-settling the WRONG bill. Reserve
+        // that heuristic for a payment the categorizer couldn't name at all.
         const matched =
           matchRecurringName(c.billName, outRecs) ??
-          matchBillByDayAmount(outRecs, row.date, Math.abs(row.amount), paidBill);
+          (c.billName ? null : matchBillByDayAmount(outRecs, row.date, Math.abs(row.amount), paidBill));
         if (matched) {
           const rec = { id: matched.id as string, dueDays: (matched.due_days ?? undefined) as number[] | undefined };
           const at = billAppliesTo(rec, row.date);

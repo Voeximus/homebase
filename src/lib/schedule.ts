@@ -15,6 +15,8 @@ export const DUE_DAYS: Record<string, number[]> = {
   Mom: [15, 30],
   Verizon: [17],
   "Claude Pro": [20],
+  "Claude Max": [22],
+  "LEMONADE INSURANCE": [18],
   "T-Mobile": [29],
   "Card payment (…6813)": [8],
   "Xinyan's 40% share": [1],
