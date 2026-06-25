@@ -112,9 +112,14 @@ function matchBillByDayAmount(
     const nearest = days.reduce((b, d) => (Math.abs(d - postDay) < Math.abs(b - postDay) ? d : b), days[0]);
     if (Math.abs(nearest - postDay) > 3) continue;
     if (paidBill.has(`${r.id}|${monthKey}|${nearest}`)) continue;
-    if (typeof r.amount === "number" && r.amount > 0) {
-      const amtGap = Math.abs(amount - r.amount);
-      if (amtGap > 15 && amtGap > 0.15 * r.amount) continue;
+    // Coerce the DB numeric (arrives as a string) so the amount filter actually
+    // runs. Fixed bills must match tightly — a $21.62 sub can't absorb a $10.59
+    // one — while variable bills (electric, etc.) keep generous slack.
+    const ramt = Number(r.amount);
+    if (ramt > 0) {
+      const amtGap = Math.abs(amount - ramt);
+      const tol = r.variable ? Math.max(15, 0.15 * ramt) : Math.max(2, 0.03 * ramt);
+      if (amtGap > tol) continue;
     }
     candidates.push(r);
   }
@@ -221,7 +226,7 @@ async function syncConnection(connId: string, force = false) {
     // bill installments (so we never double-mark a manual / prior-import / re-sync one)
     const { data: recRows } = await admin
       .from("recurring")
-      .select("id, name, due_days, amount, direction")
+      .select("id, name, due_days, amount, direction, variable")
       .eq("active", true);
     // Only out-direction bills are payment targets (never match a paycheck/transfer).
     const outRecs = (recRows ?? []).filter((r: any) => r.direction === "out");

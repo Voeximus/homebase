@@ -74,6 +74,39 @@ export function matchRecurringName<T extends { name: string }>(
   return null;
 }
 
+/** Strip the noise the bank wraps a raw statement line in — the transaction-type
+ *  prefix, the MMDD date, masked card digits, store #, "RECURRING" — so a known
+ *  merchant hidden inside a raw line ("PURCHASE 0321 YAMI.COM YAMIBUY.COM/ECA
+ *  XXXXX…7296") can still be recognized. Used only as a last resort in classify(),
+ *  so it can never change a line the normal path already classified. */
+export function stripStatementNoise(desc: string): string {
+  let s = " " + desc.toUpperCase() + " ";
+  s = s.replace(/\b(MOBILE PURCHASE|CHECKCARD PURCHASE|CHECKCARD|POS PURCHASE|POS DEBIT|DEBIT CARD PURCHASE|RECURRING PAYMENT|MOBILE PAYMENT|PURCHASE)\b/g, " ");
+  s = s.replace(/\b\d{2}\/\d{2}\b/g, " "); // MM/DD
+  s = s.replace(/\s\d{4}\s/g, " "); // a lone MMDD date token
+  s = s.replace(/\bX{3,}[0-9X]*/g, " "); // masked card number
+  s = s.replace(/\bRECURRING\b/g, " ");
+  return s.replace(/\s{2,}/g, " ").trim();
+}
+
+/** Resolve a merchant key to Gino's history label, tolerant of trailing domain /
+ *  location tokens the bank appends: exact hit first, else the longest history
+ *  key (≥5 chars) the cleaned key starts with ("YAMI.COM YAMIBUY.COM/ECA" still
+ *  resolves to the "YAMI.COM" rule). */
+function hisLookup(key: string): string | undefined {
+  const exact = MERCHANT_CATEGORY[key];
+  if (exact) return exact;
+  let best: string | undefined;
+  let bestLen = 0;
+  for (const k in MERCHANT_CATEGORY) {
+    if (k.length >= 5 && k.length > bestLen && key.startsWith(k + " ")) {
+      best = MERCHANT_CATEGORY[k];
+      bestLen = k.length;
+    }
+  }
+  return best;
+}
+
 // A line that matches one of these IS a modeled recurring bill — mark it paid,
 // don't count it as variable spend. Names must match SEED_RECURRING exactly.
 const BILL_RULES: { re: RegExp; bill: string }[] = [
@@ -83,6 +116,7 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /TMOBILE|T-MOBILE/i, bill: "T-Mobile" },
   { re: /SPOTIFY/i, bill: "Spotify" },
   { re: /SPOT PET/i, bill: "Spot Pet insurance" },
+  { re: /LEMONADE/i, bill: "LEMONADE INSURANCE" },
   { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
   { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
   // Affirm is a feed-TRACKED debt now (debts.track_pattern "AFFIRM"), not a bill.
@@ -123,8 +157,8 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
 // For merchants not in Gino's history, fall back to keyword rules so new
 // merchants still land in the right bucket (lower confidence — he can fix it).
 const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
-  { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|MOBIL|EXXON|SUNOCO|KWIK|CONOCO|76\b/i, appCategory: "transport" },
-  { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAMS? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
+  { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|76\b/i, appCategory: "transport" },
+  { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
   { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|PANDA|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
   { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
   { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "shopping" },
@@ -198,6 +232,34 @@ export function classify(
   for (const f of KEYWORD_FALLBACK) {
     if (f.re.test(desc)) {
       return { kind: "variable", appCategory: f.appCategory, reason: `guessed → ${f.appCategory}`, confidence: "low" };
+    }
+  }
+
+  // Last resort: a raw, un-normalized statement line (old CSV imports, or a feed
+  // that sends the full bank descriptor) can hide a known merchant behind a prefix
+  // + date + card mask. Strip that noise and retry the history + keyword lookups.
+  // Additive — only reached when nothing above matched, so it can't regress.
+  const cleaned = stripStatementNoise(desc);
+  if (cleaned && cleaned !== desc.toUpperCase().trim()) {
+    const his2 = hisLookup(merchantKey(cleaned));
+    if (his2) {
+      const map = HISCAT_TO_APP[his2];
+      if (map) {
+        if (map.kind !== "variable")
+          return { kind: "skip", hisCategory: his2, reason: `your label: ${his2}`, confidence: "high" };
+        return {
+          kind: "variable",
+          appCategory: map.appCategory,
+          hisCategory: his2,
+          reason: `your label: ${his2}`,
+          confidence: map.appCategory === "other" ? "low" : "high",
+        };
+      }
+    }
+    for (const f of KEYWORD_FALLBACK) {
+      if (f.re.test(cleaned)) {
+        return { kind: "variable", appCategory: f.appCategory, reason: `guessed → ${f.appCategory}`, confidence: "low" };
+      }
     }
   }
 
