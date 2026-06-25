@@ -228,29 +228,32 @@ export function TxnSheet({
             </div>
 
             {/* Set aside — real money out, kept OUT of the variable budget but still
-                VISIBLE in totals/history. A real merchant can never just vanish. */}
-            <div className="mt-2.5 flex gap-2">
-              <button
-                onClick={async () => {
-                  await setAsideTransaction(txn.id, "excluded");
-                  onClose();
-                }}
-                className="flex-1 rounded-xl py-2.5 text-[12px] font-medium"
-                style={{ background: "#161c26", color: "#8b97a6" }}
-              >
-                {t("Set aside · not my budget")}
-              </button>
-              <button
-                onClick={async () => {
-                  await setAsideTransaction(txn.id, "reimbursable");
-                  onClose();
-                }}
-                className="flex-1 rounded-xl py-2.5 text-[12px] font-semibold"
-                style={{ background: "#16241b", color: "#7fbf6a" }}
-              >
-                {t("Set aside · owed back to me")}
-              </button>
-            </div>
+                VISIBLE in totals/history. A real merchant can never just vanish.
+                Only a plain expense (not income, not already a bill/transfer/split). */}
+            {txn.type === "expense" && !txn.appliesTo && !hasSplits && (
+              <div className="mt-2.5 flex gap-2">
+                <button
+                  onClick={async () => {
+                    await setAsideTransaction(txn.id, "excluded");
+                    onClose();
+                  }}
+                  className="flex-1 rounded-xl py-2.5 text-[12px] font-medium"
+                  style={{ background: "#161c26", color: "#8b97a6" }}
+                >
+                  {t("Set aside · not my budget")}
+                </button>
+                <button
+                  onClick={async () => {
+                    await setAsideTransaction(txn.id, "reimbursable");
+                    onClose();
+                  }}
+                  className="flex-1 rounded-xl py-2.5 text-[12px] font-semibold"
+                  style={{ background: "#16241b", color: "#7fbf6a" }}
+                >
+                  {t("Set aside · owed back to me")}
+                </button>
+              </div>
+            )}
             <button
               onClick={async () => {
                 await deleteTransaction(txn.id);

@@ -286,39 +286,60 @@ export function buildFinanceVMs(
     })),
   };
 
-  // ── "Owed to you" — unsettled reimbursable set-asides (real cash out until repaid) ──
+  // ── "Owed to you" — reimbursable set-asides (real cash out until repaid) ──
+  const isReimbursable = (tx: Transaction) =>
+    tx.type === "expense" && tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "reimbursable";
+  const inLens = (tx: Transaction) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId);
   const owed = data.transactions
-    .filter((tx) => tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "reimbursable" && !tx.appliesTo.settled)
-    .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
+    .filter((tx) => isReimbursable(tx) && !tx.appliesTo!.settled && inLens(tx))
     .sort((a, b) => b.date.localeCompare(a.date));
   const owedToYou = owed.reduce((s, tx) => s + tx.amount, 0);
-  // Candidate paybacks: real income not yet linked to a set-aside. Surface a single
-  // UNAMBIGUOUS deposit (exact amount, landing on/within 60 days after the spend) as
-  // the one-tap "is this the payback?" confirm. Zero or 2+ matches → no guess.
+
+  // Candidate paybacks: real income not yet linked, within the current lens. Match
+  // a single deposit (exact amount, on/within 60 days after the spend), then keep
+  // the suggestion ONLY if that deposit isn't claimed by another equal-amount row —
+  // a deposit two reimbursables both match is ambiguous → fall back to manual.
   const DAY = 864e5;
-  const creditPool = data.transactions.filter((tx) => tx.type === "income" && !tx.appliesTo);
-  const owedList = owed.map((tx) => {
+  const creditPool = data.transactions.filter((tx) => tx.type === "income" && !tx.appliesTo && inLens(tx));
+  const rawMatch = new Map<string, string>(); // reimbursableId -> creditId
+  const claims = new Map<string, number>(); // creditId -> # reimbursables claiming it
+  for (const tx of owed) {
     const spent = new Date(tx.date + "T00:00:00").getTime();
     const cands = creditPool.filter((c) => {
       if (Math.abs(c.amount - tx.amount) > 0.01) return false;
       const got = new Date(c.date + "T00:00:00").getTime();
       return got >= spent && got - spent <= 60 * DAY;
     });
+    if (cands.length === 1) {
+      rawMatch.set(tx.id, cands[0].id);
+      claims.set(cands[0].id, (claims.get(cands[0].id) ?? 0) + 1);
+    }
+  }
+  const owedList = owed.map((tx) => {
+    const cid = rawMatch.get(tx.id);
+    const c = cid && claims.get(cid) === 1 ? data.transactions.find((t) => t.id === cid) : undefined;
     return {
       id: tx.id,
       merchant: tx.description || catName(tx.categoryId),
       amount: tx.amount,
       dateLabel: relDay(tx.date),
       note: tx.appliesTo?.note,
-      ...(cands.length === 1 ? { suggestedCreditId: cands[0].id } : {}),
+      ...(c ? { suggested: { id: c.id, label: `${c.description || catName(c.categoryId)} · ${relDay(c.date)}` } } : {}),
     };
   });
+  // Recently-settled reimbursables, newest first — the undo path for a mis-confirm.
+  const owedSettled = data.transactions
+    .filter((tx) => isReimbursable(tx) && !!tx.appliesTo!.settled && inLens(tx))
+    .sort((a, b) => (b.appliesTo?.settledAt ?? b.date).localeCompare(a.appliesTo?.settledAt ?? a.date))
+    .slice(0, 8)
+    .map((tx) => ({ id: tx.id, merchant: tx.description || catName(tx.categoryId), amount: tx.amount, dateLabel: relDay(tx.date) }));
 
   const home: HomeVM = {
     firepower,
     overspent: overspend,
     owedToYou,
     owedList,
+    owedSettled,
     debtFreeBy,
     // the "Send X at the debt" tile is the DEBT portion only — in the final
     // payoff phase `total` also includes the savings skim (surfaced separately in

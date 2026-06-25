@@ -179,6 +179,8 @@ export interface FinanceStore {
   // Mark a reimbursable as paid back — clears the "owed to you" marker. Pass the
   // payback credit's id to link the two (auto-suggest); omit for a manual "got it back".
   settleReimbursable: (reimbursableId: string, creditTxnId?: string) => Promise<void>;
+  // Undo a settle — re-open the reimbursable as owed and free its payback credit.
+  unsettleReimbursable: (reimbursableId: string) => Promise<void>;
   makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
   setRecurringVariable: (id: string, variable: boolean) => Promise<void>;
   setAccountBalance: (accountId: string, balance: number) => Promise<void>;
@@ -753,7 +755,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           const back = at?.appliedAmount ?? txn.amount;
           setData((p) => ({
             ...p,
-            accounts: txn.accountId
+            // A settled row moved no cash (reverse_money_event short-circuits on
+            // settled), so deleting it must NOT touch the balance — mirror that
+            // here exactly like the debt/goal branches below, or the in-app cash
+            // drifts from server truth until the next sync re-anchors it.
+            accounts: txn.accountId && !at?.settled
               ? p.accounts.map((a) =>
                   a.id === txn.accountId
                     ? {
@@ -861,13 +867,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         // both the spend and any deposit posted independently; this records the pair.
         const now = new Date().toISOString();
         const reimb = dataRef.current.transactions.find((t) => t.id === reimbursableId);
+        // Only link a credit that's STILL a free, unlinked deposit — guards a stale
+        // suggestion (the credit was already claimed by another reimbursable, or
+        // isn't income anymore). Otherwise settle WITHOUT a link (manual "got it back").
+        const credit = creditTxnId ? dataRef.current.transactions.find((t) => t.id === creditTxnId) : undefined;
+        const link = credit && credit.type === "income" && !credit.appliesTo ? creditTxnId : undefined;
         const reimbAt: AppliesTo = {
           ...(reimb?.appliesTo ?? { kind: "setaside", reason: "reimbursable" }),
           kind: "setaside",
           reason: "reimbursable",
           settled: true,
           settledAt: now,
-          ...(creditTxnId ? { settledByTxnId: creditTxnId } : {}),
+          ...(link ? { settledByTxnId: link } : {}),
         };
         const creditAt: AppliesTo = {
           kind: "setaside",
@@ -879,13 +890,42 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
-            t.id === reimbursableId ? { ...t, appliesTo: reimbAt } : creditTxnId && t.id === creditTxnId ? { ...t, appliesTo: creditAt } : t,
+            t.id === reimbursableId ? { ...t, appliesTo: reimbAt } : link && t.id === link ? { ...t, appliesTo: creditAt } : t,
           ),
         }));
         const e1 = await supabase.from("transactions").update({ applies_to: reimbAt }).eq("id", reimbursableId);
         if (e1.error) console.error(e1.error);
-        if (creditTxnId) {
-          const e2 = await supabase.from("transactions").update({ applies_to: creditAt }).eq("id", creditTxnId);
+        if (link) {
+          const e2 = await supabase.from("transactions").update({ applies_to: creditAt }).eq("id", link);
+          if (e2.error) console.error(e2.error);
+        }
+      },
+      async unsettleReimbursable(reimbursableId) {
+        // Undo: re-open the reimbursable as owed and free its linked payback credit
+        // (back to a plain income deposit). Moves no cash — both rows posted on their
+        // own; this only unlinks the pair.
+        const reimb = dataRef.current.transactions.find((t) => t.id === reimbursableId);
+        const creditId = reimb?.appliesTo?.settledByTxnId;
+        const reopened: AppliesTo = {
+          kind: "setaside",
+          reason: "reimbursable",
+          settled: false,
+          ...(reimb?.appliesTo?.note ? { note: reimb.appliesTo.note } : {}),
+        };
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === reimbursableId
+              ? { ...t, appliesTo: reopened }
+              : creditId && t.id === creditId
+                ? { ...t, appliesTo: undefined }
+                : t,
+          ),
+        }));
+        const e1 = await supabase.from("transactions").update({ applies_to: reopened }).eq("id", reimbursableId);
+        if (e1.error) console.error(e1.error);
+        if (creditId) {
+          const e2 = await supabase.from("transactions").update({ applies_to: null }).eq("id", creditId);
           if (e2.error) console.error(e2.error);
         }
       },

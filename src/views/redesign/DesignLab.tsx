@@ -127,8 +127,9 @@ const HOME: HomeVM = {
   bills: { left: 449, nextName: "Claude Pro", nextDate: "Jun 20" },
   owedToYou: 64.5,
   owedList: [
-    { id: "o1", merchant: "Costco — Jay's half", amount: 64.5, dateLabel: "Tue, Jun 16", note: "group order" },
+    { id: "o1", merchant: "Costco — Jay's half", amount: 64.5, dateLabel: "Tue, Jun 16", note: "group order", suggested: { id: "c1", label: "Zelle from Jay · Jun 22" } },
   ],
+  owedSettled: [{ id: "o2", merchant: "Dinner — Sam's share", amount: 28.0, dateLabel: "Mon, Jun 9" }],
 };
 
 const BILLS: BillsVM = {
@@ -223,7 +224,7 @@ export function DesignLab() {
       <TabNav active={tab} onTab={setTab} />
       <BillsSheet vm={BILLS} open={billsOpen} onClose={() => setBillsOpen(false)} />
       <CategorySheet vm={ENV} open={envOpen} onClose={() => setEnvOpen(false)} />
-      <OwedSheet open={owedOpen} onClose={() => setOwedOpen(false)} owed={HOME.owedList} onSettle={() => setOwedOpen(false)} />
+      <OwedSheet open={owedOpen} onClose={() => setOwedOpen(false)} owed={HOME.owedList} settled={HOME.owedSettled} onSettle={() => setOwedOpen(false)} onUnsettle={() => setOwedOpen(false)} />
     </div>
   );
 }

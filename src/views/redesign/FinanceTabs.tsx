@@ -119,7 +119,7 @@ export function FinanceTabs({
   lens: Lens;
   onLens: (l: Lens) => void;
 }) {
-  const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable, acknowledgeAnomaly, settleReimbursable } = useStore();
+  const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable, acknowledgeAnomaly, settleReimbursable, unsettleReimbursable } = useStore();
   const { session, signOut } = useAuth();
   const { setLang } = useLang();
   // Persist the active tab so a language switch (which remounts the whole tree
@@ -190,6 +190,8 @@ export function FinanceTabs({
     );
     return data.transactions
       .filter((tx) => !tx.appliesTo?.settled)
+      // excluded set-asides drop from the all-time ledger too (match `visible`)
+      .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
       .filter((tx) => !personal || !tx.accountId || !otherIds.has(tx.accountId));
   }, [data.transactions, data.accounts, personal, owner]);
   const hasRule = useMemo(() => {
@@ -396,7 +398,9 @@ export function FinanceTabs({
         open={owedOpen}
         onClose={() => setOwedOpen(false)}
         owed={vms.home.owedList}
+        settled={vms.home.owedSettled}
         onSettle={(id, creditId) => void settleReimbursable(id, creditId)}
+        onUnsettle={(id) => void unsettleReimbursable(id)}
       />
       <AnomalySheet
         open={anomalyOpen}

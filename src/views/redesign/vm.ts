@@ -37,9 +37,12 @@ export interface HomeVM {
   sinceMonday: number; // "spent $X since Monday"
   bills: { left: number; nextName: string; nextDate: string }; // the Home Bills tile
   owedToYou: number; // sum of unsettled reimbursable set-asides (0 = hide the tile)
-  // the reimbursables still owed back, for the "Owed to you" sheet. suggestedCreditId
-  // is set (Phase B) when a matching payback deposit is found → one-tap settle.
-  owedList: { id: string; merchant: string; amount: number; dateLabel: string; note?: string; suggestedCreditId?: string }[];
+  // reimbursables still owed back, for the "Owed to you" sheet. `suggested` is set
+  // when a single payback deposit matches → an honest "is this it?" confirm (the
+  // label shows the deposit's merchant + date so a coincidental match is obvious).
+  owedList: { id: string; merchant: string; amount: number; dateLabel: string; note?: string; suggested?: { id: string; label: string } }[];
+  // recently-settled reimbursables — the undo path if a match was confirmed wrongly.
+  owedSettled: { id: string; merchant: string; amount: number; dateLabel: string }[];
 }
 
 // ── Bills surface (Option A list + calendar on tap) ──
