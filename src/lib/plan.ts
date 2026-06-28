@@ -290,6 +290,29 @@ export function variableSpentThisMonth(
     .reduce((s, t) => s + t.amount, 0);
 }
 
+/** The SUSTAINABLE variable-spend pace: the average of actual variable spend over
+ *  the last `months` COMPLETE calendar months (the current, partial month is
+ *  excluded). The payoff timeline projects from this, so the debt-free date drifts
+ *  with real behavior — a one-off over-budget month is diluted by the others, a
+ *  sustained trend moves the date. Falls back to the budget target until at least
+ *  one complete month of spend history exists. */
+export function avgVariableSpend(
+  transactions: Transaction[],
+  now: Date,
+  months: number,
+  fallback: number,
+): number {
+  const totals: number[] = [];
+  for (let m = 1; m <= months; m++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const spent = variableSpentThisMonth(transactions, key);
+    if (spent > 0) totals.push(spent); // a month with no data reads 0 → skip it
+  }
+  if (totals.length === 0) return fallback;
+  return totals.reduce((s, t) => s + t, 0) / totals.length;
+}
+
 /** This month's free-form spend grouped by category id (for the budget bars).
  *  A split transaction fans its amount across its split categories; an unsplit
  *  one lands wholly on its single category. The total is identical either way. */

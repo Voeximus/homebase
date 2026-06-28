@@ -38,6 +38,7 @@ import {
   orderedDebts,
   payoffSchedule,
   variableSpentThisMonth,
+  avgVariableSpend,
   PAY_DAYS,
   SAVINGS_SPLIT,
   type BudgetLine,
@@ -169,12 +170,15 @@ export function FinanceTabs({
     const mKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const target = sumTargets(LEAN_VARIABLE);
     const math = planMath(data.recurring, data.debts, target);
-    const overspend = Math.max(0, variableSpentThisMonth(data.transactions, mKey) - target);
+    const spent = variableSpentThisMonth(data.transactions, mKey);
     const ordered = orderedDebts(data.debts);
-    // Sustainable firepower for the projection; this month's overspend is a one-time
-    // dent (next payday only), so a single over-budget month doesn't bend the whole
-    // timeline. Mirrors buildVMs so the slip + ladder match Home's debt-free date.
-    const schedule = payoffSchedule(ordered, math.firepower, now, PAY_DAYS, SAVINGS_SPLIT, overspend);
+    // Project from the SUSTAINABLE pace (trailing average of actual variable spend),
+    // with this month's above-pace spend as a one-time dent. Mirrors buildVMs so the
+    // slip + ladder match Home's debt-free date.
+    const projVariable = avgVariableSpend(data.transactions, now, 3, target);
+    const projFirepower = Math.max(0, math.income - math.fixedNonDebt - projVariable);
+    const monthDent = Math.max(0, spent - projVariable);
+    const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
     return { ordered, schedule, next: schedule[0] ?? null, totalDebt: math.totalDebt };
   }, [data.recurring, data.debts, data.transactions]);
 

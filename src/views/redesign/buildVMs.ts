@@ -15,6 +15,7 @@ import {
   lineSpent,
   spentByCategory,
   variableSpentThisMonth,
+  avgVariableSpend,
   commitmentProgress,
   billExpected,
 } from "../../lib/plan";
@@ -89,10 +90,14 @@ export function buildFinanceVMs(
   const overspend = Math.max(0, spent - target);
   const firepower = Math.max(0, math.firepower - overspend); // "available THIS month" (the hero tile)
   const ordered = orderedDebts(data.debts);
-  // Project the payoff at the SUSTAINABLE monthly firepower; this month's overspend
-  // is a one-time dent on the next payday(s) only — so a single over-budget month
-  // (a China-restock month) doesn't push the debt-free date out as if it recurs.
-  const schedule = payoffSchedule(ordered, math.firepower, now, PAY_DAYS, SAVINGS_SPLIT, overspend);
+  // Project the payoff from the SUSTAINABLE pace — a trailing average of ACTUAL
+  // variable spend — so the debt-free date tracks real behavior: a one-off
+  // over-budget month barely moves it, a sustained trend does. This month's spend
+  // above that pace dents the next payday once (that cash is already gone).
+  const projVariable = avgVariableSpend(data.transactions, now, 3, target);
+  const projFirepower = Math.max(0, math.income - math.fixedNonDebt - projVariable);
+  const monthDent = Math.max(0, spent - projVariable);
+  const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
   const next = schedule[0] ?? null;
   const payoffDate = schedule.length ? schedule[schedule.length - 1].date : null;
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
