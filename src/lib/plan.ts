@@ -302,10 +302,15 @@ export function avgVariableSpend(
   months: number,
   fallback: number,
 ): number {
+  // Only count complete months from the lean-plan start onward — PRE-plan months
+  // were normal (higher) spending and would wrongly inflate the "sustainable pace".
+  // Until a real post-plan month is banked, fall back to the budget target.
+  const floor = PLAN_START.slice(0, 7);
   const totals: number[] = [];
   for (let m = 1; m <= months; m++) {
     const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (key < floor) continue; // ignore pre-plan months
     const spent = variableSpentThisMonth(transactions, key);
     if (spent > 0) totals.push(spent); // a month with no data reads 0 → skip it
   }
