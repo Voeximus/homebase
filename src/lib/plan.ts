@@ -194,9 +194,15 @@ export function payoffSchedule(
   from: Date,
   payDays: number[] = PAY_DAYS,
   split?: SavingsSplit,
+  // This month's budget overspend, applied as a ONE-TIME debit on the earliest
+  // paydays only (then full firepower resumes). Pass the SUSTAINABLE monthly
+  // firepower as `monthlyFirepower` so a single over-budget month dents the
+  // payoff now without projecting forward as if every future month is over.
+  oneTimeReduction = 0,
 ): PayoffEvent[] {
   if (monthlyFirepower <= 0) return [];
   const perPay = monthlyFirepower / 2;
+  let reduction = Math.max(0, oneTimeReduction);
   const bal = debtsOrdered.map((d) => ({
     id: d.id,
     name: d.name,
@@ -220,7 +226,11 @@ export function payoffSchedule(
       emergency += emShare;
       savingsKind = emShare > 0.005 ? "emergency" : "investing";
     }
-    const debtFire = perPay - toSavings;
+    // Debit this month's overspend off the earliest paydays, then it's gone —
+    // a one-off over-budget month never compounds into the long-term timeline.
+    const reduce = Math.min(reduction, perPay - toSavings);
+    reduction -= reduce;
+    const debtFire = perPay - toSavings - reduce;
 
     let interest = 0;
     for (const b of bal)

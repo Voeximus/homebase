@@ -87,9 +87,12 @@ export function buildFinanceVMs(
   // just the month not being over yet.) This flows into the payoff schedule, the
   // hero number, and the "Next move", so they all reflect real available cash.
   const overspend = Math.max(0, spent - target);
-  const firepower = Math.max(0, math.firepower - overspend);
+  const firepower = Math.max(0, math.firepower - overspend); // "available THIS month" (the hero tile)
   const ordered = orderedDebts(data.debts);
-  const schedule = payoffSchedule(ordered, firepower, now, PAY_DAYS, SAVINGS_SPLIT);
+  // Project the payoff at the SUSTAINABLE monthly firepower; this month's overspend
+  // is a one-time dent on the next payday(s) only — so a single over-budget month
+  // (a China-restock month) doesn't push the debt-free date out as if it recurs.
+  const schedule = payoffSchedule(ordered, math.firepower, now, PAY_DAYS, SAVINGS_SPLIT, overspend);
   const next = schedule[0] ?? null;
   const payoffDate = schedule.length ? schedule[schedule.length - 1].date : null;
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);

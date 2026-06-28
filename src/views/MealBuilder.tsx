@@ -323,7 +323,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
       )}
 
       {/* adherence — streak + compliance over time */}
-      <AdherenceCard stats={stats} acc={PERSON_ACC[person]} />
+      <AdherenceCard stats={stats} acc={PERSON_ACC[person]} activeDate={viewDate} />
 
       {/* calibration — does the macro budget still fit the weekly scale? */}
       <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
@@ -869,7 +869,7 @@ const STATUS_COLOR: Record<DayStatus, string> = {
   skipped: "#f0556e",
   none: "#222b38",
 };
-function AdherenceCard({ stats, acc }: { stats: ReturnType<typeof adherenceStats>; acc: string }) {
+function AdherenceCard({ stats, acc, activeDate }: { stats: ReturnType<typeof adherenceStats>; acc: string; activeDate?: string }) {
   const pct = stats.compliancePct;
   const pctColor = pct == null ? "#7c8696" : pct >= 80 ? "#46d18a" : pct >= 50 ? "#e3b341" : "#f0556e";
   return (
@@ -892,7 +892,7 @@ function AdherenceCard({ stats, acc }: { stats: ReturnType<typeof adherenceStats
           <span
             key={d.date}
             className="h-5 flex-1 rounded-[3px]"
-            style={{ background: STATUS_COLOR[d.status], boxShadow: i === stats.recent.length - 1 ? `0 0 0 1.5px ${acc}` : "none" }}
+            style={{ background: STATUS_COLOR[d.status], boxShadow: (activeDate ? d.date === activeDate : i === stats.recent.length - 1) ? `0 0 0 1.5px ${acc}` : "none" }}
           />
         ))}
       </div>

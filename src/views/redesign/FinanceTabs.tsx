@@ -170,9 +170,11 @@ export function FinanceTabs({
     const target = sumTargets(LEAN_VARIABLE);
     const math = planMath(data.recurring, data.debts, target);
     const overspend = Math.max(0, variableSpentThisMonth(data.transactions, mKey) - target);
-    const firepower = Math.max(0, math.firepower - overspend);
     const ordered = orderedDebts(data.debts);
-    const schedule = payoffSchedule(ordered, firepower, now, PAY_DAYS, SAVINGS_SPLIT);
+    // Sustainable firepower for the projection; this month's overspend is a one-time
+    // dent (next payday only), so a single over-budget month doesn't bend the whole
+    // timeline. Mirrors buildVMs so the slip + ladder match Home's debt-free date.
+    const schedule = payoffSchedule(ordered, math.firepower, now, PAY_DAYS, SAVINGS_SPLIT, overspend);
     return { ordered, schedule, next: schedule[0] ?? null, totalDebt: math.totalDebt };
   }, [data.recurring, data.debts, data.transactions]);
 
