@@ -1,35 +1,34 @@
 import { useState } from "react";
-import { Receipt, X, CircleCheck, CalendarDays, ArrowLeft, Check } from "lucide-react";
-import { catColor, catIcon } from "../../lib/catColor";
+import { Receipt, X, CircleCheck, CalendarDays } from "lucide-react";
 import { t } from "../../lib/i18n";
 import type { BillsVM, BillRow } from "./vm";
+import type { MonthCalendar } from "../../lib/schedule";
+import { BillCalendar } from "./BillCalendar";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money0 = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
-// The Bills surface: Option A (the upcoming list) with the month calendar one
-// tap away. Self-contained bento overlay so it never touches the old chrome.
+// The Bills surface: Option A (the upcoming list) with a flippable month calendar
+// one tap away. Self-contained bento overlay so it never touches the old chrome.
 export function BillsSheet({
   vm,
   open,
   onClose,
   onPay,
+  getMonth,
+  baseDate,
 }: {
   vm: BillsVM;
   open: boolean;
   onClose: () => void;
   onPay?: (b: BillRow) => void;
+  getMonth: (year: number, month: number) => MonthCalendar;
+  baseDate?: Date;
 }) {
   const [showCal, setShowCal] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
   if (!open) return null;
-  const dayBills = selectedDay ? vm.monthBills.filter((b) => b.day === selectedDay) : [];
   const mon = vm.monthLabel.slice(0, 3);
-  const calBy = new Map(vm.calendar.map((c) => [c.day, c]));
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < vm.firstWeekday; i++) cells.push(null);
-  for (let d = 1; d <= vm.daysInMonth; d++) cells.push(d);
 
   return (
     <div
@@ -48,7 +47,6 @@ export function BillsSheet({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-
         <div className="mb-3.5 flex items-center gap-2.5">
           <span
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
@@ -68,114 +66,11 @@ export function BillsSheet({
         </div>
 
         {showCal ? (
-          <>
-            <div className="mb-2 grid grid-cols-7 gap-px">
-              {/* one key for the whole row — per-letter t() would mistranslate the
-                  duplicate S (Sun/Sat) and T (Tue/Thu) in 中文 (position-specific). */}
-              {t("S M T W T F S").split(" ").map((d, i) => (
-                <div key={i} className="text-center text-[10px]" style={{ color: "#5f6a78" }}>
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-px text-[12.5px]" style={{ color: "#cdd6e0" }}>
-              {cells.map((d, i) => {
-                if (d === null) return <div key={i} />;
-                const ev = calBy.get(d);
-                const isToday = d === vm.todayNum;
-                const isSel = d === selectedDay;
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setSelectedDay(d)}
-                    className="flex flex-col items-center justify-start rounded-lg py-1 transition"
-                    style={{ background: isSel ? "#1b2735" : "transparent" }}
-                  >
-                    {isToday ? (
-                      <span
-                        className="flex h-6 w-6 items-center justify-center rounded-full font-bold"
-                        style={{ background: "#34c5e8", color: "#06303a" }}
-                      >
-                        {d}
-                      </span>
-                    ) : (
-                      <span>{d}</span>
-                    )}
-                    {ev && !isToday && (
-                      <span
-                        className="mt-0.5 h-[5px] w-[5px] rounded-full"
-                        style={{ background: ev.in ? "#46d18a" : "#fb923c" }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {selectedDay && (
-              <div className="mt-3 border-t pt-3" style={{ borderColor: "#1b232e" }}>
-                <div className="mb-2 text-[12px] font-semibold text-bone">
-                  {t("{mon} {day}", { mon, day: selectedDay })}
-                </div>
-                {dayBills.length === 0 ? (
-                  <p className="text-[12px]" style={{ color: "#7e8a98" }}>
-                    {t("Nothing due this day.")}
-                  </p>
-                ) : (
-                  dayBills.map((b) => {
-                    const Icon = catIcon(b.catId);
-                    const col = catColor(b.catId);
-                    return (
-                      <button
-                        key={b.id}
-                        onClick={() => !b.paid && onPay?.(b)}
-                        className="flex w-full items-center gap-2.5 py-1.5 text-left"
-                      >
-                        <span
-                          className="flex h-7 w-7 items-center justify-center rounded-lg"
-                          style={{ background: col + "26", color: col }}
-                        >
-                          <Icon size={14} />
-                        </span>
-                        <span
-                          className="flex-1 text-[13px]"
-                          style={{
-                            color: b.paid ? "#7e8a98" : "#e6edf3",
-                            textDecoration: b.paid ? "line-through" : "none",
-                          }}
-                        >
-                          {b.name}
-                        </span>
-                        {b.paid && <Check size={13} style={{ color: "#46d18a" }} />}
-                        <span
-                          className="text-[13px] font-semibold"
-                          style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}
-                        >
-                          {b.variable ? "~" : ""}
-                          {money2(b.amount)}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-            <div className="mt-3 flex gap-3.5 border-t pt-3" style={{ borderColor: "#1b232e" }}>
-              <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#46d18a" }} /> {t("Payday")}
-              </span>
-              <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#fb923c" }} /> {t("Bill due")}
-              </span>
-            </div>
-            <button
-              onClick={() => setShowCal(false)}
-              className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[13px] font-semibold"
-              style={{ background: "#161c26", color: "#8b97a6" }}
-            >
-              <ArrowLeft size={16} /> {t("Back to the list")}
-            </button>
-          </>
+          <BillCalendar
+            getMonth={getMonth}
+            baseDate={baseDate ?? new Date()}
+            onBack={() => setShowCal(false)}
+          />
         ) : (
           <>
             {vm.upcoming.length === 0 ? (

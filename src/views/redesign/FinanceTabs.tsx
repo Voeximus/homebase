@@ -29,20 +29,10 @@ import { BillsSheet } from "./BillsSheet";
 import { TxnSheet } from "./TxnSheet";
 import { OwedSheet } from "./OwedSheet";
 import { AnomalySheet } from "./AnomalySheet";
-import type { ScheduleEntry } from "../../lib/schedule";
+import { monthCalendar, type ScheduleEntry } from "../../lib/schedule";
 import type { BillRow } from "./vm";
-import {
-  LEAN_VARIABLE,
-  sumTargets,
-  planMath,
-  orderedDebts,
-  payoffSchedule,
-  variableSpentThisMonth,
-  avgVariableSpend,
-  PAY_DAYS,
-  SAVINGS_SPLIT,
-  type BudgetLine,
-} from "../../lib/plan";
+import { LEAN_VARIABLE, type BudgetLine, type CushionPreset } from "../../lib/plan";
+import { loadCushion, saveCushion } from "../../lib/cushion";
 import { merchantKey } from "../../lib/categorize";
 
 function Seg({
@@ -141,6 +131,12 @@ export function FinanceTabs({
     }
     setTabState(t);
   };
+  // Selected deploy-strategy preset (UI state; the math always re-derives live).
+  const [cushion, setCushionState] = useState<CushionPreset>(loadCushion);
+  const setCushion = (c: CushionPreset) => {
+    saveCushion(c);
+    setCushionState(c);
+  };
   const [, setSyncing] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -161,30 +157,13 @@ export function FinanceTabs({
     ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
     settingsOpen || markSentOpen || billsOpen || !!payBillEntry || !!txnId || anomalyOpen || owedOpen;
 
-  // The snowball plan (for the attack ladder + the mark-sent slip). Firepower is
-  // reduced by this month's overspend EXACTLY as buildVMs does, so the slip's
-  // send amounts and the ladder's clear-dates match the Home/Insights debt-free
-  // date instead of diverging whenever the budget is overspent.
-  const debtPlan = useMemo(() => {
-    const now = new Date();
-    const mKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const target = sumTargets(LEAN_VARIABLE);
-    const math = planMath(data.recurring, data.debts, target);
-    const spent = variableSpentThisMonth(data.transactions, mKey);
-    const ordered = orderedDebts(data.debts);
-    // Project from the SUSTAINABLE pace (trailing average of actual variable spend),
-    // with this month's above-pace spend as a one-time dent. Mirrors buildVMs so the
-    // slip + ladder match Home's debt-free date.
-    const projVariable = avgVariableSpend(data.transactions, now, 3, target);
-    const projFirepower = Math.max(0, math.income - math.fixedNonDebt - projVariable);
-    const monthDent = Math.max(0, spent - projVariable);
-    const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
-    return { ordered, schedule, next: schedule[0] ?? null, totalDebt: math.totalDebt };
-  }, [data.recurring, data.debts, data.transactions]);
+  // The attack ladder + the deploy slip read the SINGLE shared deploy plan from
+  // buildVMs (vms.deploy below) — so their send-amounts and the debt-free date
+  // never diverge from Home/Insights.
 
   const vms = useMemo(
-    () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
-    [data, owner, lens, session],
+    () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang(), cushion }),
+    [data, owner, lens, session, cushion],
   );
 
   // Lens-filtered ledger + a merchant-rule lookup, for the reused LedgerSheet.
@@ -296,7 +275,7 @@ export function FinanceTabs({
               onCash: () => setAccountsOpen(true),
               onDebt: () => setSprintOpen(true),
               onBudget: () => setTab("insights"),
-              onNext: () => setMarkSentOpen(true),
+              onDeploy: () => setMarkSentOpen(true),
               onBills: () => setBillsOpen(true),
               onRecent: () => {
                 setLedgerView("all");
@@ -304,6 +283,7 @@ export function FinanceTabs({
               },
               onAnomaly: () => setAnomalyOpen(true),
               onOwed: () => setOwedOpen(true),
+              onCushion: setCushion,
             }}
           />
         ) : tab === "insights" ? (
@@ -361,19 +341,19 @@ export function FinanceTabs({
       <SprintSheet
         open={sprintOpen}
         onClose={() => setSprintOpen(false)}
-        ordered={debtPlan.ordered}
-        schedule={debtPlan.schedule}
-        totalDebt={debtPlan.totalDebt}
+        ordered={vms.deploy.ordered}
+        schedule={vms.deploy.schedule}
+        totalDebt={vms.deploy.totalDebt}
       />
       <MarkSentSheet
         open={markSentOpen}
         onClose={() => setMarkSentOpen(false)}
-        next={debtPlan.next}
+        next={vms.deploy.lumpEvent}
         accounts={data.accounts}
         onPay={payDebtExtra}
         autoTracked={
-          !!debtPlan.next &&
-          debtPlan.next.payments.every((p) => {
+          !!vms.deploy.lumpEvent &&
+          vms.deploy.lumpEvent.payments.every((p) => {
             const d = data.debts.find((x) => x.id === p.debtId);
             return !!d && (!!d.providerAccountId || !!d.trackPattern);
           })
@@ -381,7 +361,14 @@ export function FinanceTabs({
       />
       <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={lensAccounts} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
-      <BillsSheet vm={vms.bills} open={billsOpen} onClose={() => setBillsOpen(false)} onPay={openBillPay} />
+      <BillsSheet
+        vm={vms.bills}
+        open={billsOpen}
+        onClose={() => setBillsOpen(false)}
+        onPay={openBillPay}
+        getMonth={(y, m) => monthCalendar(data.recurring, data.transactions, new Date(), y, m)}
+        baseDate={new Date()}
+      />
       <PayBillSheet
         entry={payBillEntry}
         monthKey={monthKey}

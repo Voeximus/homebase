@@ -9,10 +9,23 @@ import { BillsSheet } from "./BillsSheet";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { OwedSheet } from "./OwedSheet";
 import type { HomeVM, BillsVM } from "./vm";
+import type { Recurring } from "../../types";
+import { monthCalendar } from "../../lib/schedule";
 
 // ── Mock view-models. These live ONLY in this dev-only harness (App.tsx lazy-
 //    loads it behind import.meta.env.DEV), so they never ship to production —
 //    keeping the real email / bank / account masks out of the public bundle. ──
+// Mock recurring rows so the lab's month calendar flips with realistic data
+// (incl. the June→July step-downs: Mom 400→300, Rent concession→full).
+const MOCK_RECURRING: Recurring[] = [
+  { id: "rent", name: "Rent", amount: 1715, direction: "out", cadence: "monthly", active: true, dueDays: [1], variable: false, categoryId: "housing" } as Recurring,
+  { id: "mom", name: "Mom", amount: 600, direction: "out", cadence: "monthly", active: true, dueDays: [15, 30], variable: false, categoryId: "other" } as Recurring,
+  { id: "spotify", name: "Spotify", amount: 11.99, direction: "out", cadence: "monthly", active: true, dueDays: [10], variable: false, categoryId: "subscriptions" } as Recurring,
+  { id: "verizon", name: "Verizon", amount: 83, direction: "out", cadence: "monthly", active: true, dueDays: [17], variable: false, categoryId: "utilities" } as Recurring,
+  { id: "pay", name: "Paycheck", amount: 5975, direction: "in", cadence: "monthly", active: true, dueDays: [15, 31] } as Recurring,
+];
+const LAB_NOW = new Date(2026, 5, 30); // June 30 2026
+
 const MOCK_INSIGHTS: InsightsVM = {
   budgetSpent: 719,
   budgetTarget: 1250,
@@ -97,6 +110,22 @@ const HOME: HomeVM = {
   firepower: 1983,
   overspent: 0,
   debtFreeBy: "Oct '26",
+  deployNow: 373, // 2322 cash − 449 bills − 1500 cushion (balanced)
+  billsHoldback: 449,
+  cushion: "balanced",
+  cushionAmount: 1500,
+  shortfall: 0,
+  deployedDebts: [{ name: "Xinyan card (…6813)", paid: 373, clears: false }],
+  presets: [
+    { key: "safe", cushion: 3350, deployNow: 0, debtFreeBy: "Jan '27" },
+    { key: "balanced", cushion: 1500, deployNow: 373, debtFreeBy: "Dec '26" },
+    { key: "aggressive", cushion: 0, deployNow: 1873, debtFreeBy: "Nov '26" },
+  ],
+  deployClearsZeroApr: false,
+  strategyReady: true,
+  paychecksIn: 2,
+  paychecksExpected: 2,
+  deployedThisCycle: 0,
   nextAmount: 991,
   nextDate: "Jun 30",
   cash: 2322,
@@ -222,7 +251,13 @@ export function DesignLab() {
         )}
       </div>
       <TabNav active={tab} onTab={setTab} />
-      <BillsSheet vm={BILLS} open={billsOpen} onClose={() => setBillsOpen(false)} />
+      <BillsSheet
+        vm={BILLS}
+        open={billsOpen}
+        onClose={() => setBillsOpen(false)}
+        getMonth={(y, m) => monthCalendar(MOCK_RECURRING, [], LAB_NOW, y, m)}
+        baseDate={LAB_NOW}
+      />
       <CategorySheet vm={ENV} open={envOpen} onClose={() => setEnvOpen(false)} />
       <OwedSheet open={owedOpen} onClose={() => setOwedOpen(false)} owed={HOME.owedList} settled={HOME.owedSettled} onSettle={() => setOwedOpen(false)} onUnsettle={() => setOwedOpen(false)} />
     </div>

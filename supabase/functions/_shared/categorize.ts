@@ -117,6 +117,13 @@ export function classifyCredit(desc: string): "income" | "transfer" {
   return his && his.startsWith("Internal:") ? "transfer" : "income";
 }
 
+/** A WORK paycheck (vs. other income like Zelle, refunds, cashback). Drives the
+ *  strategy gate, which only opens once both of the cycle's paychecks have landed.
+ *  Both earners' ACH payroll lines carry "PAYROLL". */
+export function isPaycheck(desc: string): boolean {
+  return /\bPAYROLL\b/.test(desc.toUpperCase());
+}
+
 // A line that matches one of these IS a modeled recurring bill — mark it paid,
 // don't count it as variable spend. Names must match SEED_RECURRING exactly.
 const BILL_RULES: { re: RegExp; bill: string }[] = [

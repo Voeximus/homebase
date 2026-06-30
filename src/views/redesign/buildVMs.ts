@@ -3,12 +3,12 @@
 // exactly (planMath / payoffSchedule / spentByCategory / lens filtering) so the
 // reskin shows the same numbers, just in the new shell.
 
-import type { AppData, Transaction } from "../../types";
+import type { AppData, Transaction, Debt } from "../../types";
 import {
   planMath,
   orderedDebts,
-  payoffSchedule,
-  PAY_DAYS,
+  deployPlan,
+  cushionAmount,
   SAVINGS_SPLIT,
   sumTargets,
   LEAN_VARIABLE,
@@ -18,11 +18,14 @@ import {
   avgVariableSpend,
   commitmentProgress,
   billExpected,
+  previousPayday,
+  type CushionPreset,
+  type PayoffEvent,
 } from "../../lib/plan";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
-import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
+import { monthlySchedule, billsBeforeNextPayday, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
-import { merchantKey } from "../../lib/categorize";
+import { merchantKey, isPaycheck } from "../../lib/categorize";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
 import { t } from "../../lib/i18n";
 import type { HomeVM, BillsVM } from "./vm";
@@ -51,6 +54,7 @@ const shortDebt = (n: string) => {
 export interface VMExtras {
   email: string;
   lang: "en" | "zh";
+  cushion?: CushionPreset;
 }
 
 export interface FinanceVMs {
@@ -59,6 +63,14 @@ export interface FinanceVMs {
   activity: ActivityVM;
   profile: ProfileVM;
   bills: BillsVM;
+  // The single shared deploy plan — Home, the attack ladder, and the deploy slip
+  // all read THIS, so their send-amounts and debt-free date never diverge.
+  deploy: {
+    ordered: Debt[];
+    schedule: PayoffEvent[]; // the post-lump flow (drives the debt-free date)
+    totalDebt: number;
+    lumpEvent: PayoffEvent | null; // the deploy-now moves, shaped for MarkSentSheet
+  };
 }
 
 export function buildFinanceVMs(
@@ -96,11 +108,8 @@ export function buildFinanceVMs(
   // above that pace dents the next payday once (that cash is already gone).
   const projVariable = avgVariableSpend(data.transactions, now, 3, target);
   const projFirepower = Math.max(0, math.income - math.fixedNonDebt - projVariable);
-  const monthDent = Math.max(0, spent - projVariable);
-  const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
-  const next = schedule[0] ?? null;
-  const payoffDate = schedule.length ? schedule[schedule.length - 1].date : null;
-  const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
+  // The deploy plan (lump-now + flow-after) is built below — after the bills
+  // section — because it needs the bills-before-next-payday hold-back.
   const totalOriginal = data.debts.reduce((s, d) => s + d.originalBalance, 0);
   const cleared = totalOriginal - math.totalDebt;
   const clearedPct = totalOriginal > 0 ? (cleared / totalOriginal) * 100 : 0;
@@ -125,10 +134,7 @@ export function buildFinanceVMs(
   }));
   const donut = lineRows.filter((r) => r.spent > 0).map((r) => ({ catId: r.catId, amount: r.spent }));
 
-  const debtFreeBy = payoffDate ? fmtMY(payoffDate) : "—";
-  const monthsToGo = payoffDate
-    ? Math.max(1, Math.round((payoffDate.getTime() - now.getTime()) / 2.592e9))
-    : 0;
+  // debtFreeBy / monthsToGo are derived from the deploy plan (built after bills).
 
   // ── lens-filtered ledger (same predicate as OnePager `recent`/`ledgerTxns`) ──
   const visible = data.transactions
@@ -220,11 +226,11 @@ export function buildFinanceVMs(
   outEntries.forEach((e) => {
     if (e.recurringId) (recDaysByRec[e.recurringId] ??= []).push(e.day);
   });
-  const recordedBill = (e: ScheduleEntry) =>
+  const recordedBill = (e: ScheduleEntry, mk: string = monthKey) =>
     e.recurringId
       ? data.transactions.find((t) => {
           if (t.type !== "expense" || t.appliesTo?.kind !== "bill") return false;
-          if (t.appliesTo.recurringId !== e.recurringId || t.appliesTo.monthKey !== monthKey)
+          if (t.appliesTo.recurringId !== e.recurringId || t.appliesTo.monthKey !== mk)
             return false;
           // snap the recorded day to this recurring's nearest scheduled day, then
           // require it to land on THIS entry — so single-installment bills flip on
@@ -294,6 +300,98 @@ export function buildFinanceVMs(
     })),
   };
 
+  // ── Deploy-now plan: a lump from today's cash + the flow on reduced balances ──
+  // Hold back the bills landing before the next paycheck. The paid-check is
+  // month-aware (recordedBill(e, mk)) so next month's bills aren't wrongly marked
+  // paid by the current-month day<=today heuristic.
+  const billsHoldback = billsBeforeNextPayday(
+    data.recurring,
+    data.transactions,
+    now,
+    (e, mk) => (e.recurringId ? !!recordedBill(e, mk) : false),
+  );
+  const cushionAnchors = {
+    emergencyTarget: SAVINGS_SPLIT.emergencyTarget,
+    monthOfExpenses: math.fixedNonDebt + target,
+  };
+  const selectedPreset: CushionPreset = extra.cushion ?? "balanced";
+  const presetKeys: CushionPreset[] = ["safe", "balanced", "aggressive"];
+  const presetPlans = presetKeys.map((key) => ({
+    key,
+    plan: deployPlan(ordered, cushionAmount(key, cushionAnchors), cash, billsHoldback, projFirepower, now),
+  }));
+  const selected = (presetPlans.find((p) => p.key === selectedPreset) ?? presetPlans[1]).plan;
+  const presets = presetPlans.map(({ key, plan }) => ({
+    key,
+    cushion: plan.cushion,
+    deployNow: plan.lump,
+    debtFreeBy: fmtMY(plan.debtFreeDate),
+  }));
+  const next = selected.future[0] ?? null;
+  const debtFreeBy = selected.future.length ? fmtMY(selected.debtFreeDate) : "—";
+  const monthsToGo = selected.future.length
+    ? Math.max(1, Math.round((selected.debtFreeDate.getTime() - now.getTime()) / 2.592e9))
+    : 0;
+  const totalInterest = selected.future.reduce((s, e) => s + e.interest, 0);
+  // For the trade-off nudge: does the chosen lump fully clear a 0%-APR debt?
+  // (Draining a cushion to kill interest-free debt is the move research warns against.)
+  const deployClearsZeroApr = selected.cleared.some(
+    (c) => c.clears && (data.debts.find((d) => d.id === c.id)?.apr ?? 0) === 0,
+  );
+  // The deploy-now lump, shaped as a PayoffEvent so it reuses MarkSentSheet (which
+  // already shows an advisory "send it — the feed reconciles" slip for tracked debts).
+  const lumpEvent: PayoffEvent | null = selected.cleared.length
+    ? {
+        date: now,
+        payments: selected.cleared.map((c) => ({
+          debtId: c.id,
+          name: c.name,
+          amount: c.paid,
+          clears: c.clears,
+        })),
+        total: selected.lump,
+        toDebt: selected.lump,
+        toSavings: 0,
+        savingsKind: null,
+        emergencyBalance: 0,
+        interest: 0,
+        remaining: selected.deployedDebts.reduce((s, d) => s + Math.max(0, d.balance), 0),
+      }
+    : null;
+  const deploy = {
+    ordered,
+    schedule: selected.future,
+    totalDebt: math.totalDebt,
+    lumpEvent,
+  };
+
+  // ── Strategy gate: only surface the dial once BOTH of the cycle's paychecks
+  // have landed — you can't safely pick a deploy before your full income is in.
+  // Paychecks are detected by DESCRIPTOR (isPaycheck), not category, so it works
+  // on existing rows. The cycle starts at the previous payday (− a few days of
+  // early-post grace). deployedThisCycle is summed LIVE from tagged debt-payment
+  // transactions, so it tracks reality as the feed posts.
+  const cycleAnchor = previousPayday(now);
+  cycleAnchor.setDate(cycleAnchor.getDate() - 4);
+  const cycleStartKey = dateKeyOf(cycleAnchor);
+  const paychecksExpected = data.recurring.filter((r) => r.active && r.direction === "in").length;
+  const paychecksIn = data.transactions.filter(
+    (t) => t.type === "income" && t.date >= cycleStartKey && isPaycheck(t.description ?? ""),
+  ).length;
+  const strategyReady = paychecksExpected === 0 ? true : paychecksIn >= paychecksExpected;
+  const debtPatterns = data.debts
+    .map((d) => d.trackPattern)
+    .filter((p): p is string => !!p)
+    .map((p) => p.toUpperCase());
+  const deployedThisCycle = data.transactions
+    .filter(
+      (t) =>
+        t.date >= cycleStartKey &&
+        (t.appliesTo?.kind === "debt" ||
+          (t.amount < 0 && debtPatterns.some((p) => (t.description ?? "").toUpperCase().includes(p)))),
+    )
+    .reduce((s, t) => s + Math.abs(t.amount), 0);
+
   // ── "Owed to you" — reimbursable set-asides (real cash out until repaid) ──
   const isReimbursable = (tx: Transaction) =>
     tx.type === "expense" && tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "reimbursable";
@@ -349,6 +447,18 @@ export function buildFinanceVMs(
     owedList,
     owedSettled,
     debtFreeBy,
+    deployNow: selected.lump,
+    billsHoldback,
+    cushion: selectedPreset,
+    cushionAmount: selected.cushion,
+    shortfall: selected.shortfall,
+    deployedDebts: selected.cleared.map((c) => ({ name: c.name, paid: c.paid, clears: c.clears })),
+    presets,
+    deployClearsZeroApr,
+    strategyReady,
+    paychecksIn,
+    paychecksExpected,
+    deployedThisCycle,
     // the "Send X at the debt" tile is the DEBT portion only — in the final
     // payoff phase `total` also includes the savings skim (surfaced separately in
     // the slip), so using toDebt keeps the label honest.
@@ -491,5 +601,5 @@ export function buildFinanceVMs(
       })),
   };
 
-  return { home, insights, activity, profile, bills };
+  return { home, insights, activity, profile, bills, deploy };
 }

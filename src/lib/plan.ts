@@ -173,7 +173,7 @@ export function paydayDate(year: number, month: number, payDay: number): Date {
   return payDay >= 31 ? new Date(year, month + 1, 0) : new Date(year, month, payDay);
 }
 
-function nextPayday(after: Date, payDays: number[]): Date {
+export function nextPayday(after: Date, payDays: number[] = PAY_DAYS): Date {
   const y = after.getFullYear();
   const m = after.getMonth();
   const cands = payDays
@@ -181,6 +181,20 @@ function nextPayday(after: Date, payDays: number[]): Date {
     .sort((a, b) => a.getTime() - b.getTime());
   for (const c of cands) if (c.getTime() > after.getTime()) return c;
   return paydayDate(y, m + 1, payDays[0]); // none left this month → next month's first
+}
+
+/** The most recent payday on or before `before` — the start of the current pay
+ *  cycle (mirror of nextPayday). Used to gate the strategy dial: it opens only
+ *  once this cycle's paychecks have landed. */
+export function previousPayday(before: Date, payDays: number[] = PAY_DAYS): Date {
+  const y = before.getFullYear();
+  const m = before.getMonth();
+  const cands = payDays
+    .map((pd) => paydayDate(y, m, pd))
+    .filter((d) => d.getTime() <= before.getTime())
+    .sort((a, b) => b.getTime() - a.getTime());
+  if (cands.length) return cands[0];
+  return paydayDate(y, m - 1, payDays[payDays.length - 1]); // none yet this month → last month's final payday
 }
 
 /**
@@ -265,6 +279,89 @@ export function payoffSchedule(
     date = nextPayday(date, payDays);
   }
   return events;
+}
+
+// --- Deploy-now: the cash-aware lump on top of the flow ----------------------
+// The hero number is no longer a monthly FLOW ("free to fire this month") but a
+// BALANCE fact: how much of the cash on hand can go at the debt right now, after
+// reserving (A) the bills due before the next paycheck and (B) a safety cushion.
+// The lump is applied to debt BALANCES, then the existing payoffSchedule runs on
+// those reduced balances from the next (unearned) payday — so no dollar is ever
+// counted in both the lump and the flow.
+
+export type CushionPreset = "safe" | "balanced" | "aggressive";
+
+export interface DeployCleared {
+  id: string;
+  name: string;
+  paid: number;
+  clears: boolean; // the lump zeroes this debt
+}
+
+export interface DeployPlan {
+  cushion: number; // safety cushion held back for this preset
+  lump: number; // deployable now = max(0, cash − billsHeld − cushion)
+  shortfall: number; // how far UNDER the cushion the cash is (0 once the pad is full)
+  cleared: DeployCleared[]; // which debts the lump hits, in attack order
+  deployedDebts: Debt[]; // copies, with post-lump balances
+  future: PayoffEvent[]; // the flow, run on post-lump balances from the next payday
+  debtFreeDate: Date;
+}
+
+/** The cushion dollar amount for a preset — anchored to live constants so a
+ *  re-seed moves the math, never hardcoded.
+ *   · aggressive → 0 (only the auto bills-before-payday is held back)
+ *   · balanced   → the starter emergency fund (SAVINGS_SPLIT.emergencyTarget)
+ *   · safe       → one month of lean living (fixed-non-debt + the variable budget) */
+export function cushionAmount(
+  preset: CushionPreset,
+  opts: { emergencyTarget: number; monthOfExpenses: number },
+): number {
+  switch (preset) {
+    case "aggressive":
+      return 0;
+    case "balanced":
+      return opts.emergencyTarget;
+    case "safe":
+      return opts.monthOfExpenses;
+  }
+}
+
+/** Stage 1 (deploy a lump from today's cash) + Stage 2 (the flow continues on the
+ *  reduced balances). No double-count: the lump is money already in the bank, the
+ *  flow starts at the next UNEARNED payday, and the lump is applied to balances —
+ *  never added to firepower. monthDent is intentionally omitted here: this month's
+ *  overspend already came out of the cash we start from. */
+export function deployPlan(
+  orderedDebts: Debt[],
+  cushion: number,
+  cash: number,
+  billsHeld: number,
+  projFirepower: number,
+  now: Date,
+): DeployPlan {
+  const lump = Math.max(0, cash - billsHeld - cushion);
+  const shortfall = Math.max(0, billsHeld + cushion - cash);
+
+  // Apply the lump to COPIES in attack order; record what it clears. Inputs are
+  // never mutated.
+  const reduced = orderedDebts.map((d) => ({ ...d }));
+  let fire = lump;
+  const cleared: DeployCleared[] = [];
+  for (const d of reduced) {
+    if (fire <= 0.005) break;
+    if (d.balance <= 0.005) continue;
+    const pay = Math.min(fire, d.balance);
+    d.balance = Math.round((d.balance - pay) * 100) / 100;
+    fire -= pay;
+    cleared.push({ id: d.id, name: d.name, paid: pay, clears: d.balance <= 0.005 });
+  }
+
+  // The flow continues on the reduced balances, from the next unearned payday.
+  const future = payoffSchedule(reduced, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT);
+  const debtFreeDate = future.length ? future[future.length - 1].date : now;
+
+  return { cushion, lump, shortfall, cleared, deployedDebts: reduced, future, debtFreeDate };
 }
 
 /**

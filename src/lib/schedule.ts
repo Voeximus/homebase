@@ -1,6 +1,6 @@
 import type { Recurring, Transaction } from "../types";
 import { monthlyAmount } from "./recurring";
-import { billExpected, PAY_DAYS } from "./plan";
+import { billExpected, PAY_DAYS, nextPayday } from "./plan";
 
 // Day-of-month each recurring item posts, detected from Mar–Jun 2026 bank
 // history (keyed by the recurring row's NAME). Mom posts on each payday (two
@@ -151,4 +151,159 @@ export function eventsForMonth(
     map.set(d, arr);
   }
   return map;
+}
+
+/** The AUTO half of the deploy hold-back: the OUT bills landing between today and
+ *  your next paycheck (inclusive), spanning the month boundary when the next
+ *  payday is in the following month (e.g. today the 30th → next check the 15th).
+ *  Already-paid bills are dropped via the injected predicate. */
+export function billsBeforeNextPayday(
+  recurring: Recurring[],
+  transactions: Transaction[],
+  now: Date,
+  isBillPaid: (entry: ScheduleEntry, monthKey: string) => boolean = () => false,
+): number {
+  const next = nextPayday(now);
+  const startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const endMs = new Date(next.getFullYear(), next.getMonth(), next.getDate()).getTime();
+
+  let total = 0;
+  let y = now.getFullYear();
+  let m = now.getMonth(); // 0-indexed
+  const ey = next.getFullYear();
+  const em = next.getMonth();
+  // Walk every month the [today, next payday] window touches (at most two).
+  while (y < ey || (y === ey && m <= em)) {
+    const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const { entries } = monthlySchedule(recurring, monthKey, transactions);
+    for (const e of entries) {
+      if (e.direction !== "out") continue;
+      const day = Math.min(e.day, daysInMonth);
+      const dMs = new Date(y, m, day).getTime();
+      if (dMs >= startMs && dMs <= endMs && !isBillPaid(e, monthKey)) total += e.amount;
+    }
+    m++;
+    if (m > 11) {
+      m = 0;
+      y++;
+    }
+  }
+  return total;
+}
+
+// --- Month-flippable calendar -------------------------------------------------
+export interface MonthCalDay {
+  day: number;
+  in: boolean; // income lands
+  out: boolean; // a bill is due
+  pay: boolean; // a paycheck lands (payday marker)
+}
+export interface MonthCalBill {
+  id: string; // recurringId@day (stable key)
+  name: string;
+  catId: string; // category id → icon + color
+  day: number;
+  amount: number;
+  dateLabel: string; // "Jul 1"
+  paid: boolean;
+  variable: boolean; // amount is a rolling-average estimate
+  recurringId?: string;
+}
+export interface MonthCalendar {
+  year: number;
+  month: number; // 0-indexed
+  monthKey: string;
+  monthLabel: string; // "July 2026"
+  daysInMonth: number;
+  firstWeekday: number; // weekday (0=Sun) of day 1
+  isCurrentMonth: boolean;
+  todayNum: number; // day-of-month if current month, else -1 (no "today" shading off-month)
+  days: MonthCalDay[]; // only days that carry a dot
+  bills: MonthCalBill[]; // every out-bill this month, day-ordered
+}
+
+/** Build one month's calendar for ANY month, reusing the schedule engine so
+ *  step-downs (Mom 400→300, Rent concession→full) and ANNUAL items render the
+ *  correct amount per month. Paid-status is month-scoped (a recorded payment in
+ *  THIS month), never the current-month "day ≤ today" heuristic — so flipping to a
+ *  past/future month never mislabels a bill as paid. */
+export function monthCalendar(
+  recurring: Recurring[],
+  transactions: Transaction[],
+  now: Date,
+  year: number,
+  month: number,
+): MonthCalendar {
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
+  const todayNum = isCurrentMonth ? now.getDate() : -1;
+  const { entries } = monthlySchedule(recurring, monthKey, transactions);
+
+  // Day-snapping table so a recorded payment maps to the right installment
+  // (multi-installment bills like Mom 15/30).
+  const recDays: Record<string, number[]> = {};
+  entries.forEach((e) => {
+    if (e.direction === "out" && e.recurringId) (recDays[e.recurringId] ??= []).push(e.day);
+  });
+  const paidEntry = (e: ScheduleEntry): boolean => {
+    if (!e.recurringId) return false; // annual/non-recurring: no recorded link to match
+    return !!transactions.find((tx) => {
+      if (tx.type !== "expense" || tx.appliesTo?.kind !== "bill") return false;
+      if (tx.appliesTo.recurringId !== e.recurringId || tx.appliesTo.monthKey !== monthKey) return false;
+      const days = recDays[e.recurringId!] ?? [e.day];
+      const rd = tx.appliesTo.day;
+      if (rd == null) return days.length === 1;
+      const nearest = days.reduce((b, d) => (Math.abs(d - rd) < Math.abs(b - rd) ? d : b), days[0]);
+      return nearest === e.day;
+    });
+  };
+
+  const calMap: Record<number, { in: boolean; out: boolean; pay: boolean }> = {};
+  entries.forEach((e) => {
+    const d = Math.min(e.day, daysInMonth);
+    calMap[d] ??= { in: false, out: false, pay: false };
+    if (e.direction === "in") {
+      calMap[d].in = true;
+      calMap[d].pay = true;
+    } else if (e.direction === "out") {
+      calMap[d].out = true;
+    }
+  });
+
+  const fmtDay = (day: number) =>
+    new Date(year, month, Math.min(day, daysInMonth)).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+
+  const bills: MonthCalBill[] = entries
+    .filter((e) => e.direction === "out")
+    .sort((a, b) => a.day - b.day)
+    .map((e) => ({
+      id: `${e.recurringId ?? e.label}@${e.day}`,
+      name: e.label,
+      catId: recurring.find((r) => r.id === e.recurringId)?.categoryId ?? "other",
+      day: e.day,
+      amount: e.amount,
+      dateLabel: fmtDay(e.day),
+      paid: paidEntry(e),
+      variable: !!e.variable,
+      recurringId: e.recurringId,
+    }));
+
+  return {
+    year,
+    month,
+    monthKey,
+    monthLabel: new Date(year, month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    daysInMonth,
+    firstWeekday,
+    isCurrentMonth,
+    todayNum,
+    days: Object.entries(calMap).map(([d, v]) => ({ day: +d, in: v.in, out: v.out, pay: v.pay })),
+    bills,
+  };
 }

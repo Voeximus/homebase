@@ -15,7 +15,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { reconcile, type NormalRow, type PlaidTxn } from "../_shared/plaidSync.ts";
-import { classify, classifyCredit, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import { classify, classifyCredit, isPaycheck, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
 const PLAID_BASE = `https://${PLAID_ENV}.plaid.com`;
@@ -310,7 +310,7 @@ async function syncConnection(connId: string, force = false) {
           date: row.date,
           amount: Math.abs(row.amount),
           type: "income",
-          category_id: "other-income",
+          category_id: isPaycheck(row.description) ? "paycheck" : "other-income",
           description: row.description,
           needs_review: false,
         });
