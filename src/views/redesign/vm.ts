@@ -3,8 +3,6 @@
 // (Gino's real numbers) so the look can be verified without a login; the real
 // container will compute the same shapes from the store. One contract, two feeds.
 
-import type { CushionPreset } from "../../lib/plan";
-
 export interface RecentRow {
   id: string;
   merchant: string;
@@ -19,19 +17,7 @@ export interface HomeVM {
   firepower: number; // $/mo free to fire at debt (already net of budget overspend)
   overspent: number; // $ over the lean budget this month (0 = on/under budget) — reduces firepower
   debtFreeBy: string; // "Oct '26"
-  // ── deploy-now model (cash-aware) ──
-  deployNow: number; // selected preset's deployable-now lump = cash − billsHoldback − cushion
-  billsHoldback: number; // bills due before the next paycheck (auto-reserved)
-  cushion: CushionPreset; // the selected strategy
-  cushionAmount: number; // the $ cushion held for the selected preset
-  shortfall: number; // how far cash is UNDER the cushion (0 once the pad is funded)
-  deployedDebts: { name: string; paid: number; clears: boolean }[]; // what the lump clears
-  presets: { key: CushionPreset; cushion: number; deployNow: number; debtFreeBy: string }[];
-  deployClearsZeroApr: boolean; // the selected lump clears a 0%-APR debt (drives the trade-off nudge)
-  strategyReady: boolean; // both of the cycle's paychecks have landed → show the dial
-  paychecksIn: number; // paychecks detected this cycle
-  paychecksExpected: number; // paychecks expected this cycle (active income sources)
-  deployedThisCycle: number; // $ actually sent at debt this cycle (live from tagged txns)
+  deployedThisCycle: number; // $ actually sent at debt this cycle (live from tagged txns) — tracking
   nextAmount: number; // next payday send
   nextDate: string; // "Jun 30"
   cash: number;

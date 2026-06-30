@@ -1,15 +1,12 @@
-import { useState } from "react";
-import { ChevronRight, Flame, Wallet, Target, Receipt } from "lucide-react";
+import { ChevronRight, Flame, Wallet, Receipt } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 import type { HomeVM } from "./vm";
-import type { CushionPreset } from "../../lib/plan";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const shortName = (n: string) => n.replace(/\s*\(.*\)$/, "").trim();
 
 interface Taps {
   onCash?: () => void;
@@ -20,83 +17,29 @@ interface Taps {
   onAnomaly?: () => void;
   onRecent?: () => void;
   onOwed?: () => void;
-  onCushion?: (preset: CushionPreset) => void;
-  onDeploy?: () => void;
 }
 
 export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
   const donutSegs = vm.donut.map((d) => ({ color: catColor(d.catId), value: d.amount }));
-  const [showMath, setShowMath] = useState(false);
   return (
     <div className="flex flex-col gap-0">
-      {/* ── Gradient hero — Stage 1: Deploy now (cash-aware) ── */}
+      {/* ── Gradient hero — debt tracking ── */}
       <div
         style={{ background: BRAND_GRADIENT }}
         className="rounded-b-[26px] px-6 pb-5 pt-4 text-white"
       >
-        <div className="flex items-center gap-1.5 text-[12px] opacity-90">
-          {vm.deployNow > 0 ? t("deploy at debt · right now") : t("hold · right now")}
-        </div>
+        <div className="flex items-center gap-1.5 text-[12px] opacity-90">{t("debt left")}</div>
         <div className="mt-0.5 flex items-end justify-between">
-          <div className="text-[40px] font-bold leading-none tracking-tight">
-            {money(vm.deployNow)}
+          <div className="text-[40px] font-bold leading-none tracking-tight">{money(vm.debtLeft)}</div>
+          <div className="pb-1 text-[12px] opacity-90">
+            {t("{pct}% cleared", { pct: Math.round(vm.debtProgressPct) })}
           </div>
-          <div className="pb-1 text-[12px] opacity-90">{t("debt-free {date}", { date: vm.debtFreeBy })}</div>
         </div>
-
-        {/* what the lump clears — or, at $0, the honest reason why */}
-        {vm.deployNow > 0 ? (
-          (() => {
-            const cleared = vm.deployedDebts.filter((d) => d.clears).map((d) => shortName(d.name));
-            const label = cleared.length
-              ? t("clears {names}", { names: cleared.join(" + ") })
-              : vm.deployedDebts.length
-                ? t("toward {name}", { name: shortName(vm.deployedDebts[0].name) })
-                : "";
-            return label ? <div className="mt-1.5 text-[12.5px] opacity-95">{label}</div> : null;
-          })()
-        ) : vm.shortfall > 0 ? (
-          <div
-            className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ background: "rgba(0,0,0,0.18)", color: "#ffe0c2" }}
-          >
-            {t("{short} under your {target} cushion — keep building", {
-              short: money(vm.shortfall),
-              target: money(vm.cushionAmount),
-            })}
-          </div>
-        ) : (
-          <div className="mt-1.5 text-[12.5px] opacity-90">{t("cushion funded — nothing to deploy yet")}</div>
-        )}
-
-        {/* collapsible math: cash − bills − cushion = deploy */}
-        <button
-          onClick={() => setShowMath((s) => !s)}
-          className="mt-2 inline-flex items-center text-[11px] underline underline-offset-2 opacity-80"
-        >
-          {showMath ? t("hide math") : t("show math")}
-        </button>
-        {showMath && (
-          <div className="mt-1.5 space-y-0.5 text-[11.5px] opacity-90">
-            <div className="flex justify-between">
-              <span>{t("cash on hand")}</span>
-              <span>{money(vm.cash)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>− {t("bills before payday")}</span>
-              <span>{money(vm.billsHoldback)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>− {t("cushion ({preset})", { preset: vm.cushion })}</span>
-              <span>{money(vm.cushionAmount)}</span>
-            </div>
-            <div className="mt-0.5 flex justify-between border-t border-white/25 pt-0.5 font-semibold">
-              <span>{t("deploy now")}</span>
-              <span>{money(vm.deployNow)}</span>
-            </div>
+        {vm.deployedThisCycle > 0 && (
+          <div className="mt-1.5 text-[12.5px] opacity-95">
+            {t("deployed {amount} at debt this cycle", { amount: money(vm.deployedThisCycle) })}
           </div>
         )}
-
         {vm.overspent > 0 && (
           <div
             className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -216,97 +159,6 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           </div>
           <ChevronRight size={18} style={{ color: "#6b7686" }} />
         </button>
-
-        {/* Strategy dial — pick a cushion → see deploy now + debt-free date */}
-        <div
-          className="col-span-2 rounded-[18px] border p-3"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
-        >
-          <div className="mb-2 flex items-center gap-1.5 px-1 text-[11.5px]" style={{ color: "#8b97a6" }}>
-            <Target size={14} /> {t("Strategy · safer ↔ faster")}
-          </div>
-          {vm.deployedThisCycle > 0 && (
-            <div
-              className="mb-2 rounded-[12px] px-2.5 py-1.5 text-[11.5px]"
-              style={{ background: "#0e2a1c", color: "#7fbf6a" }}
-            >
-              {t("Deployed {amount} at debt this cycle", { amount: money(vm.deployedThisCycle) })}
-            </div>
-          )}
-          {!vm.strategyReady ? (
-            <div
-              className="rounded-[12px] px-3 py-3 text-[12px]"
-              style={{ background: "#161c26", color: "#9aa6b5" }}
-            >
-              {t("Waiting on your paychecks — {paid} of {total} in. The strategy opens once both land.", {
-                paid: vm.paychecksIn,
-                total: vm.paychecksExpected,
-              })}
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-3 gap-1.5">
-            {vm.presets.map((p) => {
-              const on = p.key === vm.cushion;
-              return (
-                <button
-                  key={p.key}
-                  onClick={() => taps.onCushion?.(p.key)}
-                  className="rounded-[14px] border px-2 py-2.5 text-left transition active:scale-[0.97]"
-                  style={{
-                    background: on ? "rgba(52,197,232,0.14)" : "#0f1620",
-                    borderColor: on ? "#34c5e8" : "#232d3a",
-                  }}
-                >
-                  <div
-                    className="text-[11px] font-semibold capitalize"
-                    style={{ color: on ? "#34c5e8" : "#8b97a6" }}
-                  >
-                    {t(p.key)}
-                  </div>
-                  <div className="mt-1 text-[17px] font-bold leading-none text-bone">
-                    {money(p.deployNow)}
-                  </div>
-                  <div className="mt-1 text-[10.5px]" style={{ color: "#6b7686" }}>
-                    {t("keep {amount}", { amount: money(p.cushion) })}
-                  </div>
-                  <div className="mt-0.5 text-[10.5px]" style={{ color: "#6b7686" }}>
-                    {p.deployNow > 0 ? t("free {date}", { date: p.debtFreeBy }) : t("hold")}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2.5 px-1 text-[11.5px]" style={{ color: "#9aa6b5" }}>
-            {vm.deployNow > 0
-              ? t("Then each payday continues the snowball → debt-free {date}", { date: vm.debtFreeBy })
-              : t("Hold this cycle; each payday still chips the snowball → debt-free {date}", { date: vm.debtFreeBy })}
-          </div>
-          {vm.deployNow > 0 && (
-            <button
-              onClick={taps.onDeploy}
-              className="mt-2.5 w-full rounded-[14px] py-2.5 text-center text-[13px] font-semibold transition active:scale-[0.98]"
-              style={{ background: "linear-gradient(150deg,#0e7490,#1d4ed8)", color: "#eaf6ff" }}
-            >
-              {t("Deploy {amount} now →", { amount: money(vm.deployNow) })}
-            </button>
-          )}
-          {vm.deployNow > 0 && vm.deployClearsZeroApr && vm.cushion !== "safe" && (
-            <div
-              className="mt-2 flex items-start gap-1.5 rounded-[12px] px-2.5 py-2 text-[11px]"
-              style={{ background: "#2a2016", color: "#fbbf77" }}
-            >
-              <Flame size={13} className="mt-px shrink-0" />
-              <span>
-                {t(
-                  "This clears a 0%-interest balance and thins your safety pad — a surprise expense would land on your high-interest card.",
-                )}
-              </span>
-            </div>
-          )}
-            </>
-          )}
-        </div>
 
         {/* Bills — critical daily glance */}
         <button

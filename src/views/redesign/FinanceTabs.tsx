@@ -19,7 +19,6 @@ import { AddTransactionSheet } from "../../components/AddTransactionSheet";
 import { ImportSheet } from "../../components/ImportSheet";
 import {
   SprintSheet,
-  MarkSentSheet,
   AccountsSheet,
   SettingsSheet,
   PayBillSheet,
@@ -31,8 +30,7 @@ import { OwedSheet } from "./OwedSheet";
 import { AnomalySheet } from "./AnomalySheet";
 import { monthCalendar, type ScheduleEntry } from "../../lib/schedule";
 import type { BillRow } from "./vm";
-import { LEAN_VARIABLE, type BudgetLine, type CushionPreset } from "../../lib/plan";
-import { loadCushion, saveCushion } from "../../lib/cushion";
+import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
 import { merchantKey } from "../../lib/categorize";
 
 function Seg({
@@ -110,7 +108,7 @@ export function FinanceTabs({
   lens: Lens;
   onLens: (l: Lens) => void;
 }) {
-  const { data, payDebtExtra, payBill, markBillPaid, setRecurringVariable, acknowledgeAnomaly, settleReimbursable, unsettleReimbursable } = useStore();
+  const { data, payBill, markBillPaid, setRecurringVariable, acknowledgeAnomaly, settleReimbursable, unsettleReimbursable } = useStore();
   const { session, signOut } = useAuth();
   const { setLang } = useLang();
   // Persist the active tab so a language switch (which remounts the whole tree
@@ -131,12 +129,6 @@ export function FinanceTabs({
     }
     setTabState(t);
   };
-  // Selected deploy-strategy preset (UI state; the math always re-derives live).
-  const [cushion, setCushionState] = useState<CushionPreset>(loadCushion);
-  const setCushion = (c: CushionPreset) => {
-    saveCushion(c);
-    setCushionState(c);
-  };
   const [, setSyncing] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -145,7 +137,6 @@ export function FinanceTabs({
   const [sprintOpen, setSprintOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [markSentOpen, setMarkSentOpen] = useState(false);
   const [billsOpen, setBillsOpen] = useState(false);
   const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
   const [txnId, setTxnId] = useState<string | null>(null);
@@ -155,15 +146,12 @@ export function FinanceTabs({
 
   const anySheetOpen =
     ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
-    settingsOpen || markSentOpen || billsOpen || !!payBillEntry || !!txnId || anomalyOpen || owedOpen;
+    settingsOpen || billsOpen || !!payBillEntry || !!txnId || anomalyOpen || owedOpen;
 
-  // The attack ladder + the deploy slip read the SINGLE shared deploy plan from
-  // buildVMs (vms.deploy below) — so their send-amounts and the debt-free date
-  // never diverge from Home/Insights.
-
+  // The attack ladder reads the shared payoff projection from buildVMs (vms.deploy).
   const vms = useMemo(
-    () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang(), cushion }),
-    [data, owner, lens, session, cushion],
+    () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
+    [data, owner, lens, session],
   );
 
   // Lens-filtered ledger + a merchant-rule lookup, for the reused LedgerSheet.
@@ -275,7 +263,6 @@ export function FinanceTabs({
               onCash: () => setAccountsOpen(true),
               onDebt: () => setSprintOpen(true),
               onBudget: () => setTab("insights"),
-              onDeploy: () => setMarkSentOpen(true),
               onBills: () => setBillsOpen(true),
               onRecent: () => {
                 setLedgerView("all");
@@ -283,7 +270,6 @@ export function FinanceTabs({
               },
               onAnomaly: () => setAnomalyOpen(true),
               onOwed: () => setOwedOpen(true),
-              onCushion: setCushion,
             }}
           />
         ) : tab === "insights" ? (
@@ -344,20 +330,6 @@ export function FinanceTabs({
         ordered={vms.deploy.ordered}
         schedule={vms.deploy.schedule}
         totalDebt={vms.deploy.totalDebt}
-      />
-      <MarkSentSheet
-        open={markSentOpen}
-        onClose={() => setMarkSentOpen(false)}
-        next={vms.deploy.lumpEvent}
-        accounts={data.accounts}
-        onPay={payDebtExtra}
-        autoTracked={
-          !!vms.deploy.lumpEvent &&
-          vms.deploy.lumpEvent.payments.every((p) => {
-            const d = data.debts.find((x) => x.id === p.debtId);
-            return !!d && (!!d.providerAccountId || !!d.trackPattern);
-          })
-        }
       />
       <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={lensAccounts} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
