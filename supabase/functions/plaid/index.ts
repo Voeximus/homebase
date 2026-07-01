@@ -414,6 +414,20 @@ async function syncConnection(connId: string, force = false) {
       reverseSent = true;
     }
 
+    // If the connection has no mapped accounts, the loop above never ran — flush
+    // any pending reversals directly so Plaid `removed` ids aren't lost.
+    if (!reverseSent && ops.reverse.length) {
+      const { error } = await admin.rpc("apply_bank_sync", {
+        p_account_id: null,
+        p_provider: "plaid",
+        p_reported_balance: null,
+        p_balance_date: new Date().toISOString(),
+        p_posted: [],
+        p_reverse: ops.reverse,
+      });
+      if (error) throw new Error("apply_bank_sync (reverse flush): " + error.message);
+    }
+
     // Recompute each feed-tracked debt as baseline − sum(its recorded payments
     // since tracked_since). A SET from a recompute (not a decrement) — idempotent
     // across re-syncs and self-correcting if a payment is later reversed. Runs
@@ -489,7 +503,7 @@ async function syncConnection(connId: string, force = false) {
 
     await admin
       .from("bank_connections")
-      .update({ cursor, last_sync_at: new Date().toISOString(), status: "ok", last_error: null })
+      .update({ cursor, last_sync_at: new Date().toISOString(), status: "ok", last_error: null, consecutive_failures: 0 })
       .eq("id", connId);
 
     // Summary of what landed this sync — the webhook uses it to push a phone
@@ -506,9 +520,18 @@ async function syncConnection(connId: string, force = false) {
     return { posted: ops.upsertPosted.length, pending: ops.pendingUpsert.length, reversed: ops.reverse.length, newRows };
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
+    const { data: cf } = await admin
+      .from("bank_connections")
+      .select("consecutive_failures")
+      .eq("id", connId)
+      .single();
     await admin
       .from("bank_connections")
-      .update({ status: "error", last_error: msg.slice(0, 400) })
+      .update({
+        status: "error",
+        last_error: msg.slice(0, 400),
+        consecutive_failures: (cf?.consecutive_failures ?? 0) + 1,
+      })
       .eq("id", connId);
     throw e;
   }
