@@ -137,6 +137,36 @@ export function monthlySchedule(
   return { entries, unscheduled };
 }
 
+/** Which bill CYCLE a payment settles. A payment is "for" the earliest due date
+ *  it lands on or before — or at most GRACE days after. So an early payment (Jun
+ *  30 toward a Jul-17 bill) rolls forward to the NEXT cycle instead of counting as
+ *  a very-late payment on the current one; an on-time or slightly-late payment
+ *  stays on the current cycle. Returns the chosen installment's month + due day.
+ *  MIRRORED in supabase/functions/plaid/index.ts (billAppliesTo) — keep in step. */
+export function billCycleFor(
+  dueDays: number[] | undefined,
+  isoDate: string,
+): { monthKey: string; day: number } {
+  const [py, pm, pd] = isoDate.split("-").map(Number);
+  const days = dueDays && dueDays.length ? dueDays : [pd];
+  const GRACE_MS = 7 * 86400000; // pay up to a week late for a cycle; beyond that it's prepaying the next
+  const pay = Date.UTC(py, pm - 1, pd);
+  const cands: { y: number; m: number; day: number; due: number }[] = [];
+  for (const off of [0, 1]) {
+    // this payment-month and the next, at each due day (clamped to month length)
+    const y = pm - 1 + off >= 12 ? py + 1 : py;
+    const m0 = (pm - 1 + off) % 12;
+    const dim = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
+    for (const dd of days) {
+      const day = Math.min(dd, dim);
+      cands.push({ y, m: m0, day, due: Date.UTC(y, m0, day) });
+    }
+  }
+  cands.sort((a, b) => a.due - b.due);
+  const c = cands.find((k) => pay <= k.due + GRACE_MS) ?? cands[cands.length - 1];
+  return { monthKey: `${c.y}-${String(c.m + 1).padStart(2, "0")}`, day: c.day };
+}
+
 // --- Month-flippable calendar -------------------------------------------------
 export interface MonthCalDay {
   day: number;
@@ -149,10 +179,11 @@ export interface MonthCalBill {
   id: string; // recurringId@day (stable key)
   name: string;
   catId: string; // category id → icon + color
-  day: number;
-  amount: number;
-  dateLabel: string; // "Jul 1"
+  day: number; // the DUE day — the bill is always anchored here, paid or not
+  amount: number; // paid → the actual amount paid; unpaid → the expected amount
+  dateLabel: string; // the DUE date, e.g. "Jul 17"
   paid: boolean;
+  paidDate?: string; // when it actually got paid, e.g. "Jun 30" (may be a prior month for an early payment)
   variable: boolean; // amount is a rolling-average estimate
   recurringId?: string;
 }
@@ -173,14 +204,15 @@ export interface MonthCalendar {
  *  step-downs (Mom 400→300, Rent concession→full) and ANNUAL items render the
  *  correct amount per month.
  *
- *  DUE vs PAID: an unpaid bill shows at its EXPECTED due day with its expected
- *  amount. The moment a recorded payment matches it, the entry SNAPS to the
- *  actual paid date + actual amount and the due-marker for that slot clears — so
- *  each bill appears exactly once a month: "expected" or "paid", never both. This
- *  also makes the Plaid post-lag harmless: the bill sits quietly in "expected"
- *  until the real payment lands, instead of looking overdue. Paid-status is
- *  month-scoped (a recorded payment in THIS month), never the "day ≤ today"
- *  heuristic — so flipping across months never mislabels a bill. */
+ *  DUE vs PAID: a bill is always anchored to its DUE day. When a recorded payment
+ *  matches it, the entry is marked paid and carries the ACTUAL paid date + amount
+ *  as detail (shown on tap) — the bill does NOT move off its due day. This keeps
+ *  an early payment visible on the right cycle: paying the Jul-17 bill on Jun 30
+ *  still shows on Jul 17, "paid Jun 30" — the paid date can even be a prior month.
+ *  It also makes the Plaid post-lag harmless: the bill sits on its due day as
+ *  "expected" until the real payment lands. Paid-status is month-scoped (a payment
+ *  whose appliesTo.monthKey is THIS month), never the "day ≤ today" heuristic — so
+ *  flipping across months never mislabels a bill. */
 export function monthCalendar(
   recurring: Recurring[],
   transactions: Transaction[],
@@ -198,6 +230,13 @@ export function monthCalendar(
   const clampDay = (d: number) => Math.min(Math.max(d, 1), daysInMonth);
   const fmtDay = (day: number) =>
     new Date(year, month, clampDay(day)).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // Format a payment's OWN ISO date (its real month/day), which may be a prior
+  // month than the one being rendered — so an early cross-month payment reads
+  // "Jun 30" on the July calendar rather than being coerced into July.
+  const fmtISO = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
 
   // This month's recorded bill payments, grouped by recurring row. A payment
   // carries the ACTUAL date it hit (tx.date) and, in appliesTo.day, which
@@ -236,15 +275,16 @@ export function monthCalendar(
         }
       }
       const paid = !!paidTx;
-      const day = clampDay(paid ? txDay(paidTx!) : e.day);
+      const dueDay = clampDay(e.day); // anchor: the bill lives on its due day, paid or not
       return {
         id: `${rid ?? e.label}@${e.day}`,
         name: e.label,
         catId: recurring.find((r) => r.id === rid)?.categoryId ?? "other",
-        day,
+        day: dueDay,
         amount: paid ? Math.abs(paidTx!.amount) : e.amount,
-        dateLabel: fmtDay(day),
+        dateLabel: fmtDay(dueDay),
         paid,
+        paidDate: paidTx ? fmtISO(paidTx.date) : undefined,
         variable: !!e.variable,
         recurringId: rid,
       };

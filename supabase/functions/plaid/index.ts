@@ -74,20 +74,30 @@ function pickHold(a: any): number {
   return Math.max(0, Number(b.current) - Number(b.available));
 }
 
-// Resolve a bill payment to its idempotent appliesTo (mirror of buildImportPlan):
-// snap the posted day to the recurring's nearest scheduled due day, so the feed
-// row lines up with a calendar-marked installment and dedups.
+// Resolve a bill payment to its idempotent appliesTo. Attributes to the bill
+// CYCLE the payment settles: the earliest due date it lands on/before, or at most
+// GRACE days after — so an early payment (Jun 30 toward a Jul-17 bill) rolls to
+// the NEXT cycle, while on-time/slightly-late stays on the current one. MIRROR of
+// billCycleFor in src/lib/schedule.ts — keep the two in step.
 function billAppliesTo(rec: { id: string; dueDays?: number[] }, date: string) {
-  const monthKey = date.slice(0, 7);
-  const postDay = parseInt(date.slice(8, 10), 10);
-  const day =
-    rec.dueDays && rec.dueDays.length
-      ? rec.dueDays.reduce(
-          (best, d) => (Math.abs(d - postDay) < Math.abs(best - postDay) ? d : best),
-          rec.dueDays[0],
-        )
-      : postDay;
-  return { kind: "bill", recurringId: rec.id, monthKey, day, settled: true } as const;
+  const [py, pm, pd] = date.split("-").map(Number);
+  const days = rec.dueDays && rec.dueDays.length ? rec.dueDays : [pd];
+  const GRACE_MS = 7 * 86400000;
+  const pay = Date.UTC(py, pm - 1, pd);
+  const cands: { y: number; m: number; day: number; due: number }[] = [];
+  for (const off of [0, 1]) {
+    const y = pm - 1 + off >= 12 ? py + 1 : py;
+    const m0 = (pm - 1 + off) % 12;
+    const dim = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
+    for (const dd of days) {
+      const day = Math.min(dd, dim);
+      cands.push({ y, m: m0, day, due: Date.UTC(y, m0, day) });
+    }
+  }
+  cands.sort((a, b) => a.due - b.due);
+  const c = cands.find((k) => pay <= k.due + GRACE_MS) ?? cands[cands.length - 1];
+  const monthKey = `${c.y}-${String(c.m + 1).padStart(2, "0")}`;
+  return { kind: "bill", recurringId: rec.id, monthKey, day: c.day, settled: true } as const;
 }
 
 // Last-resort match for a payment the categorizer KNOWS is a bill (kind:"bill")

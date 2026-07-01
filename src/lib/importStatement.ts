@@ -5,6 +5,7 @@
 
 import type { Recurring, Transaction } from "../types";
 import { classify, merchantKey, matchRecurringName, type LearnedRules } from "./categorize";
+import { billCycleFor } from "./schedule";
 
 export interface RawRow {
   date: string; // ISO YYYY-MM-DD
@@ -184,15 +185,10 @@ export function buildImportPlan(
         } else duplicates.push(asDup(r));
         continue;
       }
-      const monthKey = r.date.slice(0, 7);
-      const postDay = parseInt(r.date.slice(8, 10), 10);
-      // Use the bill's SCHEDULED due day (the one closest to the actual post day
-      // for multi-installment bills like Mom), not the raw bank post day — so an
-      // imported bill lines up with a calendar-marked one and re-imports dedup.
-      const day =
-        rec.dueDays && rec.dueDays.length
-          ? rec.dueDays.reduce((best, d) => (Math.abs(d - postDay) < Math.abs(best - postDay) ? d : best), rec.dueDays[0])
-          : postDay;
+      // Attribute to the bill CYCLE this payment settles — early payments roll to
+      // the next cycle so they line up with the calendar-marked installment and
+      // re-imports dedup (shared with the live feed via billCycleFor).
+      const { monthKey, day } = billCycleFor(rec.dueDays, r.date);
       if (paidBill.has(`${rec.id}|${monthKey}|${day}`)) {
         duplicates.push(asDup(r));
         continue;

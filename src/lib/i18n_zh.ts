@@ -283,6 +283,8 @@ const SEED: Record<string, string> = {
   Payday: "发薪日",
   "Bill due": "账单到期",
   Paid: "已支付",
+  "paid {date}": "{date} 已付",
+  "due {date}": "{date} 到期",
   "Back to the list": "返回列表",
   " · ~est": " · ~预估",
   "{n} paid this month": "本月已付 {n} 笔",

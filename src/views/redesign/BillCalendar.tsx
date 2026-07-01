@@ -138,17 +138,22 @@ export function BillCalendar({
                   >
                     <Icon size={14} />
                   </span>
-                  <span
-                    className="flex-1 text-[13px]"
-                    style={{
-                      color: b.paid ? "#7e8a98" : "#e6edf3",
-                      textDecoration: b.paid ? "line-through" : "none",
-                    }}
-                  >
-                    {b.name}
+                  <span className="flex flex-1 flex-col">
+                    <span
+                      className="text-[13px]"
+                      style={{
+                        color: b.paid ? "#7e8a98" : "#e6edf3",
+                        textDecoration: b.paid ? "line-through" : "none",
+                      }}
+                    >
+                      {b.name}
+                    </span>
+                    <span className="text-[11px]" style={{ color: b.paid ? "#6b9e83" : "#7e8a98" }}>
+                      {b.paid ? t("paid {date}", { date: b.paidDate ?? "" }) : t("due {date}", { date: b.dateLabel })}
+                    </span>
                   </span>
                   <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}>
-                    {b.variable ? "~" : ""}
+                    {b.variable && !b.paid ? "~" : ""}
                     {money2(b.amount)}
                   </span>
                 </div>
