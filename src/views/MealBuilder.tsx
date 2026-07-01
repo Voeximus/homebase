@@ -545,6 +545,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
                       type="range"
                       min={0}
                       max={100}
+                      step={10}
                       value={pct}
                       onChange={(e) => setShare(d.rid, Number(e.target.value) / 100)}
                       className="h-1.5 flex-1 cursor-pointer"
