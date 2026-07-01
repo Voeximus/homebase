@@ -17,6 +17,12 @@ export function UpdatePrompt() {
       const check = () => {
         reg.update().catch(() => {});
       };
+      // Check the moment the app opens — including a cold start (no visibility
+      // transition fires on initial load) — so the Update pill shows on its own
+      // instead of only after a manual pull-to-refresh. Then keep checking on
+      // every foreground + a 20-min timer.
+      check();
+      window.addEventListener("pageshow", check); // covers back/forward + reopen
       setInterval(check, 20 * 60 * 1000);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") check();
