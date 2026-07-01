@@ -12,15 +12,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "2026.07.01",
-    date: "July 2026",
+    version: "2026.07.01b",
+    date: "July 1, 2026",
     notes: [
       "Bills now show when you actually paid them — pay early and it still lands on the right bill, on its due date.",
-      "Bills sheet: a Paid and an Unpaid list you expand, plus a flippable month calendar.",
+      "Bills sheet: a Paid and an Unpaid · posting list you expand, plus a flippable month calendar.",
       "Activity: flip back through previous months, not just this one.",
-      "Meal builder decluttered — saved meals and each meal's ingredients tuck into dropdowns.",
+      "Meal builder decluttered — saved meals and each meal's ingredients collapse into dropdowns, the daily macro counter scrolls instead of covering the screen, and the keyboard no longer pops up on its own.",
+      "Preview a saved meal before adding it, and save a meal to your library without logging it to today.",
       "Set your own daily calorie + macro targets.",
-      "Together: split each ingredient of a shared meal individually instead of a flat 50/50, and see what each of you ate today.",
+      "Together: see what each of you ate today, and split each ingredient of a shared meal individually (in 10% steps) instead of a flat 50/50.",
+      "Edit or delete a shared meal after logging it — in case a split came out wrong.",
+      "Notifications now arrive right away, even with the app closed (no more waiting until you open it).",
+      "This 'What's new' card + a clearer, distinct update button, and the Activity + button pinned to the bottom so it stops covering the list.",
     ],
   },
 ];
