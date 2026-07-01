@@ -302,6 +302,7 @@ const SEED: Record<string, string> = {
   "Log both meals": "记录两人",
   "What's new": "更新内容",
   "Got it": "知道了",
+  "Tap an ingredient to fix its amount.": "点按食材可修改分量。",
   "Back to the list": "返回列表",
   " · ~est": " · ~预估",
   "{n} paid this month": "本月已付 {n} 笔",

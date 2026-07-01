@@ -300,10 +300,11 @@ export function ActivityTab({
         </div>
       </div>
 
-      {/* ── FAB ── */}
+      {/* ── FAB — pinned to the viewport bottom (above the tab bar) so it never
+            floats over the cards in the middle of the list ── */}
       <button
         onClick={taps.onAdd}
-        className="absolute bottom-[74px] right-[18px] flex h-[52px] w-[52px] items-center justify-center rounded-full text-white shadow-lg transition active:scale-[0.94]"
+        className="fixed bottom-[74px] right-[18px] z-40 flex h-[52px] w-[52px] items-center justify-center rounded-full text-white shadow-lg transition active:scale-[0.94]"
         style={{ background: BRAND_GRADIENT }}
       >
         <Plus size={24} />

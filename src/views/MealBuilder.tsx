@@ -431,6 +431,8 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const [editDish, setEditDish] = useState<DishItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [savingDish, setSavingDish] = useState(false);
+  // editing an ALREADY-LOGGED meal from "Eaten today" (fix a portion you got wrong)
+  const [editLogged, setEditLogged] = useState<{ person: Person; mealId: string; item: LoggedItem } | null>(null);
 
   const targets: Record<Person, Macros> = {
     gino: (macroTargets.gino ?? DAILY.gino) as Macros,
@@ -471,6 +473,31 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
       ...m.items.map((it) => ({ rid: rowId(), food: foodFromItem(it), grams: it.grams, qty: it.qty, unit: it.unit, share: lastShare })),
     ]);
 
+  // edit / remove items on an already-logged day meal (from "Eaten today"), and
+  // delete a whole logged meal — so a wrong split can be fixed after the fact.
+  const updateLoggedItem = (person: Person, mealId: string, itemId: string, a: Amount) => {
+    const log = getDay(person, today);
+    setDay({
+      ...log,
+      meals: log.meals.map((m) =>
+        m.id === mealId ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, grams: a.grams, qty: a.qty, unit: a.unit } : it)) } : m,
+      ),
+    });
+  };
+  const removeLoggedItem = (person: Person, mealId: string, itemId: string) => {
+    const log = getDay(person, today);
+    setDay({
+      ...log,
+      meals: log.meals
+        .map((m) => (m.id === mealId ? { ...m, items: m.items.filter((it) => it.id !== itemId) } : m))
+        .filter((m) => m.items.length > 0),
+    });
+  };
+  const removeLoggedMeal = (person: Person, mealId: string) => {
+    const log = getDay(person, today);
+    setDay({ ...log, meals: log.meals.filter((m) => m.id !== mealId) });
+  };
+
   const logForBoth = () => {
     if (!dish.length || dishGrams <= 0) return;
     for (const p of order) {
@@ -500,8 +527,14 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
         })}
       </div>
 
-      {/* accountability — what each of you has actually eaten today */}
-      <EatenTogether logs={logs} order={order} you={you} />
+      {/* accountability + fix-ups — what each of you has eaten today, editable */}
+      <EatenTogether
+        logs={logs}
+        order={order}
+        you={you}
+        onEditItem={(person, mealId, item) => setEditLogged({ person, mealId, item })}
+        onRemoveMeal={removeLoggedMeal}
+      />
 
       {/* saved / favorite meals — tap to drop into the dish */}
       <SavedMealsBar meals={savedMeals} onPick={addSavedToDish} onDelete={deleteSavedMeal} />
@@ -649,6 +682,22 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
         initialAmount={editDish ? { grams: editDish.grams, qty: editDish.qty, unit: editDish.unit } : undefined}
         onAdd={(_food, amount) => { if (editDish) editDishItem(editDish.rid, amount); }}
         onRemove={() => { if (editDish) removeDish(editDish.rid); }}
+      />
+
+      {/* edit a portion on an already-logged meal (from "Eaten today") */}
+      <FoodSearchSheet
+        open={editLogged !== null}
+        onClose={() => setEditLogged(null)}
+        library={library}
+        title={t("Edit portion")}
+        initialFood={
+          editLogged
+            ? ({ id: editLogged.item.foodId, name: editLogged.item.name, role: editLogged.item.role, ...editLogged.item.per100, unit: editLogged.item.unit } as Food)
+            : undefined
+        }
+        initialAmount={editLogged ? { grams: editLogged.item.grams, qty: editLogged.item.qty, unit: editLogged.item.unit } : undefined}
+        onAdd={(_food, amount) => { if (editLogged) updateLoggedItem(editLogged.person, editLogged.mealId, editLogged.item.id, amount); }}
+        onRemove={() => { if (editLogged) removeLoggedItem(editLogged.person, editLogged.mealId, editLogged.item.id); }}
       />
 
       <SaveMealSheet
@@ -855,8 +904,28 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
 // Together accountability: a read-only glance at what BOTH of you have logged
 // today — each person's meals + their running totals — so you can check in on
 // each other. Household data is already shared, so this just surfaces it.
-function EatenTogether({ logs, order, you }: { logs: Record<Person, DayLog>; order: Person[]; you: Person }) {
+function EatenTogether({
+  logs,
+  order,
+  you,
+  onEditItem,
+  onRemoveMeal,
+}: {
+  logs: Record<Person, DayLog>;
+  order: Person[];
+  you: Person;
+  onEditItem: (person: Person, mealId: string, item: LoggedItem) => void;
+  onRemoveMeal: (person: Person, mealId: string) => void;
+}) {
   const [open, setOpen] = useState(true);
+  const [openMeals, setOpenMeals] = useState<Set<string>>(new Set());
+  const toggleMeal = (id: string) =>
+    setOpenMeals((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   return (
     <section className="overflow-hidden rounded-[16px] border" style={TILE}>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left">
@@ -882,10 +951,34 @@ function EatenTogether({ logs, order, you }: { logs: Record<Person, DayLog>; ord
                   <div className="flex flex-col gap-1">
                     {meals.map((m, i) => {
                       const mt = mealTotals(m);
+                      const label = m.items.map((it) => it.name).join(", ") || t("Meal {n}", { n: i + 1 });
+                      const mo = openMeals.has(m.id);
                       return (
-                        <div key={m.id} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5" style={{ background: "#0f141c", border: "1px solid #1b232e" }}>
-                          <span className="min-w-0 flex-1 truncate text-[12px] text-bone">{m.items.map((it) => it.name).join(", ") || t("Meal {n}", { n: i + 1 })}</span>
-                          <span className="num shrink-0 text-[11px]" style={{ color: "#9aa6b2" }}>{r0(mt.kcal)} {t("kcal")}</span>
+                        <div key={m.id} className="overflow-hidden rounded-lg" style={{ background: "#0f141c", border: "1px solid #1b232e" }}>
+                          <div className="flex items-center gap-2 px-2.5 py-1.5">
+                            <button onClick={() => toggleMeal(m.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+                              <ChevronDown size={13} style={{ color: "#6b7686", transform: mo ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                              <span className="min-w-0 flex-1 truncate text-[12px] text-bone">{label}</span>
+                            </button>
+                            <span className="num shrink-0 text-[11px]" style={{ color: "#9aa6b2" }}>{r0(mt.kcal)} {t("kcal")}</span>
+                            <button onClick={() => onRemoveMeal(p, m.id)} className="shrink-0" style={{ color: "#6b7686" }} aria-label="Delete meal">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                          {mo && (
+                            <div className="border-t px-2.5 py-1" style={{ borderColor: "#1b232e" }}>
+                              {m.items.map((it) => {
+                                const c = contribution(it);
+                                return (
+                                  <button key={it.id} onClick={() => onEditItem(p, m.id, it)} className="flex w-full items-center gap-2 py-1 text-left">
+                                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-bone">{it.name}</span>
+                                    <span className="num shrink-0 text-[10.5px]" style={{ color: "#7e8a98" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</span>
+                                  </button>
+                                );
+                              })}
+                              <p className="py-0.5 text-[10px]" style={{ color: "#6b7686" }}>{t("Tap an ingredient to fix its amount.")}</p>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
