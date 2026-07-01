@@ -45,10 +45,6 @@ import { HEALTH, HEALTH_GRADIENT, HEALTH_HERO } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
 
-// The Daily Macro Summary pins to the top of the scroll (the Health header is
-// non-sticky now) so it's the always-visible, most-important element.
-const STICKY_TOP = "calc(env(safe-area-inset-top, 0px) + 6px)";
-
 // ── palette ───────────────────────────────────────────────────────────────────
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -243,8 +239,9 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* sticky, always-visible Daily Macro Summary */}
-      <div className="sticky z-30" style={{ top: STICKY_TOP }}>
+      {/* Daily Macro Summary — scrolls with the page (no longer pinned to top,
+          so it doesn't cover the screen while browsing meals) */}
+      <div>
         <DaySummary
           name={PERSON_NAME[person]}
           target={target}
@@ -452,8 +449,9 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* sticky dual summary — each bowl previewed against that person's day */}
-      <div className="sticky z-30 grid grid-cols-2 gap-3" style={{ top: STICKY_TOP }}>
+      {/* dual summary — each bowl previewed against that person's day; scrolls
+          with the page (no longer pinned to the top) */}
+      <div className="grid grid-cols-2 gap-3">
         {order.map((p) => {
           const live = dayTotals(logs[p]);
           const bm = bowlMacros(p);
@@ -921,27 +919,35 @@ const foodFromItem = (it: LoggedItem): Food => ({
   unit: it.unit,
 });
 
-// A row of saved-meal chips — tap to re-add, × to delete. Hidden when empty.
+// A collapsible drawer of saved-meal chips — tap the header to expand, a chip to
+// open it, × to delete. Collapsed by default so the list never floods the screen;
+// its open/closed state persists. Hidden entirely when empty.
 function SavedMealsBar({ meals, onPick, onDelete }: { meals: SavedMeal[]; onPick: (m: SavedMeal) => void; onDelete: (id: string) => void }) {
+  const [open, setOpen] = useState(() => localStorage.getItem("hb-saved-open") === "1");
+  useEffect(() => localStorage.setItem("hb-saved-open", open ? "1" : "0"), [open]);
   if (!meals.length) return null;
   return (
-    <section className="rounded-[16px] border p-3" style={TILE}>
-      <div className="mb-2 flex items-center gap-1.5">
+    <section className="overflow-hidden rounded-[16px] border" style={TILE}>
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left">
         <Bookmark size={13} style={{ color: HEALTH }} />
-        <p className="stat-key" style={{ color: "#97a3b2" }}>{t("Saved meals")}</p>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {meals.map((m) => (
-          <span key={m.id} className="flex items-center gap-1 rounded-full py-1 pl-3 pr-1" style={{ background: "#0f141c", border: "1px solid #2a3441" }}>
-            <button onClick={() => onPick(m)} className="flex items-center gap-1 text-[12.5px] font-medium text-bone">
-              <Plus size={12} style={{ color: "#34c5e8" }} /> {m.name}
-            </button>
-            <button onClick={() => onDelete(m.id)} className="px-0.5" style={{ color: "#5f6a78" }} aria-label="Delete saved meal">
-              <X size={13} />
-            </button>
-          </span>
-        ))}
-      </div>
+        <span className="stat-key flex-1" style={{ color: "#97a3b2" }}>{t("Saved meals")}</span>
+        <span className="num text-[11px]" style={{ color: "#7e8a98" }}>{meals.length}</span>
+        <ChevronDown size={16} style={{ color: "#6b7686", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+      </button>
+      {open && (
+        <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+          {meals.map((m) => (
+            <span key={m.id} className="flex items-center gap-1 rounded-full py-1 pl-3 pr-1" style={{ background: "#0f141c", border: "1px solid #2a3441" }}>
+              <button onClick={() => onPick(m)} className="flex items-center gap-1 text-[12.5px] font-medium text-bone">
+                {m.name}
+              </button>
+              <button onClick={() => onDelete(m.id)} className="px-0.5" style={{ color: "#5f6a78" }} aria-label="Delete saved meal">
+                <X size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -983,15 +989,32 @@ function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; 
 
 function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void; onSave?: () => void }) {
   const tot = mealTotals(meal);
+  // Ingredients collapse behind the meal header (which still shows the macro
+  // summary) so a multi-ingredient meal doesn't flood the day. Add-food stays
+  // reachable whether open or closed.
+  const [itemsOpen, setItemsOpen] = useState(false);
+  const hasItems = meal.items.length > 0;
   return (
     <section className="rounded-[14px] border p-3.5" style={{ background: "#0f141c", borderColor: "#1f2937" }}>
       <div className="mb-2 flex items-center justify-between">
-        <div>
-          <div className="text-[14px] font-semibold text-bone">{t("Meal {n}", { n: index + 1 })}</div>
-          <div className="num text-[11px]" style={{ color: "#7e8a98" }}>
-            {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
+        <button
+          onClick={() => hasItems && setItemsOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          {hasItems && (
+            <ChevronDown
+              size={15}
+              style={{ color: "#6b7686", transform: itemsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
+            />
+          )}
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-bone">{t("Meal {n}", { n: index + 1 })}</div>
+            <div className="num text-[11px]" style={{ color: "#7e8a98" }}>
+              {hasItems ? t("{n} items · ", { n: meal.items.length }) : ""}
+              {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
+            </div>
           </div>
-        </div>
+        </button>
         <div className="flex items-center gap-1.5">
           {onSave && meal.items.length > 0 && (
             <button onClick={onSave} className="p-1" style={{ color: "#6b7686" }} aria-label="Save meal">
@@ -1004,7 +1027,8 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
         </div>
       </div>
 
-      {meal.items.length > 0 &&
+      {itemsOpen &&
+        meal.items.length > 0 &&
         meal.items.map((it) => {
           const c = contribution(it);
           return (
@@ -1161,8 +1185,9 @@ function FoodSearchSheet(props: SearchSheetProps) {
               <div className="flex gap-2 px-4">
                 <div className="flex flex-1 items-center gap-2 rounded-xl px-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
                   <Search size={16} style={{ color: "#6b7686" }} />
+                  {/* No autoFocus — opening the sheet shows the options first; the
+                      user taps the field to bring up the keyboard when ready. */}
                   <input
-                    autoFocus
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder={t("Search a food…")}
