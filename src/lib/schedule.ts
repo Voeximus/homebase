@@ -10,7 +10,7 @@ export const DUE_DAYS: Record<string, number[]> = {
   Rent: [1],
   "Spot Pet insurance": [4],
   Spotify: [10],
-  "Electric (SRP)": [31], // SRP drafts end-of-month (clamped per-month), not the 13th
+  "Electric (SRP)": [17],
   "Card payment (…4728)": [15],
   Mom: [15, 30],
   Verizon: [17],
