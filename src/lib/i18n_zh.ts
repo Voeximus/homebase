@@ -300,6 +300,8 @@ const SEED: Record<string, string> = {
   "Add what went in, then set how much of each ingredient is yours vs {name}'s.": "加入食材，然后设定每样各自吃多少（你 vs {name}）。",
   "Each of you gets": "各自摄入",
   "Log both meals": "记录两人",
+  "What's new": "更新内容",
+  "Got it": "知道了",
   "Back to the list": "返回列表",
   " · ~est": " · ~预估",
   "{n} paid this month": "本月已付 {n} 笔",

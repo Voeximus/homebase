@@ -197,4 +197,18 @@ input[type="number"] {
       transform: none;
     }
   }
+
+  /* Gentle glow pulse so the amber "update available" pill draws the eye */
+  .hb-update-pulse {
+    animation: updatePulse 2.2s ease-in-out infinite;
+  }
+  @keyframes updatePulse {
+    0%,
+    100% {
+      box-shadow: 0 10px 26px -6px rgba(249, 115, 22, 0.5);
+    }
+    50% {
+      box-shadow: 0 12px 30px -4px rgba(249, 115, 22, 0.9);
+    }
+  }
 }

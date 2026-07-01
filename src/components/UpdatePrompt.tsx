@@ -50,11 +50,14 @@ export function UpdatePrompt() {
   return (
     <button
       onClick={() => updateServiceWorker(true)}
-      className="fixed left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg transition active:scale-95"
+      className="hb-update-pulse fixed left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-bold transition active:scale-95"
       style={{
         top: "calc(env(safe-area-inset-top, 0px) + 10px)",
-        background: "linear-gradient(150deg,#10b981,#06b6d4)",
-        boxShadow: "0 8px 24px -8px rgba(6,182,212,.55)",
+        // Distinct amber — deliberately OUTSIDE the app's blue/teal palette so an
+        // update never blends into the finance chrome.
+        background: "linear-gradient(150deg,#fbbf24,#f97316)",
+        color: "#3a1d02",
+        boxShadow: "0 10px 26px -6px rgba(249,115,22,.65)",
       }}
     >
       <RefreshCw size={15} /> {t("Update available — tap to refresh")}
