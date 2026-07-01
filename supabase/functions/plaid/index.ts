@@ -6,8 +6,9 @@
 //   sync       — pull /transactions/sync, reconcile, write posted rows + bank-truth balances.
 //
 // The Plaid secret and the bank access_token live server-side ONLY — never sent
-// to the browser. Lean mode: no public webhook; the daily pg_cron job and a
-// client "refresh" both hit `sync`. JWT-verified (no unauthenticated surface).
+// to the browser. Triggers that hit `sync`: the Plaid webhook (real-time, app
+// closed — see plaid-webhook), the daily pg_cron job, and a client "refresh".
+// JWT-verified (no unauthenticated surface); `set_webhook` points items at us.
 //
 // Categorization reuses your full trained library (categorizeData + classify +
 // learned merchant_rules); low-confidence rows are flagged needs_review for the

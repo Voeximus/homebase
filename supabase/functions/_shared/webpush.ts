@@ -32,6 +32,11 @@ export async function sendPush(admin: any, payload: PushPayload, owner?: string)
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
         JSON.stringify(payload),
+        // HIGH urgency = deliver now. Without it push services (Apple/APNs, FCM)
+        // treat pushes as low priority and BATCH them until the device next wakes
+        // — which is why they arrived in a lump when the app was opened. TTL keeps
+        // the push queued for a day if the phone is briefly offline.
+        { urgency: "high", TTL: 24 * 60 * 60 },
       );
       sent++;
       // deno-lint-ignore no-explicit-any
