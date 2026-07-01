@@ -137,7 +137,7 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
   { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
   // Affirm is a feed-TRACKED debt now (debts.track_pattern "AFFIRM"), not a bill.
-  { re: /ZELLE PAYMENT TO MON\b/i, bill: "Mom" },
+  // "Zelle payment to mom" is handled earlier (amount-gated) — not a blanket rule.
 ];
 
 // Gino's own category labels → the app's category + whether it's living spend.
@@ -204,6 +204,18 @@ export function classify(
     if (lr.kind === "skip")
       return { kind: "skip", reason: "you taught it", confidence: "high" };
     return { kind: "variable", appCategory: lr.categoryId, reason: "you taught it", confidence: "high" };
+  }
+
+  // Zelle to mom: the monthly assistance is a support-sized payment ($300 going
+  // forward, $400 before that). A SMALLER Zelle to mom is an ad-hoc transfer —
+  // e.g. a $200 you front and get back a few days later — NOT an assistance
+  // installment. Amount-gate it (like the Anthropic price-band below) so a repaid
+  // loan never lands on the Mom bill. Below the gate → a personal transfer, kept
+  // out of the lean budget; mark it reimbursable if it's owed back.
+  if (/ZELLE PAYMENT TO MON\b/i.test(desc)) {
+    return Math.abs(amount) >= 250
+      ? { kind: "bill", billName: "Mom", reason: "matched bill: Mom (assistance)", confidence: "high" }
+      : { kind: "skip", reason: "Zelle to mom below assistance amount — personal transfer", confidence: "low" };
   }
 
   // Anthropic/Claude: the bank descriptor is identical ("Anthropic", "Claude.ai",
