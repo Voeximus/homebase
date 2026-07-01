@@ -46,10 +46,25 @@ export function UpdatePrompt() {
     },
   });
 
+  const doUpdate = async () => {
+    try {
+      // reload the moment the new worker takes control (push-sw.js claims it)
+      navigator.serviceWorker?.addEventListener("controllerchange", () => window.location.reload(), { once: true });
+      const reg = await navigator.serviceWorker?.getRegistration();
+      reg?.waiting?.postMessage({ type: "SKIP_WAITING" });
+    } catch {
+      /* fall through to the hook + hard fallback below */
+    }
+    updateServiceWorker(true).catch(() => {});
+    // last resort: if the SW handshake didn't reload us, force it (the new worker
+    // has activated by now, so this lands on the fresh version)
+    window.setTimeout(() => window.location.reload(), 2500);
+  };
+
   if (!needRefresh) return null;
   return (
     <button
-      onClick={() => updateServiceWorker(true)}
+      onClick={doUpdate}
       className="hb-update-pulse fixed left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-bold transition active:scale-95"
       style={{
         top: "calc(env(safe-area-inset-top, 0px) + 10px)",

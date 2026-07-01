@@ -1,6 +1,18 @@
 /* Web Push handlers, importScripts'd into the workbox-generated service worker.
    Kept as a plain public file (no bundler) so it can be imported by the SW. */
 
+// Update flow: when the app's "Update" button posts SKIP_WAITING, activate the
+// pending worker immediately and CLAIM the open page — otherwise skip-waiting can
+// no-op and the tab keeps its old controller, so tapping Update appears to do
+// nothing. clients.claim() flips the controller, which fires controllerchange in
+// the page → it reloads onto the new version.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {
