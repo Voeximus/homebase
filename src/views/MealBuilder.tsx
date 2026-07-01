@@ -76,14 +76,6 @@ const toItem = (f: Food, a: Amount): LoggedItem => ({
   qty: a.qty,
   unit: a.unit,
 });
-// scale an existing item (for shared-meal bowl portioning) by a fraction
-const scaleItem = (it: LoggedItem, frac: number): LoggedItem => ({
-  ...it,
-  id: rowId(),
-  grams: it.grams * frac,
-  qty: it.qty != null ? it.qty * frac : undefined,
-});
-
 // ── entry point ────────────────────────────────────────────────────────────────
 export function MealBuilder({ owner, person }: { owner: Person; person: Person }) {
   const { data } = useStore();
@@ -416,6 +408,7 @@ interface DishItem {
   grams: number;
   qty?: number;
   unit?: FoodUnit;
+  share: number; // fraction (0..1) of THIS ingredient that goes to YOU (owner); the partner gets the rest
 }
 
 function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
@@ -427,7 +420,13 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const { getDay, setDay, savedMeals, addSavedMeal, deleteSavedMeal, macroTargets } = useHealth();
   const logs: Record<Person, DayLog> = { gino: getDay("gino", today), xinyan: getDay("xinyan", today) };
   const [dish, setDish] = useState<DishItem[]>([]);
-  const [bowls, setBowls] = useState<Record<Person, number> | null>(null); // null = even split
+  // the split you last used, remembered so the next ingredient defaults to it
+  // (most dishes split the same way) instead of a meaningless 50/50.
+  const [lastShare, setLastShare] = useState(() => {
+    const v = parseFloat(localStorage.getItem("hb-dish-share") || "0.5");
+    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.5;
+  });
+  const bumpShare = (s: number) => { setLastShare(s); localStorage.setItem("hb-dish-share", String(s)); };
   const [searchOpen, setSearchOpen] = useState(false);
   const [editDish, setEditDish] = useState<DishItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -441,42 +440,49 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const dishMacros = mealTotals({ id: "x", name: "x", items: dishItems });
   const dishGrams = dish.reduce((s, d) => s + d.grams, 0);
 
-  const effBowl = (p: Person) => (bowls ? bowls[p] ?? 0 : dishGrams / 2);
-  const bowlMacros = (p: Person): Macros => {
-    if (dishGrams <= 0) return { ...ZERO };
-    const f = effBowl(p) / dishGrams;
-    return { kcal: dishMacros.kcal * f, p: dishMacros.p * f, c: dishMacros.c * f, f: dishMacros.f * f };
+  // each ingredient splits INDEPENDENTLY: `share` = fraction to YOU (owner), the
+  // partner gets 1 − share. A person's meal is the sum of their share of every
+  // ingredient — so "I ate most of the chicken, she had more rice" is expressible.
+  const shareFor = (d: DishItem, p: Person) => (p === you ? d.share : 1 - d.share);
+  const personMacros = (p: Person): Macros =>
+    dish.reduce(
+      (acc, d) => {
+        const g = d.grams * shareFor(d, p);
+        return { kcal: acc.kcal + (d.food.kcal * g) / 100, p: acc.p + (d.food.p * g) / 100, c: acc.c + (d.food.c * g) / 100, f: acc.f + (d.food.f * g) / 100 };
+      },
+      { ...ZERO },
+    );
+  const setShare = (rid: string, s: number) => {
+    const share = Math.max(0, Math.min(1, s));
+    setDish((d) => d.map((x) => (x.rid === rid ? { ...x, share } : x)));
+    bumpShare(share);
   };
-  const setBowl = (p: Person, v: number) =>
-    setBowls((b) => {
-      const cur = b ?? { gino: dishGrams / 2, xinyan: dishGrams / 2 };
-      return { ...cur, [p]: Math.max(0, v) };
-    });
 
   const addDishItem = (food: Food, a: Amount) =>
-    setDish((d) => [...d, { rid: rowId(), food, grams: a.grams, qty: a.qty, unit: a.unit }]);
+    setDish((d) => [...d, { rid: rowId(), food, grams: a.grams, qty: a.qty, unit: a.unit, share: lastShare }]);
   const editDishItem = (rid: string, a: Amount) =>
     setDish((d) => d.map((x) => (x.rid === rid ? { ...x, grams: a.grams, qty: a.qty, unit: a.unit } : x)));
   const removeDish = (rid: string) => setDish((d) => d.filter((x) => x.rid !== rid));
-  // drop a saved meal's items into the shared dish (reconstruct Food from each)
+  // drop a saved meal's items into the shared dish (reconstruct Food from each);
+  // each lands at your last split, then you fine-tune per ingredient.
   const addSavedToDish = (m: SavedMeal) =>
     setDish((d) => [
       ...d,
-      ...m.items.map((it) => ({ rid: rowId(), food: foodFromItem(it), grams: it.grams, qty: it.qty, unit: it.unit })),
+      ...m.items.map((it) => ({ rid: rowId(), food: foodFromItem(it), grams: it.grams, qty: it.qty, unit: it.unit, share: lastShare })),
     ]);
 
   const logForBoth = () => {
     if (!dish.length || dishGrams <= 0) return;
-    for (const p of ["gino", "xinyan"] as Person[]) {
-      const f = effBowl(p) / dishGrams;
-      if (f <= 0) continue;
-      const items = dishItems.map((it) => scaleItem(it, f)).filter((it) => it.grams > 0.01);
+    for (const p of order) {
+      // each person gets their SHARE of every ingredient (grams-scaled per item)
+      const items = dish
+        .map((d) => toItem(d.food, { grams: d.grams * shareFor(d, p) }))
+        .filter((it) => it.grams > 0.01);
       if (!items.length) continue;
       const log = getDay(p, today);
       setDay({ ...log, meals: [...log.meals, { id: rowId(), name: mealName(log.meals.length), items }] });
     }
     setDish([]);
-    setBowls(null);
     setToast(t("Logged for both 🍽️"));
     setTimeout(() => setToast(null), 2200);
   };
@@ -488,7 +494,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
       <div className="grid grid-cols-2 gap-3">
         {order.map((p) => {
           const live = dayTotals(logs[p]);
-          const bm = bowlMacros(p);
+          const bm = personMacros(p);
           const totalEaten = { kcal: live.kcal + bm.kcal, p: live.p + bm.p, c: live.c + bm.c, f: live.f + bm.f };
           return <PersonSummary key={p} person={p} you={p === you} target={targets[p]} eaten={totalEaten} />;
         })}
@@ -507,7 +513,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           <p className="text-[13.5px] font-semibold text-bone">{t("Shared dish")}</p>
         </div>
         <p className="mb-3 text-[11.5px]" style={{ color: "#97a3b2" }}>
-          {t("Add what went into the whole dish, then split it into bowls below.")}
+          {t("Add what went in, then set how much of each ingredient is yours vs {name}'s.", { name: PERSON_NAME[partner] })}
         </p>
 
         {dish.length === 0 ? (
@@ -517,24 +523,37 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
             {dish.map((d) => {
               const it = toItem(d.food, { grams: d.grams, qty: d.qty, unit: d.unit });
               const c = contribution(it);
+              const pct = Math.round(d.share * 100);
               return (
-                <button
-                  key={d.rid}
-                  onClick={() => setEditDish(d)}
-                  className="flex w-full items-center gap-2 border-b py-2.5 text-left last:border-0"
-                  style={{ borderColor: "#1b232e" }}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] text-bone">{d.food.name}</p>
-                    <p className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
-                      {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
-                    </p>
+                <div key={d.rid} className="border-b py-2.5 last:border-0" style={{ borderColor: "#1b232e" }}>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setEditDish(d)} className="min-w-0 flex-1 text-left">
+                      <p className="truncate text-[13px] text-bone">{d.food.name}</p>
+                      <p className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
+                        {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
+                      </p>
+                    </button>
+                    <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+                    <button onClick={() => removeDish(d.rid)} className="w-4 shrink-0" style={{ color: "#6b7686" }} aria-label="Remove ingredient">
+                      <X size={15} />
+                    </button>
                   </div>
-                  <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
-                  <button onClick={(e) => { e.stopPropagation(); removeDish(d.rid); }} className="w-4 shrink-0" style={{ color: "#6b7686" }}>
-                    <X size={15} />
-                  </button>
-                </button>
+                  {/* per-ingredient split: drag to set how much is yours vs the partner's */}
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="w-[54px] shrink-0 text-[10px] font-semibold" style={{ color: PERSON_ACC[you] }}>{t("You")} {pct}%</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={pct}
+                      onChange={(e) => setShare(d.rid, Number(e.target.value) / 100)}
+                      className="h-1.5 flex-1 cursor-pointer"
+                      style={{ accentColor: PERSON_ACC[you] }}
+                      aria-label={`Your share of ${d.food.name}`}
+                    />
+                    <span className="w-[64px] shrink-0 text-right text-[10px] font-semibold" style={{ color: PERSON_ACC[partner] }}>{PERSON_NAME[partner]} {100 - pct}%</span>
+                  </div>
+                </div>
               );
             })}
             <div className="mt-2.5 flex items-baseline justify-between rounded-[12px] px-3 py-2" style={{ background: "#0f141c" }}>
@@ -555,44 +574,40 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
             <Plus size={15} /> {t("Add ingredient")}
           </button>
           {dish.length > 0 && (
-            <button
-              onClick={() => setSavingDish(true)}
-              className="flex items-center justify-center gap-1.5 rounded-[14px] px-4 py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-              style={{ background: "#0f141c", border: "1px solid #232d3a", color: "#9aa6b2" }}
-            >
-              <Bookmark size={15} /> {t("Save")}
-            </button>
+            <>
+              <button
+                onClick={() => setSavingDish(true)}
+                className="flex items-center justify-center gap-1.5 rounded-[14px] px-3.5 py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
+                style={{ background: "#0f141c", border: "1px solid #232d3a", color: "#9aa6b2" }}
+              >
+                <Bookmark size={15} /> {t("Save")}
+              </button>
+              <button
+                onClick={() => setDish([])}
+                className="flex items-center justify-center rounded-[14px] px-3.5 py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
+                style={{ background: "rgba(240,85,110,0.10)", color: "#f0556e" }}
+                aria-label="Clear dish"
+              >
+                <Trash2 size={15} />
+              </button>
+            </>
           )}
         </div>
       </section>
 
-      {/* split into bowls */}
+      {/* what each person's share adds up to — from the per-ingredient splits */}
       {dish.length > 0 && (
         <section className="rounded-[18px] border p-4" style={TILE}>
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-[13.5px] font-semibold text-bone">{t("Split into bowls")}</p>
-            <button onClick={() => setBowls(null)} className="text-[11.5px] font-semibold" style={{ color: "#34c5e8" }}>
-              {t("Even split")}
-            </button>
-          </div>
-          <p className="mb-3 text-[11.5px]" style={{ color: "#97a3b2" }}>
-            {t("Roughly how much is in each bowl? Macros follow the portion.")}
-          </p>
+          <p className="mb-2.5 text-[13.5px] font-semibold text-bone">{t("Each of you gets")}</p>
           <div className="grid grid-cols-2 gap-3">
             {order.map((p) => {
               const acc = PERSON_ACC[p];
-              const bowl = effBowl(p);
-              const bm = bowlMacros(p);
+              const bm = personMacros(p);
               const afterRem = targets[p].kcal - dayTotals(logs[p]).kcal - bm.kcal;
-              const pct = dishGrams > 0 ? Math.round((bowl / dishGrams) * 100) : 0;
               return (
                 <div key={p} className="rounded-[14px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
-                  <p className="text-[12px] font-semibold" style={{ color: acc }}>{p === you ? t("Your bowl") : t("{name}'s bowl", { name: PERSON_NAME[p] })}</p>
-                  <div className="mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
-                    <NumField value={Math.round(bowl)} onChange={(v) => setBowl(p, v)} className="num w-full bg-transparent text-[17px] font-bold text-bone outline-none" />
-                    <span className="text-[11px]" style={{ color: "#7c8696" }}>g · {pct}%</span>
-                  </div>
-                  <div className="num mt-2 text-[14px] font-bold text-bone">{r0(bm.kcal)} <span className="text-[10px] font-normal" style={{ color: "#7c8696" }}>{t("kcal")}</span></div>
+                  <p className="text-[12px] font-semibold" style={{ color: acc }}>{p === you ? t("You") : PERSON_NAME[p]}</p>
+                  <div className="num mt-2 text-[16px] font-bold text-bone">{r0(bm.kcal)} <span className="text-[10px] font-normal" style={{ color: "#7c8696" }}>{t("kcal")}</span></div>
                   <div className="num text-[10.5px]" style={{ color: "#9aa6b2" }}>{r0(bm.p)}P · {r0(bm.c)}C · {r0(bm.f)}F</div>
                   <div className="mt-1.5 border-t pt-1.5 stat-key" style={{ borderColor: acc + "33", color: afterRem < 0 ? "#f0556e" : "#7c8696" }}>
                     {afterRem < 0 ? t("{n} over after", { n: r0(-afterRem) }) : t("{n} kcal left after", { n: r0(afterRem) })}
@@ -606,7 +621,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
             style={{ background: HEALTH_GRADIENT }}
           >
-            <Check size={16} /> {t("Log both bowls")}
+            <Check size={16} /> {t("Log both meals")}
           </button>
         </section>
       )}
