@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { lookupBarcode } from "../lib/barcode";
-import { DAILY, unitFor, type Food, type FoodRole, type FoodUnit } from "../lib/nutrition";
+import { DAILY, unitFor, type Food, type FoodRole, type FoodUnit, type MacroTarget } from "../lib/nutrition";
 import {
   amountLabel,
   buildLibrary,
@@ -157,8 +157,8 @@ function ModePill({
 // ── SOLO — one person's daily burndown ──────────────────────────────────────────
 function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const today = todayStr();
-  const target = DAILY[person] as Macros;
-  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, deleteSavedMeal } = useHealth();
+  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, deleteSavedMeal, macroTargets, setMacroTarget } = useHealth();
+  const target = (macroTargets[person] ?? DAILY[person]) as Macros;
   // which day you're viewing/editing — default today; ◀ ▶ navigate, capped at today.
   const [viewDate, setViewDate] = useState(today);
   const shiftDate = (d: string, by: number) => {
@@ -181,6 +181,8 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const [editing, setEditing] = useState<{ mealId: string; item: LoggedItem } | null>(null);
   const [estimateOpen, setEstimateOpen] = useState(false);
   const [savingMeal, setSavingMeal] = useState<Meal | null>(null); // meal pending "save as favorite"
+  const [preview, setPreview] = useState<SavedMeal | null>(null); // tap a saved meal → view/edit before adding
+  const [editTargets, setEditTargets] = useState(false); // edit this person's daily macro targets
   // the meals collect into one collapsible "Today's Meals" container — its
   // open/closed state persists (localStorage) so switching modes and coming back
   // doesn't blow it open again.
@@ -252,13 +254,20 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
           onNext={() => canNext && setViewDate((d) => shiftDate(d, 1))}
           onToday={isToday ? undefined : () => setViewDate(today)}
         />
+        <button
+          onClick={() => setEditTargets(true)}
+          className="mt-1.5 text-[11.5px] font-medium"
+          style={{ color: "#7e8a98" }}
+        >
+          {t("Edit daily targets")}
+        </button>
       </div>
 
       {/* the gentle 8 PM nudge */}
       {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
 
-      {/* saved / favorite meals — one-tap re-add */}
-      <SavedMealsBar meals={savedMeals} onPick={addSavedToDay} onDelete={deleteSavedMeal} />
+      {/* saved / favorite meals — tap to preview (view/edit), then add */}
+      <SavedMealsBar meals={savedMeals} onPick={setPreview} onDelete={deleteSavedMeal} />
 
       {/* meals — collected into one labeled, collapsible container so the main
           screen stays clean no matter how many get added */}
@@ -372,7 +381,29 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         open={savingMeal !== null}
         defaultName={savingMeal ? savingMeal.items.map((it) => it.name).join(", ").slice(0, 40) : ""}
         onClose={() => setSavingMeal(null)}
-        onSave={(name) => { if (savingMeal) addSavedMeal(name, savingMeal.items); setSavingMeal(null); }}
+        onSave={(name, keepInDay) => {
+          if (savingMeal) {
+            addSavedMeal(name, savingMeal.items);
+            if (!keepInDay) removeMeal(savingMeal.id); // save to library only — don't log it to today
+          }
+          setSavingMeal(null);
+        }}
+      />
+
+      {/* tap a saved meal → preview it, then choose to add it to today */}
+      <SavedMealPreview
+        meal={preview}
+        onClose={() => setPreview(null)}
+        onAdd={() => { if (preview) addSavedToDay(preview); setPreview(null); }}
+      />
+
+      {/* edit this person's daily macro targets */}
+      <EditTargetsSheet
+        open={editTargets}
+        name={PERSON_NAME[person]}
+        target={target}
+        onClose={() => setEditTargets(false)}
+        onSave={(tg) => { setMacroTarget(person, tg); setEditTargets(false); }}
       />
     </div>
   );
@@ -393,7 +424,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const partner = other(owner);
   const order: Person[] = [you, partner];
 
-  const { getDay, setDay, savedMeals, addSavedMeal, deleteSavedMeal } = useHealth();
+  const { getDay, setDay, savedMeals, addSavedMeal, deleteSavedMeal, macroTargets } = useHealth();
   const logs: Record<Person, DayLog> = { gino: getDay("gino", today), xinyan: getDay("xinyan", today) };
   const [dish, setDish] = useState<DishItem[]>([]);
   const [bowls, setBowls] = useState<Record<Person, number> | null>(null); // null = even split
@@ -402,7 +433,10 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
   const [toast, setToast] = useState<string | null>(null);
   const [savingDish, setSavingDish] = useState(false);
 
-  const targets: Record<Person, Macros> = { gino: DAILY.gino, xinyan: DAILY.xinyan };
+  const targets: Record<Person, Macros> = {
+    gino: (macroTargets.gino ?? DAILY.gino) as Macros,
+    xinyan: (macroTargets.xinyan ?? DAILY.xinyan) as Macros,
+  };
   const dishItems = dish.map((d) => toItem(d.food, { grams: d.grams, qty: d.qty, unit: d.unit }));
   const dishMacros = mealTotals({ id: "x", name: "x", items: dishItems });
   const dishGrams = dish.reduce((s, d) => s + d.grams, 0);
@@ -459,6 +493,9 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           return <PersonSummary key={p} person={p} you={p === you} target={targets[p]} eaten={totalEaten} />;
         })}
       </div>
+
+      {/* accountability — what each of you has actually eaten today */}
+      <EatenTogether logs={logs} order={order} you={you} />
 
       {/* saved / favorite meals — tap to drop into the dish */}
       <SavedMealsBar meals={savedMeals} onPick={addSavedToDish} onDelete={deleteSavedMeal} />
@@ -799,6 +836,54 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
   );
 }
 
+// Together accountability: a read-only glance at what BOTH of you have logged
+// today — each person's meals + their running totals — so you can check in on
+// each other. Household data is already shared, so this just surfaces it.
+function EatenTogether({ logs, order, you }: { logs: Record<Person, DayLog>; order: Person[]; you: Person }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className="overflow-hidden rounded-[16px] border" style={TILE}>
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left">
+        <Users size={13} style={{ color: HEALTH }} />
+        <span className="stat-key flex-1" style={{ color: "#97a3b2" }}>{t("Eaten today")}</span>
+        <ChevronDown size={16} style={{ color: "#6b7686", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+      </button>
+      {open && (
+        <div className="flex flex-col gap-3 px-3 pb-3">
+          {order.map((p) => {
+            const meals = logs[p].meals;
+            const tot = dayTotals(logs[p]);
+            const acc = PERSON_ACC[p];
+            return (
+              <div key={p}>
+                <div className="mb-1.5 flex items-baseline justify-between">
+                  <span className="text-[12.5px] font-semibold" style={{ color: acc }}>{p === you ? t("You") : PERSON_NAME[p]}</span>
+                  <span className="num text-[11px]" style={{ color: "#7e8a98" }}>{r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F</span>
+                </div>
+                {meals.length === 0 ? (
+                  <p className="text-[11.5px]" style={{ color: "#7e8a98" }}>{t("Nothing logged yet.")}</p>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {meals.map((m, i) => {
+                      const mt = mealTotals(m);
+                      return (
+                        <div key={m.id} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5" style={{ background: "#0f141c", border: "1px solid #1b232e" }}>
+                          <span className="min-w-0 flex-1 truncate text-[12px] text-bone">{m.items.map((it) => it.name).join(", ") || t("Meal {n}", { n: i + 1 })}</span>
+                          <span className="num shrink-0 text-[11px]" style={{ color: "#9aa6b2" }}>{r0(mt.kcal)} {t("kcal")}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ── adherence: the gentle 8 PM nudge, the estimate sheet, the history card ──────
 function NudgeCard({ onYes, onNo, onLater }: { onYes: () => void; onNo: () => void; onLater: () => void }) {
   return (
@@ -952,10 +1037,12 @@ function SavedMealsBar({ meals, onPick, onDelete }: { meals: SavedMeal[]; onPick
   );
 }
 
-// Name-this-meal prompt before saving a favorite.
-function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; defaultName: string; onClose: () => void; onSave: (name: string) => void }) {
+// Name-this-meal prompt before saving a favorite. Also lets you SAVE without
+// logging it to today (create a template you're not eating right now).
+function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; defaultName: string; onClose: () => void; onSave: (name: string, keepInDay: boolean) => void }) {
   const [name, setName] = useState(defaultName);
-  useEffect(() => { if (open) setName(defaultName); }, [open, defaultName]);
+  const [keepInDay, setKeepInDay] = useState(true);
+  useEffect(() => { if (open) { setName(defaultName); setKeepInDay(true); } }, [open, defaultName]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
@@ -969,18 +1056,130 @@ function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; 
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          autoFocus
           placeholder={t("Meal name")}
           className="mt-3 w-full rounded-lg px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
           style={{ background: "#141a24", border: "1px solid #232d3a" }}
         />
+        {/* keep in today's log, or save the template only (don't count it today) */}
         <button
-          onClick={() => name.trim() && onSave(name.trim())}
+          onClick={() => setKeepInDay((v) => !v)}
+          className="mt-3 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left"
+          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        >
+          <span
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
+            style={{ background: keepInDay ? HEALTH : "transparent", border: keepInDay ? "none" : "1.5px solid #3a4552" }}
+          >
+            {keepInDay && <Check size={13} style={{ color: "#06303a" }} />}
+          </span>
+          <span className="flex-1 text-[12.5px] text-bone">{t("Also keep it in today's log")}</span>
+        </button>
+        <button
+          onClick={() => name.trim() && onSave(name.trim(), keepInDay)}
           disabled={!name.trim()}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
           style={{ background: HEALTH_GRADIENT, opacity: name.trim() ? 1 : 0.45 }}
         >
-          <Check size={16} /> {t("Save meal")}
+          <Check size={16} /> {keepInDay ? t("Save meal") : t("Save to meals only")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Preview a saved meal — its ingredients + macro total — before adding it to the
+// day. Fixes the old "tap = silently added" behavior: now you view first, then
+// choose to add (and can edit the copy once it's in your day).
+function SavedMealPreview({ meal, onClose, onAdd }: { meal: SavedMeal | null; onClose: () => void; onAdd: () => void }) {
+  if (!meal) return null;
+  const tot = meal.items.reduce(
+    (a, it) => ({ kcal: a.kcal + (it.grams / 100) * it.per100.kcal, p: a.p + (it.grams / 100) * it.per100.p, c: a.c + (it.grams / 100) * it.per100.c, f: a.f + (it.grams / 100) * it.per100.f }),
+    ZERO,
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
+      <div className="max-h-[80vh] w-full max-w-[380px] overflow-y-auto rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <Bookmark size={16} style={{ color: HEALTH }} />
+          <div className="min-w-0 flex-1 text-[15px] font-bold text-bone">{meal.name}</div>
+          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+        </div>
+        <div className="num mt-1 text-[12px]" style={{ color: "#97a3b2" }}>
+          {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
+        </div>
+        <div className="mt-3 flex flex-col">
+          {meal.items.map((it) => {
+            const c = contribution(it);
+            return (
+              <div key={it.id} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "#1b232e" }}>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] text-bone">{it.name}</div>
+                  <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
+                </div>
+                <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          onClick={onAdd}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+          style={{ background: HEALTH_GRADIENT }}
+        >
+          <Plus size={16} /> {t("Add to today")}
+        </button>
+        <p className="mt-2 text-center text-[11px]" style={{ color: "#7e8a98" }}>{t("Edit it in your day after adding.")}</p>
+      </div>
+    </div>
+  );
+}
+
+// Edit one person's daily macro targets. Writes to the household macro_targets
+// table (syncs across phones); calories are shown as the sum for reference.
+function EditTargetsSheet({ open, name, target, onClose, onSave }: { open: boolean; name: string; target: MacroTarget; onClose: () => void; onSave: (t: MacroTarget) => void }) {
+  const [p, setP] = useState(String(target.p));
+  const [c, setC] = useState(String(target.c));
+  const [f, setF] = useState(String(target.f));
+  const [kcal, setKcal] = useState(String(target.kcal));
+  useEffect(() => {
+    if (open) { setP(String(target.p)); setC(String(target.c)); setF(String(target.f)); setKcal(String(target.kcal)); }
+  }, [open, target]);
+  if (!open) return null;
+  const num = (s: string) => Math.max(0, Number(s) || 0);
+  const field = (label: string, val: string, set: (v: string) => void, unit: string) => (
+    <label className="flex flex-col gap-1">
+      <span className="stat-key" style={{ color: "#97a3b2" }}>{label}</span>
+      <div className="flex items-center gap-1.5 rounded-lg px-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+        <input
+          value={val}
+          onChange={(e) => set(e.target.value.replace(/[^0-9.]/g, ""))}
+          inputMode="numeric"
+          className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none"
+        />
+        <span className="text-[11px]" style={{ color: "#6b7686" }}>{unit}</span>
+      </div>
+    </label>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
+      <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <Flame size={16} style={{ color: HEALTH }} />
+          <div className="flex-1 text-[15px] font-bold text-bone">{t("{name}'s daily targets", { name })}</div>
+          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {field(t("Calories"), kcal, setKcal, "kcal")}
+          {field(t("Protein"), p, setP, "g")}
+          {field(t("Carbs"), c, setC, "g")}
+          {field(t("Fat"), f, setF, "g")}
+        </div>
+        <button
+          onClick={() => onSave({ kcal: num(kcal), p: num(p), c: num(c), f: num(f) })}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+          style={{ background: HEALTH_GRADIENT }}
+        >
+          <Check size={16} /> {t("Save targets")}
         </button>
       </div>
     </div>
