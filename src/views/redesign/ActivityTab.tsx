@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, Check, Plus, ArrowDownLeft, HelpCircle } from "lucide-react";
+import { RefreshCw, Check, Plus, ArrowDownLeft, HelpCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 
@@ -21,13 +21,19 @@ export interface ActivityRow {
   pending?: boolean; // still-processing bank charge
 }
 
+// One month's worth of activity — the tab flips through these (newest first).
+export interface ActivityMonth {
+  monthKey: string; // "2026-06"
+  monthLabel: string; // "June 2026"
+  rows: ActivityRow[];
+  counted: number; // variable spend counted this month
+  needsReview: number; // uncategorized charges in this month
+}
+
 export interface ActivityVM {
   sinceMonday: number;
-  needsReview: number;
-  monthLabel: string;
-  counted: number;
-  rows: ActivityRow[];
   processing: number; // $ held at the bank but not yet itemized (BoA posts later)
+  months: ActivityMonth[]; // newest first; [0] is the current month
 }
 
 interface ActivityTaps {
@@ -103,6 +109,11 @@ export function ActivityTab({
   const [filter, setFilter] = useState<FilterKey>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [justRefreshed, setJustRefreshed] = useState(false);
+  const [mIdx, setMIdx] = useState(0); // 0 = current month; higher = older
+
+  const months = vm.months.length ? vm.months : [{ monthKey: "", monthLabel: "", rows: [], counted: 0, needsReview: 0 }];
+  const idx = Math.min(mIdx, months.length - 1);
+  const m = months[idx];
 
   const doRefresh = async () => {
     if (refreshing) return;
@@ -118,7 +129,7 @@ export function ActivityTab({
 
   // The filter chips actually filter now: "In budget" = counted living spend,
   // "Needs review" = uncategorized, "All" = everything.
-  const shown = vm.rows.filter((r) =>
+  const shown = m.rows.filter((r) =>
     filter === "all" ? true : filter === "budget" ? r.fate === "envelope" : r.fate === "review",
   );
 
@@ -190,7 +201,7 @@ export function ActivityTab({
         >
           {chip("all", t("All"))}
           {chip("budget", t("In budget"))}
-          {chip("review", t("Needs review"), vm.needsReview)}
+          {chip("review", t("Needs review"), m.needsReview)}
         </div>
 
         {/* ── still-processing notice — BoA holds pending charges as a lump and
@@ -209,11 +220,31 @@ export function ActivityTab({
           </div>
         )}
 
-        {/* ── Month group ── */}
+        {/* ── Month group (flippable: browse prior months) ── */}
         <div>
-          <div className="mb-2 flex items-baseline justify-between">
-            <span className="text-[13.5px] font-semibold text-bone">{vm.monthLabel}</span>
-            <span className="text-[12px] text-taupe">{t("{amount} counted", { amount: money(vm.counted) })}</span>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setMIdx((i) => Math.min(i + 1, months.length - 1))}
+                disabled={idx >= months.length - 1}
+                aria-label={t("Previous month")}
+                className="rounded-md p-1 disabled:opacity-30"
+                style={{ color: "#9aa6b2" }}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="min-w-[104px] text-center text-[13.5px] font-semibold text-bone">{m.monthLabel}</span>
+              <button
+                onClick={() => setMIdx((i) => Math.max(i - 1, 0))}
+                disabled={idx <= 0}
+                aria-label={t("Next month")}
+                className="rounded-md p-1 disabled:opacity-30"
+                style={{ color: "#9aa6b2" }}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            <span className="text-[12px] text-taupe">{t("{amount} counted", { amount: money(m.counted) })}</span>
           </div>
 
           <div

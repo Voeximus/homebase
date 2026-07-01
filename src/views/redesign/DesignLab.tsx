@@ -59,17 +59,33 @@ const MOCK_INSIGHTS: InsightsVM = {
 
 const MOCK_ACTIVITY: ActivityVM = {
   sinceMonday: 1136,
-  needsReview: 4,
-  monthLabel: "June 2026",
-  counted: 719,
-  rows: [
-    { id: "r1", merchant: "Sam's Club", catId: "groceries", amount: 229.81, fate: "envelope", badgeLabel: "→ Groceries" },
-    { id: "r2", merchant: "QuikTrip", catId: "transport", amount: 9.07, fate: "envelope", badgeLabel: "→ Gas" },
-    { id: "r3", merchant: "Verizon", catId: "utilities", amount: 83.0, fate: "skip", badgeLabel: "Bill · not in budget" },
-    { id: "r4", merchant: "SQ *JOHNNY'S", catId: "other", amount: 18.4, fate: "review", badgeLabel: "Needs review" },
-    { id: "r5", merchant: "Payroll", catId: "salary", amount: 991.0, fate: "income", badgeLabel: "Income · not in budget" },
-  ],
   processing: 144.43,
+  months: [
+    {
+      monthKey: "2026-06",
+      monthLabel: "June 2026",
+      counted: 719,
+      needsReview: 1,
+      rows: [
+        { id: "r1", merchant: "Sam's Club", catId: "groceries", amount: 229.81, fate: "envelope", badgeLabel: "→ Groceries" },
+        { id: "r2", merchant: "QuikTrip", catId: "transport", amount: 9.07, fate: "envelope", badgeLabel: "→ Gas" },
+        { id: "r3", merchant: "Verizon", catId: "utilities", amount: 83.0, fate: "skip", badgeLabel: "Bill · not in budget" },
+        { id: "r4", merchant: "SQ *JOHNNY'S", catId: "other", amount: 18.4, fate: "review", badgeLabel: "Needs review" },
+        { id: "r5", merchant: "Payroll", catId: "salary", amount: 991.0, fate: "income", badgeLabel: "Income · not in budget" },
+      ],
+    },
+    {
+      monthKey: "2026-05",
+      monthLabel: "May 2026",
+      counted: 642,
+      needsReview: 0,
+      rows: [
+        { id: "m1", merchant: "Trader Joe's", catId: "groceries", amount: 58.51, fate: "envelope", badgeLabel: "→ Groceries" },
+        { id: "m2", merchant: "Chevron", catId: "transport", amount: 41.2, fate: "envelope", badgeLabel: "→ Gas" },
+        { id: "m3", merchant: "Spotify", catId: "subscriptions", amount: 14.04, fate: "skip", badgeLabel: "Bill · not in budget" },
+      ],
+    },
+  ],
 };
 
 const MOCK_PROFILE: ProfileVM = {

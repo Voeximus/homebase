@@ -29,7 +29,7 @@ import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
 import { t } from "../../lib/i18n";
 import type { HomeVM, BillsVM } from "./vm";
 import type { InsightsVM } from "./InsightsTab";
-import type { ActivityVM, ActivityRow, ActivityFate } from "./ActivityTab";
+import type { ActivityVM, ActivityMonth, ActivityRow, ActivityFate } from "./ActivityTab";
 import type { ProfileVM } from "./ProfileTab";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -461,29 +461,37 @@ export function buildFinanceVMs(
   // The Activity tab is THIS month (matches the "June 2026" header) and is NOT
   // capped — so the "Needs review" badge count equals what the filter shows, and
   // every reviewable charge is reachable (the all-time triage bench is LedgerSheet).
-  const monthVisible = visible.filter((tx) => tx.date.slice(0, 7) === monthKey);
-  const rows: ActivityRow[] = monthVisible.map((tx) => {
-    const f = fateOf(tx);
+  // Group activity by month so the tab can flip back through prior months. Every
+  // month present in the visible ledger (plus the current one) gets a group,
+  // newest first; [0] is the current month.
+  const activityMonthKeys = Array.from(new Set([monthKey, ...visible.map((tx) => tx.date.slice(0, 7))]))
+    .sort()
+    .reverse();
+  const months: ActivityMonth[] = activityMonthKeys.map((mk) => {
+    const mv = visible.filter((tx) => tx.date.slice(0, 7) === mk);
+    const mrows: ActivityRow[] = mv.map((tx) => {
+      const f = fateOf(tx);
+      return {
+        id: tx.id,
+        merchant: tx.description || catName(tx.categoryId),
+        catId: tx.categoryId,
+        sub: relDay(tx.date),
+        amount: tx.amount,
+        fate: f.fate,
+        badgeLabel: tx.pending ? t("Processing") : f.badge,
+        pending: !!tx.pending,
+      };
+    });
+    const [yy, mm] = mk.split("-").map(Number);
     return {
-      id: tx.id,
-      merchant: tx.description || catName(tx.categoryId),
-      catId: tx.categoryId,
-      sub: relDay(tx.date),
-      amount: tx.amount,
-      fate: f.fate,
-      badgeLabel: tx.pending ? t("Processing") : f.badge,
-      pending: !!tx.pending,
+      monthKey: mk,
+      monthLabel: new Date(yy, mm - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+      rows: mrows,
+      counted: variableSpentThisMonth(visible, mk),
+      needsReview: mrows.filter((r) => r.fate === "review").length,
     };
   });
-  const needsReview = monthVisible.filter((tx) => fateOf(tx).fate === "review").length;
-  const activity: ActivityVM = {
-    sinceMonday,
-    needsReview,
-    monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-    counted: variableSpentThisMonth(visible, monthKey),
-    rows,
-    processing,
-  };
+  const activity: ActivityVM = { sinceMonday, processing, months };
 
   // ── Profile ──
   // Same lens rule as the Cash sheet/total: own + joint in "me", all in "all".
