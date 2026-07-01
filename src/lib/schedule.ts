@@ -10,7 +10,7 @@ export const DUE_DAYS: Record<string, number[]> = {
   Rent: [1],
   "Spot Pet insurance": [4],
   Spotify: [10],
-  "Electric (SRP)": [13],
+  "Electric (SRP)": [31], // SRP drafts end-of-month (clamped per-month), not the 13th
   "Card payment (…4728)": [15],
   Mom: [15, 30],
   Verizon: [17],
@@ -141,8 +141,9 @@ export function monthlySchedule(
 export interface MonthCalDay {
   day: number;
   in: boolean; // income lands
-  out: boolean; // a bill is due
+  out: boolean; // an UNPAID bill is due this day (expected slot)
   pay: boolean; // a paycheck lands (payday marker)
+  paid: boolean; // a bill was actually PAID this day (due-marker moved here)
 }
 export interface MonthCalBill {
   id: string; // recurringId@day (stable key)
@@ -170,9 +171,16 @@ export interface MonthCalendar {
 
 /** Build one month's calendar for ANY month, reusing the schedule engine so
  *  step-downs (Mom 400→300, Rent concession→full) and ANNUAL items render the
- *  correct amount per month. Paid-status is month-scoped (a recorded payment in
- *  THIS month), never the current-month "day ≤ today" heuristic — so flipping to a
- *  past/future month never mislabels a bill as paid. */
+ *  correct amount per month.
+ *
+ *  DUE vs PAID: an unpaid bill shows at its EXPECTED due day with its expected
+ *  amount. The moment a recorded payment matches it, the entry SNAPS to the
+ *  actual paid date + actual amount and the due-marker for that slot clears — so
+ *  each bill appears exactly once a month: "expected" or "paid", never both. This
+ *  also makes the Plaid post-lag harmless: the bill sits quietly in "expected"
+ *  until the real payment lands, instead of looking overdue. Paid-status is
+ *  month-scoped (a recorded payment in THIS month), never the "day ≤ today"
+ *  heuristic — so flipping across months never mislabels a bill. */
 export function monthCalendar(
   recurring: Recurring[],
   transactions: Transaction[],
@@ -187,57 +195,78 @@ export function monthCalendar(
   const todayNum = isCurrentMonth ? now.getDate() : -1;
   const { entries } = monthlySchedule(recurring, monthKey, transactions);
 
-  // Day-snapping table so a recorded payment maps to the right installment
-  // (multi-installment bills like Mom 15/30).
-  const recDays: Record<string, number[]> = {};
-  entries.forEach((e) => {
-    if (e.direction === "out" && e.recurringId) (recDays[e.recurringId] ??= []).push(e.day);
-  });
-  const paidEntry = (e: ScheduleEntry): boolean => {
-    if (!e.recurringId) return false; // annual/non-recurring: no recorded link to match
-    return !!transactions.find((tx) => {
-      if (tx.type !== "expense" || tx.appliesTo?.kind !== "bill") return false;
-      if (tx.appliesTo.recurringId !== e.recurringId || tx.appliesTo.monthKey !== monthKey) return false;
-      const days = recDays[e.recurringId!] ?? [e.day];
-      const rd = tx.appliesTo.day;
-      if (rd == null) return days.length === 1;
-      const nearest = days.reduce((b, d) => (Math.abs(d - rd) < Math.abs(b - rd) ? d : b), days[0]);
-      return nearest === e.day;
-    });
-  };
-
-  const calMap: Record<number, { in: boolean; out: boolean; pay: boolean }> = {};
-  entries.forEach((e) => {
-    const d = Math.min(e.day, daysInMonth);
-    calMap[d] ??= { in: false, out: false, pay: false };
-    if (e.direction === "in") {
-      calMap[d].in = true;
-      calMap[d].pay = true;
-    } else if (e.direction === "out") {
-      calMap[d].out = true;
-    }
-  });
-
+  const clampDay = (d: number) => Math.min(Math.max(d, 1), daysInMonth);
   const fmtDay = (day: number) =>
-    new Date(year, month, Math.min(day, daysInMonth)).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
+    new Date(year, month, clampDay(day)).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
+  // This month's recorded bill payments, grouped by recurring row. A payment
+  // carries the ACTUAL date it hit (tx.date) and, in appliesTo.day, which
+  // installment it settles (snapped at capture) — match on the installment,
+  // DISPLAY on the actual date.
+  const paymentsByRec: Record<string, Transaction[]> = {};
+  for (const tx of transactions) {
+    if (tx.type !== "expense" || tx.appliesTo?.kind !== "bill") continue;
+    if (tx.appliesTo.monthKey !== monthKey) continue;
+    const rid = tx.appliesTo.recurringId;
+    if (rid) (paymentsByRec[rid] ??= []).push(tx);
+  }
+  const txDay = (tx: Transaction) => parseInt(tx.date.slice(8, 10), 10);
+  const claimDay = (tx: Transaction) => tx.appliesTo?.day ?? txDay(tx);
+
+  // Resolve each scheduled OUT installment to its matching payment (→ actual date
+  // + amount, paid) or its expected slot. A claimed payment is consumed so two
+  // installments (Mom 15/30) never share one; if two payments target one
+  // installment the nearest wins and the stray is left for the seed-placeholder
+  // cleanup (which removes manual "already paid" rows once the real feed covers
+  // the same bill+month).
+  const consumed: Record<string, Set<string>> = {};
   const bills: MonthCalBill[] = entries
     .filter((e) => e.direction === "out")
-    .sort((a, b) => a.day - b.day)
-    .map((e) => ({
-      id: `${e.recurringId ?? e.label}@${e.day}`,
-      name: e.label,
-      catId: recurring.find((r) => r.id === e.recurringId)?.categoryId ?? "other",
-      day: e.day,
-      amount: e.amount,
-      dateLabel: fmtDay(e.day),
-      paid: paidEntry(e),
-      variable: !!e.variable,
-      recurringId: e.recurringId,
-    }));
+    .map((e) => {
+      const rid = e.recurringId;
+      let paidTx: Transaction | undefined;
+      if (rid) {
+        const pool = (paymentsByRec[rid] ?? []).filter((tx) => !consumed[rid]?.has(tx.id));
+        if (pool.length) {
+          paidTx = pool.reduce(
+            (best, tx) => (Math.abs(claimDay(tx) - e.day) < Math.abs(claimDay(best) - e.day) ? tx : best),
+            pool[0],
+          );
+          (consumed[rid] ??= new Set()).add(paidTx.id);
+        }
+      }
+      const paid = !!paidTx;
+      const day = clampDay(paid ? txDay(paidTx!) : e.day);
+      return {
+        id: `${rid ?? e.label}@${e.day}`,
+        name: e.label,
+        catId: recurring.find((r) => r.id === rid)?.categoryId ?? "other",
+        day,
+        amount: paid ? Math.abs(paidTx!.amount) : e.amount,
+        dateLabel: fmtDay(day),
+        paid,
+        variable: !!e.variable,
+        recurringId: rid,
+      };
+    })
+    .sort((a, b) => a.day - b.day);
+
+  // Calendar dots: income/payday at their days; a bill contributes a "due" dot at
+  // its expected day when unpaid, or a "paid" dot at its actual day when paid.
+  const calMap: Record<number, { in: boolean; out: boolean; pay: boolean; paid: boolean }> = {};
+  const touch = (d: number) => (calMap[d] ??= { in: false, out: false, pay: false, paid: false });
+  entries.forEach((e) => {
+    if (e.direction === "in") {
+      const c = touch(clampDay(e.day));
+      c.in = true;
+      c.pay = true;
+    }
+  });
+  bills.forEach((b) => {
+    const c = touch(b.day);
+    if (b.paid) c.paid = true;
+    else c.out = true;
+  });
 
   return {
     year,
@@ -248,7 +277,7 @@ export function monthCalendar(
     firstWeekday,
     isCurrentMonth,
     todayNum,
-    days: Object.entries(calMap).map(([d, v]) => ({ day: +d, in: v.in, out: v.out, pay: v.pay })),
+    days: Object.entries(calMap).map(([d, v]) => ({ day: +d, in: v.in, out: v.out, pay: v.pay, paid: v.paid })),
     bills,
   };
 }

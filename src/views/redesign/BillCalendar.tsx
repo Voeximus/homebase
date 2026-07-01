@@ -109,6 +109,7 @@ export function BillCalendar({
               {ev && !isToday && (
                 <span className="mt-0.5 flex gap-0.5">
                   {ev.out && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#fb923c" }} />}
+                  {ev.paid && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#6b7686" }} />}
                   {ev.pay && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#46d18a" }} />}
                 </span>
               )}
@@ -164,6 +165,9 @@ export function BillCalendar({
         </span>
         <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
           <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#fb923c" }} /> {t("Bill due")}
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
+          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#6b7686" }} /> {t("Paid")}
         </span>
       </div>
 

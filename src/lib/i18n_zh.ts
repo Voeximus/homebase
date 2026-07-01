@@ -282,6 +282,7 @@ const SEED: Record<string, string> = {
   "Nothing due this day.": "当天没有到期账单。",
   Payday: "发薪日",
   "Bill due": "账单到期",
+  Paid: "已支付",
   "Back to the list": "返回列表",
   " · ~est": " · ~预估",
   "{n} paid this month": "本月已付 {n} 笔",
