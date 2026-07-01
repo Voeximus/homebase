@@ -40,3 +40,21 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      # Push an "Update ready" notification to the phones — but ONLY when the
+      # changelog version bumped (a real release), so ordinary commits stay quiet.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Announce update if the changelog version bumped
+        env:
+          ANNOUNCE_TOKEN: ${{ secrets.ANNOUNCE_TOKEN }}
+        run: |
+          CUR=$(grep -m1 'version: "' src/lib/changelog.ts | sed -E 's/.*"([^"]+)".*/\1/')
+          PREV=$(git show HEAD~1:src/lib/changelog.ts 2>/dev/null | grep -m1 'version: "' | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          if [ -n "$CUR" ] && [ "$CUR" != "$PREV" ]; then
+            echo "changelog version $PREV -> $CUR — announcing"
+            curl -s -X POST "https://ganzefaciiyibselizqi.supabase.co/functions/v1/announce-update?token=$ANNOUNCE_TOKEN&v=$CUR" || true
+          else
+            echo "no changelog version change ($CUR) — skipping announce"
+          fi
