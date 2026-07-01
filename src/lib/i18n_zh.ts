@@ -285,6 +285,8 @@ const SEED: Record<string, string> = {
   Paid: "已支付",
   "paid {date}": "{date} 已付",
   "due {date}": "{date} 到期",
+  "Unpaid · posting": "未付 · 处理中",
+  "Nothing here this month.": "本月暂无。",
   "Back to the list": "返回列表",
   " · ~est": " · ~预估",
   "{n} paid this month": "本月已付 {n} 笔",

@@ -28,8 +28,7 @@ import { BillsSheet } from "./BillsSheet";
 import { TxnSheet } from "./TxnSheet";
 import { OwedSheet } from "./OwedSheet";
 import { AnomalySheet } from "./AnomalySheet";
-import { monthCalendar, type ScheduleEntry } from "../../lib/schedule";
-import type { BillRow } from "./vm";
+import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
 import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
 import { merchantKey } from "../../lib/categorize";
 
@@ -191,7 +190,7 @@ export function FinanceTabs({
   };
   const openCategory = (catId: string) =>
     setEnvLine(LEAN_VARIABLE.find((l) => l.cats.includes(catId)) ?? null);
-  const openBillPay = (b: BillRow) => {
+  const openBillPay = (b: MonthCalBill) => {
     setBillsOpen(false);
     setPayBillEntry({
       day: b.day,
@@ -334,7 +333,6 @@ export function FinanceTabs({
       <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={lensAccounts} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
       <BillsSheet
-        vm={vms.bills}
         open={billsOpen}
         onClose={() => setBillsOpen(false)}
         onPay={openBillPay}

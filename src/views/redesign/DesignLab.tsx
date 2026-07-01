@@ -8,7 +8,7 @@ import { ProfileTab, type ProfileVM } from "./ProfileTab";
 import { BillsSheet } from "./BillsSheet";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { OwedSheet } from "./OwedSheet";
-import type { HomeVM, BillsVM } from "./vm";
+import type { HomeVM } from "./vm";
 import type { Recurring } from "../../types";
 import { monthCalendar } from "../../lib/schedule";
 
@@ -146,35 +146,6 @@ const HOME: HomeVM = {
   owedSettled: [{ id: "o2", merchant: "Dinner — Sam's share", amount: 28.0, dateLabel: "Mon, Jun 9" }],
 };
 
-const BILLS: BillsVM = {
-  leftThisMonth: 449.1,
-  upcoming: [
-    { id: "claude@20", name: "Claude Pro", catId: "subscriptions", amount: 21.62, day: 20, dateLabel: "Jun 20", relLabel: "tomorrow", variable: false },
-    { id: "tmobile@29", name: "T-Mobile", catId: "utilities", amount: 27.48, day: 29, dateLabel: "Jun 29", relLabel: "in 10 days", variable: false },
-    { id: "mom@30", name: "Mom", catId: "other", amount: 400, day: 30, dateLabel: "Jun 30", relLabel: "in 11 days", variable: false },
-  ],
-  paidCount: 9,
-  paidTotal: 2099,
-  monthLabel: "June 2026",
-  todayNum: 19,
-  daysInMonth: 30,
-  firstWeekday: 1,
-  calendar: [
-    { day: 1, in: false, out: true }, { day: 4, in: false, out: true }, { day: 8, in: false, out: true },
-    { day: 10, in: false, out: true }, { day: 13, in: false, out: true }, { day: 15, in: true, out: true },
-    { day: 16, in: false, out: true }, { day: 17, in: false, out: true }, { day: 18, in: false, out: true },
-    { day: 20, in: false, out: true }, { day: 29, in: true, out: true }, { day: 30, in: false, out: true },
-  ],
-  monthBills: [
-    { id: "rent@1", name: "Rent", catId: "housing", amount: 1232.44, day: 1, dateLabel: "Jun 1", relLabel: "overdue", variable: false, paid: true },
-    { id: "electric@13", name: "Electric (SRP)", catId: "utilities", amount: 85, day: 13, dateLabel: "Jun 13", relLabel: "overdue", variable: true, paid: true },
-    { id: "verizon@17", name: "Verizon", catId: "utilities", amount: 83, day: 17, dateLabel: "Jun 17", relLabel: "overdue", variable: true, paid: true },
-    { id: "claude@20", name: "Claude Pro", catId: "subscriptions", amount: 21.62, day: 20, dateLabel: "Jun 20", relLabel: "tomorrow", variable: false, paid: false },
-    { id: "tmobile@29", name: "T-Mobile", catId: "utilities", amount: 27.48, day: 29, dateLabel: "Jun 29", relLabel: "in 10 days", variable: false, paid: false },
-    { id: "mom@30", name: "Mom", catId: "other", amount: 400, day: 30, dateLabel: "Jun 30", relLabel: "in 11 days", variable: false, paid: false },
-  ],
-};
-
 function TopBar() {
   return (
     <div
@@ -237,7 +208,6 @@ export function DesignLab() {
       </div>
       <TabNav active={tab} onTab={setTab} />
       <BillsSheet
-        vm={BILLS}
         open={billsOpen}
         onClose={() => setBillsOpen(false)}
         getMonth={(y, m) => monthCalendar(MOCK_RECURRING, [], LAB_NOW, y, m)}
