@@ -191,19 +191,10 @@ export interface FinanceStore {
     minPayment?: number;
     color: string;
   }) => Promise<void>;
-  payDebt: (id: string, amount: number) => Promise<void>;
   // Connect a credit-card account to a debt so its balance auto-syncs from the bank.
   linkDebtToCard: (debtId: string, accountId: string) => Promise<void>;
   unlinkDebtCard: (debtId: string) => Promise<void>;
   createDebtFromCard: (accountId: string) => Promise<void>;
-  addGoal: (g: {
-    name: string;
-    target: number;
-    saved?: number;
-    icon: string;
-    color: string;
-  }) => Promise<void>;
-  contributeGoal: (id: string, amount: number) => Promise<void>;
   seedHousehold: () => Promise<{ ok: boolean; message: string }>;
   resetAll: () => Promise<void>;
   setPaidBill: (month: string, billKey: string, paid: boolean) => Promise<void>;
@@ -213,11 +204,6 @@ export interface FinanceStore {
     monthKey: string,
     amount: number,
     day?: number,
-    fromAccountId?: string,
-  ) => Promise<void>;
-  payDebtExtra: (
-    debtId: string,
-    amount: number,
     fromAccountId?: string,
   ) => Promise<void>;
   // A reconciliation marker: record a bill as already paid (already reflected in
@@ -268,7 +254,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   });
   const [loading, setLoading] = useState(true);
 
-  // Latest data for actions that read-modify-write (payDebt, contributeGoal).
+  // Latest data for actions that read-modify-write.
   const dataRef = useRef(data);
   dataRef.current = data;
   // True once the `foods` table is reachable; false → fall back to localStorage.
@@ -576,16 +562,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           appliesTo: { kind: "bill", recurringId, monthKey, day },
         });
       },
-      async payDebtExtra(debtId, amount, fromAccountId) {
-        await applyMoneyEvent({
-          accountId: fromAccountId,
-          amount,
-          type: "expense",
-          categoryId: "other",
-          description: "Debt payment",
-          appliesTo: { kind: "debt", debtId },
-        });
-      },
       async markBillPaid(recurringId, monthKey, amount, day) {
         const rec = dataRef.current.recurring.find((r) => r.id === recurringId);
         if (!rec) return;
@@ -727,7 +703,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 a.id === t.accountId ? { ...a, balance: nb } : a,
               ),
             }));
-            await supabase.from("accounts").update({ balance: nb }).eq("id", t.accountId);
+            const { error: balErr } = await supabase
+              .from("accounts")
+              .update({ balance: nb })
+              .eq("id", t.accountId);
+            if (balErr) {
+              console.error("addTransaction: balance update failed — resyncing", balErr);
+              await resyncLedger();
+            }
           }
         }
       },
@@ -752,6 +735,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           if (!debtId && at?.kind === "bill" && at.recurringId) {
             debtId = dataRef.current.recurring.find((r) => r.id === at.recurringId)?.linkedDebtId;
           }
+          // Auto-tracked debts (bank-linked card or feed pattern) reconcile from the
+          // feed; reverse_money_event skips them, so the optimistic restore must too.
+          const rdebt = debtId ? dataRef.current.debts.find((d) => d.id === debtId) : undefined;
+          const debtAutoTracked = !!rdebt && (!!rdebt.providerAccountId || !!rdebt.trackPattern);
           const back = at?.appliedAmount ?? txn.amount;
           setData((p) => ({
             ...p,
@@ -770,7 +757,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 )
               : p.accounts,
             debts:
-              !at?.settled && debtId
+              !at?.settled && debtId && !debtAutoTracked
                 ? p.debts.map((d) =>
                     d.id === debtId ? { ...d, balance: d.balance + back } : d,
                   )
@@ -1019,22 +1006,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error || !row) return console.error(error);
         setData((p) => ({ ...p, debts: [...p.debts, mapDebt(row)] }));
       },
-      async payDebt(id, amount) {
-        const debt = dataRef.current.debts.find((d) => d.id === id);
-        if (!debt) return;
-        const newBalance = Math.max(0, debt.balance - amount);
-        setData((p) => ({
-          ...p,
-          debts: p.debts.map((d) =>
-            d.id === id ? { ...d, balance: newBalance } : d,
-          ),
-        }));
-        const { error } = await supabase
-          .from("debts")
-          .update({ balance: newBalance })
-          .eq("id", id);
-        if (error) console.error(error);
-      },
       // Point an existing debt at a connected credit card. Snap its balance to
       // the card's current balance now; the DB trigger keeps it in sync after.
       async linkDebtToCard(debtId, accountId) {
@@ -1088,37 +1059,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .single();
         if (error || !row) return console.error(error);
         setData((p) => ({ ...p, debts: [...p.debts, mapDebt(row)] }));
-      },
-      async addGoal(input) {
-        const { data: row, error } = await supabase
-          .from("savings_goals")
-          .insert({
-            name: input.name,
-            target: input.target,
-            saved: input.saved ?? 0,
-            icon: input.icon,
-            color: input.color,
-          })
-          .select()
-          .single();
-        if (error || !row) return console.error(error);
-        setData((p) => ({ ...p, goals: [...p.goals, mapGoal(row)] }));
-      },
-      async contributeGoal(id, amount) {
-        const goal = dataRef.current.goals.find((g) => g.id === id);
-        if (!goal) return;
-        const newSaved = Math.max(0, goal.saved + amount);
-        setData((p) => ({
-          ...p,
-          goals: p.goals.map((g) =>
-            g.id === id ? { ...g, saved: newSaved } : g,
-          ),
-        }));
-        const { error } = await supabase
-          .from("savings_goals")
-          .update({ saved: newSaved })
-          .eq("id", id);
-        if (error) console.error(error);
       },
       async seedHousehold() {
         const { data: existing } = await supabase

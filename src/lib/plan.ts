@@ -30,20 +30,6 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   { key: "subscriptions", label: "Subscriptions", icon: "🔁", target: 50, cats: ["subscriptions", "entertainment"], note: "streaming · apps" },
 ];
 
-export interface OneTime {
-  label: string;
-  amount: number;
-  icon: string;
-  note?: string;
-}
-
-// Lumpy costs that land during the sprint — paid from the cash cushion, not the
-// monthly firepower, so they don't slow the payoff.
-export const ONE_TIMES: OneTime[] = [
-  { label: "Dental deep-clean", amount: 482, icon: "🦷", note: "time it inside the sprint" },
-  { label: "Car registration", amount: 200, icon: "🚗", note: "notice expected · estimate" },
-];
-
 // Renters insurance — a fixed cost found during the audit, not yet in the live
 // recurring table, so it's folded into the plan's fixed total here.
 export const RENTERS_INSURANCE = 10.59;
@@ -358,13 +344,6 @@ export function spentByCategory(
 export const PLAN_START = "2026-06-16"; // the day Gino + Xinyan committed
 export const PLAN_DAYS = 90;
 
-export const HABITS: { icon: string; label: string }[] = [
-  { icon: "🍽️", label: "Measured food" },
-  { icon: "💪", label: "Gym + training" },
-  { icon: "💸", label: "Lean spending" },
-  { icon: "🚫", label: "No impulse buys" },
-];
-
 export interface Commitment {
   day: number;
   total: number;
@@ -380,37 +359,3 @@ export function commitmentProgress(now: Date): Commitment {
   return { day, total: PLAN_DAYS, pct: (day / PLAN_DAYS) * 100, endDate };
 }
 
-// --- Upcoming income ----------------------------------------------------------
-// Derived from the live income rows (one source of truth) so it always matches
-// the calendar — no hand-kept list to go stale. Each is a SOFT target: the
-// scheduled payday can slide ±2-3 days, and the bank feed confirms the real date
-// once the check posts.
-export interface UpcomingPay {
-  label: string;
-  amount: number; // this single check (the monthly amount split across its paydays)
-  date: Date;
-}
-export function upcomingIncome(
-  recurring: Recurring[],
-  from: Date,
-  count = 4,
-): UpcomingPay[] {
-  const startOfDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const out: UpcomingPay[] = [];
-  for (let m = 0; m < 5; m++) {
-    const y = from.getFullYear();
-    const mo = from.getMonth() + m;
-    for (const r of recurring) {
-      if (!r.active || r.direction !== "in") continue;
-      const days = r.dueDays ?? PAY_DAYS;
-      const perCheck = monthlyAmount(r) / days.length;
-      for (const d of days) {
-        const date = paydayDate(y, mo, d);
-        if (date.getTime() >= startOfDay.getTime()) {
-          out.push({ label: r.name, amount: perCheck, date });
-        }
-      }
-    }
-  }
-  return out.sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, count);
-}

@@ -1,6 +1,6 @@
 import type { Recurring, Transaction } from "../types";
 import { monthlyAmount } from "./recurring";
-import { billExpected, PAY_DAYS, nextPayday } from "./plan";
+import { billExpected, PAY_DAYS } from "./plan";
 
 // Day-of-month each recurring item posts, detected from Mar–Jun 2026 bank
 // history (keyed by the recurring row's NAME). Mom posts on each payday (two
@@ -135,61 +135,6 @@ export function monthlySchedule(
 
   entries.sort((a, b) => a.day - b.day);
   return { entries, unscheduled };
-}
-
-/** Map the recurring entries onto a specific month's days, clamping any day
- *  past month-end (e.g. the "30th" lands on Feb 28). Keyed by day number. */
-export function eventsForMonth(
-  entries: ScheduleEntry[],
-  daysInMonth: number,
-): Map<number, ScheduleEntry[]> {
-  const map = new Map<number, ScheduleEntry[]>();
-  for (const e of entries) {
-    const d = Math.min(e.day, daysInMonth);
-    const arr = map.get(d) ?? [];
-    arr.push(e);
-    map.set(d, arr);
-  }
-  return map;
-}
-
-/** The AUTO half of the deploy hold-back: the OUT bills landing between today and
- *  your next paycheck (inclusive), spanning the month boundary when the next
- *  payday is in the following month (e.g. today the 30th → next check the 15th).
- *  Already-paid bills are dropped via the injected predicate. */
-export function billsBeforeNextPayday(
-  recurring: Recurring[],
-  transactions: Transaction[],
-  now: Date,
-  isBillPaid: (entry: ScheduleEntry, monthKey: string) => boolean = () => false,
-): number {
-  const next = nextPayday(now);
-  const startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const endMs = new Date(next.getFullYear(), next.getMonth(), next.getDate()).getTime();
-
-  let total = 0;
-  let y = now.getFullYear();
-  let m = now.getMonth(); // 0-indexed
-  const ey = next.getFullYear();
-  const em = next.getMonth();
-  // Walk every month the [today, next payday] window touches (at most two).
-  while (y < ey || (y === ey && m <= em)) {
-    const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const { entries } = monthlySchedule(recurring, monthKey, transactions);
-    for (const e of entries) {
-      if (e.direction !== "out") continue;
-      const day = Math.min(e.day, daysInMonth);
-      const dMs = new Date(y, m, day).getTime();
-      if (dMs >= startMs && dMs <= endMs && !isBillPaid(e, monthKey)) total += e.amount;
-    }
-    m++;
-    if (m > 11) {
-      m = 0;
-      y++;
-    }
-  }
-  return total;
 }
 
 // --- Month-flippable calendar -------------------------------------------------

@@ -481,8 +481,10 @@ async function syncConnection(connId: string, force = false) {
       });
     }
     if (pendingRows.length) {
-      const { error: pErr } = await admin.from("transactions").insert(pendingRows);
-      if (pErr) console.warn("pending insert:", pErr.message);
+      const { error: pErr } = await admin
+        .from("transactions")
+        .upsert(pendingRows, { onConflict: "provider,provider_txn_id", ignoreDuplicates: true });
+      if (pErr) console.warn("pending upsert:", pErr.message);
     }
 
     await admin
@@ -496,7 +498,10 @@ async function syncConnection(connId: string, force = false) {
       ...Object.values(postedByAcct).flat(),
       ...Object.values(billByAcct).flat(),
       ...pendingRows,
-    ].map((r: any) => ({ description: r.description, amount: r.amount, pending: r.status === "pending" }));
+    ]
+      // Income (paychecks/refunds) isn't a charge — keep it out of the "new charge" push.
+      .filter((r: any) => r.type !== "income")
+      .map((r: any) => ({ description: r.description, amount: r.amount, pending: r.status === "pending" }));
 
     return { posted: ops.upsertPosted.length, pending: ops.pendingUpsert.length, reversed: ops.reverse.length, newRows };
   } catch (e) {
@@ -531,7 +536,6 @@ async function disconnect(p: any) {
   const { data: accts } = await admin.from("accounts").select("id").eq("connection_id", conn);
   const ids = (accts ?? []).map((a: any) => a.id);
   if (ids.length) await admin.from("transactions").delete().in("account_id", ids);
-  await admin.from("pending_preview").delete().eq("connection_id", conn);
   await admin.from("accounts").delete().eq("connection_id", conn);
   await admin.from("bank_connections").delete().eq("id", conn);
   return json({ disconnected: conn, accounts_removed: ids.length });
