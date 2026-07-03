@@ -140,6 +140,24 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   // "Zelle payment to mom" is handled earlier (amount-gated) — not a blanket rule.
 ];
 
+// Drift-tolerant second pass: DISTINCTIVE aliases per bill, matched against the
+// descriptor NORMALIZED by billKey (lowercased, alphanumerics only). Runs only
+// when the regex rules above didn't match, so it can't regress them — it just
+// catches spacing/punctuation/case drift (Plaid's clean "Spotpet" vs the raw
+// "SPOT PET SPOTPET.COM", "T Mobile" vs "T-Mobile", "Vz Wireless" vs "VZWIRELESS").
+// Every alias must be UNIQUE to that biller so it can't grab an unrelated merchant.
+const BILL_ALIASES: { bill: string; aliases: string[] }[] = [
+  { bill: "Rent", aliases: ["nollie"] },
+  { bill: "Electric (SRP)", aliases: ["echxpwr"] },
+  { bill: "Verizon", aliases: ["verizon", "vzwireless"] },
+  { bill: "T-Mobile", aliases: ["tmobile"] },
+  { bill: "Spotify", aliases: ["spotify"] },
+  { bill: "Spot Pet insurance", aliases: ["spotpet"] },
+  { bill: "LEMONADE INSURANCE", aliases: ["lemonade"] },
+  { bill: "Card payment (…4728)", aliases: ["crd4728"] },
+  { bill: "Card payment (…6813)", aliases: ["crd6813"] },
+];
+
 // Gino's own category labels → the app's category + whether it's living spend.
 const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   Groceries: { kind: "variable", appCategory: "groceries" },
@@ -238,6 +256,15 @@ export function classify(
   for (const r of BILL_RULES) {
     if (r.re.test(desc)) {
       return { kind: "bill", billName: r.bill, reason: `matched bill: ${r.bill}`, confidence: "high" };
+    }
+  }
+
+  // drift-tolerant alias pass — normalize the descriptor and look for a bill's
+  // distinctive alias, so a re-spaced/rebranded descriptor still resolves.
+  const normDesc = billKey(desc);
+  for (const b of BILL_ALIASES) {
+    if (b.aliases.some((a) => normDesc.includes(a))) {
+      return { kind: "bill", billName: b.bill, reason: `matched bill (alias): ${b.bill}`, confidence: "high" };
     }
   }
 
