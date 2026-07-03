@@ -132,7 +132,7 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
   { re: /VZ WIRELESS|VERIZON/i, bill: "Verizon" },
   { re: /TMOBILE|T-MOBILE/i, bill: "T-Mobile" },
   { re: /SPOTIFY/i, bill: "Spotify" },
-  { re: /SPOT PET/i, bill: "Spot Pet insurance" },
+  { re: /SPOT ?PET/i, bill: "Spot Pet insurance" }, // "SPOT PET SPOTPET.COM" or Plaid's clean "Spotpet"
   { re: /LEMONADE/i, bill: "LEMONADE INSURANCE" },
   { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
   { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
