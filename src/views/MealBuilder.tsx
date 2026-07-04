@@ -172,6 +172,8 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
   // open/closed state persists (localStorage) so switching modes and coming back
   // doesn't blow it open again.
   const [detailOpen, setDetailOpen] = useState<null | "week" | "weight">(null); // 2-up tile → full card
+  const [savedOpen, setSavedOpen] = useState(() => localStorage.getItem("hb-saved-open") === "1"); // collapsed by default
+  useEffect(() => localStorage.setItem("hb-saved-open", savedOpen ? "1" : "0"), [savedOpen]);
 
   // adherence + the gentle 8 PM nudge (in-app)
   const snoozeKey = `hb-nudge-snooze-${person}-${today}`;
@@ -273,16 +275,19 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
 
         {savedMeals.length > 0 && (
           <div className="hb-panel full">
-            <div className="hb-saved">
+            <button className="hb-saved" style={{ width: "100%", marginBottom: savedOpen ? undefined : 0 }} onClick={() => setSavedOpen((o) => !o)}>
               <Bookmark size={13} style={{ color: "var(--color-accent)" }} />
               <span className="t">{t("Saved meals")}</span>
               <span className="hb-tiny">{savedMeals.length}</span>
-            </div>
-            <div className="hb-chipsrow">
-              {savedMeals.map((m) => (
-                <button key={m.id} className="hb-sc truncate" style={{ maxWidth: 150 }} onClick={() => setPreview(m)}>{m.name}</button>
-              ))}
-            </div>
+              <ChevronDown size={15} style={{ color: "var(--color-faint)", transform: savedOpen ? "rotate(180deg)" : "none", transition: "transform .2s", marginLeft: 4 }} />
+            </button>
+            {savedOpen && (
+              <div className="hb-chipsrow">
+                {savedMeals.map((m) => (
+                  <button key={m.id} className="hb-sc truncate" style={{ maxWidth: 150 }} onClick={() => setPreview(m)}>{m.name}</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
