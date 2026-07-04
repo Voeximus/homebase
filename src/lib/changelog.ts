@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.04c",
+    date: "July 4, 2026",
+    notes: [
+      "Health has a whole new look — a cleaner layout led by a calories-left hero with a colored protein / carbs / fat counter, plus glanceable This-week and Weight tiles you tap to expand.",
+      "Pick your Health style — tap the palette icon up top for Original, Instrument, or Bold. It's saved per device, so you and Xinyan can each choose your own.",
+      "The new look is consistent everywhere — meals, workouts, Together, and every pop-up.",
+      "Tidier header — the Meal/Workout and Just-me/Together switches are compact icons now, and saved meals collapse to one line so long names don't crowd the screen.",
+    ],
+  },
+  {
     version: "2026.07.04b",
     date: "July 4, 2026",
     notes: [
