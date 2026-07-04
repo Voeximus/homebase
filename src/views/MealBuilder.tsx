@@ -275,8 +275,8 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
 
         {savedMeals.length > 0 && (
           <div className="hb-panel full">
-            <button className="hb-saved" style={{ width: "100%", marginBottom: savedOpen ? undefined : 0 }} onClick={() => setSavedOpen((o) => !o)}>
-              <Bookmark size={13} style={{ color: "var(--color-accent)" }} />
+            <button className="hb-saved" style={{ width: "100%", textAlign: "left", marginBottom: savedOpen ? undefined : 0 }} onClick={() => setSavedOpen((o) => !o)}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>🔖</span>
               <span className="t">{t("Saved meals")}</span>
               <span className="hb-tiny">{savedMeals.length}</span>
               <ChevronDown size={15} style={{ color: "var(--color-faint)", transform: savedOpen ? "rotate(180deg)" : "none", transition: "transform .2s", marginLeft: 4 }} />
