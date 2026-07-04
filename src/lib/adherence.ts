@@ -30,10 +30,26 @@ export function dayStatusOf(day: DayLog | undefined, target?: Macros): DayStatus
 }
 export const isFollowed = (s: DayStatus) => s === "logged" || s === "estimated";
 
+function fmtLocal(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
 function minusDays(date: string, d: number): string {
   const dt = new Date(date + "T00:00:00");
   dt.setDate(dt.getDate() - d);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  return fmtLocal(dt);
+}
+/** Shift an ISO date by n days (n may be negative). */
+function shiftDays(date: string, n: number): string {
+  const dt = new Date(date + "T00:00:00");
+  dt.setDate(dt.getDate() + n);
+  return fmtLocal(dt);
+}
+/** The Monday (week start) on/before a date. Weeks run Monday→Sunday. */
+function mondayOf(date: string): string {
+  const dt = new Date(date + "T00:00:00");
+  const back = (dt.getDay() + 6) % 7; // 0=Sun → 6, 1=Mon → 0, …
+  dt.setDate(dt.getDate() - back);
+  return fmtLocal(dt);
 }
 
 export interface AdherenceStats {
@@ -83,4 +99,64 @@ export function adherenceStats(
     recent.push({ date, status: statusFn(date) });
   }
   return { streak, followed, missed, compliancePct, recent };
+}
+
+// ── weekly view ──────────────────────────────────────────────────────────────
+// Adherence people actually feel is WEEKLY — a fresh start every Monday, not a
+// rolling 30-day blur. weeklyAdherence buckets the log into Mon→Sun weeks so the
+// card can show "this week resets, and here's how the past weeks went".
+export interface WeekDay {
+  date: string;
+  status: DayStatus;
+  future: boolean; // later this week — not yet decided, shown blank
+}
+export interface WeekBucket {
+  startDate: string; // the Monday
+  isCurrent: boolean;
+  days: WeekDay[]; // exactly 7, Mon→Sun
+  followed: number; // clearly-followed days
+  decided: number; // followed + skipped (days with a verdict)
+  elapsed: number; // days up to & including today (7 for a past week)
+  pct: number | null; // followed / decided, null when nothing's decided yet
+}
+
+export function weeklyAdherence(
+  byDate: Map<string, DayLog>,
+  person: Person,
+  today: string,
+  target?: Macros,
+  weeks = 6, // current week + the 5 before it
+): WeekBucket[] {
+  const statusFn = (date: string) => dayStatusOf(byDate.get(`${person}|${date}`), target);
+  const curMonday = mondayOf(today);
+  const out: WeekBucket[] = [];
+  for (let w = weeks - 1; w >= 0; w--) {
+    const start = shiftDays(curMonday, -7 * w);
+    const days: WeekDay[] = [];
+    let followed = 0;
+    let skipped = 0;
+    let elapsed = 0;
+    for (let d = 0; d < 7; d++) {
+      const date = shiftDays(start, d);
+      const future = date > today;
+      const status = future ? "none" : statusFn(date);
+      if (!future) {
+        elapsed++;
+        if (isFollowed(status)) followed++;
+        else if (status === "skipped") skipped++;
+      }
+      days.push({ date, status, future });
+    }
+    const decided = followed + skipped;
+    out.push({
+      startDate: start,
+      isCurrent: w === 0,
+      days,
+      followed,
+      decided,
+      elapsed,
+      pct: decided > 0 ? Math.round((followed / decided) * 100) : null,
+    });
+  }
+  return out;
 }

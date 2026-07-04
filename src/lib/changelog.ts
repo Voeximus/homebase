@@ -12,6 +12,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.04a",
+    date: "July 4, 2026",
+    notes: [
+      "Saved meals keep their name when you add them to a day — no more \"Meal 1, Meal 2, Meal 3\".",
+      "Tap a saved meal to edit it in place — rename it or change its ingredients — without logging it and re-bookmarking.",
+      "Meal cards now show calories and each macro (P / C / F) in its own color, so the breakdown reads at a glance.",
+      "Plan adherence is now weekly: a fresh \"this week\" that resets every Monday, with a recent-weeks trend below it.",
+      "New \"Electronics\" category for one-off tech buys (monitors, etc.) — it sits outside the monthly budget but still counts against debt.",
+    ],
+  },
+  {
     version: "2026.07.01b",
     date: "July 1, 2026",
     notes: [

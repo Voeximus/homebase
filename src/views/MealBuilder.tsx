@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Flame,
   Minus,
+  Pencil,
   Plus,
   ScanLine,
   Search,
@@ -40,7 +41,7 @@ import {
 } from "../lib/mealLog";
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
-import { adherenceStats, type DayStatus } from "../lib/adherence";
+import { adherenceStats, weeklyAdherence, type DayStatus, type WeekBucket } from "../lib/adherence";
 import { HEALTH, HEALTH_GRADIENT, HEALTH_HERO } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
@@ -149,7 +150,7 @@ function ModePill({
 // ── SOLO — one person's daily burndown ──────────────────────────────────────────
 function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const today = todayStr();
-  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, deleteSavedMeal, macroTargets, setMacroTarget } = useHealth();
+  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, updateSavedMeal, deleteSavedMeal, macroTargets, setMacroTarget } = useHealth();
   const target = (macroTargets[person] ?? DAILY[person]) as Macros;
   // which day you're viewing/editing — default today; ◀ ▶ navigate, capped at today.
   const [viewDate, setViewDate] = useState(today);
@@ -187,6 +188,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const afterEvening = new Date().getHours() >= 20;
   const showNudge = isToday && afterEvening && log.meals.length === 0 && !log.status && !snoozed;
   const stats = useMemo(() => adherenceStats(new Map(Object.entries(mealDays)), person, today, target), [mealDays, person, today, target]);
+  const weeks = useMemo(() => weeklyAdherence(new Map(Object.entries(mealDays)), person, today, target), [mealDays, person, today, target]);
   const markSkipped = () => update((l) => ({ ...l, status: "skipped" }));
   const markEstimated = (note: string) => update((l) => ({ ...l, status: "estimated", note: note.trim() || undefined }));
   const snooze = () => { localStorage.setItem(snoozeKey, "1"); setSnoozed(true); };
@@ -195,7 +197,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
 
   const addMeal = (): string => {
     const id = rowId();
-    update((l) => ({ ...l, meals: [...l.meals, { id, name: mealName(l.meals.length), items: [] }] }));
+    update((l) => ({ ...l, meals: [...l.meals, { id, name: "", items: [] }] }));
     return id;
   };
   const startNewMeal = () => setAddTo(addMeal());
@@ -228,7 +230,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   const addSavedToDay = (m: SavedMeal) =>
     update((l) => ({
       ...l,
-      meals: [...l.meals, { id: rowId(), name: mealName(l.meals.length), items: m.items.map((it) => ({ ...it, id: rowId() })) }],
+      meals: [...l.meals, { id: rowId(), name: m.name, items: m.items.map((it) => ({ ...it, id: rowId() })) }],
     }));
 
   return (
@@ -320,8 +322,8 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         </section>
       )}
 
-      {/* adherence — streak + compliance over time */}
-      <AdherenceCard stats={stats} acc={PERSON_ACC[person]} activeDate={viewDate} />
+      {/* adherence — this week resets Monday, past weeks show the trend */}
+      <AdherenceCard stats={stats} weeks={weeks} today={today} acc={PERSON_ACC[person]} activeDate={viewDate} />
 
       {/* calibration — does the macro budget still fit the weekly scale? */}
       <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
@@ -382,11 +384,13 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         }}
       />
 
-      {/* tap a saved meal → preview it, then choose to add it to today */}
-      <SavedMealPreview
+      {/* tap a saved meal → view / edit it in place, or add it to today */}
+      <SavedMealEditor
         meal={preview}
+        library={library}
         onClose={() => setPreview(null)}
-        onAdd={() => { if (preview) addSavedToDay(preview); setPreview(null); }}
+        onAddToday={(m) => addSavedToDay(m)}
+        onUpdate={(id, name, items) => updateSavedMeal(id, name, items)}
       />
 
       {/* edit this person's daily macro targets */}
@@ -1061,40 +1065,93 @@ const STATUS_COLOR: Record<DayStatus, string> = {
   skipped: "#f0556e",
   none: "#222b38",
 };
-function AdherenceCard({ stats, acc, activeDate }: { stats: ReturnType<typeof adherenceStats>; acc: string; activeDate?: string }) {
-  const pct = stats.compliancePct;
-  const pctColor = pct == null ? "#7c8696" : pct >= 80 ? "#46d18a" : pct >= 50 ? "#e3b341" : "#f0556e";
+const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+const weekPctColor = (pct: number | null): string =>
+  pct == null ? "#39424f" : pct >= 80 ? "#46d18a" : pct >= 50 ? "#e3b341" : "#f0556e";
+const BAR_H = 32; // px — the recent-weeks trend bar height
+
+function AdherenceCard({
+  stats,
+  weeks,
+  today,
+  acc,
+  activeDate,
+}: {
+  stats: ReturnType<typeof adherenceStats>;
+  weeks: WeekBucket[];
+  today: string;
+  acc: string;
+  activeDate?: string;
+}) {
+  const cur = weeks[weeks.length - 1];
+  const highlight = activeDate ?? today;
+  const headlineColor = cur.followed === 0 ? "#e6ecf2" : weekPctColor(cur.pct);
+  const barH = (pct: number | null) => (pct == null ? 5 : Math.max(5, Math.round((pct / 100) * BAR_H)));
   return (
     <section className="rounded-[18px] border p-4" style={TILE}>
+      {/* this week — the part that resets every Monday */}
       <div className="flex items-center justify-between">
-        <p className="stat-key" style={{ color: acc }}>{t("Plan adherence")}</p>
-        <div className="text-right">
-          <span className="stat text-[20px]" style={{ color: pctColor }}>{pct == null ? "—" : `${pct}%`}</span>
-          <span className="ml-1 stat-key" style={{ color: "#7c8696" }}>{t("on plan")}</span>
+        <p className="stat-key" style={{ color: acc }}>{t("This week")}</p>
+        <div className="flex items-center gap-1.5">
+          <Flame size={14} style={{ color: stats.streak > 0 ? "#fb923c" : "#5f6a78" }} />
+          <span className="text-[12px] font-semibold" style={{ color: stats.streak > 0 ? "#e6ecf2" : "#7c8696" }}>
+            {stats.streak > 0 ? t("{n}-day streak", { n: stats.streak }) : t("no streak yet")}
+          </span>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-1.5">
-        <Flame size={15} style={{ color: stats.streak > 0 ? "#fb923c" : "#5f6a78" }} />
-        <span className="text-[13px] font-semibold text-bone">
-          {stats.streak > 0 ? t("{n}-day streak", { n: stats.streak }) : t("Log a day to start a streak")}
-        </span>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className="stat text-[24px]" style={{ color: headlineColor }}>{cur.followed}</span>
+        <span className="text-[13px]" style={{ color: "#7c8696" }}>{t("of {n} days on plan", { n: cur.elapsed })}</span>
       </div>
-      <div className="mt-3 flex gap-1">
-        {stats.recent.map((d, i) => (
+
+      {/* the 7 days of this week, Mon→Sun */}
+      <div className="mt-3 grid grid-cols-7 gap-1.5">
+        {cur.days.map((d) => (
           <span
             key={d.date}
-            className="h-5 flex-1 rounded-[3px]"
-            style={{ background: STATUS_COLOR[d.status], boxShadow: (activeDate ? d.date === activeDate : i === stats.recent.length - 1) ? `0 0 0 1.5px ${acc}` : "none" }}
+            className="h-6 w-full rounded-[5px]"
+            style={{
+              background: d.future ? "#141b25" : STATUS_COLOR[d.status],
+              border: d.future ? "1px dashed #263041" : "none",
+              boxShadow: d.date === highlight && !d.future ? `0 0 0 1.5px ${acc}` : "none",
+            }}
           />
         ))}
+        {WEEKDAY_LETTERS.map((l, i) => (
+          <span key={i} className="text-center text-[9.5px]" style={{ color: "#5f6a78" }}>{l}</span>
+        ))}
       </div>
-      <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "#7c8696" }}>
+
+      {/* compact legend so the day colors decode */}
+      <div className="mt-2.5 flex flex-wrap gap-x-2.5 gap-y-1 text-[9.5px]" style={{ color: "#7c8696" }}>
         {([["logged", t("on plan")], ["partial", t("partial")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
           <span key={k} className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-[2px]" style={{ background: STATUS_COLOR[k] }} /> {label}
           </span>
         ))}
       </div>
+
+      {/* the trend over time — one bar per week, this week ringed */}
+      {weeks.length > 1 && (
+        <>
+          <p className="mt-3.5 text-[10px] font-medium uppercase tracking-wide" style={{ color: "#6b7686" }}>{t("Recent weeks")}</p>
+          <div className="mt-1.5 flex items-end gap-1.5" style={{ height: BAR_H }}>
+            {weeks.map((wk) => (
+              <div key={wk.startDate} className="flex flex-1 items-end" style={{ height: BAR_H }}>
+                <div
+                  className="w-full rounded-[3px]"
+                  style={{
+                    height: barH(wk.pct),
+                    background: weekPctColor(wk.pct),
+                    opacity: wk.pct == null ? 0.4 : 1,
+                    boxShadow: wk.isCurrent ? `0 0 0 1.5px ${acc}` : "none",
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -1199,47 +1256,144 @@ function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; 
 // Preview a saved meal — its ingredients + macro total — before adding it to the
 // day. Fixes the old "tap = silently added" behavior: now you view first, then
 // choose to add (and can edit the copy once it's in your day).
-function SavedMealPreview({ meal, onClose, onAdd }: { meal: SavedMeal | null; onClose: () => void; onAdd: () => void }) {
+// Tap a saved meal → view it, edit its name / ingredients in place (persisted
+// back to the favorite), or add it to today. Editing here means you no longer
+// have to log a meal, tweak it, and re-bookmark just to fix a saved favorite.
+function SavedMealEditor({
+  meal,
+  library,
+  onClose,
+  onAddToday,
+  onUpdate,
+}: {
+  meal: SavedMeal | null;
+  library: Food[];
+  onClose: () => void;
+  onAddToday: (m: SavedMeal) => void;
+  onUpdate: (id: string, name: string, items: LoggedItem[]) => void;
+}) {
+  const [name, setName] = useState("");
+  const [items, setItems] = useState<LoggedItem[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (meal) {
+      setName(meal.name);
+      setItems(meal.items);
+      setDirty(false);
+      setAddOpen(false);
+      setEditIdx(null);
+    }
+  }, [meal?.id]);
+
   if (!meal) return null;
-  const tot = meal.items.reduce(
-    (a, it) => ({ kcal: a.kcal + (it.grams / 100) * it.per100.kcal, p: a.p + (it.grams / 100) * it.per100.p, c: a.c + (it.grams / 100) * it.per100.c, f: a.f + (it.grams / 100) * it.per100.f }),
-    ZERO,
+
+  const tot = items.reduce(
+    (a, it) => {
+      const c = contribution(it);
+      return { kcal: a.kcal + c.kcal, p: a.p + c.p, c: a.c + c.c, f: a.f + c.f };
+    },
+    { ...ZERO },
   );
+  const editItem = editIdx != null ? items[editIdx] : null;
+
+  const changePortion = (amount: Amount) =>
+    setItems((xs) => { setDirty(true); return xs.map((it, i) => (i === editIdx ? { ...it, grams: amount.grams, qty: amount.qty, unit: amount.unit } : it)); });
+  const removeIngredient = () =>
+    setItems((xs) => { setDirty(true); return xs.filter((_, i) => i !== editIdx); });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
-      <div className="max-h-[80vh] w-full max-w-[380px] overflow-y-auto rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2">
-          <Bookmark size={16} style={{ color: HEALTH }} />
-          <div className="min-w-0 flex-1 text-[15px] font-bold text-bone">{meal.name}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
+        <div className="max-h-[85vh] w-full max-w-[380px] overflow-y-auto rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
+            <Bookmark size={16} style={{ color: HEALTH }} />
+            <input
+              value={name}
+              onChange={(e) => { setName(e.target.value); setDirty(true); }}
+              placeholder={t("Meal name")}
+              className="min-w-0 flex-1 bg-transparent text-[15px] font-bold text-bone outline-none placeholder:text-[#5f6a78]"
+            />
+            <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+          </div>
+          <div className="num mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-[13px] font-bold text-bone">{r0(tot.kcal)}<span className="ml-0.5 text-[10px] font-medium" style={{ color: "#7e8a98" }}> {t("kcal")}</span></span>
+            <MacroChip label="P" value={r0(tot.p)} color="#fb7185" />
+            <MacroChip label="C" value={r0(tot.c)} color="#38bdf8" />
+            <MacroChip label="F" value={r0(tot.f)} color="#f6c453" />
+          </div>
+
+          <div className="mt-3 flex flex-col">
+            {items.map((it, i) => {
+              const c = contribution(it);
+              return (
+                <button
+                  key={it.id}
+                  onClick={() => setEditIdx(i)}
+                  className="flex items-center gap-2 border-b py-2 text-left last:border-0"
+                  style={{ borderColor: "#1b232e" }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] text-bone">{it.name}</div>
+                    <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
+                  </div>
+                  <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+                  <Pencil size={13} style={{ color: "#5f6a78" }} />
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setAddOpen(true)}
+            className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
+            style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+          >
+            <Plus size={14} /> {t("Add food")}
+          </button>
+
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={() => { onAddToday({ ...meal, name: name.trim() || meal.name, items }); onClose(); }}
+              className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
+              style={{ background: HEALTH_GRADIENT }}
+            >
+              <Plus size={16} /> {t("Add to today")}
+            </button>
+            <button
+              onClick={() => { onUpdate(meal.id, name, items); setDirty(false); onClose(); }}
+              disabled={!dirty}
+              className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold transition active:scale-[0.98]"
+              style={{ background: dirty ? "rgba(70,209,138,0.14)" : "rgba(255,255,255,0.04)", color: dirty ? "#46d18a" : "#5f6a78" }}
+            >
+              <Check size={16} /> {t("Save changes")}
+            </button>
+          </div>
         </div>
-        <div className="num mt-1 text-[12px]" style={{ color: "#97a3b2" }}>
-          {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
-        </div>
-        <div className="mt-3 flex flex-col">
-          {meal.items.map((it) => {
-            const c = contribution(it);
-            return (
-              <div key={it.id} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "#1b232e" }}>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] text-bone">{it.name}</div>
-                  <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
-                </div>
-                <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
-              </div>
-            );
-          })}
-        </div>
-        <button
-          onClick={onAdd}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT }}
-        >
-          <Plus size={16} /> {t("Add to today")}
-        </button>
-        <p className="mt-2 text-center text-[11px]" style={{ color: "#7e8a98" }}>{t("Edit it in your day after adding.")}</p>
       </div>
-    </div>
+
+      {/* add a new ingredient to the favorite */}
+      <FoodSearchSheet
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        library={library}
+        title={t("Add food")}
+        onAdd={(food, amount) => { setItems((xs) => [...xs, toItem(food, amount)]); setDirty(true); }}
+      />
+      {/* edit / remove an ingredient of the favorite */}
+      <FoodSearchSheet
+        open={editItem !== null}
+        onClose={() => setEditIdx(null)}
+        library={library}
+        title={t("Edit portion")}
+        initialFood={editItem ? ({ id: editItem.foodId, name: editItem.name, role: editItem.role, ...editItem.per100, unit: editItem.unit } as Food) : undefined}
+        initialAmount={editItem ? { grams: editItem.grams, qty: editItem.qty, unit: editItem.unit } : undefined}
+        onAdd={(_food, amount) => changePortion(amount)}
+        onRemove={removeIngredient}
+      />
+    </>
   );
 }
 
@@ -1295,6 +1449,20 @@ function EditTargetsSheet({ open, name, target, onClose, onSave }: { open: boole
   );
 }
 
+// A small tinted macro pill — protein rose, carb sky, fat gold — so the P/C/F
+// breakdown reads at a glance instead of as one flat monotone line.
+function MacroChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <span
+      className="num inline-flex items-baseline gap-0.5 rounded-md px-1.5 py-[1px] text-[11px]"
+      style={{ background: `${color}1f`, color }}
+    >
+      <span className="font-semibold">{value}</span>
+      <span className="text-[9px] font-medium opacity-75">{label}</span>
+    </span>
+  );
+}
+
 function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void; onSave?: () => void }) {
   const tot = mealTotals(meal);
   // Ingredients collapse behind the meal header (which still shows the macro
@@ -1316,10 +1484,22 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
             />
           )}
           <div className="min-w-0">
-            <div className="text-[14px] font-semibold text-bone">{t("Meal {n}", { n: index + 1 })}</div>
-            <div className="num text-[11px]" style={{ color: "#7e8a98" }}>
-              {hasItems ? t("{n} items · ", { n: meal.items.length }) : ""}
-              {r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-[14px] font-semibold text-bone">{meal.name || t("Meal {n}", { n: index + 1 })}</span>
+              {hasItems && (
+                <span className="num shrink-0 rounded-full px-1.5 py-[1px] text-[10px]" style={{ background: "rgba(255,255,255,0.05)", color: "#8b97a6" }}>
+                  {t(meal.items.length === 1 ? "{n} item" : "{n} items", { n: meal.items.length })}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="num text-[13.5px] font-bold text-bone">
+                {r0(tot.kcal)}
+                <span className="ml-0.5 text-[10px] font-medium" style={{ color: "#7e8a98" }}> {t("kcal")}</span>
+              </span>
+              <MacroChip label="P" value={r0(tot.p)} color="#fb7185" />
+              <MacroChip label="C" value={r0(tot.c)} color="#38bdf8" />
+              <MacroChip label="F" value={r0(tot.f)} color="#f6c453" />
             </div>
           </div>
         </button>

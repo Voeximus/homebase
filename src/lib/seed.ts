@@ -20,6 +20,9 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: "shopping", name: "Household + Hygiene", icon: "🧴", color: "#f97316", type: "expense" },
   { id: "entertainment", name: "Entertainment", icon: "🎬", color: "#a855f7", type: "expense" },
   { id: "subscriptions", name: "Subscriptions", icon: "🔁", color: "#8b5cf6", type: "expense" },
+  // Electronics = tech purchases (monitors, gadgets). Often fronted for someone
+  // and paid back, so kept as its own line rather than muddying groceries/dining.
+  { id: "electronics", name: "Electronics", icon: "🖥️", color: "#818cf8", type: "expense" },
   { id: "kids", name: "Kids", icon: "🧸", color: "#f472b6", type: "expense" },
   { id: "pets", name: "Pets", icon: "🐾", color: "#f472b6", type: "expense" },
   { id: "other", name: "Other", icon: "📦", color: "#64748b", type: "expense" },

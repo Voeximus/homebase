@@ -79,6 +79,7 @@ export interface HealthStore {
   deleteWeight: (person: Person, date: string) => void;
   clearWeights: (person: Person) => void;
   addSavedMeal: (name: string, items: LoggedItem[]) => void;
+  updateSavedMeal: (id: string, name: string, items: LoggedItem[]) => void;
   deleteSavedMeal: (id: string) => void;
 }
 
@@ -396,6 +397,15 @@ export function HealthProvider({ children }: { children: ReactNode }) {
           .from("saved_meals")
           .insert({ id: meal.id, name: meal.name, items: meal.items })
           .then(({ error }) => error && console.error("saved_meals insert", error));
+      },
+      updateSavedMeal(id, name, items) {
+        const clean = name.trim() || "Saved meal";
+        setState((s) => ({ ...s, savedMeals: s.savedMeals.map((m) => (m.id === id ? { ...m, name: clean, items } : m)) }));
+        supabase
+          .from("saved_meals")
+          .update({ name: clean, items })
+          .eq("id", id)
+          .then(({ error }) => error && console.error("saved_meals update", error));
       },
       deleteSavedMeal(id) {
         setState((s) => ({ ...s, savedMeals: s.savedMeals.filter((m) => m.id !== id) }));

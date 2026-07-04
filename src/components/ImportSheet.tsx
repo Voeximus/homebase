@@ -135,7 +135,7 @@ export function ImportSheet({
 
   // The categories offered on a clarify card (the common living-spend buckets).
   // "shopping" is the merged Household + Hygiene bucket (the old "health" folded in).
-  const CLARIFY_CATS = ["groceries", "dining", "transport", "shopping", "pets", "subscriptions", "other"];
+  const CLARIFY_CATS = ["groceries", "dining", "transport", "shopping", "pets", "subscriptions", "electronics", "other"];
 
   async function commit() {
     if (!plan) return;
