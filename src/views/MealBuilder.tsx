@@ -119,10 +119,11 @@ export function MealBuilder({ owner, person }: { owner: Person; person: Person }
     <div className="flex flex-col gap-3 pb-8">
       {/* control row (mock .ctl): Just me / Together segment + day nav */}
       <div className="hb-ctl">
-        <div className="hb-seg">
-          <button className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")}><User size={13} /> {t("Just me")}</button>
-          <button className={mode === "together" ? "on" : ""} onClick={() => setMode("together")}><Users size={13} /> {t("Together")}</button>
+        <div className="hb-itog">
+          <button className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")} aria-label={t("Just me")}><User size={16} /></button>
+          <button className={mode === "together" ? "on" : ""} onClick={() => setMode("together")} aria-label={t("Together")}><Users size={16} /></button>
         </div>
+        <div className="min-w-0 flex-1" />
         {mode === "solo" && (
           <div className="hb-daynav">
             <button onClick={() => setViewDate((d) => shiftDate(d, -1))} aria-label="Previous day">‹</button>
@@ -279,7 +280,7 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
             </div>
             <div className="hb-chipsrow">
               {savedMeals.map((m) => (
-                <button key={m.id} className="hb-sc truncate" style={{ maxWidth: 190 }} onClick={() => setPreview(m)}>{m.name}</button>
+                <button key={m.id} className="hb-sc truncate" style={{ maxWidth: 150 }} onClick={() => setPreview(m)}>{m.name}</button>
               ))}
             </div>
           </div>

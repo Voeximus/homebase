@@ -240,6 +240,10 @@ input[type="number"] {
 .hb-seg { display: flex; flex: 1; background: rgba(255,255,255,.03); border: 1px solid var(--color-edge); border-radius: 11px; padding: 3px; }
 .hb-seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-align: center; font-size: 12.5px; font-weight: 600; padding: 7px 0; border-radius: 8px; color: var(--color-taupe); background: transparent; border: 0; cursor: pointer; transition: .15s; }
 .hb-seg button.on { background: var(--color-bone); color: var(--color-bg); }
+/* compact icon toggle — for the mode / section switches (icons, not labels) */
+.hb-itog { display: inline-flex; background: rgba(255,255,255,.03); border: 1px solid var(--color-edge); border-radius: 10px; padding: 3px; gap: 2px; }
+.hb-itog button { display: grid; place-items: center; width: 36px; height: 30px; border-radius: 7px; color: var(--color-taupe); background: transparent; border: 0; cursor: pointer; transition: .15s; }
+.hb-itog button.on { background: var(--color-bone); color: var(--color-bg); }
 .hb-targets { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-taupe); background: transparent; border: 0; padding: 4px 2px; cursor: pointer; }
 .hb-daynav { display: flex; align-items: center; gap: 2px; }
 .hb-daynav button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--color-faint); background: transparent; border: 0; font-size: 15px; cursor: pointer; }

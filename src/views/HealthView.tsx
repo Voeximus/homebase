@@ -48,9 +48,18 @@ export function HealthView({
       {/* slim, non-sticky header — the macro summary inside each section pins instead */}
       <div className="safe-top border-b border-edge">
         <div className="mx-auto max-w-[640px] px-4">
-          <div className="flex h-14 items-center gap-2">
+          <div className="flex h-14 items-center gap-2 pb-1">
             <ModeToggle mode={mode} onMode={onMode} />
             <div className="min-w-0 flex-1" />
+            {/* Meal Builder / Workouts — compact icon toggle */}
+            <div className="hb-itog">
+              <button onClick={() => setSub("kitchen")} className={sub === "kitchen" ? "on" : ""} aria-label={t("Meal Builder")}>
+                <UtensilsCrossed size={16} />
+              </button>
+              <button onClick={() => setSub("plan")} className={sub === "plan" ? "on" : ""} aria-label={t("Workouts")}>
+                <Dumbbell size={16} />
+              </button>
+            </div>
             <LangToggle />
             <button
               onClick={() => setApprOpen(true)}
@@ -66,27 +75,6 @@ export function HealthView({
             >
               <LogOut size={17} />
             </button>
-          </div>
-          {/* section nav */}
-          <div className="grid grid-cols-2 gap-2 pb-2.5">
-            {[
-              { k: "kitchen" as const, label: t("Meal Builder"), Icon: UtensilsCrossed },
-              { k: "plan" as const, label: t("Workouts"), Icon: Dumbbell },
-            ].map(({ k, label, Icon }) => {
-              const on = sub === k;
-              return (
-                <button
-                  key={k}
-                  onClick={() => setSub(k)}
-                  className={`flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold transition ${
-                    on ? "" : "bg-tile text-taupe hover:text-bone"
-                  }`}
-                  style={on ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : undefined}
-                >
-                  <Icon size={15} /> {label}
-                </button>
-              );
-            })}
           </div>
         </div>
       </div>
