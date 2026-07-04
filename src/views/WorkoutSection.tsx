@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -69,13 +69,11 @@ export function WorkoutSection({ owner, person }: { owner: Person; person: Perso
 
   return (
     <div className="flex flex-col gap-3 pb-8">
-      <div className="flex rounded-full p-1 text-[13px]" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
-        <ModePill on={mode === "solo"} onClick={() => setMode("solo")} icon={<User size={14} />}>
-          {t("Just me")}
-        </ModePill>
-        <ModePill on={mode === "together"} onClick={() => setMode("together")} icon={<Users size={14} />}>
-          {t("Together")}
-        </ModePill>
+      <div className="hb-ctl">
+        <div className="hb-itog">
+          <button className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")} aria-label={t("Just me")}><User size={16} /></button>
+          <button className={mode === "together" ? "on" : ""} onClick={() => setMode("together")} aria-label={t("Together")}><Users size={16} /></button>
+        </div>
       </div>
 
       {mode === "solo" ? (
@@ -84,19 +82,6 @@ export function WorkoutSection({ owner, person }: { owner: Person; person: Perso
         <TogetherWorkout key={owner} owner={owner} />
       )}
     </div>
-  );
-}
-
-function ModePill({ on, onClick, icon, children }: { on: boolean; onClick: () => void; icon: ReactNode; children: ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 font-semibold transition"
-      style={on ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}
-    >
-      {icon}
-      {children}
-    </button>
   );
 }
 
@@ -232,8 +217,8 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
           </button>
           <button
             onClick={() => setQuickOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-[16px] border py-3 text-[13.5px] font-semibold transition active:scale-[0.98]"
-            style={{ borderColor: "#2dd1c055", background: "rgba(45,209,192,0.10)", color: "#2dd1c0" }}
+            className="flex items-center justify-center gap-2 rounded-[16px] py-3 text-[13.5px] font-semibold transition active:scale-[0.98]"
+            style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
           >
             <Zap size={16} /> {t("Quick log — just an activity")}
           </button>
@@ -960,11 +945,11 @@ function QuickLogSheet({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
       <div
         className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
-        style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid #2dd1c0", borderRadius: "22px" }}
+        style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)", borderRadius: "22px" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 p-4 pb-2">
-          <Zap size={17} style={{ color: "#2dd1c0" }} />
+          <Zap size={17} style={{ color: "var(--color-accent)" }} />
           <div className="flex-1 text-[16px] font-bold text-bone">{t("Quick log")}</div>
           <button onClick={onClose} style={{ color: "var(--color-faint)" }}>
             <X size={20} />
