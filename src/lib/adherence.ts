@@ -115,9 +115,10 @@ export interface WeekBucket {
   isCurrent: boolean;
   days: WeekDay[]; // exactly 7, Mon→Sun
   followed: number; // clearly-followed days
-  decided: number; // followed + skipped (days with a verdict)
+  skipped: number; // days explicitly marked off-plan
   elapsed: number; // days up to & including today (7 for a past week)
-  pct: number | null; // followed / decided, null when nothing's decided yet
+  pct: number | null; // followed / elapsed — an unlogged day counts AGAINST you,
+  // not as a free pass. null only before the week has begun (0 elapsed).
 }
 
 export function weeklyAdherence(
@@ -147,15 +148,16 @@ export function weeklyAdherence(
       }
       days.push({ date, status, future });
     }
-    const decided = followed + skipped;
     out.push({
       startDate: start,
       isCurrent: w === 0,
       days,
       followed,
-      decided,
+      skipped,
       elapsed,
-      pct: decided > 0 ? Math.round((followed / decided) * 100) : null,
+      // fraction of the week's DAYS you followed the plan — unlogged days pull it
+      // down (they're not "on plan"). A week with 1 logged day now reads ~14%, not 100%.
+      pct: elapsed > 0 ? Math.round((followed / elapsed) * 100) : null,
     });
   }
   return out;

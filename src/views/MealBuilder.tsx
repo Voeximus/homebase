@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   ScanLine,
+  SlidersHorizontal,
   Search,
   Trash2,
   User,
@@ -42,7 +43,6 @@ import {
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
 import { adherenceStats, weeklyAdherence, type DayStatus, type WeekBucket } from "../lib/adherence";
-import { HEALTH, HEALTH_GRADIENT, HEALTH_HERO } from "../lib/catColor";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
 
@@ -51,7 +51,9 @@ const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" 
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
 const MACRO = { p: "#fb7185", c: "#38bdf8", f: "#f6c453" }; // protein / carb / fat (dots + bars)
 const MACRO_BRIGHT = { p: "#ff90a4", c: "#69c6ff", f: "#ffd66b" }; // higher-contrast for numbers on dark
-const TILE = { background: "#141a24", borderColor: "#232d3a" } as const;
+// Card surface — reads the themed tokens so every `style={TILE}` card reskins
+// with the Appearance chooser. (Was a hardcoded slate.)
+const TILE = { background: "var(--color-tile)", borderColor: "var(--color-edge)" } as const;
 
 const r0 = (n: number) => Math.round(n);
 const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
@@ -101,7 +103,7 @@ export function MealBuilder({ owner, person }: { owner: Person; person: Person }
       {/* mode switch — Solo / Together */}
       <div
         className="flex rounded-full p-1 text-[13px]"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}
       >
         <ModePill on={mode === "solo"} onClick={() => setMode("solo")} icon={<User size={14} />}>
           {t("Just me")}
@@ -139,7 +141,7 @@ function ModePill({
     <button
       onClick={onClick}
       className="flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 font-semibold transition"
-      style={on ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}
+      style={on ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}
     >
       {icon}
       {children}
@@ -237,25 +239,17 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
     <div className="flex flex-col gap-3">
       {/* Daily Macro Summary — scrolls with the page (no longer pinned to top,
           so it doesn't cover the screen while browsing meals) */}
-      <div>
-        <DaySummary
-          name={PERSON_NAME[person]}
-          target={target}
-          eaten={eaten}
-          dateLabel={dateLabel}
-          canNext={canNext}
-          onPrev={() => setViewDate((d) => shiftDate(d, -1))}
-          onNext={() => canNext && setViewDate((d) => shiftDate(d, 1))}
-          onToday={isToday ? undefined : () => setViewDate(today)}
-        />
-        <button
-          onClick={() => setEditTargets(true)}
-          className="mt-1.5 text-[11.5px] font-medium"
-          style={{ color: "#7e8a98" }}
-        >
-          {t("Edit daily targets")}
-        </button>
-      </div>
+      <DaySummary
+        target={target}
+        eaten={eaten}
+        meals={log.meals.length}
+        dateLabel={dateLabel}
+        canNext={canNext}
+        onPrev={() => setViewDate((d) => shiftDate(d, -1))}
+        onNext={() => canNext && setViewDate((d) => shiftDate(d, 1))}
+        onToday={isToday ? undefined : () => setViewDate(today)}
+        onEditTargets={() => setEditTargets(true)}
+      />
 
       {/* the gentle 8 PM nudge */}
       {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
@@ -269,22 +263,22 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         <button
           onClick={startNewMeal}
           className="flex flex-col items-center gap-1.5 rounded-[18px] border border-dashed py-8 text-center transition active:scale-[0.99]"
-          style={{ borderColor: "#2a3644", background: "#0f141c" }}
+          style={{ borderColor: "var(--color-edge)", background: "var(--color-raised)" }}
         >
-          <UtensilsCrossed size={22} style={{ color: "#46d18a" }} />
+          <UtensilsCrossed size={22} style={{ color: "var(--color-accent)" }} />
           <span className="text-[14px] font-semibold text-bone">{t("Add your first meal")}</span>
-          <span className="text-[12px]" style={{ color: "#7e8a98" }}>{t("Search a food or scan a barcode")}</span>
+          <span className="text-[12px] text-taupe">{t("Search a food or scan a barcode")}</span>
         </button>
       ) : (
         <section className="overflow-hidden rounded-[16px] border" style={TILE}>
           {/* slim bar — stays small when collapsed */}
           <div className="flex items-center gap-2 px-3 py-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ background: HEALTH + "1f", color: HEALTH }}>
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
               <UtensilsCrossed size={13} />
             </span>
             <button onClick={() => setMealsOpen((o) => !o)} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
               <span className="text-[13px] font-semibold text-bone">{isToday ? t("Today's Meals") : dateLabel}</span>
-              <span className="num text-[11px]" style={{ color: "#7e8a98" }}>
+              <span className="num text-[11px] text-taupe">
                 {t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", {
                   n: log.meals.length,
                   kcal: r0(eaten.kcal),
@@ -294,13 +288,13 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
             <button
               onClick={startNewMeal}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition active:scale-90"
-              style={{ background: "rgba(52,197,232,0.14)", color: "#34c5e8" }}
+              style={{ background: "color-mix(in srgb, var(--color-accent) 16%, transparent)", color: "var(--color-accent)" }}
               aria-label="Add a meal"
             >
               <Plus size={16} />
             </button>
             <button onClick={() => setMealsOpen((o) => !o)} className="shrink-0 p-1" aria-label="Toggle meals">
-              <ChevronDown size={17} style={{ color: "#6b7686", transform: mealsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+              <ChevronDown size={17} style={{ color: "var(--color-faint)", transform: mealsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
             </button>
           </div>
 
@@ -546,15 +540,15 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
       {/* the shared dish */}
       <section className="rounded-[18px] border p-4" style={TILE}>
         <div className="mb-1 flex items-center gap-2">
-          <UtensilsCrossed size={15} style={{ color: "#34c5e8" }} />
+          <UtensilsCrossed size={15} style={{ color: "var(--color-accent)" }} />
           <p className="text-[13.5px] font-semibold text-bone">{t("Shared dish")}</p>
         </div>
-        <p className="mb-3 text-[11.5px]" style={{ color: "#97a3b2" }}>
+        <p className="mb-3 text-[11.5px]" style={{ color: "var(--color-taupe)" }}>
           {t("Add what went in, then set how much of each ingredient is yours vs {name}'s.", { name: PERSON_NAME[partner] })}
         </p>
 
         {dish.length === 0 ? (
-          <p className="py-4 text-center text-[12.5px]" style={{ color: "#7e8a98" }}>{t("Nothing added yet.")}</p>
+          <p className="py-4 text-center text-[12.5px]" style={{ color: "var(--color-taupe)" }}>{t("Nothing added yet.")}</p>
         ) : (
           <>
             {dish.map((d) => {
@@ -562,16 +556,16 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
               const c = contribution(it);
               const pct = Math.round(d.share * 100);
               return (
-                <div key={d.rid} className="border-b py-2.5 last:border-0" style={{ borderColor: "#1b232e" }}>
+                <div key={d.rid} className="border-b py-2.5 last:border-0" style={{ borderColor: "var(--color-edge)" }}>
                   <div className="flex items-center gap-2">
                     <button onClick={() => setEditDish(d)} className="min-w-0 flex-1 text-left">
                       <p className="truncate text-[13px] text-bone">{d.food.name}</p>
-                      <p className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
+                      <p className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
                         {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
                       </p>
                     </button>
-                    <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
-                    <button onClick={() => removeDish(d.rid)} className="w-4 shrink-0" style={{ color: "#6b7686" }} aria-label="Remove ingredient">
+                    <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+                    <button onClick={() => removeDish(d.rid)} className="w-4 shrink-0" style={{ color: "var(--color-faint)" }} aria-label="Remove ingredient">
                       <X size={15} />
                     </button>
                   </div>
@@ -594,8 +588,8 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
                 </div>
               );
             })}
-            <div className="mt-2.5 flex items-baseline justify-between rounded-[12px] px-3 py-2" style={{ background: "#0f141c" }}>
-              <span className="stat-key" style={{ color: "#97a3b2" }}>{t("Whole dish")}</span>
+            <div className="mt-2.5 flex items-baseline justify-between rounded-[12px] px-3 py-2" style={{ background: "var(--color-raised)" }}>
+              <span className="stat-key" style={{ color: "var(--color-taupe)" }}>{t("Whole dish")}</span>
               <span className="num text-[12px] font-semibold text-bone">
                 {r0(dishMacros.kcal)} {t("kcal")} · {r0(dishMacros.p)}P {r0(dishMacros.c)}C {r0(dishMacros.f)}F · {r0(dishGrams)}g
               </span>
@@ -607,7 +601,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           <button
             onClick={() => setSearchOpen(true)}
             className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-            style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+            style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
           >
             <Plus size={15} /> {t("Add ingredient")}
           </button>
@@ -616,7 +610,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
               <button
                 onClick={() => setSavingDish(true)}
                 className="flex items-center justify-center gap-1.5 rounded-[14px] px-3.5 py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-                style={{ background: "#0f141c", border: "1px solid #232d3a", color: "#9aa6b2" }}
+                style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}
               >
                 <Bookmark size={15} /> {t("Save")}
               </button>
@@ -645,9 +639,9 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
               return (
                 <div key={p} className="rounded-[14px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
                   <p className="text-[12px] font-semibold" style={{ color: acc }}>{p === you ? t("You") : PERSON_NAME[p]}</p>
-                  <div className="num mt-2 text-[16px] font-bold text-bone">{r0(bm.kcal)} <span className="text-[10px] font-normal" style={{ color: "#7c8696" }}>{t("kcal")}</span></div>
-                  <div className="num text-[10.5px]" style={{ color: "#9aa6b2" }}>{r0(bm.p)}P · {r0(bm.c)}C · {r0(bm.f)}F</div>
-                  <div className="mt-1.5 border-t pt-1.5 stat-key" style={{ borderColor: acc + "33", color: afterRem < 0 ? "#f0556e" : "#7c8696" }}>
+                  <div className="num mt-2 text-[16px] font-bold text-bone">{r0(bm.kcal)} <span className="text-[10px] font-normal" style={{ color: "var(--color-taupe)" }}>{t("kcal")}</span></div>
+                  <div className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{r0(bm.p)}P · {r0(bm.c)}C · {r0(bm.f)}F</div>
+                  <div className="mt-1.5 border-t pt-1.5 stat-key" style={{ borderColor: acc + "33", color: afterRem < 0 ? "#f0556e" : "var(--color-taupe)" }}>
                     {afterRem < 0 ? t("{n} over after", { n: r0(-afterRem) }) : t("{n} kcal left after", { n: r0(afterRem) })}
                   </div>
                 </div>
@@ -657,7 +651,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           <button
             onClick={logForBoth}
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-            style={{ background: HEALTH_GRADIENT }}
+            style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
           >
             <Check size={16} /> {t("Log both meals")}
           </button>
@@ -762,104 +756,95 @@ function Ring({
   );
 }
 
-// The always-visible Daily Macro Summary — calorie ring + the three macros, each
-// burning down live. The number pops on every change (the delta feedback).
+// The hero — calories-left headline + a consume ring + the colored P/C/F counter,
+// on the themed gradient (Appearance chooser). The big number and each macro pop
+// on change (delta feedback). The counter is a SOLID dark module so the macro
+// colors read on any theme's hero. Reads --h-* + --color-* tokens throughout.
 function DaySummary({
-  name,
   target,
   eaten,
+  meals,
   dateLabel,
   canNext,
   onPrev,
   onNext,
   onToday,
+  onEditTargets,
 }: {
-  name: string;
   target: Macros;
   eaten: Macros;
+  meals: number;
   dateLabel: string;
   canNext: boolean;
   onPrev: () => void;
   onNext: () => void;
   onToday?: () => void;
+  onEditTargets: () => void;
 }) {
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
-  const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
-  // scale the big number to its digit count so 4-digit kcal (2800 / 1550) fit
-  // cleanly inside the 96px ring on iPhone instead of overflowing.
-  const remStr = String(r0(Math.abs(remK)));
-  const ringFont = remStr.length >= 5 ? 22 : remStr.length === 4 ? 26 : remStr.length === 3 ? 30 : 34;
+  const pct = target.kcal > 0 ? Math.min(1, eaten.kcal / target.kcal) : 0;
+  const remStr = r0(Math.abs(remK)).toLocaleString("en-US");
   const macros = [
-    { k: t("Protein"), e: eaten.p, tg: target.p, color: MACRO.p, bright: MACRO_BRIGHT.p },
-    { k: t("Carbs"), e: eaten.c, tg: target.c, color: MACRO.c, bright: MACRO_BRIGHT.c },
-    { k: t("Fat"), e: eaten.f, tg: target.f, color: MACRO.f, bright: MACRO_BRIGHT.f },
+    { k: t("Protein"), e: eaten.p, tg: target.p, color: MACRO.p },
+    { k: t("Carbs"), e: eaten.c, tg: target.c, color: MACRO.c },
+    { k: t("Fat"), e: eaten.f, tg: target.f, color: MACRO.f },
   ];
+  const chip = { background: "rgba(255,255,255,0.14)", color: "var(--h-on-hero)" };
   return (
     <div
-      className="rounded-[26px] px-5 pb-4 pt-4 text-white"
-      style={{
-        background: HEALTH_HERO,
-        border: "1px solid #232d3a",
-        borderTop: `2px solid ${HEALTH}`,
-        boxShadow: "0 12px 32px -14px rgba(2,12,24,.65)",
-      }}
+      className="overflow-hidden rounded-[24px] px-5 pb-4 pt-3.5"
+      style={{ background: "var(--h-hero)", color: "var(--h-on-hero)", boxShadow: "0 12px 32px -14px rgba(2,12,24,.55)" }}
     >
+      {/* top: edit targets · day nav (◀ label ▶, capped at today) */}
       <div className="flex items-center justify-between">
-        <span className="stat-key" style={{ opacity: 0.92 }}>{t("{name}'s day", { name })}</span>
-        {/* date navigator — ◀ / ▶ (capped at today), tap the label to jump to today */}
+        <button onClick={onEditTargets} className="flex items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-bold uppercase tracking-wide transition active:scale-95" style={chip}>
+          <SlidersHorizontal size={12} /> {t("Targets")}
+        </button>
         <div className="flex items-center gap-0.5">
-          <button onClick={onPrev} className="rounded-full p-1 transition active:scale-90" style={{ background: "rgba(255,255,255,0.14)" }} aria-label="Previous day">
+          <button onClick={onPrev} className="rounded-full p-1 transition active:scale-90" style={chip} aria-label="Previous day">
             <ChevronLeft size={15} />
           </button>
-          <button onClick={onToday} disabled={!onToday} className="stat-key min-w-[62px] px-1 text-center" style={{ opacity: 0.92 }}>
+          <button onClick={onToday} disabled={!onToday} className="min-w-[62px] px-1 text-center text-[10.5px] font-bold uppercase tracking-wide" style={{ opacity: 0.92, color: "var(--h-on-hero)" }}>
             {dateLabel}
           </button>
-          <button onClick={onNext} disabled={!canNext} className="rounded-full p-1 transition active:scale-90" style={{ background: "rgba(255,255,255,0.14)", opacity: canNext ? 1 : 0.3 }} aria-label="Next day">
+          <button onClick={onNext} disabled={!canNext} className="rounded-full p-1 transition active:scale-90" style={{ ...chip, opacity: canNext ? 1 : 0.3 }} aria-label="Next day">
             <ChevronRight size={15} />
           </button>
         </div>
       </div>
 
-      <div className="mt-2.5 flex items-center gap-4">
-        <Ring pct={pct} over={over} size={96} stroke={10}>
-          <span key={r0(remK)} className="bump stat" style={{ fontSize: ringFont, lineHeight: 1 }}>{remStr}</span>
-          <span className="stat-key mt-1" style={{ opacity: 0.9 }}>{over ? t("over") : t("left")}</span>
-        </Ring>
-        <div className="min-w-0 flex-1">
-          <div className="stat-key" style={{ opacity: 0.82 }}>{t("calories")}</div>
-          <div className="mt-1 num text-[17px] font-bold">
-            {r0(eaten.kcal)}
-            <span className="text-[13px] font-medium" style={{ opacity: 0.7 }}> / {r0(target.kcal)}</span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.22)" }}>
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${Math.min(100, pct * 100)}%`, background: over ? "#ffd1d1" : "#ffffff", transition: "width .45s cubic-bezier(.3,.85,.3,1)" }}
-            />
+      {/* body: the calories-left headline + a small consume ring */}
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="stat-key" style={{ opacity: 0.9 }}>{over ? t("Calories over") : t("Calories left")}</div>
+          <div key={remStr} className="bump stat mt-0.5 text-[46px] leading-[0.95]">{remStr}</div>
+          <div className="num mt-1 text-[12px]" style={{ opacity: 0.9 }}>
+            {t("{eaten} of {target} eaten", { eaten: r0(eaten.kcal).toLocaleString("en-US"), target: r0(target.kcal).toLocaleString("en-US") })}
+            {meals > 0 ? ` · ${t(meals === 1 ? "{n} meal" : "{n} meals", { n: meals })}` : ""}
           </div>
         </div>
+        <Ring pct={pct} over={over} size={68} stroke={7} color="var(--h-on-hero)" track="rgba(255,255,255,0.22)" overColor="var(--h-on-hero)">
+          <span className="stat text-[15px]">{r0(pct * 100)}%</span>
+        </Ring>
       </div>
 
-      {/* dark inset so the macro colors pop — the high-contrast counters */}
-      <div className="mt-3.5 grid grid-cols-3 gap-2 rounded-[18px] p-2.5" style={{ background: "rgba(3,10,20,0.30)" }}>
+      {/* counter: solid dark module so the P/C/F colors always read */}
+      <div
+        className="mt-3.5 grid grid-cols-3 gap-3 rounded-[16px] p-3"
+        style={{ background: "var(--h-counter)", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)" }}
+      >
         {macros.map((m) => {
-          const d = m.tg - m.e; // remaining; negative = over
           const mp = m.tg > 0 ? Math.min(100, (m.e / m.tg) * 100) : 0;
-          const dOver = d < 0;
           return (
-            <div key={m.k} className="px-1">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full" style={{ background: m.color }} />
-                <span className="stat-key" style={{ color: m.bright }}>{m.k}</span>
+            <div key={m.k}>
+              <span className="stat-key" style={{ color: m.color }}>{m.k}</span>
+              <div key={r0(m.e)} className="bump mt-1 flex items-baseline gap-[2px]">
+                <span className="num text-[15px] font-bold" style={{ color: "#eef3f7" }}>{r0(m.e)}</span>
+                <span className="num text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.45)" }}>/{r0(m.tg)}</span>
               </div>
-              <div key={r0(d)} className="bump mt-1.5 flex items-baseline gap-[3px]">
-                <span className="stat text-[20px]" style={{ color: dOver ? "#ff9aa6" : m.bright }}>{r0(Math.abs(d))}</span>
-                <span className="text-[11px] font-semibold" style={{ color: dOver ? "#ff9aa6" : m.bright, opacity: 0.55 }}>g</span>
-              </div>
-              <div className="stat-key mt-1" style={{ opacity: 0.5 }}>{dOver ? t("over") : t("left")}</div>
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.13)" }}>
-                <div className="h-full rounded-full" style={{ width: `${mp}%`, background: dOver ? "#ff6b7e" : m.color, transition: "width .45s cubic-bezier(.3,.85,.3,1)" }} />
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--h-counter-track)" }}>
+                <div className="h-full rounded-full" style={{ width: `${mp}%`, background: m.color, transition: "width .5s cubic-bezier(.3,.85,.3,1)" }} />
               </div>
             </div>
           );
@@ -889,14 +874,14 @@ function PersonSummary({ person, you, target, eaten }: { person: Person; you: bo
           <span key={r0(remK)} className="bump stat text-bone" style={{ fontSize: ringFont, lineHeight: 1 }}>{remStr}</span>
         </Ring>
         <div className="min-w-0 flex-1">
-          <div className="stat-key" style={{ color: over ? "#f0556e" : "#97a3b2" }}>
+          <div className="stat-key" style={{ color: over ? "#f0556e" : "var(--color-taupe)" }}>
             {over ? t("kcal over") : t("kcal left")}
           </div>
           <div className="num mt-1 text-[11px] font-semibold leading-tight">
             <span style={{ color: MACRO_BRIGHT.p }}>{r0(target.p - eaten.p)}P</span>
-            <span style={{ color: "#6b7686" }}> · </span>
+            <span style={{ color: "var(--color-faint)" }}> · </span>
             <span style={{ color: MACRO_BRIGHT.c }}>{r0(target.c - eaten.c)}C</span>
-            <span style={{ color: "#6b7686" }}> · </span>
+            <span style={{ color: "var(--color-faint)" }}> · </span>
             <span style={{ color: MACRO_BRIGHT.f }}>{r0(target.f - eaten.f)}F</span>
           </div>
         </div>
@@ -933,9 +918,9 @@ function EatenTogether({
   return (
     <section className="overflow-hidden rounded-[16px] border" style={TILE}>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left">
-        <Users size={13} style={{ color: HEALTH }} />
-        <span className="stat-key flex-1" style={{ color: "#97a3b2" }}>{t("Eaten today")}</span>
-        <ChevronDown size={16} style={{ color: "#6b7686", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+        <Users size={13} style={{ color: "var(--color-accent)" }} />
+        <span className="stat-key flex-1" style={{ color: "var(--color-taupe)" }}>{t("Eaten today")}</span>
+        <ChevronDown size={16} style={{ color: "var(--color-faint)", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
       </button>
       {open && (
         <div className="flex flex-col gap-3 px-3 pb-3">
@@ -947,10 +932,10 @@ function EatenTogether({
               <div key={p}>
                 <div className="mb-1.5 flex items-baseline justify-between">
                   <span className="text-[12.5px] font-semibold" style={{ color: acc }}>{p === you ? t("You") : PERSON_NAME[p]}</span>
-                  <span className="num text-[11px]" style={{ color: "#7e8a98" }}>{r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F</span>
+                  <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F</span>
                 </div>
                 {meals.length === 0 ? (
-                  <p className="text-[11.5px]" style={{ color: "#7e8a98" }}>{t("Nothing logged yet.")}</p>
+                  <p className="text-[11.5px]" style={{ color: "var(--color-taupe)" }}>{t("Nothing logged yet.")}</p>
                 ) : (
                   <div className="flex flex-col gap-1">
                     {meals.map((m, i) => {
@@ -958,29 +943,29 @@ function EatenTogether({
                       const label = m.items.map((it) => it.name).join(", ") || t("Meal {n}", { n: i + 1 });
                       const mo = openMeals.has(m.id);
                       return (
-                        <div key={m.id} className="overflow-hidden rounded-lg" style={{ background: "#0f141c", border: "1px solid #1b232e" }}>
+                        <div key={m.id} className="overflow-hidden rounded-lg" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
                           <div className="flex items-center gap-2 px-2.5 py-1.5">
                             <button onClick={() => toggleMeal(m.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-                              <ChevronDown size={13} style={{ color: "#6b7686", transform: mo ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                              <ChevronDown size={13} style={{ color: "var(--color-faint)", transform: mo ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                               <span className="min-w-0 flex-1 truncate text-[12px] text-bone">{label}</span>
                             </button>
-                            <span className="num shrink-0 text-[11px]" style={{ color: "#9aa6b2" }}>{r0(mt.kcal)} {t("kcal")}</span>
-                            <button onClick={() => onRemoveMeal(p, m.id)} className="shrink-0" style={{ color: "#6b7686" }} aria-label="Delete meal">
+                            <span className="num shrink-0 text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(mt.kcal)} {t("kcal")}</span>
+                            <button onClick={() => onRemoveMeal(p, m.id)} className="shrink-0" style={{ color: "var(--color-faint)" }} aria-label="Delete meal">
                               <Trash2 size={13} />
                             </button>
                           </div>
                           {mo && (
-                            <div className="border-t px-2.5 py-1" style={{ borderColor: "#1b232e" }}>
+                            <div className="border-t px-2.5 py-1" style={{ borderColor: "var(--color-edge)" }}>
                               {m.items.map((it) => {
                                 const c = contribution(it);
                                 return (
                                   <button key={it.id} onClick={() => onEditItem(p, m.id, it)} className="flex w-full items-center gap-2 py-1 text-left">
                                     <span className="min-w-0 flex-1 truncate text-[11.5px] text-bone">{it.name}</span>
-                                    <span className="num shrink-0 text-[10.5px]" style={{ color: "#7e8a98" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</span>
+                                    <span className="num shrink-0 text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</span>
                                   </button>
                                 );
                               })}
-                              <p className="py-0.5 text-[10px]" style={{ color: "#6b7686" }}>{t("Tap an ingredient to fix its amount.")}</p>
+                              <p className="py-0.5 text-[10px]" style={{ color: "var(--color-faint)" }}>{t("Tap an ingredient to fix its amount.")}</p>
                             </div>
                           )}
                         </div>
@@ -1007,17 +992,17 @@ function NudgeCard({ onYes, onNo, onLater }: { onYes: () => void; onNo: () => vo
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-semibold text-bone">{t("Did you follow the meal plan today?")}</p>
-          <p className="mt-0.5 text-[12px]" style={{ color: "#97a3b2" }}>{t("Nothing's logged yet — a quick check-in keeps your history honest.")}</p>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("Nothing's logged yet — a quick check-in keeps your history honest.")}</p>
         </div>
       </div>
       <div className="mt-3 flex items-center gap-2">
-        <button onClick={onYes} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold text-white transition active:scale-[0.98]" style={{ background: HEALTH_GRADIENT }}>
+        <button onClick={onYes} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold text-white transition active:scale-[0.98]" style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}>
           {t("Yes, I did")}
         </button>
         <button onClick={onNo} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold transition active:scale-[0.98]" style={{ background: "rgba(240,85,110,0.12)", color: "#f0556e" }}>
           {t("No, off-plan")}
         </button>
-        <button onClick={onLater} className="px-2 text-[12px] font-medium" style={{ color: "#6b7686" }}>
+        <button onClick={onLater} className="px-2 text-[12px] font-medium" style={{ color: "var(--color-faint)" }}>
           {t("Later")}
         </button>
       </div>
@@ -1031,25 +1016,25 @@ function EstimateSheet({ open, onClose, onLog }: { open: boolean; onClose: () =>
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
-      <div className="w-full max-w-[420px] overflow-hidden" style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #46d18a", borderRadius: "22px", padding: "16px" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-[420px] overflow-hidden" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid #46d18a", borderRadius: "22px", padding: "16px" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <div className="flex-1 text-[16px] font-bold text-bone">{t("Nice — roughly what did you eat?")}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={20} /></button>
+          <button onClick={onClose} style={{ color: "var(--color-faint)" }}><X size={20} /></button>
         </div>
-        <p className="mt-1 text-[12px]" style={{ color: "#97a3b2" }}>{t("A quick note is enough. Today gets marked followed (estimated, ~on target).")}</p>
+        <p className="mt-1 text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("A quick note is enough. Today gets marked followed (estimated, ~on target).")}</p>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           autoFocus
           rows={3}
           placeholder={t("e.g. chicken + rice + veg, a shake, a banana…")}
-          className="mt-3 w-full resize-none rounded-xl px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
-          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+          className="mt-3 w-full resize-none rounded-xl px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[var(--color-faint)]"
+          style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}
         />
         <button
           onClick={() => onLog(note)}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT }}
+          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
         >
           <Check size={16} /> {t("Log as followed")}
         </button>
@@ -1085,7 +1070,7 @@ function AdherenceCard({
 }) {
   const cur = weeks[weeks.length - 1];
   const highlight = activeDate ?? today;
-  const headlineColor = cur.followed === 0 ? "#e6ecf2" : weekPctColor(cur.pct);
+  const headlineColor = cur.followed === 0 ? "var(--color-bone)" : weekPctColor(cur.pct);
   const barH = (pct: number | null) => (pct == null ? 5 : Math.max(5, Math.round((pct / 100) * BAR_H)));
   return (
     <section className="rounded-[18px] border p-4" style={TILE}>
@@ -1093,15 +1078,15 @@ function AdherenceCard({
       <div className="flex items-center justify-between">
         <p className="stat-key" style={{ color: acc }}>{t("This week")}</p>
         <div className="flex items-center gap-1.5">
-          <Flame size={14} style={{ color: stats.streak > 0 ? "#fb923c" : "#5f6a78" }} />
-          <span className="text-[12px] font-semibold" style={{ color: stats.streak > 0 ? "#e6ecf2" : "#7c8696" }}>
+          <Flame size={14} style={{ color: stats.streak > 0 ? "#fb923c" : "var(--color-faint)" }} />
+          <span className="text-[12px] font-semibold" style={{ color: stats.streak > 0 ? "var(--color-bone)" : "var(--color-taupe)" }}>
             {stats.streak > 0 ? t("{n}-day streak", { n: stats.streak }) : t("no streak yet")}
           </span>
         </div>
       </div>
       <div className="mt-1 flex items-baseline gap-1.5">
         <span className="stat text-[24px]" style={{ color: headlineColor }}>{cur.followed}</span>
-        <span className="text-[13px]" style={{ color: "#7c8696" }}>{t("of {n} days on plan", { n: cur.elapsed })}</span>
+        <span className="text-[13px]" style={{ color: "var(--color-taupe)" }}>{t("of {n} days on plan", { n: cur.elapsed })}</span>
       </div>
 
       {/* the 7 days of this week, Mon→Sun */}
@@ -1111,19 +1096,19 @@ function AdherenceCard({
             key={d.date}
             className="h-6 w-full rounded-[5px]"
             style={{
-              background: d.future ? "#141b25" : STATUS_COLOR[d.status],
-              border: d.future ? "1px dashed #263041" : "none",
+              background: d.future ? "var(--color-raised)" : STATUS_COLOR[d.status],
+              border: d.future ? "1px dashed var(--color-edge)" : "none",
               boxShadow: d.date === highlight && !d.future ? `0 0 0 1.5px ${acc}` : "none",
             }}
           />
         ))}
         {WEEKDAY_LETTERS.map((l, i) => (
-          <span key={i} className="text-center text-[9.5px]" style={{ color: "#5f6a78" }}>{l}</span>
+          <span key={i} className="text-center text-[9.5px]" style={{ color: "var(--color-faint)" }}>{l}</span>
         ))}
       </div>
 
       {/* compact legend so the day colors decode */}
-      <div className="mt-2.5 flex flex-wrap gap-x-2.5 gap-y-1 text-[9.5px]" style={{ color: "#7c8696" }}>
+      <div className="mt-2.5 flex flex-wrap gap-x-2.5 gap-y-1 text-[9.5px]" style={{ color: "var(--color-taupe)" }}>
         {([["logged", t("on plan")], ["partial", t("partial")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
           <span key={k} className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-[2px]" style={{ background: STATUS_COLOR[k] }} /> {label}
@@ -1134,7 +1119,7 @@ function AdherenceCard({
       {/* the trend over time — one bar per week, this week ringed */}
       {weeks.length > 1 && (
         <>
-          <p className="mt-3.5 text-[10px] font-medium uppercase tracking-wide" style={{ color: "#6b7686" }}>{t("Recent weeks")}</p>
+          <p className="mt-3.5 text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--color-faint)" }}>{t("Recent weeks")}</p>
           <div className="mt-1.5 flex items-end gap-1.5" style={{ height: BAR_H }}>
             {weeks.map((wk) => (
               <div key={wk.startDate} className="flex flex-1 items-end" style={{ height: BAR_H }}>
@@ -1180,19 +1165,19 @@ function SavedMealsBar({ meals, onPick, onDelete }: { meals: SavedMeal[]; onPick
   return (
     <section className="overflow-hidden rounded-[16px] border" style={TILE}>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left">
-        <Bookmark size={13} style={{ color: HEALTH }} />
-        <span className="stat-key flex-1" style={{ color: "#97a3b2" }}>{t("Saved meals")}</span>
-        <span className="num text-[11px]" style={{ color: "#7e8a98" }}>{meals.length}</span>
-        <ChevronDown size={16} style={{ color: "#6b7686", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+        <Bookmark size={13} style={{ color: "var(--color-accent)" }} />
+        <span className="stat-key flex-1" style={{ color: "var(--color-taupe)" }}>{t("Saved meals")}</span>
+        <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>{meals.length}</span>
+        <ChevronDown size={16} style={{ color: "var(--color-faint)", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
       </button>
       {open && (
         <div className="flex flex-wrap gap-1.5 px-3 pb-3">
           {meals.map((m) => (
-            <span key={m.id} className="flex items-center gap-1 rounded-full py-1 pl-3 pr-1" style={{ background: "#0f141c", border: "1px solid #2a3441" }}>
+            <span key={m.id} className="flex items-center gap-1 rounded-full py-1 pl-3 pr-1" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
               <button onClick={() => onPick(m)} className="flex items-center gap-1 text-[12.5px] font-medium text-bone">
                 {m.name}
               </button>
-              <button onClick={() => onDelete(m.id)} className="px-0.5" style={{ color: "#5f6a78" }} aria-label="Delete saved meal">
+              <button onClick={() => onDelete(m.id)} className="px-0.5" style={{ color: "var(--color-faint)" }} aria-label="Delete saved meal">
                 <X size={13} />
               </button>
             </span>
@@ -1212,31 +1197,31 @@ function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; 
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
-      <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
-          <Bookmark size={16} style={{ color: HEALTH }} />
+          <Bookmark size={16} style={{ color: "var(--color-accent)" }} />
           <div className="flex-1 text-[15px] font-bold text-bone">{t("Save this meal")}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+          <button onClick={onClose} style={{ color: "var(--color-faint)" }}><X size={18} /></button>
         </div>
-        <p className="mt-1 text-[12px]" style={{ color: "#97a3b2" }}>{t("Reuse it any time with one tap.")}</p>
+        <p className="mt-1 text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("Reuse it any time with one tap.")}</p>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("Meal name")}
-          className="mt-3 w-full rounded-lg px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
-          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+          className="mt-3 w-full rounded-lg px-3 py-2.5 text-[14px] text-bone outline-none placeholder:text-[var(--color-faint)]"
+          style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}
         />
         {/* keep in today's log, or save the template only (don't count it today) */}
         <button
           onClick={() => setKeepInDay((v) => !v)}
           className="mt-3 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left"
-          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+          style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}
         >
           <span
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
-            style={{ background: keepInDay ? HEALTH : "transparent", border: keepInDay ? "none" : "1.5px solid #3a4552" }}
+            style={{ background: keepInDay ? "var(--color-accent)" : "transparent", border: keepInDay ? "none" : "1.5px solid var(--color-edge)" }}
           >
-            {keepInDay && <Check size={13} style={{ color: "#06303a" }} />}
+            {keepInDay && <Check size={13} style={{ color: "var(--h-on-accent)" }} />}
           </span>
           <span className="flex-1 text-[12.5px] text-bone">{t("Also keep it in today's log")}</span>
         </button>
@@ -1244,7 +1229,7 @@ function SaveMealSheet({ open, defaultName, onClose, onSave }: { open: boolean; 
           onClick={() => name.trim() && onSave(name.trim(), keepInDay)}
           disabled={!name.trim()}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT, opacity: name.trim() ? 1 : 0.45 }}
+          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)", opacity: name.trim() ? 1 : 0.45 }}
         >
           <Check size={16} /> {keepInDay ? t("Save meal") : t("Save to meals only")}
         </button>
@@ -1307,19 +1292,19 @@ function SavedMealEditor({
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
-        <div className="max-h-[85vh] w-full max-w-[380px] overflow-y-auto rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+        <div className="max-h-[85vh] w-full max-w-[380px] overflow-y-auto rounded-[20px] p-5" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-2">
-            <Bookmark size={16} style={{ color: HEALTH }} />
+            <Bookmark size={16} style={{ color: "var(--color-accent)" }} />
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setDirty(true); }}
               placeholder={t("Meal name")}
-              className="min-w-0 flex-1 bg-transparent text-[15px] font-bold text-bone outline-none placeholder:text-[#5f6a78]"
+              className="min-w-0 flex-1 bg-transparent text-[15px] font-bold text-bone outline-none placeholder:text-[var(--color-faint)]"
             />
-            <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+            <button onClick={onClose} style={{ color: "var(--color-faint)" }}><X size={18} /></button>
           </div>
           <div className="num mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="text-[13px] font-bold text-bone">{r0(tot.kcal)}<span className="ml-0.5 text-[10px] font-medium" style={{ color: "#7e8a98" }}> {t("kcal")}</span></span>
+            <span className="text-[13px] font-bold text-bone">{r0(tot.kcal)}<span className="ml-0.5 text-[10px] font-medium" style={{ color: "var(--color-taupe)" }}> {t("kcal")}</span></span>
             <MacroChip label="P" value={r0(tot.p)} color="#fb7185" />
             <MacroChip label="C" value={r0(tot.c)} color="#38bdf8" />
             <MacroChip label="F" value={r0(tot.f)} color="#f6c453" />
@@ -1333,14 +1318,14 @@ function SavedMealEditor({
                   key={it.id}
                   onClick={() => setEditIdx(i)}
                   className="flex items-center gap-2 border-b py-2 text-left last:border-0"
-                  style={{ borderColor: "#1b232e" }}
+                  style={{ borderColor: "var(--color-edge)" }}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] text-bone">{it.name}</div>
-                    <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
+                    <div className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
                   </div>
-                  <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
-                  <Pencil size={13} style={{ color: "#5f6a78" }} />
+                  <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+                  <Pencil size={13} style={{ color: "var(--color-faint)" }} />
                 </button>
               );
             })}
@@ -1349,7 +1334,7 @@ function SavedMealEditor({
           <button
             onClick={() => setAddOpen(true)}
             className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
-            style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+            style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
           >
             <Plus size={14} /> {t("Add food")}
           </button>
@@ -1358,7 +1343,7 @@ function SavedMealEditor({
             <button
               onClick={() => { onAddToday({ ...meal, name: name.trim() || meal.name, items }); onClose(); }}
               className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-              style={{ background: HEALTH_GRADIENT }}
+              style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
             >
               <Plus size={16} /> {t("Add to today")}
             </button>
@@ -1366,7 +1351,7 @@ function SavedMealEditor({
               onClick={() => { onUpdate(meal.id, name, items); setDirty(false); onClose(); }}
               disabled={!dirty}
               className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold transition active:scale-[0.98]"
-              style={{ background: dirty ? "rgba(70,209,138,0.14)" : "rgba(255,255,255,0.04)", color: dirty ? "#46d18a" : "#5f6a78" }}
+              style={{ background: dirty ? "rgba(70,209,138,0.14)" : "rgba(255,255,255,0.04)", color: dirty ? "#46d18a" : "var(--color-faint)" }}
             >
               <Check size={16} /> {t("Save changes")}
             </button>
@@ -1411,25 +1396,25 @@ function EditTargetsSheet({ open, name, target, onClose, onSave }: { open: boole
   const num = (s: string) => Math.max(0, Number(s) || 0);
   const field = (label: string, val: string, set: (v: string) => void, unit: string) => (
     <label className="flex flex-col gap-1">
-      <span className="stat-key" style={{ color: "#97a3b2" }}>{label}</span>
-      <div className="flex items-center gap-1.5 rounded-lg px-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+      <span className="stat-key" style={{ color: "var(--color-taupe)" }}>{label}</span>
+      <div className="flex items-center gap-1.5 rounded-lg px-3" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
         <input
           value={val}
           onChange={(e) => set(e.target.value.replace(/[^0-9.]/g, ""))}
           inputMode="numeric"
           className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none"
         />
-        <span className="text-[11px]" style={{ color: "#6b7686" }}>{unit}</span>
+        <span className="text-[11px]" style={{ color: "var(--color-faint)" }}>{unit}</span>
       </div>
     </label>
   );
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
-      <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "#0f141c", border: "1px solid #232d3a" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
-          <Flame size={16} style={{ color: HEALTH }} />
+          <Flame size={16} style={{ color: "var(--color-accent)" }} />
           <div className="flex-1 text-[15px] font-bold text-bone">{t("{name}'s daily targets", { name })}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}><X size={18} /></button>
+          <button onClick={onClose} style={{ color: "var(--color-faint)" }}><X size={18} /></button>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {field(t("Calories"), kcal, setKcal, "kcal")}
@@ -1440,7 +1425,7 @@ function EditTargetsSheet({ open, name, target, onClose, onSave }: { open: boole
         <button
           onClick={() => onSave({ kcal: num(kcal), p: num(p), c: num(c), f: num(f) })}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT }}
+          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
         >
           <Check size={16} /> {t("Save targets")}
         </button>
@@ -1471,7 +1456,7 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
   const [itemsOpen, setItemsOpen] = useState(false);
   const hasItems = meal.items.length > 0;
   return (
-    <section className="rounded-[14px] border p-3.5" style={{ background: "#0f141c", borderColor: "#1f2937" }}>
+    <section className="rounded-[14px] border p-3.5" style={{ background: "var(--color-raised)", borderColor: "var(--color-edge)" }}>
       <div className="mb-2 flex items-center justify-between">
         <button
           onClick={() => hasItems && setItemsOpen((o) => !o)}
@@ -1480,14 +1465,14 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
           {hasItems && (
             <ChevronDown
               size={15}
-              style={{ color: "#6b7686", transform: itemsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
+              style={{ color: "var(--color-faint)", transform: itemsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
             />
           )}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-[14px] font-semibold text-bone">{meal.name || t("Meal {n}", { n: index + 1 })}</span>
               {hasItems && (
-                <span className="num shrink-0 rounded-full px-1.5 py-[1px] text-[10px]" style={{ background: "rgba(255,255,255,0.05)", color: "#8b97a6" }}>
+                <span className="num shrink-0 rounded-full px-1.5 py-[1px] text-[10px]" style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-taupe)" }}>
                   {t(meal.items.length === 1 ? "{n} item" : "{n} items", { n: meal.items.length })}
                 </span>
               )}
@@ -1495,7 +1480,7 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
             <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="num text-[13.5px] font-bold text-bone">
                 {r0(tot.kcal)}
-                <span className="ml-0.5 text-[10px] font-medium" style={{ color: "#7e8a98" }}> {t("kcal")}</span>
+                <span className="ml-0.5 text-[10px] font-medium" style={{ color: "var(--color-taupe)" }}> {t("kcal")}</span>
               </span>
               <MacroChip label="P" value={r0(tot.p)} color="#fb7185" />
               <MacroChip label="C" value={r0(tot.c)} color="#38bdf8" />
@@ -1505,11 +1490,11 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
         </button>
         <div className="flex items-center gap-1.5">
           {onSave && meal.items.length > 0 && (
-            <button onClick={onSave} className="p-1" style={{ color: "#6b7686" }} aria-label="Save meal">
+            <button onClick={onSave} className="p-1" style={{ color: "var(--color-faint)" }} aria-label="Save meal">
               <Bookmark size={15} />
             </button>
           )}
-          <button onClick={onRemoveMeal} className="p-1" style={{ color: "#6b7686" }} aria-label="Remove meal">
+          <button onClick={onRemoveMeal} className="p-1" style={{ color: "var(--color-faint)" }} aria-label="Remove meal">
             <Trash2 size={15} />
           </button>
         </div>
@@ -1524,15 +1509,15 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
               key={it.id}
               onClick={() => onEditItem(it)}
               className="flex w-full items-center gap-2 border-b py-2 text-left last:border-0"
-              style={{ borderColor: "#1b232e" }}
+              style={{ borderColor: "var(--color-edge)" }}
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] text-bone">{it.name}</div>
-                <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
+                <div className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
                   {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
                 </div>
               </div>
-              <span className="num text-[11px]" style={{ color: "#9aa6b2" }}>
+              <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>
                 {r0(c.p)}P {r0(c.c)}C {r0(c.f)}F
               </span>
             </button>
@@ -1542,7 +1527,7 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
       <button
         onClick={onAddFood}
         className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
-        style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+        style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
       >
         <Plus size={14} /> {t("Add food")}
       </button>
@@ -1632,7 +1617,7 @@ function FoodSearchSheet(props: SearchSheetProps) {
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
         <div
           className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
-          style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #34c5e8", borderRadius: "22px" }}
+          style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)", borderRadius: "22px" }}
           onClick={(e) => e.stopPropagation()}
         >
           {picked ? (
@@ -1665,24 +1650,24 @@ function FoodSearchSheet(props: SearchSheetProps) {
             <>
               <div className="flex items-center gap-2 p-4 pb-2">
                 <div className="flex-1 text-[16px] font-bold text-bone">{title}</div>
-                <button onClick={onClose} style={{ color: "#6b7686" }}>
+                <button onClick={onClose} style={{ color: "var(--color-faint)" }}>
                   <X size={20} />
                 </button>
               </div>
 
               <div className="flex gap-2 px-4">
-                <div className="flex flex-1 items-center gap-2 rounded-xl px-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
-                  <Search size={16} style={{ color: "#6b7686" }} />
+                <div className="flex flex-1 items-center gap-2 rounded-xl px-3" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
+                  <Search size={16} style={{ color: "var(--color-faint)" }} />
                   {/* No autoFocus — opening the sheet shows the options first; the
                       user taps the field to bring up the keyboard when ready. */}
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder={t("Search a food…")}
-                    className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
+                    className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[var(--color-faint)]"
                   />
                   {q && (
-                    <button onClick={() => setQ("")} style={{ color: "#6b7686" }}>
+                    <button onClick={() => setQ("")} style={{ color: "var(--color-faint)" }}>
                       <X size={15} />
                     </button>
                   )}
@@ -1690,14 +1675,14 @@ function FoodSearchSheet(props: SearchSheetProps) {
                 <button
                   onClick={() => setScanOpen(true)}
                   className="flex shrink-0 items-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold"
-                  style={{ background: "#34c5e8", color: "#06303a" }}
+                  style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
                 >
                   <ScanLine size={16} /> {t("Scan")}
                 </button>
               </div>
 
               {status && (
-                <p className="mx-4 mt-2 rounded-lg px-3 py-2 text-[12px]" style={{ background: "#141a24", color: "#9aa6b2" }}>
+                <p className="mx-4 mt-2 rounded-lg px-3 py-2 text-[12px]" style={{ background: "var(--color-tile)", color: "var(--color-taupe)" }}>
                   {busy ? "… " : ""}
                   {status}
                 </p>
@@ -1709,14 +1694,14 @@ function FoodSearchSheet(props: SearchSheetProps) {
                     <button
                       key={f.id}
                       onClick={() => { setPicked(f); setTransient(false); }}
-                      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-[#141a24]"
+                      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-[var(--color-tile)]"
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[11px] font-bold" style={{ background: ROLE_TINT[f.role] + "22", color: ROLE_TINT[f.role] }}>
                         {f.kcal}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[13.5px] text-bone">{f.name}</div>
-                        <div className="num text-[10.5px]" style={{ color: "#7e8a98" }}>
+                        <div className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
                           {f.p}P · {f.c}C · {f.f}F {t("per 100g")}
                           {f.note ? ` · ${f.note}` : ""}
                         </div>
@@ -1725,11 +1710,11 @@ function FoodSearchSheet(props: SearchSheetProps) {
                     </button>
                   ))
                 ) : qd.length >= 6 ? (
-                  <button onClick={() => lookup(qd)} className="m-2 flex w-[calc(100%-16px)] items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold" style={{ background: "#0e2230", border: "1px solid #1d5066", color: "#34c5e8" }}>
+                  <button onClick={() => lookup(qd)} className="m-2 flex w-[calc(100%-16px)] items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--color-accent) 35%, transparent)", color: "var(--color-accent)" }}>
                     <Search size={15} /> {t("Look up barcode {code}", { code: qd })}
                   </button>
                 ) : (
-                  <p className="px-3 py-8 text-center text-[13px]" style={{ color: "#7e8a98" }}>
+                  <p className="px-3 py-8 text-center text-[13px]" style={{ color: "var(--color-taupe)" }}>
                     {q ? t("No match. Try fewer words, scan, or enter the barcode.") : t("Search by name, scan, or type a barcode number.")}
                   </p>
                 )}
@@ -1738,7 +1723,7 @@ function FoodSearchSheet(props: SearchSheetProps) {
               <button
                 onClick={() => setCustomOpen(true)}
                 className="flex items-center justify-center gap-1.5 border-t py-3 text-[12.5px] font-semibold"
-                style={{ borderColor: "#1b232e", color: "#8b97a6" }}
+                style={{ borderColor: "var(--color-edge)", color: "var(--color-taupe)" }}
               >
                 <Plus size={14} /> {t("Add a custom food")}
               </button>
@@ -1814,7 +1799,7 @@ function PortionView({
   return (
     <div className="flex max-h-[88vh] flex-col">
       <div className="flex items-center gap-2 p-4 pb-2">
-        <button onClick={onBack} style={{ color: "#8b97a6" }}>
+        <button onClick={onBack} style={{ color: "var(--color-taupe)" }}>
           <ArrowLeft size={18} />
         </button>
         <div className="min-w-0 flex-1">
@@ -1822,15 +1807,15 @@ function PortionView({
           <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="num text-[13px] font-bold text-bone">
               {food.kcal}
-              <span className="ml-0.5 text-[10px] font-semibold" style={{ color: "#8b97a6" }}>{t("kcal")}</span>
+              <span className="ml-0.5 text-[10px] font-semibold" style={{ color: "var(--color-taupe)" }}>{t("kcal")}</span>
             </span>
             <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.p }}>{food.p}P</span>
             <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.c }}>{food.c}C</span>
             <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.f }}>{food.f}F</span>
-            <span className="text-[10px]" style={{ color: "#7e8a98" }}>{t("per 100g")}</span>
+            <span className="text-[10px]" style={{ color: "var(--color-taupe)" }}>{t("per 100g")}</span>
           </div>
           {hasUnit && (
-            <div className="num mt-0.5 text-[11px]" style={{ color: "#9aa6b2" }}>
+            <div className="num mt-0.5 text-[11px]" style={{ color: "var(--color-taupe)" }}>
               {t("1 {unit} ≈ {g} g", { unit: unitName, g: r0(gPerUnit) })}
             </div>
           )}
@@ -1839,11 +1824,11 @@ function PortionView({
 
       <div className="flex-1 overflow-y-auto px-4 pb-2">
         {hasUnit && (
-          <div className="mb-3 flex rounded-full p-1 text-[12.5px]" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
-            <button onClick={toUnit} className="flex-1 rounded-full py-1.5 font-semibold transition" style={mode === "unit" ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}>
+          <div className="mb-3 flex rounded-full p-1 text-[12.5px]" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
+            <button onClick={toUnit} className="flex-1 rounded-full py-1.5 font-semibold transition" style={mode === "unit" ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}>
               {t("By the {unit}", { unit: unitName })}
             </button>
-            <button onClick={toGrams} className="flex-1 rounded-full py-1.5 font-semibold transition" style={mode === "grams" ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}>
+            <button onClick={toGrams} className="flex-1 rounded-full py-1.5 font-semibold transition" style={mode === "grams" ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}>
               {t("Grams")}
             </button>
           </div>
@@ -1854,19 +1839,19 @@ function PortionView({
             <QtyRow qty={qty} setQty={setQty} unitName={pluralizeUnit(unitName, qty)} />
             <div className="mb-3 flex gap-2">
               {[1, 2, 3].map((n) => (
-                <button key={n} onClick={() => setQty(n)} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
+                <button key={n} onClick={() => setQty(n)} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}>
                   {n}
                 </button>
               ))}
             </div>
-            <p className="mb-2 text-center text-[11px]" style={{ color: "#7c8696" }}>{t("= {n} g", { n: r0(effGrams) })}</p>
+            <p className="mb-2 text-center text-[11px]" style={{ color: "var(--color-taupe)" }}>{t("= {n} g", { n: r0(effGrams) })}</p>
           </>
         ) : (
           <>
             <GramRow grams={grams} setGrams={setGrams} />
             <div className="mb-3 flex gap-2">
               {gramQuick.map(([lbl, g]) => (
-                <button key={lbl} onClick={() => setGrams(Math.round(g))} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
+                <button key={lbl} onClick={() => setGrams(Math.round(g))} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}>
                   {lbl}{food.serving ? "×" : "g"}
                 </button>
               ))}
@@ -1876,10 +1861,10 @@ function PortionView({
 
         <div className="rounded-xl p-3.5" style={TILE}>
           <div className="flex items-center justify-between">
-            <span className="stat-key" style={{ color: "#b7c0cc" }}>{t("This portion")}</span>
+            <span className="stat-key" style={{ color: "var(--color-bone)" }}>{t("This portion")}</span>
             <span className="flex items-baseline gap-1">
               <span className="stat text-[26px] text-bone">{r0(c.kcal)}</span>
-              <span className="text-[11px] font-bold" style={{ color: "#97a3b2" }}>{t("kcal")}</span>
+              <span className="text-[11px] font-bold" style={{ color: "var(--color-taupe)" }}>{t("kcal")}</span>
             </span>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -1888,21 +1873,21 @@ function PortionView({
               { k: t("Carbs"), v: c.c, color: MACRO_BRIGHT.c },
               { k: t("Fat"), v: c.f, color: MACRO_BRIGHT.f },
             ].map((m) => (
-              <div key={m.k} className="rounded-lg px-2 py-2 text-center" style={{ background: "#0b0f17", border: "1px solid #1b232e" }}>
+              <div key={m.k} className="rounded-lg px-2 py-2 text-center" style={{ background: "var(--color-bg)", border: "1px solid var(--color-edge)" }}>
                 <div className="flex items-baseline justify-center gap-0.5">
                   <span className="stat text-[19px]" style={{ color: m.color }}>{r0(m.v)}</span>
                   <span className="text-[10px] font-bold" style={{ color: m.color, opacity: 0.65 }}>g</span>
                 </div>
-                <div className="stat-key mt-0.5" style={{ color: "#8b97a6" }}>{m.k}</div>
+                <div className="stat-key mt-0.5" style={{ color: "var(--color-taupe)" }}>{m.k}</div>
               </div>
             ))}
           </div>
         </div>
 
         {transient && (
-          <button onClick={() => setSave((s) => !s)} className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px]" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
-            <span className="flex h-4 w-4 items-center justify-center rounded" style={{ background: save ? "#34c5e8" : "transparent", border: save ? "none" : "1px solid #3a4654" }}>
-              {save && <Check size={12} style={{ color: "#06303a" }} />}
+          <button onClick={() => setSave((s) => !s)} className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px]" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}>
+            <span className="flex h-4 w-4 items-center justify-center rounded" style={{ background: save ? "var(--color-accent)" : "transparent", border: save ? "none" : "1px solid var(--color-edge)" }}>
+              {save && <Check size={12} style={{ color: "var(--h-on-accent)" }} />}
             </span>
             {t("Save to my library for next time")}
           </button>
@@ -1918,7 +1903,7 @@ function PortionView({
         <button
           onClick={() => onConfirm(amount(), save)}
           className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT }}
+          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
         >
           <Check size={16} /> {editing ? t("Save portion") : t("Add to meal")}
         </button>
@@ -1937,7 +1922,7 @@ function QtyRow({ qty, setQty, unitName }: { qty: number; setQty: (n: number) =>
   const step = (d: number) => setQty(Math.max(0, Math.min(99, Math.round((qty + d) * 100) / 100)));
   return (
     <div className="mb-3 mt-1 flex items-center justify-center gap-3">
-      <button onClick={() => step(-1)} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
+      <button onClick={() => step(-1)} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-bone)" }}>
         <Minus size={18} />
       </button>
       <div className="flex items-baseline gap-1.5">
@@ -1952,9 +1937,9 @@ function QtyRow({ qty, setQty, unitName }: { qty: number; setQty: (n: number) =>
           inputMode="decimal"
           className="stat w-[72px] bg-transparent text-center text-[32px] text-bone outline-none"
         />
-        <span className="text-[13px] font-semibold" style={{ color: "#7c8696" }}>{unitName}</span>
+        <span className="text-[13px] font-semibold" style={{ color: "var(--color-taupe)" }}>{unitName}</span>
       </div>
-      <button onClick={() => step(1)} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
+      <button onClick={() => step(1)} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-bone)" }}>
         <Plus size={18} />
       </button>
     </div>
@@ -2003,7 +1988,7 @@ function NumField({
 function GramRow({ grams, setGrams }: { grams: number; setGrams: (n: number) => void }) {
   return (
     <div className="mb-3 mt-1 flex items-center justify-center gap-3">
-      <button onClick={() => setGrams(Math.max(0, grams - 10))} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
+      <button onClick={() => setGrams(Math.max(0, grams - 10))} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-bone)" }}>
         <Minus size={18} />
       </button>
       <div className="flex items-baseline gap-1">
@@ -2012,9 +1997,9 @@ function GramRow({ grams, setGrams }: { grams: number; setGrams: (n: number) => 
           onChange={setGrams}
           className="num w-[88px] bg-transparent text-center text-[34px] font-bold text-bone outline-none"
         />
-        <span className="text-[14px] font-semibold" style={{ color: "#7e8a98" }}>g</span>
+        <span className="text-[14px] font-semibold" style={{ color: "var(--color-taupe)" }}>g</span>
       </div>
-      <button onClick={() => setGrams(Math.min(MAX_GRAMS, grams + 10))} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#cbd5e1" }}>
+      <button onClick={() => setGrams(Math.min(MAX_GRAMS, grams + 10))} className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-bone)" }}>
         <Plus size={18} />
       </button>
     </div>
@@ -2043,12 +2028,12 @@ function CustomFoodForm({
   const roles: FoodRole[] = ["protein", "carb", "veg", "fat", "other"];
 
   const inp = "w-full rounded-lg px-3 py-2.5 text-[14px] text-bone outline-none";
-  const inpStyle = { background: "#0f141c", border: "1px solid #232d3a" } as const;
+  const inpStyle = { background: "var(--color-raised)", border: "1px solid var(--color-edge)" } as const;
 
   return (
     <div className="flex max-h-[88vh] flex-col">
       <div className="flex items-center gap-2 p-4 pb-2">
-        <button onClick={onBack} style={{ color: "#8b97a6" }}>
+        <button onClick={onBack} style={{ color: "var(--color-taupe)" }}>
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 text-[15.5px] font-bold text-bone">{t("Add a custom food")}</div>
@@ -2056,19 +2041,19 @@ function CustomFoodForm({
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-2">
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("Name")}</label>
+          <label className="mb-1 block text-[11px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Name")}</label>
           <input className={inp} style={inpStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Mom's dumplings")} />
         </div>
 
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("Type")}</label>
+          <label className="mb-1 block text-[11px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Type")}</label>
           <div className="grid grid-cols-5 gap-1.5">
             {roles.map((r) => (
               <button
                 key={r}
                 onClick={() => setRole(r)}
                 className="rounded-lg py-2 text-[11px] font-semibold capitalize transition"
-                style={role === r ? { background: ROLE_TINT[r], color: "#0a0d12" } : { background: "#141a24", color: "#8b97a6", border: "1px solid #232d3a" }}
+                style={role === r ? { background: ROLE_TINT[r], color: "var(--color-bg)" } : { background: "var(--color-tile)", color: "var(--color-taupe)", border: "1px solid var(--color-edge)" }}
               >
                 {t(r)}
               </button>
@@ -2076,7 +2061,7 @@ function CustomFoodForm({
           </div>
         </div>
 
-        <p className="text-[12px]" style={{ color: "#7e8a98" }}>{t("Macros per 100g (from the label or a recipe):")}</p>
+        <p className="text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("Macros per 100g (from the label or a recipe):")}</p>
         <div className="grid grid-cols-4 gap-2">
           {[
             { l: "kcal", v: kcal, set: setKcal },
@@ -2085,14 +2070,14 @@ function CustomFoodForm({
             { l: "F", v: f, set: setF },
           ].map((fld) => (
             <div key={fld.l}>
-              <label className="mb-1 block text-center text-[10px]" style={{ color: "#7e8a98" }}>{t(fld.l)}</label>
+              <label className="mb-1 block text-center text-[10px]" style={{ color: "var(--color-taupe)" }}>{t(fld.l)}</label>
               <input className={`${inp} num px-2 text-center`} style={inpStyle} type="number" inputMode="decimal" value={fld.v} onChange={(e) => fld.set(e.target.value)} placeholder="0" />
             </div>
           ))}
         </div>
 
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("One serving (grams, optional)")}</label>
+          <label className="mb-1 block text-[11px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("One serving (grams, optional)")}</label>
           <input className={`${inp} num`} style={inpStyle} type="number" inputMode="numeric" value={serving} onChange={(e) => setServing(e.target.value)} placeholder={t("e.g. 150")} />
         </div>
       </div>
@@ -2116,7 +2101,7 @@ function CustomFoodForm({
           }}
           disabled={!valid}
           className="flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT, opacity: valid ? 1 : 0.45 }}
+          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)", opacity: valid ? 1 : 0.45 }}
         >
           <Check size={16} /> {t("Save & use")}
         </button>

@@ -16,7 +16,6 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { HEALTH, HEALTH_GRADIENT, HEALTH_HERO } from "../lib/catColor";
 import { t } from "../lib/i18n";
 import {
   bestSet,
@@ -46,7 +45,7 @@ const sessionStat = (w: Workout) =>
 
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
-const TILE = { background: "#141a24", borderColor: "#232d3a" } as const;
+const TILE = { background: "var(--color-tile)", borderColor: "var(--color-edge)" } as const;
 const STICKY_TOP = "calc(env(safe-area-inset-top, 0px) + 6px)";
 const r0 = (n: number) => Math.round(n);
 const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
@@ -70,7 +69,7 @@ export function WorkoutSection({ owner, person }: { owner: Person; person: Perso
 
   return (
     <div className="flex flex-col gap-3 pb-8">
-      <div className="flex rounded-full p-1 text-[13px]" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+      <div className="flex rounded-full p-1 text-[13px]" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
         <ModePill on={mode === "solo"} onClick={() => setMode("solo")} icon={<User size={14} />}>
           {t("Just me")}
         </ModePill>
@@ -93,7 +92,7 @@ function ModePill({ on, onClick, icon, children }: { on: boolean; onClick: () =>
     <button
       onClick={onClick}
       className="flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 font-semibold transition"
-      style={on ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}
+      style={on ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}
     >
       {icon}
       {children}
@@ -227,7 +226,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
           <button
             onClick={startBlank}
             className="flex items-center justify-center gap-2 rounded-[18px] py-4 text-[15px] font-semibold text-white transition active:scale-[0.98]"
-            style={{ background: HEALTH_GRADIENT }}
+            style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
           >
             <Play size={17} /> {t("Add a workout")}
           </button>
@@ -244,28 +243,28 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
       {/* routines */}
       {!active && (
         <section className="rounded-[18px] border p-4" style={TILE}>
-          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#8b97a6" }}>
+          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
             {t("Routines")}
           </p>
           <div className="flex flex-col gap-2">
             {routines.map((r) => (
-              <div key={r.id} className="flex items-center gap-2 rounded-[12px] px-3 py-2.5" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
+              <div key={r.id} className="flex items-center gap-2 rounded-[12px] px-3 py-2.5" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] font-medium text-bone">{t(r.name)}</div>
-                  <div className="truncate text-[10.5px]" style={{ color: "#7e8a98" }}>
+                  <div className="truncate text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
                     {r.meta ? t(r.meta) + " · " : ""}
                     {t("{n} exercises", { n: r.exercises.length })}
                   </div>
                 </div>
                 {!r.seed && (
-                  <button onClick={() => deleteRoutine(r.id)} style={{ color: "#6b7686" }} aria-label="Delete routine">
+                  <button onClick={() => deleteRoutine(r.id)} style={{ color: "var(--color-faint)" }} aria-label="Delete routine">
                     <Trash2 size={14} />
                   </button>
                 )}
                 <button
                   onClick={() => startFromRoutine(r)}
                   className="flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold"
-                  style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+                  style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
                 >
                   <Play size={12} /> {t("Start")}
                 </button>
@@ -280,13 +279,13 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
         <section className="rounded-[18px] border p-4" style={TILE}>
           <div className="mb-2.5 flex items-center gap-1.5">
             <Trophy size={14} style={{ color: "#f6c453" }} />
-            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#8b97a6" }}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
               {t("Personal records")}
             </p>
           </div>
           <div className="flex flex-col">
             {prs.slice(0, 6).map((pr) => (
-              <div key={pr.name} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "#1b232e" }}>
+              <div key={pr.name} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "var(--color-edge)" }}>
                 <div className="min-w-0 flex-1 truncate text-[13px] text-bone">{pr.name}</div>
                 <div className="num shrink-0 text-[12.5px] font-semibold text-bone">
                   {pr.weight > 0 ? t("{w} lb × {r}", { w: r0(pr.weight), r: pr.reps }) : t("{r} reps", { r: pr.reps })}
@@ -306,21 +305,21 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
       {done.length > 0 && (
         <section className="rounded-[18px] border p-4" style={TILE}>
           <button onClick={() => setShowHistory((s) => !s)} className="flex w-full items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#8b97a6" }}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
               {t("History · {n}", { n: done.length })}
             </p>
-            <ChevronDown size={16} style={{ color: "#6b7686", transform: showHistory ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+            <ChevronDown size={16} style={{ color: "var(--color-faint)", transform: showHistory ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
           </button>
           {showHistory && (
             <div className="mt-2 flex flex-col">
               {done.slice(0, 12).map((w) => (
-                <div key={w.id} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "#1b232e" }}>
+                <div key={w.id} className="flex items-center gap-2 border-b py-2 last:border-0" style={{ borderColor: "var(--color-edge)" }}>
                   <button onClick={() => setEditId(w.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] text-bone">{t(w.name)}</div>
-                      <div className="text-[10.5px]" style={{ color: "#7e8a98" }}>{w.date}</div>
+                      <div className="text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{w.date}</div>
                     </div>
-                    <div className="num shrink-0 text-right text-[11px]" style={{ color: "#9aa6b2" }}>
+                    <div className="num shrink-0 text-right text-[11px]" style={{ color: "var(--color-taupe)" }}>
                       {sessionStat(w)}
                       {workoutVolume(w) > 0 ? ` · ${r0(workoutVolume(w)).toLocaleString()} ${t("vol")}` : ""}
                     </div>
@@ -334,16 +333,16 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                       >
                         {t("Delete")}
                       </button>
-                      <button onClick={() => setConfirmDelId(null)} className="px-1 text-[11px]" style={{ color: "#7c8696" }}>
+                      <button onClick={() => setConfirmDelId(null)} className="px-1 text-[11px]" style={{ color: "var(--color-taupe)" }}>
                         {t("Cancel")}
                       </button>
                     </span>
                   ) : (
                     <span className="flex shrink-0 items-center gap-2">
-                      <button onClick={() => setEditId(w.id)} style={{ color: "#5f6a78" }} aria-label="Edit workout">
+                      <button onClick={() => setEditId(w.id)} style={{ color: "var(--color-faint)" }} aria-label="Edit workout">
                         <Pencil size={13} />
                       </button>
-                      <button onClick={() => setConfirmDelId(w.id)} style={{ color: "#5f6a78" }} aria-label="Delete workout">
+                      <button onClick={() => setConfirmDelId(w.id)} style={{ color: "var(--color-faint)" }} aria-label="Delete workout">
                         <Trash2 size={13} />
                       </button>
                     </span>
@@ -396,16 +395,16 @@ function ActiveWorkout({
     <section className="rounded-[18px] border p-4" style={TILE}>
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Dumbbell size={15} style={{ color: "#34c5e8" }} />
+          <Dumbbell size={15} style={{ color: "var(--color-accent)" }} />
           <p className="text-[13.5px] font-semibold text-bone">{t("Today's workout")}</p>
         </div>
-        <button onClick={onDiscard} className="text-[11px]" style={{ color: "#6b7686" }}>
+        <button onClick={onDiscard} className="text-[11px]" style={{ color: "var(--color-faint)" }}>
           {t("Discard")}
         </button>
       </div>
 
       {w.exercises.length === 0 ? (
-        <p className="py-3 text-center text-[12.5px]" style={{ color: "#7e8a98" }}>
+        <p className="py-3 text-center text-[12.5px]" style={{ color: "var(--color-taupe)" }}>
           {t("Add an exercise to get started.")}
         </p>
       ) : (
@@ -424,7 +423,7 @@ function ActiveWorkout({
       <button
         onClick={onAddExercise}
         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-        style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+        style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
       >
         <Plus size={15} /> {t("Add exercise")}
       </button>
@@ -433,14 +432,14 @@ function ActiveWorkout({
         <button
           onClick={onSaveRoutine}
           className="rounded-[12px] px-3 py-2.5 text-[12.5px] font-semibold"
-          style={{ background: "#0f141c", border: "1px solid #232d3a", color: "#9aa6b2" }}
+          style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}
         >
           {t("Save as routine")}
         </button>
         <button
           onClick={onFinish}
           className="flex flex-1 items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: HEALTH_GRADIENT }}
+          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
         >
           <Check size={16} /> {t("Finish workout")}
         </button>
@@ -464,22 +463,22 @@ function ExerciseBlock({
 }) {
   const best = bestSet(ex.sets);
   return (
-    <div className="mb-2.5 rounded-[12px] p-3" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
+    <div className="mb-2.5 rounded-[12px] p-3" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
       <div className="mb-1.5 flex items-center justify-between">
         <div className="min-w-0">
           <div className="truncate text-[13.5px] font-medium text-bone">{ex.name}</div>
           {best.e1rm > 0 && (
-            <div className="num text-[10px]" style={{ color: "#7e8a98" }}>
+            <div className="num text-[10px]" style={{ color: "var(--color-taupe)" }}>
               {t("best ~{n} 1RM", { n: r0(best.e1rm) })}
             </div>
           )}
         </div>
-        <button onClick={onRemove} style={{ color: "#6b7686" }} aria-label="Remove exercise">
+        <button onClick={onRemove} style={{ color: "var(--color-faint)" }} aria-label="Remove exercise">
           <X size={15} />
         </button>
       </div>
 
-      <div className="flex items-center gap-2 pb-1 text-[9.5px] uppercase tracking-wider" style={{ color: "#5f6a78" }}>
+      <div className="flex items-center gap-2 pb-1 text-[9.5px] uppercase tracking-wider" style={{ color: "var(--color-faint)" }}>
         <span className="w-6 text-center">{t("Set")}</span>
         <span className="flex-1 text-center">{t("Weight")}</span>
         <span className="flex-1 text-center">{t("Reps")}</span>
@@ -487,15 +486,15 @@ function ExerciseBlock({
       </div>
       {ex.sets.map((s, i) => (
         <div key={i} className="flex items-center gap-2 py-1">
-          <span className="num w-6 text-center text-[12px] font-semibold" style={{ color: "#6b7686" }}>{i + 1}</span>
+          <span className="num w-6 text-center text-[12px] font-semibold" style={{ color: "var(--color-faint)" }}>{i + 1}</span>
           <NumIn value={s.weight} onChange={(v) => onSetChange(i, { weight: v })} max={2000} suffix="lb" />
           <NumIn value={s.reps} onChange={(v) => onSetChange(i, { reps: v })} max={100} />
-          <button onClick={() => onRemoveSet(i)} className="w-5 shrink-0" style={{ color: "#5f6a78" }} aria-label="Remove set">
+          <button onClick={() => onRemoveSet(i)} className="w-5 shrink-0" style={{ color: "var(--color-faint)" }} aria-label="Remove set">
             <Minus size={14} />
           </button>
         </div>
       ))}
-      <button onClick={onAddSet} className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "#34c5e8" }}>
+      <button onClick={onAddSet} className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
         <Plus size={12} /> {t("Add set")}
       </button>
     </div>
@@ -539,33 +538,33 @@ function EditWorkoutSheet({
   const addExercise = (ex: { name: string; muscle: string; exerciseId: string }) =>
     setDraft((w) => ({ ...w, exercises: [...w.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [{ reps: 0, weight: 0 }] }] }));
 
-  const inpStyle = { background: "#141a24", border: "1px solid #232d3a" } as const;
+  const inpStyle = { background: "var(--color-tile)", border: "1px solid var(--color-edge)" } as const;
 
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
         <div
           className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
-          style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #34c5e8", borderRadius: "22px" }}
+          style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)", borderRadius: "22px" }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-2 p-4 pb-2">
-            <Dumbbell size={16} style={{ color: "#34c5e8" }} />
+            <Dumbbell size={16} style={{ color: "var(--color-accent)" }} />
             <div className="flex-1 text-[16px] font-bold text-bone">{t("Edit workout")}</div>
-            <button onClick={onClose} style={{ color: "#6b7686" }}>
+            <button onClick={onClose} style={{ color: "var(--color-faint)" }}>
               <X size={20} />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-2">
-            <label className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("Name")}</label>
+            <label className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Name")}</label>
             <input
               value={draft.name}
               onChange={(e) => setDraft((w) => ({ ...w, name: e.target.value }))}
               className="w-full rounded-lg px-3 py-2 text-[14px] text-bone outline-none"
               style={inpStyle}
             />
-            <div className="mb-3 mt-1 text-[10.5px]" style={{ color: "#7e8a98" }}>{draft.date}</div>
+            <div className="mb-3 mt-1 text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{draft.date}</div>
 
             {draft.exercises.map((ex) =>
               ex.duration != null && ex.sets.length === 0 ? (
@@ -585,18 +584,18 @@ function EditWorkoutSheet({
             <button
               onClick={() => setSearchOpen(true)}
               className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-              style={{ background: "rgba(52,197,232,0.13)", color: "#34c5e8" }}
+              style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
             >
               <Plus size={15} /> {t("Add exercise")}
             </button>
 
-            <label className="mb-1 mt-3 block text-[10px] uppercase tracking-wider" style={{ color: "#7e8a98" }}>{t("Notes")}</label>
+            <label className="mb-1 mt-3 block text-[10px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Notes")}</label>
             <textarea
               value={draft.notes}
               onChange={(e) => setDraft((w) => ({ ...w, notes: e.target.value }))}
               rows={2}
               placeholder={t("optional")}
-              className="w-full resize-none rounded-lg px-3 py-2 text-[13px] text-bone outline-none placeholder:text-[#5f6a78]"
+              className="w-full resize-none rounded-lg px-3 py-2 text-[13px] text-bone outline-none placeholder:text-[var(--color-faint)]"
               style={inpStyle}
             />
           </div>
@@ -604,10 +603,10 @@ function EditWorkoutSheet({
           <div className="flex gap-2 p-4 pt-2">
             {confirmDel ? (
               <>
-                <button onClick={() => setConfirmDel(false)} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "#161c26", color: "#b7c0cc" }}>
+                <button onClick={() => setConfirmDel(false)} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "var(--color-raised)", color: "var(--color-bone)" }}>
                   {t("Cancel")}
                 </button>
-                <button onClick={onDelete} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "#f0556e", color: "#0a0d12" }}>
+                <button onClick={onDelete} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "#f0556e", color: "var(--color-bg)" }}>
                   {t("Delete workout")}
                 </button>
               </>
@@ -619,7 +618,7 @@ function EditWorkoutSheet({
                 <button
                   onClick={() => onSave(draft)}
                   className="flex flex-1 items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-                  style={{ background: HEALTH_GRADIENT }}
+                  style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
                 >
                   <Check size={16} /> {t("Save changes")}
                 </button>
@@ -635,10 +634,10 @@ function EditWorkoutSheet({
 
 function DurationBlock({ ex, onChange, onRemove }: { ex: ExerciseEntry; onChange: (d: number) => void; onRemove: () => void }) {
   return (
-    <div className="mb-2.5 rounded-[12px] p-3" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
+    <div className="mb-2.5 rounded-[12px] p-3" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
       <div className="mb-1.5 flex items-center justify-between">
         <div className="min-w-0 truncate text-[13.5px] font-medium text-bone">{ex.name}</div>
-        <button onClick={onRemove} style={{ color: "#6b7686" }} aria-label="Remove exercise">
+        <button onClick={onRemove} style={{ color: "var(--color-faint)" }} aria-label="Remove exercise">
           <X size={15} />
         </button>
       </div>
@@ -652,7 +651,7 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
   const vol = active ? workoutVolume(active) : 0;
   const sets = active ? totalSets(active) : 0;
   return (
-    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: HEALTH_HERO, border: "1px solid #232d3a", borderTop: `2px solid ${HEALTH}` }}>
+    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: "var(--color-hero)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)" }}>
       <div className="flex items-center justify-between text-[11.5px] opacity-90">
         <span>{t("{name}'s training", { name })}</span>
         <span>{t("this week")}</span>
@@ -666,7 +665,7 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
           {/* week dots */}
           <div className="flex gap-1.5">
             {Array.from({ length: WEEK_GOAL }, (_, i) => (
-              <span key={i} className="h-2 flex-1 rounded-full" style={{ background: i < weekCount ? HEALTH : "rgba(255,255,255,0.16)", transition: "background .3s" }} />
+              <span key={i} className="h-2 flex-1 rounded-full" style={{ background: i < weekCount ? "var(--color-accent)" : "rgba(255,255,255,0.16)", transition: "background .3s" }} />
             ))}
           </div>
           <div className="mt-2 text-[11.5px] opacity-90">
@@ -706,8 +705,8 @@ function TogetherWorkout({ owner }: { owner: Person }) {
   return (
     <div className="flex flex-col gap-3">
       {/* shared weekly challenge */}
-      <div className="sticky z-30 rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ top: STICKY_TOP, background: HEALTH_HERO, border: "1px solid #232d3a", borderTop: `2px solid ${HEALTH}` }}>
-        <div className="flex items-center gap-1.5 text-[11.5px] opacity-90" style={{ color: HEALTH }}>
+      <div className="sticky z-30 rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ top: STICKY_TOP, background: "var(--color-hero)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)" }}>
+        <div className="flex items-center gap-1.5 text-[11.5px] opacity-90" style={{ color: "var(--color-accent)" }}>
           <Flame size={14} /> {t("This week · together")}
         </div>
         <div className="mt-1.5 flex items-end gap-2">
@@ -728,11 +727,11 @@ function TogetherWorkout({ owner }: { owner: Person }) {
 
       {/* shared activity feed */}
       <section className="rounded-[18px] border p-4" style={TILE}>
-        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#8b97a6" }}>
+        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
           {t("Recent activity")}
         </p>
         {feed.length === 0 ? (
-          <p className="py-4 text-center text-[12.5px]" style={{ color: "#7e8a98" }}>
+          <p className="py-4 text-center text-[12.5px]" style={{ color: "var(--color-taupe)" }}>
             {t("No workouts logged yet. Switch to Just me to start one.")}
           </p>
         ) : (
@@ -741,7 +740,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
               const who = w.person;
               const acc = PERSON_ACC[who];
               return (
-                <div key={w.id} className="flex items-center gap-2.5 border-b py-2 last:border-0" style={{ borderColor: "#1b232e" }}>
+                <div key={w.id} className="flex items-center gap-2.5 border-b py-2 last:border-0" style={{ borderColor: "var(--color-edge)" }}>
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: acc + "22", color: acc }}>
                     {who === you ? "▲" : PERSON_NAME[who][0]}
                   </span>
@@ -749,9 +748,9 @@ function TogetherWorkout({ owner }: { owner: Person }) {
                     <div className="truncate text-[13px] text-bone">
                       <span style={{ color: acc }}>{who === you ? t("You") : PERSON_NAME[who]}</span> · {t(w.name)}
                     </div>
-                    <div className="text-[10.5px]" style={{ color: "#7e8a98" }}>{w.date}</div>
+                    <div className="text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{w.date}</div>
                   </div>
-                  <div className="num text-[11px]" style={{ color: "#9aa6b2" }}>{sessionStat(w)}</div>
+                  <div className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>{sessionStat(w)}</div>
                 </div>
               );
             })}
@@ -771,7 +770,7 @@ function NumIn({ value, onChange, max, suffix }: { value: number; onChange: (n: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   return (
-    <span className="flex flex-1 items-center justify-center gap-1 rounded-lg py-1.5" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+    <span className="flex flex-1 items-center justify-center gap-1 rounded-lg py-1.5" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
       <input
         value={buf}
         inputMode="numeric"
@@ -784,7 +783,7 @@ function NumIn({ value, onChange, max, suffix }: { value: number; onChange: (n: 
         placeholder="0"
         className="num w-full bg-transparent text-center text-[15px] font-semibold text-bone outline-none"
       />
-      {suffix && <span className="pr-1 text-[10px]" style={{ color: "#5f6a78" }}>{suffix}</span>}
+      {suffix && <span className="pr-1 text-[10px]" style={{ color: "var(--color-faint)" }}>{suffix}</span>}
     </span>
   );
 }
@@ -819,27 +818,27 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
       <div
         className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
-        style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #34c5e8", borderRadius: "22px" }}
+        style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)", borderRadius: "22px" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 p-4 pb-2">
           <div className="flex-1 text-[16px] font-bold text-bone">{t("Add exercise")}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}>
+          <button onClick={onClose} style={{ color: "var(--color-faint)" }}>
             <X size={20} />
           </button>
         </div>
 
-        <div className="flex items-center gap-2 rounded-xl px-3" style={{ background: "#141a24", border: "1px solid #232d3a", margin: "0 16px" }}>
-          <Search size={16} style={{ color: "#6b7686" }} />
+        <div className="flex items-center gap-2 rounded-xl px-3" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", margin: "0 16px" }}>
+          <Search size={16} style={{ color: "var(--color-faint)" }} />
           <input
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t("Search an exercise…")}
-            className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
+            className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[var(--color-faint)]"
           />
           {q && (
-            <button onClick={() => setQ("")} style={{ color: "#6b7686" }}>
+            <button onClick={() => setQ("")} style={{ color: "var(--color-faint)" }}>
               <X size={15} />
             </button>
           )}
@@ -851,18 +850,18 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
               <button
                 key={e.id}
                 onClick={() => add({ name: e.name, muscle: e.muscle, exerciseId: e.id })}
-                className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-[#141a24]"
+                className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-[var(--color-tile)]"
               >
                 <span className="h-7 w-1.5 shrink-0 rounded-full" style={{ background: muscleColor(e.muscle) }} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] text-bone">{e.name}</div>
-                  <div className="text-[10.5px] capitalize" style={{ color: "#7e8a98" }}>{t(e.muscle)} · {t(e.equipment)}</div>
+                  <div className="text-[10.5px] capitalize" style={{ color: "var(--color-taupe)" }}>{t(e.muscle)} · {t(e.equipment)}</div>
                 </div>
                 <Plus size={16} style={{ color: "#46d18a" }} />
               </button>
             ))
           ) : (
-            <p className="px-3 py-6 text-center text-[13px]" style={{ color: "#7e8a98" }}>
+            <p className="px-3 py-6 text-center text-[13px]" style={{ color: "var(--color-taupe)" }}>
               {q ? t("No match — add it as a custom exercise below.") : t("Search by name, muscle, or equipment.")}
             </p>
           )}
@@ -870,8 +869,8 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
 
         {/* custom exercise — name from the query, pick a muscle */}
         {q.trim() && (
-          <div className="border-t p-3" style={{ borderColor: "#1b232e" }}>
-            <p className="mb-1.5 text-[11px]" style={{ color: "#7e8a98" }}>
+          <div className="border-t p-3" style={{ borderColor: "var(--color-edge)" }}>
+            <p className="mb-1.5 text-[11px]" style={{ color: "var(--color-taupe)" }}>
               {t('Add "{name}" as a custom exercise', { name: q.trim() })}
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -880,7 +879,7 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
                   key={m}
                   onClick={() => setCustomMuscle(m)}
                   className="rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize transition"
-                  style={customMuscle === m ? { background: muscleColor(m), color: "#0a0d12" } : { background: "#141a24", color: "#8b97a6", border: "1px solid #232d3a" }}
+                  style={customMuscle === m ? { background: muscleColor(m), color: "var(--color-bg)" } : { background: "var(--color-tile)", color: "var(--color-taupe)", border: "1px solid var(--color-edge)" }}
                 >
                   {t(m)}
                 </button>
@@ -890,7 +889,7 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
               disabled={!customMuscle}
               onClick={() => customMuscle && add({ name: q.trim(), muscle: customMuscle, exerciseId: "" })}
               className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold text-white transition active:scale-[0.98]"
-              style={{ background: HEALTH_GRADIENT, opacity: customMuscle ? 1 : 0.45 }}
+              style={{ background: "var(--color-accent)", color: "var(--h-on-accent)", opacity: customMuscle ? 1 : 0.45 }}
             >
               <Plus size={14} /> {t("Add custom exercise")}
             </button>
@@ -961,20 +960,20 @@ function QuickLogSheet({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
       <div
         className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
-        style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #2dd1c0", borderRadius: "22px" }}
+        style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid #2dd1c0", borderRadius: "22px" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 p-4 pb-2">
           <Zap size={17} style={{ color: "#2dd1c0" }} />
           <div className="flex-1 text-[16px] font-bold text-bone">{t("Quick log")}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}>
+          <button onClick={onClose} style={{ color: "var(--color-faint)" }}>
             <X size={20} />
           </button>
         </div>
 
         {!picked ? (
           <div className="flex-1 overflow-y-auto px-4 pb-3">
-            <p className="mb-2 text-[11px]" style={{ color: "#97a3b2" }}>{t("Common")}</p>
+            <p className="mb-2 text-[11px]" style={{ color: "var(--color-taupe)" }}>{t("Common")}</p>
             <div className="mb-3 flex flex-wrap gap-1.5">
               {QUICK_PICKS.map((p) => (
                 <button
@@ -987,13 +986,13 @@ function QuickLogSheet({
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 rounded-xl px-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
-              <Search size={16} style={{ color: "#6b7686" }} />
+            <div className="flex items-center gap-2 rounded-xl px-3" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
+              <Search size={16} style={{ color: "var(--color-faint)" }} />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder={t("or search an exercise…")}
-                className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[#5f6a78]"
+                className="w-full bg-transparent py-2.5 text-[14px] text-bone outline-none placeholder:text-[var(--color-faint)]"
               />
             </div>
             <div className="mt-1.5">
@@ -1001,7 +1000,7 @@ function QuickLogSheet({
                 <button
                   key={e.id}
                   onClick={() => pick({ name: e.name, muscle: e.muscle, exerciseId: e.id })}
-                  className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition active:bg-[#141a24]"
+                  className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition active:bg-[var(--color-tile)]"
                 >
                   <span className="h-6 w-1.5 shrink-0 rounded-full" style={{ background: muscleColor(e.muscle) }} />
                   <span className="flex-1 truncate text-[13.5px] text-bone">{e.name}</span>
@@ -1014,16 +1013,16 @@ function QuickLogSheet({
           <div className="flex flex-1 flex-col overflow-y-auto px-4 pb-2">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-[15.5px] font-bold text-bone">{picked.name}</span>
-              <button onClick={() => setPicked(null)} className="text-[12px]" style={{ color: "#34c5e8" }}>{t("change")}</button>
+              <button onClick={() => setPicked(null)} className="text-[12px]" style={{ color: "var(--color-accent)" }}>{t("change")}</button>
             </div>
 
-            <div className="mb-3 flex rounded-full p-1 text-[12.5px]" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+            <div className="mb-3 flex rounded-full p-1 text-[12.5px]" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
               {(["time", "sets"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}
                   className="flex-1 rounded-full py-1.5 font-semibold transition"
-                  style={mode === m ? { background: "#34c5e8", color: "#06303a" } : { color: "#8b97a6" }}
+                  style={mode === m ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}
                 >
                   {m === "time" ? t("Duration") : t("Sets & reps")}
                 </button>
@@ -1035,7 +1034,7 @@ function QuickLogSheet({
                 <NumIn value={mins} onChange={setMins} max={600} suffix="min" />
                 <div className="mt-2 flex gap-2">
                   {[15, 30, 45, 60].map((m) => (
-                    <button key={m} onClick={() => setMins(m)} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}>
+                    <button key={m} onClick={() => setMins(m)} className="flex-1 rounded-lg py-1.5 text-[12px] font-semibold" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}>
                       {m}
                     </button>
                   ))}
@@ -1044,15 +1043,15 @@ function QuickLogSheet({
             ) : (
               <div className="flex items-end gap-2">
                 <label className="flex-1">
-                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "#7c8696" }}>{t("Sets")}</span>
+                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Sets")}</span>
                   <NumIn value={sets} onChange={setSets} max={20} />
                 </label>
                 <label className="flex-1">
-                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "#7c8696" }}>{t("Reps")}</span>
+                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Reps")}</span>
                   <NumIn value={reps} onChange={setReps} max={100} />
                 </label>
                 <label className="flex-1">
-                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "#7c8696" }}>{t("Weight")}</span>
+                  <span className="mb-1 block text-center text-[10px] uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>{t("Weight")}</span>
                   <NumIn value={weight} onChange={setWeight} max={2000} suffix="lb" />
                 </label>
               </div>
@@ -1061,7 +1060,7 @@ function QuickLogSheet({
             <button
               onClick={log}
               className="mt-4 flex items-center justify-center gap-2 rounded-[14px] py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-              style={{ background: HEALTH_GRADIENT }}
+              style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
             >
               <Check size={16} /> {t("Log it")}
             </button>

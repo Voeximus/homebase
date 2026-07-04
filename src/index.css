@@ -149,6 +149,81 @@ input[type="number"] {
   letter-spacing: -0.011em;
 }
 
+/* ── Health mode themes ──────────────────────────────────────────────────────
+   The Settings → Appearance chooser puts one of these classes on the health
+   root; each overrides the semantic --color-* tokens (so every surface using the
+   bg-tile / text-bone / text-accent … classes reskins at once) plus a few
+   health-only --h-* tokens for the hero + macro counter. The macro colors
+   (protein rose / carb sky / fat gold) are deliberately NOT themed — they're a
+   fixed data legend. Per-device preference (localStorage), so Gino and Xinyan
+   can each pick their own look. */
+.htheme {
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+/* numerals follow the theme: sans for Original/Bold, mono for Instrument */
+.htheme .num {
+  font-family: var(--h-num-font);
+}
+
+.htheme-original {
+  --color-bg: #0b0f17;
+  --color-tile: #141a24;
+  --color-raised: #0f141c;
+  --color-hero: #141a24;
+  --color-edge: #232d3a;
+  --color-edgehero: #232d3a;
+  --color-bone: #e7edf3;
+  --color-taupe: #97a3b2;
+  --color-faint: #6b7686;
+  --color-accent: #fb7185;
+  --h-on-accent: #ffffff;
+  --h-hero: linear-gradient(150deg, #fb7185 0%, #fb6f92 52%, #f43f5e 100%);
+  --h-on-hero: #ffffff;
+  --h-counter: #0c1017;
+  --h-counter-track: rgba(255, 255, 255, 0.14);
+  --h-num-font: var(--font-sans);
+  --h-radius: 18px;
+}
+.htheme-instrument {
+  --color-bg: #080b0e;
+  --color-tile: #0e1419;
+  --color-raised: #0b1116;
+  --color-hero: #0d1318;
+  --color-edge: #1c2731;
+  --color-edgehero: #20333b;
+  --color-bone: #dbe6ea;
+  --color-taupe: #8ba0aa;
+  --color-faint: #4f5e67;
+  --color-accent: #2dd4bf;
+  --h-on-accent: #04211e;
+  --h-hero: #0d1318;
+  --h-on-hero: #dbe6ea;
+  --h-counter: #0a1014;
+  --h-counter-track: #1a2733;
+  --h-num-font: var(--font-mono);
+  --h-radius: 14px;
+}
+.htheme-bold {
+  --color-bg: #0a0b10;
+  --color-tile: #181c24;
+  --color-raised: #12151c;
+  --color-hero: #181c24;
+  --color-edge: #2b3340;
+  --color-edgehero: #2b3340;
+  --color-bone: #f2f5f8;
+  --color-taupe: #a4afbb;
+  --color-faint: #6b7686;
+  --color-accent: #fb923c;
+  --h-on-accent: #2a1406;
+  --h-hero: linear-gradient(150deg, #fbbf24, #fb7185);
+  --h-on-hero: #2a1406;
+  --h-counter: #130f0a;
+  --h-counter-track: rgba(255, 255, 255, 0.12);
+  --h-num-font: var(--font-sans);
+  --h-radius: 20px;
+}
+
 /* ── Motion — all CSS, all gated behind reduced-motion ─────────────────────── */
 @media (prefers-reduced-motion: no-preference) {
   /* "Mark sent" confirmation pop */

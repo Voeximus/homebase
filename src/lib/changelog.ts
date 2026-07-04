@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.04b",
+    date: "July 4, 2026",
+    notes: [
+      "Health has a fresh look — a cleaner layout led by a calories-left hero with a colored protein / carbs / fat counter, and consistent styling on every screen (meals, workouts, and all the pop-ups).",
+      "Choose your Health style — tap the palette icon up top to pick Original, Instrument, or Bold. It's saved per device, so you and Xinyan can each pick your own.",
+      "Fixed weekly adherence — a week with only a day or two logged no longer reads as nearly 100%; days you didn't log now count against that week.",
+    ],
+  },
+  {
     version: "2026.07.04a",
     date: "July 4, 2026",
     notes: [

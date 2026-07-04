@@ -92,32 +92,32 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
   };
 
   return (
-    <section className="rounded-[18px] border p-4" style={{ background: "#0f141c", borderColor: "#232d3a" }}>
+    <section className="rounded-[18px] border p-4" style={{ background: "var(--color-raised)", borderColor: "var(--color-edge)" }}>
       <p className="stat-key" style={{ color: acc }}>{t("Weight & trend")}</p>
       <p className="mt-1 h-title text-[15px] text-bone">
         {person === "gino" ? t("Are you gaining at the right rate?") : t("Are you losing at the right rate?")}
       </p>
-      <p className="mb-3.5 mt-0.5 text-[11.5px]" style={{ color: "#97a3b2" }}>
+      <p className="mb-3.5 mt-0.5 text-[11.5px]" style={{ color: "var(--color-taupe)" }}>
         {t("Log your weight daily — the rest is automatic.")}
       </p>
 
       {/* daily weigh-in */}
       <div className="flex items-center gap-2">
-        <div className="flex flex-1 items-center gap-1 rounded-lg px-3 py-2.5" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
+        <div className="flex flex-1 items-center gap-1 rounded-lg px-3 py-2.5" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value.replace(/[^0-9.]/g, ""))}
             onKeyDown={(e) => e.key === "Enter" && save()}
             inputMode="decimal"
             placeholder={todayEntry ? String(todayEntry.weight) : t("today's weight")}
-            className="num w-full bg-transparent text-[16px] font-semibold text-bone outline-none placeholder:text-[#5f6a78] placeholder:font-normal"
+            className="num w-full bg-transparent text-[16px] font-semibold text-bone outline-none placeholder:text-[var(--color-faint)] placeholder:font-normal"
           />
-          <span className="text-[11px]" style={{ color: "#5f6a78" }}>{t("lb")}</span>
+          <span className="text-[11px]" style={{ color: "var(--color-faint)" }}>{t("lb")}</span>
         </div>
         <button
           onClick={save}
           className="rounded-lg px-4 py-2.5 text-[13px] font-semibold"
-          style={{ background: acc, color: "#0a0d12" }}
+          style={{ background: acc, color: "var(--color-bg)" }}
         >
           {todayEntry ? t("Update") : t("Log")}
         </button>
@@ -131,20 +131,20 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
       {/* weekly average + trend */}
       <div className="mt-4 flex items-end gap-5">
         <div>
-          <div className="stat-key" style={{ color: "#97a3b2" }}>{t("This week's avg")}</div>
+          <div className="stat-key" style={{ color: "var(--color-taupe)" }}>{t("This week's avg")}</div>
           <div className="mt-1 flex items-baseline gap-1">
             <span className="stat text-[26px] text-bone">{cur != null ? cur.toFixed(1) : "—"}</span>
-            <span className="text-[12px] font-semibold" style={{ color: "#7c8696" }}>{t("lb")}</span>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--color-taupe)" }}>{t("lb")}</span>
           </div>
           {weekInfo && (
-            <div className="text-[10.5px]" style={{ color: "#7c8696" }}>{t("{n}-day average", { n: weekInfo.count })}</div>
+            <div className="text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{t("{n}-day average", { n: weekInfo.count })}</div>
           )}
         </div>
         <div className="flex-1">
-          <div className="stat-key" style={{ color: "#97a3b2" }}>{t("Trend")}</div>
+          <div className="stat-key" style={{ color: "var(--color-taupe)" }}>{t("Trend")}</div>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="stat text-[26px]" style={{ color: verdictOn ? "#46d18a" : valid ? acc : "#7c8696" }}>{shown}</span>
-            <span className="text-[11px]" style={{ color: "#7c8696" }}>{t(cfg.unit)}</span>
+            <span className="stat text-[26px]" style={{ color: verdictOn ? "#46d18a" : valid ? acc : "var(--color-taupe)" }}>{shown}</span>
+            <span className="text-[11px]" style={{ color: "var(--color-taupe)" }}>{t(cfg.unit)}</span>
           </div>
         </div>
       </div>
@@ -162,18 +162,18 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
           />
         )}
       </div>
-      <div className="flex justify-between text-[10px]" style={{ color: "#7c8696" }}>
+      <div className="flex justify-between text-[10px]" style={{ color: "var(--color-taupe)" }}>
         <span>{t("too slow")}</span>
         <span style={{ color: acc }}>{t("target band")}</span>
         <span>{t("too fast")}</span>
       </div>
 
-      <p className="mt-3 text-[13.5px] leading-snug" style={{ color: verdictOn ? "#fff" : "#97a3b2" }}>
+      <p className="mt-3 text-[13.5px] leading-snug" style={{ color: verdictOn ? "#fff" : "var(--color-taupe)" }}>
         {verdictText}
       </p>
 
       {cfg.goal != null && last != null && (
-        <div className="mt-3.5 border-t pt-3 text-[11.5px]" style={{ borderColor: "#1b232e", color: "#97a3b2" }}>
+        <div className="mt-3.5 border-t pt-3 text-[11.5px]" style={{ borderColor: "var(--color-edge)", color: "var(--color-taupe)" }}>
           <span>
             {t("Progress to {goal}:", { goal: cfg.goal })}{" "}
             <b className="text-bone">
@@ -190,16 +190,16 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
 
       {/* weigh-in history — delete one, or reset the lot */}
       {mine.length > 0 && (
-        <div className="mt-3.5 border-t pt-3" style={{ borderColor: "#1b232e" }}>
+        <div className="mt-3.5 border-t pt-3" style={{ borderColor: "var(--color-edge)" }}>
           <button onClick={() => setShowHist((s) => !s)} className="flex w-full items-center justify-between">
-            <span className="stat-key" style={{ color: "#97a3b2" }}>{t("History · {n}", { n: mine.length })}</span>
-            <ChevronDown size={15} style={{ color: "#6b7686", transform: showHist ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+            <span className="stat-key" style={{ color: "var(--color-taupe)" }}>{t("History · {n}", { n: mine.length })}</span>
+            <ChevronDown size={15} style={{ color: "var(--color-faint)", transform: showHist ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
           </button>
           {showHist && (
             <div className="mt-2 flex flex-col">
               {history.map((w) => (
-                <div key={w.date} className="flex items-center gap-2 border-b py-1.5 last:border-0" style={{ borderColor: "#161d27" }}>
-                  <span className="flex-1 text-[12px]" style={{ color: "#9aa6b2" }}>
+                <div key={w.date} className="flex items-center gap-2 border-b py-1.5 last:border-0" style={{ borderColor: "var(--color-raised)" }}>
+                  <span className="flex-1 text-[12px]" style={{ color: "var(--color-taupe)" }}>
                     {fmtHist(w.date)}
                     {w.date === today && <span style={{ color: acc }}> · {t("today")}</span>}
                   </span>
@@ -216,12 +216,12 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
                       >
                         {t("Delete")}
                       </button>
-                      <button onClick={() => setConfirmDel(null)} className="px-1 text-[11px]" style={{ color: "#7c8696" }}>
+                      <button onClick={() => setConfirmDel(null)} className="px-1 text-[11px]" style={{ color: "var(--color-taupe)" }}>
                         {t("Cancel")}
                       </button>
                     </span>
                   ) : (
-                    <button onClick={() => setConfirmDel(w.date)} style={{ color: "#5f6a78" }} aria-label="Delete weigh-in">
+                    <button onClick={() => setConfirmDel(w.date)} style={{ color: "var(--color-faint)" }} aria-label="Delete weigh-in">
                       <Trash2 size={14} />
                     </button>
                   )}
@@ -230,7 +230,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
               <button
                 onClick={() => setConfirmReset(true)}
                 className="mt-2.5 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-medium"
-                style={{ background: "#161c26", color: "#8b97a6" }}
+                style={{ background: "var(--color-raised)", color: "var(--color-taupe)" }}
               >
                 <Trash2 size={13} /> {t("Reset weight history")}
               </button>
@@ -248,7 +248,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
         >
           <div
             className="w-full max-w-[340px] rounded-[20px] p-5"
-            style={{ background: "#0f141c", border: "1px solid #232d3a" }}
+            style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-2.5">
@@ -257,11 +257,11 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-[14.5px] font-bold text-bone">{t("Reset weight history?")}</p>
-                <p className="mt-1 text-[12px]" style={{ color: "#97a3b2" }}>
+                <p className="mt-1 text-[12px]" style={{ color: "var(--color-taupe)" }}>
                   {t("Deletes all {n} weigh-ins. Your trend and averages reset. This can't be undone.", { n: mine.length })}
                 </p>
               </div>
-              <button onClick={() => setConfirmReset(false)} style={{ color: "#6b7686" }}>
+              <button onClick={() => setConfirmReset(false)} style={{ color: "var(--color-faint)" }}>
                 <X size={18} />
               </button>
             </div>
@@ -269,7 +269,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
               <button
                 onClick={() => setConfirmReset(false)}
                 className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
-                style={{ background: "#161c26", color: "#b7c0cc" }}
+                style={{ background: "var(--color-raised)", color: "var(--color-bone)" }}
               >
                 {t("Cancel")}
               </button>
@@ -280,7 +280,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
                   setShowHist(false);
                 }}
                 className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
-                style={{ background: "#f0556e", color: "#0a0d12" }}
+                style={{ background: "#f0556e", color: "var(--color-bg)" }}
               >
                 {t("Delete all")}
               </button>
