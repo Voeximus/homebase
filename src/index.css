@@ -184,6 +184,9 @@ input[type="number"] {
   --h-counter-track: rgba(255, 255, 255, 0.14);
   --h-num-font: var(--font-sans);
   --h-radius: 18px;
+  /* mock sizing tokens (ported from the agreed design) */
+  --hb-hero-size: 46px; --hb-disp-w: 800; --hb-disp-ls: -1.5px; --hb-stat-size: 24px;
+  --hb-rad: 18px; --hb-lbl-ls: .3px; --hb-lbl-tr: none; --hb-hl: #2c3a4a;
 }
 .htheme-instrument {
   --color-bg: #080b0e;
@@ -203,6 +206,8 @@ input[type="number"] {
   --h-counter-track: #1a2733;
   --h-num-font: var(--font-mono);
   --h-radius: 14px;
+  --hb-hero-size: 36px; --hb-disp-w: 600; --hb-disp-ls: -1px; --hb-stat-size: 21px;
+  --hb-rad: 14px; --hb-lbl-ls: .6px; --hb-lbl-tr: uppercase; --hb-hl: #2b3a45;
 }
 .htheme-bold {
   --color-bg: #0a0b10;
@@ -222,6 +227,87 @@ input[type="number"] {
   --h-counter-track: rgba(255, 255, 255, 0.12);
   --h-num-font: var(--font-sans);
   --h-radius: 20px;
+  --hb-hero-size: 58px; --hb-disp-w: 800; --hb-disp-ls: -2px; --hb-stat-size: 28px;
+  --hb-rad: 20px; --hb-lbl-ls: .4px; --hb-lbl-tr: uppercase; --hb-hl: #3a4350;
+}
+
+/* ── Health "bento" design system — ported verbatim from the agreed mock so the
+   app renders identically. hb-* names avoid colliding with global .stat/.num.
+   Numeric readouts get tabular figures; the theme sets the fonts + sizing. */
+.hb-num { font-variant-numeric: tabular-nums; font-family: var(--h-num-font); }
+
+.hb-ctl { display: flex; align-items: center; gap: 8px; }
+.hb-targets { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-taupe); background: transparent; border: 0; padding: 4px 2px; cursor: pointer; }
+.hb-daynav { display: flex; align-items: center; gap: 2px; }
+.hb-daynav button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--color-faint); background: transparent; border: 0; font-size: 15px; cursor: pointer; }
+.hb-daynav button:disabled { opacity: .35; }
+.hb-daynav .td { width: auto; padding: 0 9px; font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--color-taupe); }
+
+.hb-hero { background: var(--h-hero); color: var(--h-on-hero); border-radius: 24px; padding: 16px 18px 17px; position: relative; overflow: hidden; box-shadow: 0 12px 32px -14px rgba(2,12,24,.5); }
+.hb-glow { position: absolute; right: -40px; top: -50px; width: 150px; height: 150px; background: radial-gradient(circle, rgba(255,255,255,.16), transparent 70%); }
+.hb-hrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: relative; }
+.hb-lbl { font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; opacity: .94; font-family: var(--h-num-font); }
+.hb-big { font-family: var(--h-num-font); font-size: var(--hb-hero-size); font-weight: var(--hb-disp-w); line-height: .95; letter-spacing: var(--hb-disp-ls); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.hb-sub { font-size: 11.5px; opacity: .9; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.hb-ring { width: 68px; height: 68px; flex: none; }
+
+.hb-counter { display: flex; gap: 12px; margin-top: 14px; position: relative; background: var(--h-counter); border: 1px solid rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 4px 14px -8px rgba(0,0,0,.6); border-radius: 14px; padding: 11px 13px; }
+.hb-mc { flex: 1; }
+.hb-mch { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.hb-mcl { font-size: 10.5px; font-weight: 700; letter-spacing: .2px; text-transform: uppercase; font-family: var(--h-num-font); }
+.hb-mcv { font-size: 12.5px; font-weight: 700; color: #eef3f7; font-variant-numeric: tabular-nums; }
+.hb-mcv i { font-style: normal; font-size: 9.5px; opacity: .6; font-weight: 600; }
+.hb-bar { height: 5px; border-radius: 99px; background: var(--h-counter-track); overflow: hidden; }
+.hb-bar > i { display: block; height: 100%; border-radius: 99px; background: var(--mc); transition: width 1s cubic-bezier(.3,.9,.3,1); }
+
+.hb-bento { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.hb-tile { background: var(--color-tile); border: 1px solid var(--color-edge); border-radius: var(--hb-rad); padding: 13px; text-align: left; transition: transform .12s, box-shadow .2s, border-color .2s; color: var(--color-bone); cursor: pointer; width: 100%; display: block; }
+.hb-tile:hover { box-shadow: 0 8px 22px -14px rgba(0,0,0,.7); border-color: var(--hb-hl); }
+.hb-tile:active { transform: scale(.98); }
+.hb-tile.full { grid-column: 1 / -1; }
+/* non-interactive container with the same tile surface (meals / saved) */
+.hb-panel { background: var(--color-tile); border: 1px solid var(--color-edge); border-radius: var(--hb-rad); padding: 13px; color: var(--color-bone); }
+.hb-panel.full { grid-column: 1 / -1; }
+.hb-eye { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: var(--hb-lbl-ls); text-transform: var(--hb-lbl-tr); font-family: var(--h-num-font); color: var(--color-accent); }
+.hb-eye svg { width: 14px; height: 14px; }
+.hb-stat { font-size: var(--hb-stat-size); font-weight: var(--hb-disp-w); letter-spacing: -.4px; margin-top: 6px; font-family: var(--h-num-font); font-variant-numeric: tabular-nums; color: var(--color-bone); }
+.hb-stat .un { font-size: 11.5px; font-weight: 600; color: var(--color-taupe); letter-spacing: 0; font-family: var(--font-sans); }
+.hb-tiny { font-size: 10.5px; color: var(--color-taupe); font-variant-numeric: tabular-nums; }
+.hb-letrow { display: flex; gap: 5px; margin-top: 5px; }
+.hb-letrow.dots { margin-top: 11px; }
+.hb-letrow > span { flex: 1; height: 19px; border-radius: 5px; }
+.hb-letrow.labels > span { height: auto; text-align: center; font-size: 8.5px; color: var(--color-faint); }
+
+.hb-mealhead { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.hb-mealhead .ic { width: 25px; height: 25px; border-radius: 8px; background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); display: grid; place-items: center; flex: none; }
+.hb-mealhead .t { font-size: 13px; font-weight: 700; color: var(--color-bone); }
+.hb-mealhead .s { font-size: 11px; color: var(--color-taupe); font-variant-numeric: tabular-nums; }
+.hb-mrow { padding: 8px 0; border-top: 1px solid var(--color-edge); width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; cursor: pointer; }
+.hb-mname { font-size: 12.5px; font-weight: 600; color: var(--color-bone); }
+.hb-mmeta { display: flex; align-items: center; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+.hb-chip { font-size: 10.5px; font-weight: 600; border-radius: 6px; padding: 1px 6px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.hb-chip.kc { color: var(--color-bone); background: rgba(255,255,255,.06); font-weight: 800; }
+.hb-chip.it { color: #8b97a6; background: rgba(255,255,255,.05); border-radius: 99px; }
+.hb-addbtn { width: 100%; margin-top: 10px; border: 0; border-radius: 11px; padding: 9px; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); display: flex; gap: 6px; align-items: center; justify-content: center; cursor: pointer; }
+.hb-saved { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.hb-saved .t { font-size: 11px; font-weight: 600; color: var(--color-taupe); flex: 1; letter-spacing: var(--hb-lbl-ls); text-transform: var(--hb-lbl-tr); font-family: var(--h-num-font); }
+.hb-chipsrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.hb-sc { font-size: 11.5px; font-weight: 600; color: var(--color-bone); background: rgba(255,255,255,.02); border: 1px solid var(--color-edge); border-radius: 99px; padding: 5px 10px; cursor: pointer; }
+
+/* per-theme hero tweaks (from the mock) */
+.htheme-instrument .hb-hero { border: 1px solid var(--color-edge); border-radius: 18px; padding: 15px 16px; box-shadow: none; }
+.htheme-instrument .hb-glow { display: none; }
+.htheme-instrument .hb-lbl { color: var(--color-accent); }
+.htheme-instrument .hb-ring circle.p { stroke: var(--color-accent) !important; }
+.htheme-instrument .hb-ring text { fill: var(--color-bone) !important; }
+.htheme-bold .hb-eye, .htheme-bold .hb-saved .t { font-weight: 800; }
+.htheme-bold .hb-ring circle.p { stroke: #2a1406 !important; }
+.htheme-bold .hb-ring text { fill: #2a1406 !important; }
+.htheme-bold .hb-mcv { color: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hb-bar > i { transition: none !important; }
+  .hb-ring circle.p { transition: none !important; }
 }
 
 /* ── Motion — all CSS, all gated behind reduced-motion ─────────────────────── */

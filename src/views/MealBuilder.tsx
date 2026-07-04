@@ -4,12 +4,11 @@ import {
   Bookmark,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Flame,
   Minus,
   Pencil,
   Plus,
+  Scale,
   ScanLine,
   SlidersHorizontal,
   Search,
@@ -43,6 +42,7 @@ import {
 import { useStore } from "../store/FinanceStore";
 import { useHealth } from "../store/HealthStore";
 import { adherenceStats, weeklyAdherence, type DayStatus, type WeekBucket } from "../lib/adherence";
+import { latestWeight, ratePerWeek } from "../lib/weightLog";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
 
@@ -181,8 +181,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   // the meals collect into one collapsible "Today's Meals" container — its
   // open/closed state persists (localStorage) so switching modes and coming back
   // doesn't blow it open again.
-  const [mealsOpen, setMealsOpen] = useState(() => localStorage.getItem("hb-meals-open") !== "0");
-  useEffect(() => localStorage.setItem("hb-meals-open", mealsOpen ? "1" : "0"), [mealsOpen]);
+  const [detailOpen, setDetailOpen] = useState<null | "week" | "weight">(null); // 2-up tile → full card
 
   // adherence + the gentle 8 PM nudge (in-app)
   const snoozeKey = `hb-nudge-snooze-${person}-${today}`;
@@ -237,90 +236,79 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Daily Macro Summary — scrolls with the page (no longer pinned to top,
-          so it doesn't cover the screen while browsing meals) */}
-      <DaySummary
-        target={target}
-        eaten={eaten}
-        meals={log.meals.length}
-        dateLabel={dateLabel}
-        canNext={canNext}
-        onPrev={() => setViewDate((d) => shiftDate(d, -1))}
-        onNext={() => canNext && setViewDate((d) => shiftDate(d, 1))}
-        onToday={isToday ? undefined : () => setViewDate(today)}
-        onEditTargets={() => setEditTargets(true)}
-      />
+      {/* control row — Targets + day nav (mock .ctl; the Just me / Together
+          toggle is the parent's ModePill just above) */}
+      <div className="hb-ctl">
+        <button className="hb-targets" onClick={() => setEditTargets(true)}>
+          <SlidersHorizontal size={12} /> {t("Targets")}
+        </button>
+        <div className="flex-1" />
+        <div className="hb-daynav">
+          <button onClick={() => setViewDate((d) => shiftDate(d, -1))} aria-label="Previous day">‹</button>
+          <button className="td" onClick={isToday ? undefined : () => setViewDate(today)} disabled={isToday}>{dateLabel}</button>
+          <button onClick={() => canNext && setViewDate((d) => shiftDate(d, 1))} disabled={!canNext} aria-label="Next day">›</button>
+        </div>
+      </div>
+
+      {/* hero */}
+      <DaySummary target={target} eaten={eaten} meals={log.meals.length} />
 
       {/* the gentle 8 PM nudge */}
       {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
 
-      {/* saved / favorite meals — tap to preview (view/edit), then add */}
-      <SavedMealsBar meals={savedMeals} onPick={setPreview} onDelete={deleteSavedMeal} />
+      {/* bento — 2-up tiles + meals + saved (mock .bento) */}
+      <div className="hb-bento">
+        <WeekTile weeks={weeks} today={today} onOpen={() => setDetailOpen("week")} />
+        <WeightTile person={person} onOpen={() => setDetailOpen("weight")} />
 
-      {/* meals — collected into one labeled, collapsible container so the main
-          screen stays clean no matter how many get added */}
-      {log.meals.length === 0 ? (
-        <button
-          onClick={startNewMeal}
-          className="flex flex-col items-center gap-1.5 rounded-[18px] border border-dashed py-8 text-center transition active:scale-[0.99]"
-          style={{ borderColor: "var(--color-edge)", background: "var(--color-raised)" }}
-        >
-          <UtensilsCrossed size={22} style={{ color: "var(--color-accent)" }} />
-          <span className="text-[14px] font-semibold text-bone">{t("Add your first meal")}</span>
-          <span className="text-[12px] text-taupe">{t("Search a food or scan a barcode")}</span>
-        </button>
-      ) : (
-        <section className="overflow-hidden rounded-[16px] border" style={TILE}>
-          {/* slim bar — stays small when collapsed */}
-          <div className="flex items-center gap-2 px-3 py-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
-              <UtensilsCrossed size={13} />
-            </span>
-            <button onClick={() => setMealsOpen((o) => !o)} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
-              <span className="text-[13px] font-semibold text-bone">{isToday ? t("Today's Meals") : dateLabel}</span>
-              <span className="num text-[11px] text-taupe">
-                {t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", {
-                  n: log.meals.length,
-                  kcal: r0(eaten.kcal),
-                })}
-              </span>
-            </button>
-            <button
-              onClick={startNewMeal}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition active:scale-90"
-              style={{ background: "color-mix(in srgb, var(--color-accent) 16%, transparent)", color: "var(--color-accent)" }}
-              aria-label="Add a meal"
-            >
-              <Plus size={16} />
-            </button>
-            <button onClick={() => setMealsOpen((o) => !o)} className="shrink-0 p-1" aria-label="Toggle meals">
-              <ChevronDown size={17} style={{ color: "var(--color-faint)", transform: mealsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-            </button>
+        {log.meals.length === 0 ? (
+          <button onClick={startNewMeal} className="hb-tile full flex flex-col items-center gap-1.5 py-8 text-center" style={{ borderStyle: "dashed" }}>
+            <UtensilsCrossed size={22} style={{ color: "var(--color-accent)" }} />
+            <span className="text-[14px] font-semibold" style={{ color: "var(--color-bone)" }}>{t("Add your first meal")}</span>
+            <span className="text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("Search a food or scan a barcode")}</span>
+          </button>
+        ) : (
+          <div className="hb-panel full">
+            <div className="hb-mealhead">
+              <span className="ic"><UtensilsCrossed size={14} /></span>
+              <div style={{ flex: 1 }}>
+                <div className="t">{isToday ? t("Today's meals") : dateLabel}</div>
+                <div className="s">{t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", { n: log.meals.length, kcal: r0(eaten.kcal) })}</div>
+              </div>
+            </div>
+            {log.meals.map((meal, i) => (
+              <MealCard
+                key={meal.id}
+                index={i}
+                meal={meal}
+                onAddFood={() => setAddTo(meal.id)}
+                onEditItem={(item) => setEditing({ mealId: meal.id, item })}
+                onRemoveMeal={() => removeMeal(meal.id)}
+                onSave={() => setSavingMeal(meal)}
+              />
+            ))}
+            <button className="hb-addbtn" onClick={startNewMeal}><Plus size={14} /> {t("Add meal")}</button>
           </div>
+        )}
 
-          {mealsOpen && (
-            <div className="flex flex-col gap-2.5 px-3 pb-3">
-              {log.meals.map((meal, i) => (
-                <MealCard
-                  key={meal.id}
-                  index={i}
-                  meal={meal}
-                  onAddFood={() => setAddTo(meal.id)}
-                  onEditItem={(item) => setEditing({ mealId: meal.id, item })}
-                  onRemoveMeal={() => removeMeal(meal.id)}
-                  onSave={() => setSavingMeal(meal)}
-                />
+        {savedMeals.length > 0 && (
+          <div className="hb-panel full">
+            <div className="hb-saved">
+              <Bookmark size={13} style={{ color: "var(--color-accent)" }} />
+              <span className="t">{t("Saved meals")}</span>
+              <span className="hb-tiny">{savedMeals.length}</span>
+            </div>
+            <div className="hb-chipsrow">
+              {savedMeals.map((m) => (
+                <span key={m.id} className="hb-sc inline-flex items-center gap-1.5">
+                  <button onClick={() => setPreview(m)} className="min-w-0 truncate">{m.name}</button>
+                  <button onClick={() => deleteSavedMeal(m.id)} aria-label="Delete saved meal" style={{ color: "var(--color-faint)" }}><X size={12} /></button>
+                </span>
               ))}
             </div>
-          )}
-        </section>
-      )}
-
-      {/* adherence — this week resets Monday, past weeks show the trend */}
-      <AdherenceCard stats={stats} weeks={weeks} today={today} acc={PERSON_ACC[person]} activeDate={viewDate} />
-
-      {/* calibration — does the macro budget still fit the weekly scale? */}
-      <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
+          </div>
+        )}
+      </div>
 
       {/* add a food to a meal */}
       <FoodSearchSheet
@@ -395,6 +383,19 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         onClose={() => setEditTargets(false)}
         onSave={(tg) => { setMacroTarget(person, tg); setEditTargets(false); }}
       />
+
+      {/* a 2-up tile tapped → its full card (trend / weigh-in) */}
+      {detailOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style={{ background: "rgba(0,0,0,.55)" }} onClick={() => setDetailOpen(null)}>
+          <div className="max-h-[88vh] w-full max-w-[440px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {detailOpen === "week" ? (
+              <AdherenceCard stats={stats} weeks={weeks} today={today} acc={PERSON_ACC[person]} activeDate={viewDate} />
+            ) : (
+              <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -760,92 +761,61 @@ function Ring({
 // on the themed gradient (Appearance chooser). The big number and each macro pop
 // on change (delta feedback). The counter is a SOLID dark module so the macro
 // colors read on any theme's hero. Reads --h-* + --color-* tokens throughout.
-function DaySummary({
-  target,
-  eaten,
-  meals,
-  dateLabel,
-  canNext,
-  onPrev,
-  onNext,
-  onToday,
-  onEditTargets,
-}: {
-  target: Macros;
-  eaten: Macros;
-  meals: number;
-  dateLabel: string;
-  canNext: boolean;
-  onPrev: () => void;
-  onNext: () => void;
-  onToday?: () => void;
-  onEditTargets: () => void;
-}) {
+// The hero — ported from the agreed mock (hb-hero): CALORIES LEFT headline + a
+// consume ring + the solid-dark P/C/F counter. Day nav / Targets live in the
+// control row above it (SoloMode), keeping the hero clean like the mock.
+function DaySummary({ target, eaten, meals }: { target: Macros; eaten: Macros; meals: number }) {
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? Math.min(1, eaten.kcal / target.kcal) : 0;
   const remStr = r0(Math.abs(remK)).toLocaleString("en-US");
+  const C = 182.2; // ring circumference (r = 29)
   const macros = [
     { k: t("Protein"), e: eaten.p, tg: target.p, color: MACRO.p },
     { k: t("Carbs"), e: eaten.c, tg: target.c, color: MACRO.c },
     { k: t("Fat"), e: eaten.f, tg: target.f, color: MACRO.f },
   ];
-  const chip = { background: "rgba(255,255,255,0.14)", color: "var(--h-on-hero)" };
   return (
-    <div
-      className="overflow-hidden rounded-[24px] px-5 pb-4 pt-3.5"
-      style={{ background: "var(--h-hero)", color: "var(--h-on-hero)", boxShadow: "0 12px 32px -14px rgba(2,12,24,.55)" }}
-    >
-      {/* top: edit targets · day nav (◀ label ▶, capped at today) */}
-      <div className="flex items-center justify-between">
-        <button onClick={onEditTargets} className="flex items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-bold uppercase tracking-wide transition active:scale-95" style={chip}>
-          <SlidersHorizontal size={12} /> {t("Targets")}
-        </button>
-        <div className="flex items-center gap-0.5">
-          <button onClick={onPrev} className="rounded-full p-1 transition active:scale-90" style={chip} aria-label="Previous day">
-            <ChevronLeft size={15} />
-          </button>
-          <button onClick={onToday} disabled={!onToday} className="min-w-[62px] px-1 text-center text-[10.5px] font-bold uppercase tracking-wide" style={{ opacity: 0.92, color: "var(--h-on-hero)" }}>
-            {dateLabel}
-          </button>
-          <button onClick={onNext} disabled={!canNext} className="rounded-full p-1 transition active:scale-90" style={{ ...chip, opacity: canNext ? 1 : 0.3 }} aria-label="Next day">
-            <ChevronRight size={15} />
-          </button>
-        </div>
-      </div>
-
-      {/* body: the calories-left headline + a small consume ring */}
-      <div className="mt-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="stat-key" style={{ opacity: 0.9 }}>{over ? t("Calories over") : t("Calories left")}</div>
-          <div key={remStr} className="bump stat mt-0.5 text-[46px] leading-[0.95]">{remStr}</div>
-          <div className="num mt-1 text-[12px]" style={{ opacity: 0.9 }}>
+    <div className="hb-hero">
+      <div className="hb-glow" />
+      <div className="hb-hrow">
+        <div>
+          <div className="hb-lbl">{over ? t("Calories over") : t("Calories left")}</div>
+          <div key={remStr} className="hb-big bump">{remStr}</div>
+          <div className="hb-sub">
             {t("{eaten} of {target} eaten", { eaten: r0(eaten.kcal).toLocaleString("en-US"), target: r0(target.kcal).toLocaleString("en-US") })}
             {meals > 0 ? ` · ${t(meals === 1 ? "{n} meal" : "{n} meals", { n: meals })}` : ""}
           </div>
         </div>
-        <Ring pct={pct} over={over} size={68} stroke={7} color="var(--h-on-hero)" track="rgba(255,255,255,0.22)" overColor="var(--h-on-hero)">
-          <span className="stat text-[15px]">{r0(pct * 100)}%</span>
-        </Ring>
+        <svg className="hb-ring" viewBox="0 0 68 68" aria-hidden="true">
+          <circle cx="34" cy="34" r="29" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="7" />
+          <circle
+            className="p"
+            cx="34"
+            cy="34"
+            r="29"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="7"
+            strokeLinecap="round"
+            transform="rotate(-90 34 34)"
+            strokeDasharray={C}
+            strokeDashoffset={(C * (1 - pct)).toFixed(1)}
+            style={{ transition: "stroke-dashoffset .6s cubic-bezier(.3,.9,.3,1)" }}
+          />
+          <text x="34" y="38" textAnchor="middle" fontSize="14" fontWeight="800" fill="currentColor">{r0(pct * 100)}%</text>
+        </svg>
       </div>
-
-      {/* counter: solid dark module so the P/C/F colors always read */}
-      <div
-        className="mt-3.5 grid grid-cols-3 gap-3 rounded-[16px] p-3"
-        style={{ background: "var(--h-counter)", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)" }}
-      >
+      <div className="hb-counter">
         {macros.map((m) => {
           const mp = m.tg > 0 ? Math.min(100, (m.e / m.tg) * 100) : 0;
           return (
-            <div key={m.k}>
-              <span className="stat-key" style={{ color: m.color }}>{m.k}</span>
-              <div key={r0(m.e)} className="bump mt-1 flex items-baseline gap-[2px]">
-                <span className="num text-[15px] font-bold" style={{ color: "#eef3f7" }}>{r0(m.e)}</span>
-                <span className="num text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.45)" }}>/{r0(m.tg)}</span>
+            <div key={m.k} className="hb-mc">
+              <div className="hb-mch">
+                <span className="hb-mcl" style={{ color: m.color }}>{m.k}</span>
+                <span key={r0(m.e)} className="hb-mcv bump">{r0(m.e)}<i> /{r0(m.tg)}</i></span>
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--h-counter-track)" }}>
-                <div className="h-full rounded-full" style={{ width: `${mp}%`, background: m.color, transition: "width .5s cubic-bezier(.3,.85,.3,1)" }} />
-              </div>
+              <div className="hb-bar"><i style={{ width: `${mp}%`, "--mc": m.color } as CSSProperties} /></div>
             </div>
           );
         })}
@@ -1054,6 +1024,68 @@ const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const weekPctColor = (pct: number | null): string =>
   pct == null ? "#39424f" : pct >= 80 ? "#46d18a" : pct >= 50 ? "#e3b341" : "#f0556e";
 const BAR_H = 32; // px — the recent-weeks trend bar height
+
+// ── the home 2-up: mock hb-tiles; tap opens the full card ─────────────────────
+function WeekTile({ weeks, today, onOpen }: { weeks: WeekBucket[]; today: string; onOpen: () => void }) {
+  const cur = weeks[weeks.length - 1];
+  return (
+    <button onClick={onOpen} className="hb-tile">
+      <div className="hb-eye"><Flame size={13} /> {t("This week")}</div>
+      <div className="hb-stat">{cur.followed}<span className="un"> / {t("{n} on plan", { n: cur.elapsed })}</span></div>
+      <div className="hb-letrow dots">
+        {cur.days.map((d) => (
+          <span
+            key={d.date}
+            style={{
+              background: d.future ? "var(--color-raised)" : STATUS_COLOR[d.status],
+              border: d.future ? "1px dashed var(--color-edge)" : "none",
+              boxShadow: d.date === today && !d.future ? "0 0 0 1.5px var(--color-accent)" : "none",
+            }}
+          />
+        ))}
+      </div>
+      <div className="hb-letrow labels">{WEEKDAY_LETTERS.map((l, i) => <span key={i}>{l}</span>)}</div>
+    </button>
+  );
+}
+
+function WeightTile({ person, onOpen }: { person: Person; onOpen: () => void }) {
+  const { weights } = useHealth();
+  const mine = useMemo(
+    () => weights.filter((w) => w.person === person).sort((a, b) => a.date.localeCompare(b.date)),
+    [weights, person],
+  );
+  const cur = latestWeight(mine);
+  const rate = ratePerWeek(mine);
+  const valid = rate != null && mine.length >= 2;
+  const rStr = valid ? (person === "gino" && rate >= 0 ? "+" : "") + rate.toFixed(1) : "";
+  const pts = mine.slice(-14).map((w) => w.weight);
+  const geo =
+    pts.length >= 2
+      ? (() => {
+          const min = Math.min(...pts), max = Math.max(...pts), rng = max - min || 1, W = 130, H = 28, step = W / (pts.length - 1);
+          const xy = pts.map((v, i) => [i * step, H - ((v - min) / rng) * H] as const);
+          return { points: xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "), last: xy[xy.length - 1] };
+        })()
+      : null;
+  return (
+    <button onClick={onOpen} className="hb-tile">
+      <div className="hb-eye"><Scale size={13} /> {t("Weight")}</div>
+      <div className="hb-stat">{cur != null ? cur.toFixed(1) : "—"}<span className="un"> {t("lb")}</span></div>
+      {geo ? (
+        <svg width="100%" height="28" viewBox="0 0 130 28" preserveAspectRatio="none" style={{ marginTop: 8 }} aria-hidden="true">
+          <polyline fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={geo.points} />
+          <circle cx={geo.last[0].toFixed(1)} cy={geo.last[1].toFixed(1)} r="2.6" fill="var(--color-accent)" />
+        </svg>
+      ) : (
+        <div style={{ height: 28, marginTop: 8 }} />
+      )}
+      <div className="hb-tiny" style={{ color: valid ? "#46d18a" : "var(--color-faint)" }}>
+        {valid ? `${rStr} ${t("lb / wk")}` : t("Log to see trend")}
+      </div>
+    </button>
+  );
+}
 
 function AdherenceCard({
   stats,
@@ -1450,88 +1482,54 @@ function MacroChip({ label, value, color }: { label: string; value: number; colo
 
 function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void; onSave?: () => void }) {
   const tot = mealTotals(meal);
-  // Ingredients collapse behind the meal header (which still shows the macro
-  // summary) so a multi-ingredient meal doesn't flood the day. Add-food stays
-  // reachable whether open or closed.
-  const [itemsOpen, setItemsOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const hasItems = meal.items.length > 0;
   return (
-    <section className="rounded-[14px] border p-3.5" style={{ background: "var(--color-raised)", borderColor: "var(--color-edge)" }}>
-      <div className="mb-2 flex items-center justify-between">
-        <button
-          onClick={() => hasItems && setItemsOpen((o) => !o)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        >
-          {hasItems && (
-            <ChevronDown
-              size={15}
-              style={{ color: "var(--color-faint)", transform: itemsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
-            />
-          )}
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-[14px] font-semibold text-bone">{meal.name || t("Meal {n}", { n: index + 1 })}</span>
-              {hasItems && (
-                <span className="num shrink-0 rounded-full px-1.5 py-[1px] text-[10px]" style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-taupe)" }}>
-                  {t(meal.items.length === 1 ? "{n} item" : "{n} items", { n: meal.items.length })}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="num text-[13.5px] font-bold text-bone">
-                {r0(tot.kcal)}
-                <span className="ml-0.5 text-[10px] font-medium" style={{ color: "var(--color-taupe)" }}> {t("kcal")}</span>
-              </span>
-              <MacroChip label="P" value={r0(tot.p)} color="#fb7185" />
-              <MacroChip label="C" value={r0(tot.c)} color="#38bdf8" />
-              <MacroChip label="F" value={r0(tot.f)} color="#f6c453" />
-            </div>
-          </div>
-        </button>
+    <div className="hb-mrow">
+      <button onClick={() => setOpen((o) => !o)} className="w-full text-left">
         <div className="flex items-center gap-1.5">
-          {onSave && meal.items.length > 0 && (
-            <button onClick={onSave} className="p-1" style={{ color: "var(--color-faint)" }} aria-label="Save meal">
-              <Bookmark size={15} />
-            </button>
-          )}
-          <button onClick={onRemoveMeal} className="p-1" style={{ color: "var(--color-faint)" }} aria-label="Remove meal">
-            <Trash2 size={15} />
-          </button>
+          <span className="hb-mname flex-1 truncate">{meal.name || t("Meal {n}", { n: index + 1 })}</span>
+          <ChevronDown size={14} style={{ color: "var(--color-faint)", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
         </div>
-      </div>
-
-      {itemsOpen &&
-        meal.items.length > 0 &&
-        meal.items.map((it) => {
-          const c = contribution(it);
-          return (
-            <button
-              key={it.id}
-              onClick={() => onEditItem(it)}
-              className="flex w-full items-center gap-2 border-b py-2 text-left last:border-0"
-              style={{ borderColor: "var(--color-edge)" }}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] text-bone">{it.name}</div>
-                <div className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
-                  {amountLabel(it)} · {r0(c.kcal)} {t("kcal")}
-                </div>
-              </div>
-              <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>
-                {r0(c.p)}P {r0(c.c)}C {r0(c.f)}F
-              </span>
-            </button>
-          );
-        })}
-
-      <button
-        onClick={onAddFood}
-        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
-        style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
-      >
-        <Plus size={14} /> {t("Add food")}
+        <div className="hb-mmeta">
+          {hasItems && <span className="hb-chip it">{t(meal.items.length === 1 ? "{n} item" : "{n} items", { n: meal.items.length })}</span>}
+          <span className="hb-chip kc">{r0(tot.kcal)} {t("kcal")}</span>
+          <span className="hb-chip" style={{ color: MACRO.p, background: "rgba(251,113,133,.14)" }}>{r0(tot.p)}P</span>
+          <span className="hb-chip" style={{ color: MACRO.c, background: "rgba(56,189,248,.14)" }}>{r0(tot.c)}C</span>
+          <span className="hb-chip" style={{ color: MACRO.f, background: "rgba(246,196,83,.14)" }}>{r0(tot.f)}F</span>
+        </div>
       </button>
-    </section>
+      {open && (
+        <div className="mt-1.5">
+          {meal.items.map((it) => {
+            const c = contribution(it);
+            return (
+              <button
+                key={it.id}
+                onClick={() => onEditItem(it)}
+                className="flex w-full items-center gap-2 border-t py-2 text-left"
+                style={{ borderColor: "var(--color-edge)" }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12.5px]" style={{ color: "var(--color-bone)" }}>{it.name}</div>
+                  <div className="hb-num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
+                </div>
+                <span className="hb-num text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+              </button>
+            );
+          })}
+          <button onClick={onAddFood} className="hb-addbtn" style={{ marginTop: 8 }}>
+            <Plus size={14} /> {t("Add food")}
+          </button>
+          <div className="mt-2 flex items-center gap-4 text-[11px]">
+            {onSave && hasItems && (
+              <button onClick={onSave} className="flex items-center gap-1" style={{ color: "var(--color-taupe)" }}><Bookmark size={13} /> {t("Save")}</button>
+            )}
+            <button onClick={onRemoveMeal} className="flex items-center gap-1" style={{ color: "var(--color-faint)" }}><Trash2 size={13} /> {t("Remove")}</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
