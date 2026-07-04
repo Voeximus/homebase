@@ -98,63 +98,9 @@ export function MealBuilder({ owner, person }: { owner: Person; person: Person }
   }, []);
   const library = useMemo(() => buildLibrary(bundled, data.foods), [bundled, data.foods]);
 
-  return (
-    <div className="flex flex-col gap-3 pb-8">
-      {/* mode switch — Solo / Together */}
-      <div
-        className="flex rounded-full p-1 text-[13px]"
-        style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}
-      >
-        <ModePill on={mode === "solo"} onClick={() => setMode("solo")} icon={<User size={14} />}>
-          {t("Just me")}
-        </ModePill>
-        <ModePill
-          on={mode === "together"}
-          onClick={() => setMode("together")}
-          icon={<Users size={14} />}
-        >
-          {t("Together")}
-        </ModePill>
-      </div>
-
-      {mode === "solo" ? (
-        <SoloMode key={person} person={person} library={library} />
-      ) : (
-        <TogetherMode key={owner} owner={owner} library={library} />
-      )}
-    </div>
-  );
-}
-
-function ModePill({
-  on,
-  onClick,
-  icon,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  icon: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 font-semibold transition"
-      style={on ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { color: "var(--color-taupe)" }}
-    >
-      {icon}
-      {children}
-    </button>
-  );
-}
-
-// ── SOLO — one person's daily burndown ──────────────────────────────────────────
-function SoloMode({ person, library }: { person: Person; library: Food[] }) {
+  // The day you're viewing (Solo). Lifted here so the day-nav shares one control
+  // row with the Just-me / Together segment — the mock's `.ctl`.
   const today = todayStr();
-  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, updateSavedMeal, deleteSavedMeal, macroTargets, setMacroTarget } = useHealth();
-  const target = (macroTargets[person] ?? DAILY[person]) as Macros;
-  // which day you're viewing/editing — default today; ◀ ▶ navigate, capped at today.
   const [viewDate, setViewDate] = useState(today);
   const shiftDate = (d: string, by: number) => {
     const dt = new Date(d + "T00:00:00");
@@ -163,6 +109,49 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
   };
   const isToday = viewDate === today;
   const canNext = viewDate < today;
+  const dateLabel = isToday
+    ? t("Today")
+    : viewDate === shiftDate(today, -1)
+      ? t("Yesterday")
+      : new Date(viewDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+  return (
+    <div className="flex flex-col gap-3 pb-8">
+      {/* control row (mock .ctl): Just me / Together segment + day nav */}
+      <div className="hb-ctl">
+        <div className="hb-seg">
+          <button className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")}><User size={13} /> {t("Just me")}</button>
+          <button className={mode === "together" ? "on" : ""} onClick={() => setMode("together")}><Users size={13} /> {t("Together")}</button>
+        </div>
+        {mode === "solo" && (
+          <div className="hb-daynav">
+            <button onClick={() => setViewDate((d) => shiftDate(d, -1))} aria-label="Previous day">‹</button>
+            <button className="td" onClick={isToday ? undefined : () => setViewDate(today)} disabled={isToday}>{dateLabel}</button>
+            <button onClick={() => canNext && setViewDate((d) => shiftDate(d, 1))} disabled={!canNext} aria-label="Next day">›</button>
+          </div>
+        )}
+      </div>
+
+      {mode === "solo" ? (
+        <SoloMode key={person} person={person} library={library} viewDate={viewDate} />
+      ) : (
+        <TogetherMode key={owner} owner={owner} library={library} />
+      )}
+    </div>
+  );
+}
+
+// ── SOLO — one person's daily burndown ──────────────────────────────────────────
+function SoloMode({ person, library, viewDate }: { person: Person; library: Food[]; viewDate: string }) {
+  const today = todayStr();
+  const { getDay, setDay, mealDays, savedMeals, addSavedMeal, updateSavedMeal, deleteSavedMeal, macroTargets, setMacroTarget } = useHealth();
+  const target = (macroTargets[person] ?? DAILY[person]) as Macros;
+  const shiftDate = (d: string, by: number) => {
+    const dt = new Date(d + "T00:00:00");
+    dt.setDate(dt.getDate() + by);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  };
+  const isToday = viewDate === today;
   const dateLabel = isToday
     ? t("Today")
     : viewDate === shiftDate(today, -1)
@@ -236,22 +225,8 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* control row — Targets + day nav (mock .ctl; the Just me / Together
-          toggle is the parent's ModePill just above) */}
-      <div className="hb-ctl">
-        <button className="hb-targets" onClick={() => setEditTargets(true)}>
-          <SlidersHorizontal size={12} /> {t("Targets")}
-        </button>
-        <div className="flex-1" />
-        <div className="hb-daynav">
-          <button onClick={() => setViewDate((d) => shiftDate(d, -1))} aria-label="Previous day">‹</button>
-          <button className="td" onClick={isToday ? undefined : () => setViewDate(today)} disabled={isToday}>{dateLabel}</button>
-          <button onClick={() => canNext && setViewDate((d) => shiftDate(d, 1))} disabled={!canNext} aria-label="Next day">›</button>
-        </div>
-      </div>
-
-      {/* hero */}
-      <DaySummary target={target} eaten={eaten} meals={log.meals.length} />
+      {/* hero — day nav + Just me/Together are in the parent's control row */}
+      <DaySummary target={target} eaten={eaten} meals={log.meals.length} onEditTargets={() => setEditTargets(true)} />
 
       {/* the gentle 8 PM nudge */}
       {showNudge && <NudgeCard onYes={() => setEstimateOpen(true)} onNo={markSkipped} onLater={snooze} />}
@@ -262,7 +237,11 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         <WeightTile person={person} onOpen={() => setDetailOpen("weight")} />
 
         {log.meals.length === 0 ? (
-          <button onClick={startNewMeal} className="hb-tile full flex flex-col items-center gap-1.5 py-8 text-center" style={{ borderStyle: "dashed" }}>
+          <button
+            onClick={startNewMeal}
+            className="hb-tile full"
+            style={{ borderStyle: "dashed", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "30px 12px", textAlign: "center" }}
+          >
             <UtensilsCrossed size={22} style={{ color: "var(--color-accent)" }} />
             <span className="text-[14px] font-semibold" style={{ color: "var(--color-bone)" }}>{t("Add your first meal")}</span>
             <span className="text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("Search a food or scan a barcode")}</span>
@@ -300,10 +279,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
             </div>
             <div className="hb-chipsrow">
               {savedMeals.map((m) => (
-                <span key={m.id} className="hb-sc inline-flex items-center gap-1.5">
-                  <button onClick={() => setPreview(m)} className="min-w-0 truncate">{m.name}</button>
-                  <button onClick={() => deleteSavedMeal(m.id)} aria-label="Delete saved meal" style={{ color: "var(--color-faint)" }}><X size={12} /></button>
-                </span>
+                <button key={m.id} className="hb-sc truncate" style={{ maxWidth: 190 }} onClick={() => setPreview(m)}>{m.name}</button>
               ))}
             </div>
           </div>
@@ -373,6 +349,7 @@ function SoloMode({ person, library }: { person: Person; library: Food[] }) {
         onClose={() => setPreview(null)}
         onAddToday={(m) => addSavedToDay(m)}
         onUpdate={(id, name, items) => updateSavedMeal(id, name, items)}
+        onDelete={(id) => deleteSavedMeal(id)}
       />
 
       {/* edit this person's daily macro targets */}
@@ -602,7 +579,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           <button
             onClick={() => setSearchOpen(true)}
             className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-            style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
+            style={{ background: "color-mix(in srgb, var(--color-accent) 14%, transparent)", color: "var(--color-accent)" }}
           >
             <Plus size={15} /> {t("Add ingredient")}
           </button>
@@ -764,7 +741,7 @@ function Ring({
 // The hero — ported from the agreed mock (hb-hero): CALORIES LEFT headline + a
 // consume ring + the solid-dark P/C/F counter. Day nav / Targets live in the
 // control row above it (SoloMode), keeping the hero clean like the mock.
-function DaySummary({ target, eaten, meals }: { target: Macros; eaten: Macros; meals: number }) {
+function DaySummary({ target, eaten, meals, onEditTargets }: { target: Macros; eaten: Macros; meals: number; onEditTargets: () => void }) {
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? Math.min(1, eaten.kcal / target.kcal) : 0;
@@ -780,7 +757,12 @@ function DaySummary({ target, eaten, meals }: { target: Macros; eaten: Macros; m
       <div className="hb-glow" />
       <div className="hb-hrow">
         <div>
-          <div className="hb-lbl">{over ? t("Calories over") : t("Calories left")}</div>
+          <div className="hb-lbl" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {over ? t("Calories over") : t("Calories left")}
+            <button onClick={onEditTargets} aria-label="Edit targets" style={{ opacity: 0.7, color: "inherit", background: "transparent", border: 0, display: "inline-flex", cursor: "pointer" }}>
+              <SlidersHorizontal size={12} />
+            </button>
+          </div>
           <div key={remStr} className="hb-big bump">{remStr}</div>
           <div className="hb-sub">
             {t("{eaten} of {target} eaten", { eaten: r0(eaten.kcal).toLocaleString("en-US"), target: r0(target.kcal).toLocaleString("en-US") })}
@@ -1282,12 +1264,14 @@ function SavedMealEditor({
   onClose,
   onAddToday,
   onUpdate,
+  onDelete,
 }: {
   meal: SavedMeal | null;
   library: Food[];
   onClose: () => void;
   onAddToday: (m: SavedMeal) => void;
   onUpdate: (id: string, name: string, items: LoggedItem[]) => void;
+  onDelete: (id: string) => void;
 }) {
   const [name, setName] = useState("");
   const [items, setItems] = useState<LoggedItem[]>([]);
@@ -1366,7 +1350,7 @@ function SavedMealEditor({
           <button
             onClick={() => setAddOpen(true)}
             className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
-            style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
+            style={{ background: "color-mix(in srgb, var(--color-accent) 14%, transparent)", color: "var(--color-accent)" }}
           >
             <Plus size={14} /> {t("Add food")}
           </button>
@@ -1388,6 +1372,13 @@ function SavedMealEditor({
               <Check size={16} /> {t("Save changes")}
             </button>
           </div>
+          <button
+            onClick={() => { onDelete(meal.id); onClose(); }}
+            className="mt-2.5 flex w-full items-center justify-center gap-1.5 py-1.5 text-[12px] font-medium"
+            style={{ color: "var(--color-faint)" }}
+          >
+            <Trash2 size={13} /> {t("Delete favorite")}
+          </button>
         </div>
       </div>
 
