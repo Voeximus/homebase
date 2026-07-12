@@ -82,23 +82,42 @@ function pickHold(a: any): number {
 // billCycleFor in src/lib/schedule.ts — keep the two in step.
 function billAppliesTo(rec: { id: string; dueDays?: number[] }, date: string) {
   const [py, pm, pd] = date.split("-").map(Number);
-  const days = rec.dueDays && rec.dueDays.length ? rec.dueDays : [pd];
+  const rawDays = rec.dueDays && rec.dueDays.length ? rec.dueDays : [pd];
+  const days = [...rawDays].sort((a, b) => a - b); // stable ordinal for installmentIndex
   const GRACE_MS = 7 * 86400000;
   const pay = Date.UTC(py, pm - 1, pd);
-  const cands: { y: number; m: number; day: number; due: number }[] = [];
+  const cands: { y: number; m: number; day: number; idx: number; due: number }[] = [];
   for (const off of [0, 1]) {
     const y = pm - 1 + off >= 12 ? py + 1 : py;
     const m0 = (pm - 1 + off) % 12;
     const dim = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
-    for (const dd of days) {
+    days.forEach((dd, idx) => {
       const day = Math.min(dd, dim);
-      cands.push({ y, m: m0, day, due: Date.UTC(y, m0, day) });
-    }
+      cands.push({ y, m: m0, day, idx, due: Date.UTC(y, m0, day) });
+    });
   }
   cands.sort((a, b) => a.due - b.due);
   const c = cands.find((k) => pay <= k.due + GRACE_MS) ?? cands[cands.length - 1];
   const monthKey = `${c.y}-${String(c.m + 1).padStart(2, "0")}`;
-  return { kind: "bill", recurringId: rec.id, monthKey, day: c.day, settled: true } as const;
+  // Cycle identity keys on the installment ORDINAL (idx), not the derived day — so a
+  // manual "paid" row (posting-day) and its feed twin (due-day) collapse to the SAME
+  // cycle instead of drifting into a double-count. See installmentIndexForDay below.
+  return { kind: "bill", recurringId: rec.id, monthKey, day: c.day, installmentIndex: c.idx, settled: true } as const;
+}
+
+// Which installment slot (ordinal in the sorted due_days) a STORED applies_to.day
+// belongs to — so the paidBill seed keys old/manual rows the SAME way billAppliesTo
+// keys incoming feed rows. Single-due-day bills always → 0 (one settled per cycle);
+// multi-due-day bills (Mom on the 15th & 30th) keep their two installments distinct.
+function installmentIndexForDay(dueDays: number[] | undefined | null, day: number): number {
+  const days = (dueDays && dueDays.length ? [...dueDays] : [day]).sort((a, b) => a - b);
+  if (days.length <= 1) return 0;
+  let best = 0, bestGap = Infinity;
+  days.forEach((d, i) => {
+    const g = Math.abs(d - day);
+    if (g < bestGap) { bestGap = g; best = i; }
+  });
+  return best;
 }
 
 // Last-resort match for a payment the categorizer KNOWS is a bill (kind:"bill")
@@ -262,11 +281,17 @@ async function syncConnection(connId: string, force = false) {
       .from("transactions")
       .select("applies_to, provider_txn_id")
       .not("applies_to", "is", null);
+    // Map recurringId → its due_days so we can key a stored bill row on its
+    // installment ordinal (stable) rather than its drift-prone posting day.
+    const dueDaysById: Record<string, number[] | undefined> = {};
+    for (const r of outRecs) dueDaysById[r.id as string] = (r.due_days ?? undefined) as number[] | undefined;
+    const cycleKey = (at: any) =>
+      `${at.recurringId}|${at.monthKey}|${at.installmentIndex ?? installmentIndexForDay(dueDaysById[at.recurringId], at.day)}`;
     const paidBill = new Set<string>();
     const seenProviderIds = new Set<string>();
     for (const t of paidRows ?? []) {
       const at = (t as any).applies_to;
-      if (at?.kind === "bill") paidBill.add(`${at.recurringId}|${at.monthKey}|${at.day}`);
+      if (at?.kind === "bill") paidBill.add(cycleKey(at));
       if ((t as any).provider_txn_id) seenProviderIds.add((t as any).provider_txn_id);
     }
 
@@ -360,7 +385,7 @@ async function syncConnection(connId: string, force = false) {
         if (matched) {
           const rec = { id: matched.id as string, dueDays: (matched.due_days ?? undefined) as number[] | undefined };
           const at = billAppliesTo(rec, row.date);
-          const key = `${rec.id}|${at.monthKey}|${at.day}`;
+          const key = `${rec.id}|${at.monthKey}|${at.installmentIndex}`;
           // skip if this installment is already recorded (manual / prior import) —
           // unless it's THIS feed row re-syncing (the unique index will update it).
           if (paidBill.has(key) && !seenProviderIds.has(row.providerTxnId)) continue;

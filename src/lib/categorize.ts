@@ -31,7 +31,11 @@ export type LearnedRules = Record<string, LearnedRule>;
 /** Normalize a description to a merchant key. MUST stay identical to the
  *  generator in Desktop/Finances/_gendict.cjs, or dictionary lookups miss. */
 export function merchantKey(desc: string): string {
-  let s = desc;
+  // Strip literal double-quotes the bank now wraps around Zelle memos (e.g.
+  // `Zelle payment to Gio for "Rent"`) — the quote eats a slot and shifts the
+  // 28-char truncation, breaking the dict lookup. Apostrophes are KEPT so
+  // "Trader Joe's" / "Sam's Club" dict keys still resolve.
+  let s = desc.replace(/[“”"]/g, "");
   s = s.replace(/\s+(DES:|Conf#|ID:|Confirmation#).*/i, "");
   s = s.replace(/\s+\d{2}\/\d{2}\b.*/, "");
   s = s.replace(/\s+#?\d{3,}.*/, "");
@@ -113,8 +117,15 @@ function hisLookup(key: string): string | undefined {
  *  Paychecks, refunds, cashback, and money people send you all read as income;
  *  only "Internal:" history labels (account-to-account, spouse shuffle) are transfers. */
 export function classifyCredit(desc: string): "income" | "transfer" {
+  // Card-payment credits ("PAYMENT FROM CHK …" landing ON a credit card) and ATM
+  // cash deposits are the household's OWN money moving — the paired checking
+  // outflow is already recorded — so they must NOT book as new income (that both
+  // inflates gross income and double-counts the transfer). They carry no
+  // "Internal:" history label, so detect them explicitly.
+  if (/\bPAYMENT FROM (CHK|SAV)\b|BKOFAMERICA ATM|\bATM (CASH )?DEPOSIT\b/i.test(desc)) return "transfer";
   const his = hisLookup(merchantKey(desc));
-  return his && his.startsWith("Internal:") ? "transfer" : "income";
+  if (his && (his.startsWith("Internal:") || his === "Cash deposit")) return "transfer";
+  return "income";
 }
 
 /** A WORK paycheck (vs. other income like Zelle, refunds, cashback). Drives the
@@ -194,7 +205,7 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
 const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
   { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|76\b/i, appCategory: "transport" },
   { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
-  { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|PANDA|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
+  { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
   { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
   { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "shopping" },
   { re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i, appCategory: "subscriptions" },
@@ -222,6 +233,15 @@ export function classify(
     if (lr.kind === "skip")
       return { kind: "skip", reason: "you taught it", confidence: "high" };
     return { kind: "variable", appCategory: lr.categoryId, reason: "you taught it", confidence: "high" };
+  }
+
+  // Overseas remittances (Pandaremit, Remitly/RMTLY) are money sent abroad — not
+  // living spend, so they must never fall through to a dining/other guess. A
+  // Remitly outflow that pays down the Mom-China debt is caught earlier in the
+  // importer (tracked-debt match) before classify() ever runs, so this only
+  // catches the non-debt remittance rails.
+  if (/PANDAREMIT|\bREMITLY\b|\bRMTLY\b/i.test(desc)) {
+    return { kind: "skip", reason: "overseas remittance", confidence: "high" };
   }
 
   // Zelle to mom: the monthly assistance is a support-sized payment ($300 going
