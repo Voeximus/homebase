@@ -273,6 +273,15 @@ export function classify(
     return { kind: "variable", appCategory: "subscriptions", reason: "Anthropic (non-seat amount) — confirm", confidence: "low" };
   }
 
+  // The cost of carrying a balance — card interest and late/penalty fees. NOT a
+  // bill (no recurring row) and NOT living spend: it's already baked into the card
+  // balance that the linked debt reads from, so it must never route to a debt or
+  // land on a budget line, or it double-counts. Its own category so the price of
+  // the debt is visible rather than buried in "other".
+  if (/INTEREST CHARGED|FINANCE CHARGE|\bLATE FEE\b|PENALTY FEE/i.test(desc)) {
+    return { kind: "variable", appCategory: "interest", reason: "cost of debt (interest / fee)", confidence: "high" };
+  }
+
   for (const r of BILL_RULES) {
     if (r.re.test(desc)) {
       return { kind: "bill", billName: r.bill, reason: `matched bill: ${r.bill}`, confidence: "high" };

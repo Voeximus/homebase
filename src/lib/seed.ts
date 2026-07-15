@@ -25,6 +25,12 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: "electronics", name: "Electronics", icon: "🖥️", color: "#818cf8", type: "expense" },
   { id: "kids", name: "Kids", icon: "🧸", color: "#f472b6", type: "expense" },
   { id: "pets", name: "Pets", icon: "🐾", color: "#f472b6", type: "expense" },
+  // What the debt COSTS: card interest + late fees. Deliberately NOT on a budget
+  // line — it isn't discretionary living spend, and it's already inside the card
+  // balance the debt total reads from (so it must never be re-added). Its own id
+  // purely so the price of carrying a balance is visible instead of buried in
+  // "other" next to a coffee.
+  { id: "interest", name: "Interest + Fees", icon: "🩸", color: "#e11d48", type: "expense" },
   { id: "other", name: "Other", icon: "📦", color: "#64748b", type: "expense" },
 ];
 

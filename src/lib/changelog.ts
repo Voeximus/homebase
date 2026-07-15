@@ -12,6 +12,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.15b",
+    date: "July 15, 2026",
+    notes: [
+      "New \"Interest + Fees\" category — card interest and late fees have their own line now instead of hiding in Other. You've paid $465 to carry debt since March.",
+      "It stays out of your $1,250 budget on purpose: it isn't spending you chose, and it's already counted inside the card balance your debt total reads from.",
+    ],
+  },
+  {
     version: "2026.07.15a",
     date: "July 15, 2026",
     notes: [
