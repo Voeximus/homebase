@@ -21,7 +21,10 @@ export interface BudgetLine {
 // maps cleanly to how transactions categorize (so spent-vs-target is exact).
 export const LEAN_VARIABLE: BudgetLine[] = [
   { key: "groceries", label: "Groceries", icon: "🛒", target: 500, cats: ["groceries"], note: "measured food" },
-  { key: "gas", label: "Gas + convenience", icon: "⛽", target: 250, cats: ["transport"], note: "commute · rideshare" },
+  // $250 was set when gas was $4.89–4.99/gal. The Sam's Club card dropped it to
+  // ~$3.30 from July, and actual spend runs ~$95/mo — so $50 moves to Misc and this
+  // line still carries 2× the real burn.
+  { key: "gas", label: "Gas + convenience", icon: "⛽", target: 200, cats: ["transport"], note: "commute · rideshare" },
   { key: "dining", label: "Dining out", icon: "🍽️", target: 150, cats: ["dining"], note: "a few times, to enjoy life" },
   // Household + Hygiene = the merged line (was separate "Household" + "Health/grooming").
   // cats keeps the legacy "health" id so any un-migrated row still counts here.
@@ -34,7 +37,31 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   // instead of escaping it — an uncovered category is invisible to the budget.
   { key: "household", label: "Household + Hygiene", icon: "🧴", target: 250, cats: ["shopping", "health", "subscriptions", "entertainment", "housing"], note: "supplies · hygiene · grooming" },
   { key: "pets", label: "Dog / pets", icon: "🐾", target: 100, cats: ["pets"], note: "food · vet · toys" },
+  // The holding pen. "other" is what the categorizer assigns to a merchant it has
+  // never seen, so it can't be left off the lines: what's GRADED is what's on a
+  // line (see variableSpentThisMonth), and a category on no line would make the
+  // breakdown fail to reconcile with the total. The small target is deliberate —
+  // this isn't an allowance, it's a prompt: if Misc is over, something needs a
+  // real category, not a bigger envelope.
+  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 50, cats: ["other", "kids"], note: "unknown merchants — recategorize" },
 ];
+
+/** Ungraded, but still real cash out the door — so it can't go at the debt either.
+ *  Electronics is Gino's deliberate carve-out ("outside the budget, but it still
+ *  takes from what can go at debt"), so it skips the envelope and cuts firepower
+ *  directly. `interest` is deliberately NOT here: it never leaves checking — the
+ *  bank folds it into the card balance, which the debt total already reads, so
+ *  charging it against firepower too would count it twice. */
+export const OUTSIDE_BUDGET_CASH_CATS = ["electronics"];
+
+/** Is this category graded against the lean budget? True iff some line claims it.
+ *  `electronics` and `interest` deliberately belong to NO line: electronics is
+ *  outside-the-budget by design (it's still cash out, so it cuts firepower — see
+ *  buildVMs), and interest isn't spending you chose (it's already inside the card
+ *  balance the debt total reads from). */
+export function inAnyLine(catId: string): boolean {
+  return LEAN_VARIABLE.some((l) => l.cats.includes(catId));
+}
 
 // Renters insurance — a fixed cost found during the audit, not yet in the live
 // recurring table, so it's folded into the plan's fixed total here.
@@ -283,17 +310,17 @@ export function variableSpentThisMonth(
   transactions: Transaction[],
   monthKey: string,
 ): number {
-  return transactions
-    .filter(
-      (t) =>
-        t.type === "expense" &&
-        t.date.slice(0, 7) === monthKey &&
-        !t.pending && // still-processing charges don't count until they post
-        // Free-form living spend only — anything with an appliesTo (a bill, a
-        // debt payment, a goal contribution, …) is firepower/fixed, not variable.
-        !t.appliesTo,
-    )
-    .reduce((s, t) => s + t.amount, 0);
+  // Grade exactly what the LINES claim, so the per-line breakdown always sums to
+  // this number. Reusing spentByCategory also makes it split-aware: a Sam's run
+  // split across pets/groceries/household contributes each slice to its own line,
+  // not its whole amount to one. Categories on no line (electronics, interest) are
+  // real money but deliberately ungraded — see inAnyLine.
+  const byCat = spentByCategory(transactions, monthKey);
+  let total = 0;
+  for (const [catId, amount] of Object.entries(byCat)) {
+    if (inAnyLine(catId)) total += amount;
+  }
+  return total;
 }
 
 /** The SUSTAINABLE variable-spend pace: the average of actual variable spend over

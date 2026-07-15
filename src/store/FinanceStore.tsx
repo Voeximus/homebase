@@ -779,9 +779,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             t.id === id ? { ...t, categoryId } : t,
           ),
         }));
+        // user_categorized marks this as a HUMAN decision, so a later re-sync
+        // refreshes auto-guesses around it but never overwrites this one.
         const { error } = await supabase
           .from("transactions")
-          .update({ category_id: categoryId })
+          .update({ category_id: categoryId, user_categorized: true })
           .eq("id", id);
         if (error) console.error(error);
       },
@@ -805,7 +807,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               : t,
           ),
         }));
-        const update: Record<string, unknown> = { splits: useSplits };
+        // Splitting is a human call on where this money belongs — protect it from
+        // being re-guessed on the next sync.
+        const update: Record<string, unknown> = { splits: useSplits, user_categorized: true };
         if (primary) update.category_id = primary;
         const { error } = await supabase.from("transactions").update(update).eq("id", id);
         if (error) console.error(error);

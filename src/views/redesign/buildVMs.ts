@@ -12,6 +12,7 @@ import {
   SAVINGS_SPLIT,
   sumTargets,
   LEAN_VARIABLE,
+  OUTSIDE_BUDGET_CASH_CATS,
   lineSpent,
   spentByCategory,
   variableSpentThisMonth,
@@ -97,7 +98,11 @@ export function buildFinanceVMs(
   // just the month not being over yet.) This flows into the payoff schedule, the
   // hero number, and the "Next move", so they all reflect real available cash.
   const overspend = Math.max(0, spent - target);
-  const firepower = Math.max(0, math.firepower - overspend); // "available THIS month" (the hero tile)
+  // Cash that left but is NOT graded against the envelope (electronics). It never
+  // shows as "overspend" — there's no line to blow — but it's still money that
+  // can't go at the debt, so it comes off firepower directly.
+  const outsideBudgetCash = OUTSIDE_BUDGET_CASH_CATS.reduce((s, c) => s + (byCat[c] ?? 0), 0);
+  const firepower = Math.max(0, math.firepower - overspend - outsideBudgetCash); // "available THIS month" (the hero tile)
   const ordered = orderedDebts(data.debts);
   // Project the payoff from the SUSTAINABLE pace — a trailing average of ACTUAL
   // variable spend — so the debt-free date tracks real behavior: a one-off

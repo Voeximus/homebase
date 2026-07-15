@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.15c",
+    date: "July 15, 2026",
+    notes: [
+      "Electronics no longer counts against your $1,250 — it sits outside the budget the way you set it up, and still comes off what's available for debt.",
+      "New \"Misc / uncategorized\" line ($50) catches purchases from merchants the app has never seen, so your budget lines finally add up to your budget total. Gas moves $250 → $200 to make room (you're running ~$95/mo since the Sam's Club card).",
+      "Fixing a merchant's category now also fixes the older purchases it got wrong — anything you set by hand is left alone.",
+    ],
+  },
+  {
     version: "2026.07.15b",
     date: "July 15, 2026",
     notes: [
