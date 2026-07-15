@@ -336,7 +336,7 @@ export function FinanceTabs({
         open={billsOpen}
         onClose={() => setBillsOpen(false)}
         onPay={openBillPay}
-        getMonth={(y, m) => monthCalendar(data.recurring, data.transactions, new Date(), y, m)}
+        getMonth={(y, m) => monthCalendar(data.recurring, data.transactions, new Date(), y, m, data.debts)}
         baseDate={new Date()}
       />
       <PayBillSheet

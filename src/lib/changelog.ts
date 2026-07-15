@@ -12,6 +12,13 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.15d",
+    date: "July 15, 2026",
+    notes: [
+      "Pay off a card and its monthly payment disappears from your bills on its own — no cleanup. Charge the card again and it comes back.",
+    ],
+  },
+  {
     version: "2026.07.15c",
     date: "July 15, 2026",
     notes: [

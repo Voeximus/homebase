@@ -217,7 +217,7 @@ export function buildFinanceVMs(
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const firstWeekday = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
   const todayNum = now.getDate();
-  const { entries } = monthlySchedule(data.recurring, monthKey, data.transactions);
+  const { entries } = monthlySchedule(data.recurring, monthKey, data.transactions, data.debts);
   const outEntries = entries.filter((e) => e.direction === "out");
   // The scheduled installment days for each recurring this month — used to snap a
   // recorded payment to the right installment even if the feed logged the raw bank

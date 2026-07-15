@@ -1,4 +1,4 @@
-import type { Cadence, Recurring, Transaction } from "../types";
+import type { Cadence, Debt, Recurring, Transaction } from "../types";
 import { monthlyAmount } from "./recurring";
 import { billExpected, PAY_DAYS } from "./plan";
 
@@ -68,6 +68,7 @@ export function monthlySchedule(
   recurring: Recurring[],
   monthKey?: string,
   transactions?: Transaction[],
+  debts?: Debt[],
 ): MonthlySchedule {
   const entries: ScheduleEntry[] = [];
   const unscheduled: { label: string; amount: number; direction: FlowDir }[] = [];
@@ -97,6 +98,16 @@ export function monthlySchedule(
     }
 
     const dir: FlowDir = r.direction === "transfer" ? "transfer" : "out";
+    // A card-payment bill exists ONLY to service its debt: clear the debt and the
+    // minimum stops existing, so the bill must stop rendering. Gated live off the
+    // debt's balance rather than deactivating the row, so it self-corrects BOTH
+    // ways — charge the card again and the bill comes back on its own. Card
+    // balances are bank-truth (trg_sync_debt_from_account), so this flips the
+    // moment a payoff posts, with nothing to remember to clean up.
+    if (r.linkedDebtId && debts) {
+      const linked = debts.find((d) => d.id === r.linkedDebtId);
+      if (linked && linked.balance <= 0) continue;
+    }
     // A longer-than-monthly bill (yearly membership, semiannual insurance) belongs
     // ONLY to its anniversary month, at the FULL charge — never amortized into every
     // month. monthlyAmount() would spread a $16.22 yearly fee into $1.35 × 12, which
@@ -222,13 +233,14 @@ export function monthCalendar(
   now: Date,
   year: number,
   month: number,
+  debts?: Debt[],
 ): MonthCalendar {
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstWeekday = new Date(year, month, 1).getDay();
   const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
   const todayNum = isCurrentMonth ? now.getDate() : -1;
-  const { entries } = monthlySchedule(recurring, monthKey, transactions);
+  const { entries } = monthlySchedule(recurring, monthKey, transactions, debts);
 
   const clampDay = (d: number) => Math.min(Math.max(d, 1), daysInMonth);
   const fmtDay = (day: number) =>
