@@ -12,6 +12,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.15a",
+    date: "July 15, 2026",
+    notes: [
+      "Yearly and 6-month bills now land only in the month they're actually due — your Sam's Club membership no longer shows up as a bill every single month.",
+      "Xinyan's car insurance is tracked now: $639.42 every 6 months, due Aug 1 and again Feb 1.",
+      "Fixed a hole where some purchases didn't count toward your budget at all — anything you buy now lands on a budget line, so a mislabel can shift a category but can never make money disappear.",
+      "Retired the Subscriptions budget line — every live subscription is already a bill, so its $50 moved to Household + Hygiene (now $250). Your monthly total is still $1,250.",
+      "Xinyan's card now shows its real 27.49% interest rate instead of looking free.",
+    ],
+  },
+  {
     version: "2026.07.04c",
     date: "July 4, 2026",
     notes: [

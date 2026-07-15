@@ -25,9 +25,15 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   { key: "dining", label: "Dining out", icon: "🍽️", target: 150, cats: ["dining"], note: "a few times, to enjoy life" },
   // Household + Hygiene = the merged line (was separate "Household" + "Health/grooming").
   // cats keeps the legacy "health" id so any un-migrated row still counts here.
-  { key: "household", label: "Household + Hygiene", icon: "🧴", target: 200, cats: ["shopping", "health"], note: "supplies · hygiene · grooming" },
+  //
+  // It also absorbs the retired "Subscriptions" line ($50): every live subscription
+  // (Claude Max / Claude Pro) is modeled as a recurring BILL, so a variable
+  // subscriptions line reads $0 by construction — the old one only ever caught
+  // cancelled trials (Replit, Grok, Prime, Kindle). Its cats fold in here, along with
+  // "housing", so a stray charge in any of them still COUNTS against the envelope
+  // instead of escaping it — an uncovered category is invisible to the budget.
+  { key: "household", label: "Household + Hygiene", icon: "🧴", target: 250, cats: ["shopping", "health", "subscriptions", "entertainment", "housing"], note: "supplies · hygiene · grooming" },
   { key: "pets", label: "Dog / pets", icon: "🐾", target: 100, cats: ["pets"], note: "food · vet · toys" },
-  { key: "subscriptions", label: "Subscriptions", icon: "🔁", target: 50, cats: ["subscriptions", "entertainment"], note: "streaming · apps" },
 ];
 
 // Renters insurance — a fixed cost found during the audit, not yet in the live

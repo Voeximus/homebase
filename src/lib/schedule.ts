@@ -1,4 +1,4 @@
-import type { Recurring, Transaction } from "../types";
+import type { Cadence, Recurring, Transaction } from "../types";
 import { monthlyAmount } from "./recurring";
 import { billExpected, PAY_DAYS } from "./plan";
 
@@ -22,19 +22,29 @@ export const DUE_DAYS: Record<string, number[]> = {
   "Xinyan's 40% share": [1],
 };
 
-// Annual memberships / fees — billed once a year on a fixed month+day (month is
-// 1-indexed). Shown only in that month at full amount, never amortized monthly.
-export const ANNUAL: {
-  name: string;
-  month: number;
-  day: number;
-  amount: number;
-  owner?: string;
-}[] = [
-  // Sam's Club — $15 membership + AZ tax = $16.22, paid on Xinyan's debit
-  // 2026-06-16, renews each June 16. Pays for itself on bulk groceries + gas.
-  { name: "Sam's Club", month: 6, day: 16, amount: 16.22, owner: "Xinyan" },
-];
+// How many months apart a bill repeats, for the cadences that DON'T fire every
+// month. Monthly and sub-monthly cadences are absent: their due_days already
+// carry the whole schedule, so they fire in every month.
+const PERIOD_MONTHS: Partial<Record<Cadence, number>> = {
+  quarterly: 3,
+  semiannual: 6,
+  yearly: 12,
+};
+
+/** Does a longer-than-monthly bill fire in this month? Its anchorDate names one
+ *  month it's known to hit; it repeats every `period` months from there, forwards
+ *  and backwards (so past months render correctly too). A periodic bill with no
+ *  anchor can't be placed — we let it through rather than hide a real bill, and
+ *  it behaves as it did before. Monthly cadences always fire. */
+export function firesInMonth(r: Recurring, monthKey: string): boolean {
+  const period = PERIOD_MONTHS[r.cadence];
+  if (!period) return true;
+  if (!r.anchorDate) return true;
+  const [ay, am] = r.anchorDate.split("-").map(Number);
+  const [y, m] = monthKey.split("-").map(Number);
+  const delta = (y - ay) * 12 + (m - am);
+  return ((delta % period) + period) % period === 0;
+}
 
 export type FlowDir = "in" | "out" | "transfer";
 
@@ -87,6 +97,14 @@ export function monthlySchedule(
     }
 
     const dir: FlowDir = r.direction === "transfer" ? "transfer" : "out";
+    // A longer-than-monthly bill (yearly membership, semiannual insurance) belongs
+    // ONLY to its anniversary month, at the FULL charge — never amortized into every
+    // month. monthlyAmount() would spread a $16.22 yearly fee into $1.35 × 12, which
+    // is right for a budget average but wrong for a calendar of real due dates.
+    const period = PERIOD_MONTHS[r.cadence];
+    if (period) {
+      if (!monthKey || !firesInMonth(r, monthKey)) continue;
+    }
     // Read the row's own due day(s); fall back to the legacy map so it still
     // works before a re-seed bakes due_days onto the rows.
     const days = r.dueDays ?? DUE_DAYS[r.name];
@@ -96,7 +114,7 @@ export function monthlySchedule(
       //  · Mom's support is $400/check through June, then $300/check from July.
       //  · Rent is the discounted $1,232.44 through June (move-in concession),
       //    then the full $1,715 from July.
-      let perPayment = monthly / days.length;
+      let perPayment = period ? r.amount : monthly / days.length;
       if (monthKey && monthKey <= "2026-06") {
         if (r.name === "Mom") perPayment = 400;
         else if (r.name === "Rent") perPayment = 1232.44;
@@ -114,22 +132,6 @@ export function monthlySchedule(
       }
     } else {
       unscheduled.push({ label: r.name, amount: monthly, direction: dir });
-    }
-  }
-
-  // Annual items appear only in their anniversary month, at full amount.
-  if (monthKey) {
-    const mNum = parseInt(monthKey.split("-")[1] ?? "0", 10);
-    for (const a of ANNUAL) {
-      if (a.month === mNum) {
-        entries.push({
-          day: a.day,
-          label: a.name,
-          amount: a.amount,
-          direction: "out",
-          owner: a.owner,
-        });
-      }
     }
   }
 
@@ -201,8 +203,9 @@ export interface MonthCalendar {
 }
 
 /** Build one month's calendar for ANY month, reusing the schedule engine so
- *  step-downs (Mom 400→300, Rent concession→full) and ANNUAL items render the
- *  correct amount per month.
+ *  step-downs (Mom 400→300, Rent concession→full) and longer-than-monthly bills
+ *  (a yearly membership, a semiannual premium) render the correct amount in the
+ *  correct month.
  *
  *  DUE vs PAID: a bill is always anchored to its DUE day. When a recorded payment
  *  matches it, the entry is marked paid and carries the ACTUAL paid date + amount

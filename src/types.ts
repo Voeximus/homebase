@@ -122,6 +122,8 @@ export type Cadence =
   | "biweekly"
   | "semimonthly"
   | "monthly"
+  | "quarterly"
+  | "semiannual"
   | "yearly";
 
 export interface Recurring {
@@ -138,6 +140,11 @@ export interface Recurring {
   variable?: boolean; // amount varies month-to-month → project via rolling avg of actuals
   note?: string;
   dueDays?: number[]; // day(s) of month this posts — the calendar reads this, not a constant
+  // A date this bill is KNOWN to have fired. Only meaningful for cadences longer
+  // than a month (quarterly / semiannual / yearly), which repeat on an anniversary
+  // the due-day alone can't express: due_days says the 16th, the anchor says WHICH
+  // month. Without it a yearly membership renders in all twelve.
+  anchorDate?: string; // "YYYY-MM-DD"
   linkedDebtId?: string; // if this bill is a payment on a debt, the debt it pays down
   createdAt: string;
 }

@@ -106,6 +106,7 @@ function mapRecurring(r: any): Recurring {
     variable: r.variable ?? false,
     note: r.note ?? undefined,
     dueDays: r.due_days ?? undefined,
+    anchorDate: r.anchor_date ?? undefined,
     linkedDebtId: r.linked_debt_id ?? undefined,
     createdAt: r.created_at,
   };

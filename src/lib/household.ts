@@ -84,5 +84,7 @@ export const CADENCE_TO_MONTHLY: Record<Cadence, number> = {
   biweekly: 2,
   semimonthly: 2,
   monthly: 1,
+  quarterly: 1 / 3,
+  semiannual: 1 / 6,
   yearly: 1 / 12,
 };
