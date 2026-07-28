@@ -225,8 +225,21 @@ export function classify(
 
   const key = merchantKey(desc);
 
+  // Descriptors whose correct answer depends on the AMOUNT, not just the merchant:
+  // Anthropic bills an identical line for a $21.62 Pro seat and a $108.10 Max seat,
+  // and a Zelle to mom is either the support installment or an ad-hoc loan. A learned
+  // rule is keyed by merchant ALONE, so it physically cannot express that split — one
+  // "Remember" tap on either flattens both cases forever. So these keep their
+  // amount-gated branches below and opt OUT of learned-rule precedence.
+  //
+  // Live damage this caught: a learned `ANTHROPIC -> variable/subscriptions` rule was
+  // shadowing the price band, so the $108.10 Max charge landed as variable spend every
+  // month instead of settling the "Claude Max" bill — inflating the budget by $108 and
+  // leaving the bill showing unpaid.
+  const amountGated = /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b/i.test(desc);
+
   // 1) A rule you taught the app wins over everything — and is always confident.
-  const lr = learned?.[key];
+  const lr = amountGated ? undefined : learned?.[key];
   if (lr) {
     if (lr.kind === "bill")
       return { kind: "bill", billName: lr.billName, reason: "you taught it", confidence: "high" };
