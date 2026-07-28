@@ -17,15 +17,23 @@ export interface BudgetLine {
   note?: string;
 }
 
-// Lean monthly variable budget — same $1,250 envelope, regrouped so each line
-// maps cleanly to how transactions categorize (so spent-vs-target is exact).
+// Monthly variable budget — a $1,600 envelope, each line mapping cleanly to how
+// transactions categorize (so spent-vs-target is exact).
+//
+// RE-BASED 2026-07-28 from $1,250. The old number was aspirational: five months of
+// actuals never once came in under it (~$1,730 avg), so every month "failed" by
+// construction — which made the budget a source of friction rather than a decision
+// tool. Each line below is set at or just under REAL July spend, so the envelope is
+// a target he can actually hit. The debt payoff gets slower on purpose; Gino's
+// company (Knotted Studios) is the priority now, and a budget nobody can hold is
+// worth less than a slower plan that holds.
 export const LEAN_VARIABLE: BudgetLine[] = [
-  { key: "groceries", label: "Groceries", icon: "🛒", target: 500, cats: ["groceries"], note: "measured food" },
+  { key: "groceries", label: "Groceries", icon: "🛒", target: 600, cats: ["groceries"], note: "measured food" },
   // $250 was set when gas was $4.89–4.99/gal. The Sam's Club card dropped it to
   // ~$3.30 from July, and actual spend runs ~$95/mo — so $50 moves to Misc and this
   // line still carries 2× the real burn.
   { key: "gas", label: "Gas + convenience", icon: "⛽", target: 200, cats: ["transport"], note: "commute · rideshare" },
-  { key: "dining", label: "Dining out", icon: "🍽️", target: 150, cats: ["dining"], note: "a few times, to enjoy life" },
+  { key: "dining", label: "Dining out", icon: "🍽️", target: 250, cats: ["dining"], note: "meals + coffee/boba" },
   // Household + Hygiene = the merged line (was separate "Household" + "Health/grooming").
   // cats keeps the legacy "health" id so any un-migrated row still counts here.
   //
@@ -35,15 +43,21 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   // cancelled trials (Replit, Grok, Prime, Kindle). Its cats fold in here, along with
   // "housing", so a stray charge in any of them still COUNTS against the envelope
   // instead of escaping it — an uncovered category is invisible to the budget.
-  { key: "household", label: "Household + Hygiene", icon: "🧴", target: 250, cats: ["shopping", "health", "subscriptions", "entertainment", "housing"], note: "supplies · hygiene · grooming" },
-  { key: "pets", label: "Dog / pets", icon: "🐾", target: 100, cats: ["pets"], note: "food · vet · toys" },
+  { key: "household", label: "Household + Hygiene", icon: "🧴", target: 350, cats: ["shopping", "health", "subscriptions", "entertainment", "housing"], note: "supplies · hygiene · grooming" },
+  // 100 -> 75: five months of actuals run ~$40/mo. Trimmed to fund the lines that
+  // were genuinely under-set, not because the dog is getting less.
+  { key: "pets", label: "Dog / pets", icon: "🐾", target: 75, cats: ["pets"], note: "food · vet · toys" },
   // The holding pen. "other" is what the categorizer assigns to a merchant it has
   // never seen, so it can't be left off the lines: what's GRADED is what's on a
   // line (see variableSpentThisMonth), and a category on no line would make the
   // breakdown fail to reconcile with the total. The small target is deliberate —
   // this isn't an allowance, it's a prompt: if Misc is over, something needs a
   // real category, not a bigger envelope.
-  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 50, cats: ["other", "kids"], note: "unknown merchants — recategorize" },
+  // 50 -> 125. It stopped being a pure holding pen once Knotted Studios started
+  // generating real costs (AZ e-corp filing, GoDaddy, CCA fees = $100 in July) that
+  // land here. Still worth watching: if Misc runs high on UNKNOWN merchants rather
+  // than company costs, those need real categories, not a bigger envelope.
+  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 125, cats: ["other", "kids"], note: "business costs · unknown merchants" },
 ];
 
 /** Ungraded, but still real cash out the door — so it can't go at the debt either.

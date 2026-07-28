@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.07.28a",
+    date: "July 28, 2026",
+    notes: [
+      "Monthly budget re-based from $1,250 to $1,600 — the old number was never once hit in five months, so every month read as a failure. Each line is now set from what you actually spend: groceries $600, household $350, dining $250, gas $200, misc $125, pets $75.",
+      "Dining now covers coffee and boba explicitly, and Misc covers business costs — the Knotted Studios filings were landing there anyway.",
+      "Your dental plan is tracked: Cherry, $1,062 at 0%, $151.72 on the 24th through January.",
+      "Claude Max now settles as a bill instead of eating $108 of your variable budget every month.",
+    ],
+  },
+  {
     version: "2026.07.15d",
     date: "July 15, 2026",
     notes: [
