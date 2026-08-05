@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.05b",
+    date: "August 5, 2026",
+    notes: [
+      "The budget now runs on your PAY CYCLE instead of the calendar month. It resets on payday — the 15th and the last day — because that's when money actually arrives, and rent hits the 1st.",
+      "Home shows which cycle you're in and how far through it, so you can see you're at 51% spent with 8 days left instead of finding out at month end.",
+      "Each line is now a per-cycle allowance: $800 total, groceries $300, household $175, dining $125, gas $100, misc $63, pets $38.",
+      "Bills stay monthly — rent really is due on the 1st.",
+    ],
+  },
+  {
     version: "2026.08.05a",
     date: "August 5, 2026",
     notes: [

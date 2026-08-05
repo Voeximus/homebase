@@ -15,6 +15,10 @@ import {
   OUTSIDE_BUDGET_CASH_CATS,
   lineSpent,
   spentByCategory,
+  spentByCategoryBetween,
+  variableSpentBetween,
+  payCycleFor,
+  perCycle,
   variableSpentThisMonth,
   avgVariableSpend,
   commitmentProgress,
@@ -88,27 +92,39 @@ export function buildFinanceVMs(
   const myAccounts = personal ? ownAccounts(data.accounts, owner) : data.accounts;
 
   // ── core plan math ──
-  const target = sumTargets(LEAN_VARIABLE);
-  const math = planMath(data.recurring, data.debts, target);
-  const spent = variableSpentThisMonth(data.transactions, monthKey);
-  const byCat = spentByCategory(data.transactions, monthKey);
-  // Overspending the lean budget is real cash that can NO LONGER go at the debt
-  // this month, so it reduces firepower live as you spend. (Under-spending does
-  // NOT inflate firepower — the budget stays reserved, and a mid-month "under" is
-  // just the month not being over yet.) This flows into the payoff schedule, the
-  // hero number, and the "Next move", so they all reflect real available cash.
+  // TWO horizons, deliberately. The debt/firepower math is MONTHLY because income
+  // and bills are monthly. The BUDGET is graded per PAY CYCLE, because that's the
+  // unit money actually arrives in — a calendar month splits one paycheck's
+  // spending across two reports and hides where you stand until it's too late.
+  const monthlyTarget = sumTargets(LEAN_VARIABLE);
+  const math = planMath(data.recurring, data.debts, monthlyTarget);
+  const spentMonth = variableSpentThisMonth(data.transactions, monthKey);
+
+  const cycle = payCycleFor(now);
+  const target = perCycle(monthlyTarget); // the allowance for THIS cycle
+  const spent = variableSpentBetween(data.transactions, cycle.start, cycle.end);
+  const byCat = spentByCategoryBetween(data.transactions, cycle.start, cycle.end);
+  // Overspending the lean budget is real cash that can NO LONGER go at the debt,
+  // so it reduces firepower live as you spend. (Under-spending does NOT inflate
+  // firepower — the budget stays reserved, and a mid-period "under" is just the
+  // period not being over yet.) Measured MONTHLY here on purpose: firepower is a
+  // monthly figure (monthly income less monthly bills), so mixing a per-cycle
+  // overspend into it would compare half a period against a whole one.
+  const overspendMonth = Math.max(0, spentMonth - monthlyTarget);
+  // The same idea on the cycle horizon — what the budget bar shows.
   const overspend = Math.max(0, spent - target);
   // Cash that left but is NOT graded against the envelope (electronics). It never
   // shows as "overspend" — there's no line to blow — but it's still money that
-  // can't go at the debt, so it comes off firepower directly.
-  const outsideBudgetCash = OUTSIDE_BUDGET_CASH_CATS.reduce((s, c) => s + (byCat[c] ?? 0), 0);
-  const firepower = Math.max(0, math.firepower - overspend - outsideBudgetCash); // "available THIS month" (the hero tile)
+  // can't go at the debt, so it comes off firepower directly. Monthly, to match.
+  const byCatMonth = spentByCategory(data.transactions, monthKey);
+  const outsideBudgetCash = OUTSIDE_BUDGET_CASH_CATS.reduce((s, c) => s + (byCatMonth[c] ?? 0), 0);
+  const firepower = Math.max(0, math.firepower - overspendMonth - outsideBudgetCash); // "available THIS month" (the hero tile)
   const ordered = orderedDebts(data.debts);
   // Project the payoff from the SUSTAINABLE pace — a trailing average of ACTUAL
   // variable spend — so the debt-free date tracks real behavior: a one-off
   // over-budget month barely moves it, a sustained trend does. This month's spend
   // above that pace dents the next payday once (that cash is already gone).
-  const projVariable = avgVariableSpend(data.transactions, now, 3, target);
+  const projVariable = avgVariableSpend(data.transactions, now, 3, monthlyTarget);
   const projFirepower = Math.max(0, math.income - math.fixedNonDebt - projVariable);
   // The deploy plan (lump-now + flow-after) is built below — after the bills
   // section — because it needs the bills-before-next-payday hold-back.
@@ -132,7 +148,7 @@ export function buildFinanceVMs(
     catId: l.cats[0],
     label: l.label,
     spent: lineSpent(l, byCat),
-    target: l.target,
+    target: perCycle(l.target),
   }));
   const donut = lineRows.filter((r) => r.spent > 0).map((r) => ({ catId: r.catId, amount: r.spent }));
 
@@ -398,6 +414,9 @@ export function buildFinanceVMs(
     debtLeft: math.totalDebt,
     debtProgressPct: clearedPct,
     budgetSpent: spent,
+    budgetCycleLabel: cycle.label,
+    budgetCycleDay: cycle.dayIndex,
+    budgetCycleDays: cycle.days,
     budgetTarget: target,
     donut,
     anomalyCount,
@@ -429,6 +448,9 @@ export function buildFinanceVMs(
   });
   const insights: InsightsVM = {
     budgetSpent: spent,
+    budgetCycleLabel: cycle.label,
+    budgetCycleDay: cycle.dayIndex,
+    budgetCycleDays: cycle.days,
     budgetTarget: target,
     donut,
     categories: lineRows,

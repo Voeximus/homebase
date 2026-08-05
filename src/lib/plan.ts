@@ -206,6 +206,67 @@ export function paydayDate(year: number, month: number, payDay: number): Date {
   return payDay >= 31 ? new Date(year, month + 1, 0) : new Date(year, month, payDay);
 }
 
+// --- Pay cycles ---------------------------------------------------------------
+// The variable budget is graded per PAY CYCLE, not per calendar month. Gino's
+// observation, and it's the right unit: money lands on the 15th and the last day,
+// and rent hits the 1st — so a calendar month cuts one paycheck's spending in half
+// and reports the pieces in two different months. A charge made the evening of the
+// 31st, right after the check landed, belongs to the run that check funds.
+//
+// It also reads better mid-flight: half a cycle is ~7 days, so "51% spent, 8 days
+// to go" is actionable, where a month-end verdict arrives too late to change.
+// BILLS stay calendar-monthly — rent really is due on the 1st.
+
+export interface PayCycle {
+  start: string; // ISO date, inclusive — the payday that opens the cycle
+  end: string; // ISO date, inclusive — the day before the next payday
+  label: string; // "Jul 31 – Aug 14"
+  dayIndex: number; // 1-based position of `now` within the cycle
+  days: number; // length of the cycle in days
+}
+
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** The pay cycle containing `now`: from the most recent payday through the day
+ *  before the next one. Spans the month boundary by design. */
+export function payCycleFor(now: Date, payDays: number[] = PAY_DAYS): PayCycle {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // paydays across the previous, current and next month — enough to bracket `now`
+  const cands: Date[] = [];
+  for (const off of [-1, 0, 1]) {
+    for (const d of payDays) cands.push(paydayDate(now.getFullYear(), now.getMonth() + off, d));
+  }
+  cands.sort((a, b) => +a - +b);
+  let start = cands[0];
+  let next = cands[cands.length - 1];
+  for (let i = 0; i < cands.length; i++) {
+    if (+cands[i] <= +today) {
+      start = cands[i];
+      next = cands[i + 1] ?? new Date(+cands[i] + 15 * 86400000);
+    }
+  }
+  const end = new Date(+next - 86400000); // inclusive last day
+  const DAY = 86400000;
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return {
+    start: iso(start),
+    end: iso(end),
+    label: `${fmt(start)} – ${fmt(end)}`,
+    dayIndex: Math.floor((+today - +start) / DAY) + 1,
+    days: Math.round((+end - +start) / DAY) + 1,
+  };
+}
+
+/** How many pay cycles a month holds — the divisor turning a MONTHLY budget line
+ *  into a per-cycle allowance. Semimonthly paydays ⇒ 2. */
+export const CYCLES_PER_MONTH = PAY_DAYS.length;
+
+/** The per-cycle allowance for the whole envelope (or one line). */
+export function perCycle(monthlyAmount: number): number {
+  return monthlyAmount / CYCLES_PER_MONTH;
+}
+
 export function nextPayday(after: Date, payDays: number[] = PAY_DAYS): Date {
   const y = after.getFullYear();
   const m = after.getMonth();
@@ -372,9 +433,25 @@ export function spentByCategory(
   transactions: Transaction[],
   monthKey: string,
 ): Record<string, number> {
+  return spentByCategoryBetween(transactions, monthKey + "-01", monthKey + "-31");
+}
+
+/** Same partition as spentByCategory, over an arbitrary INCLUSIVE date range —
+ *  which is what a pay cycle needs, since it straddles the month boundary. */
+export function spentByCategoryBetween(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of transactions) {
-    if (t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo && !t.pending) {
+    if (
+      t.type === "expense" &&
+      t.date >= startISO &&
+      t.date <= endISO &&
+      !t.appliesTo &&
+      !t.pending
+    ) {
       if (t.splits && t.splits.length) {
         for (const s of t.splits) out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;
       } else {
@@ -383,6 +460,21 @@ export function spentByCategory(
     }
   }
   return out;
+}
+
+/** Graded variable spend over a date range — the pay-cycle counterpart of
+ *  variableSpentThisMonth. Same rule: only categories a budget line claims. */
+export function variableSpentBetween(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+): number {
+  const byCat = spentByCategoryBetween(transactions, startISO, endISO);
+  let total = 0;
+  for (const [catId, amount] of Object.entries(byCat)) {
+    if (inAnyLine(catId)) total += amount;
+  }
+  return total;
 }
 
 // --- The 90-day commitment ---------------------------------------------------

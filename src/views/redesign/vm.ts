@@ -26,6 +26,10 @@ export interface HomeVM {
   debtLeft: number;
   debtProgressPct: number; // 0..100 cleared
   budgetSpent: number;
+  // The pay cycle the budget is graded over (e.g. "Jul 31 – Aug 14") + how far in.
+  budgetCycleLabel: string;
+  budgetCycleDay: number;
+  budgetCycleDays: number;
   budgetTarget: number;
   donut: { catId: string; amount: number }[];
   anomalyCount: number; // 0 = hide the alert

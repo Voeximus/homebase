@@ -7,6 +7,9 @@ const money = (n: number) =>
 
 export interface InsightsVM {
   budgetSpent: number;
+  budgetCycleLabel: string;
+  budgetCycleDay: number;
+  budgetCycleDays: number;
   budgetTarget: number;
   donut: { catId: string; amount: number }[];
   categories: { catId: string; label: string; spent: number; target: number }[];

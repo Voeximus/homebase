@@ -131,10 +131,18 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between">
-              <span className="text-[13.5px] font-semibold text-bone">{t("Budget")}</span>
+              <span className="text-[13.5px] font-semibold text-bone">{t("This cycle")}</span>
               <span className="text-[11.5px] text-taupe">
                 {t("of {amount}", { amount: money(vm.budgetTarget) })}
               </span>
+            </div>
+            {/* Which paycheck this budget belongs to, and how far through it you
+                are — the pace check that makes a mid-cycle number actionable. */}
+            <div className="text-[10.5px] text-taupe">
+              {vm.budgetCycleLabel} · {t("day {n} of {total}", {
+                n: vm.budgetCycleDay,
+                total: vm.budgetCycleDays,
+              })}
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
               <div

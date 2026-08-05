@@ -28,6 +28,9 @@ const LAB_NOW = new Date(2026, 5, 30); // June 30 2026
 
 const MOCK_INSIGHTS: InsightsVM = {
   budgetSpent: 719,
+  budgetCycleLabel: "Jul 31 – Aug 14",
+  budgetCycleDay: 6,
+  budgetCycleDays: 15,
   budgetTarget: 1250,
   donut: [
     { catId: "groceries", amount: 392 },
@@ -135,6 +138,9 @@ const HOME: HomeVM = {
   debtLeft: 5837,
   debtProgressPct: 31,
   budgetSpent: 719,
+  budgetCycleLabel: "Jul 31 – Aug 14",
+  budgetCycleDay: 6,
+  budgetCycleDays: 15,
   budgetTarget: 1250,
   donut: [
     { catId: "groceries", amount: 392 },
