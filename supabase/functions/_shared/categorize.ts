@@ -128,6 +128,40 @@ export function classifyCredit(desc: string): "income" | "transfer" {
   return "income";
 }
 
+// Merchants that operate a FUEL STATION and a STORE under the same brand, so a
+// single merchant->category rule can never be right for both. Matched against the
+// clean merchant name; the fuel/store call is then made from the RAW descriptor.
+//
+// Deliberately a closed list rather than "any descriptor containing GAS" — in
+// Arizona the gas UTILITY bill reads "SW GAS"/"SOUTHWEST GAS", and a blanket token
+// match would file the heating bill as vehicle fuel.
+const MULTI_DEPARTMENT = /SAM'?S ?CLUB|COSTCO|WAL-?MART|WM SUPERCENTER|SAFEWAY|FRYS|FRY'S|KROGER|ALBERTSONS|CIRCLE ?K|QUIKTRIP|\bQT\b/i;
+
+// The bank's own fuel markers, as they appear inside the raw descriptor:
+// "SAMSCLUB 4956 GAS 07/16", "COSTCO GAS #123", "FRYS FUEL". Word-anchored so
+// GASOLINE-adjacent noise (VEGAS, GASTON) can't trip it.
+const FUEL_TOKEN = /\bGAS\b|\bGASOLINE\b|\bFUEL\b|\bPUMP\b/i;
+
+export type Department = "fuel" | "ambiguous" | null;
+
+/** For a merchant that sells both fuel and groceries, decide which department a
+ *  charge came from using the RAW bank descriptor.
+ *
+ *  - "fuel"      — the bank tagged the pump. Trust it.
+ *  - "ambiguous" — a multi-department merchant with no tag. The app genuinely
+ *                  cannot know, so the caller flags it for a one-tap answer
+ *                  instead of guessing and being silently wrong half the time.
+ *  - null        — an ordinary single-department merchant; nothing special.
+ *
+ *  Without a raw descriptor (manual entry, CSV import) nothing can be resolved,
+ *  so it reports null and the normal path runs unchanged. */
+export function resolveDepartment(desc: string, raw?: string): Department {
+  if (!MULTI_DEPARTMENT.test(desc) && !(raw && MULTI_DEPARTMENT.test(raw))) return null;
+  if (!raw) return null;
+  if (FUEL_TOKEN.test(raw)) return "fuel";
+  return "ambiguous";
+}
+
 /** A WORK paycheck (vs. other income like Zelle, refunds, cashback). Drives the
  *  strategy gate, which only opens once both of the cycle's paychecks have landed.
  *  Both earners' ACH payroll lines carry "PAYROLL". */
@@ -212,18 +246,57 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
 ];
 
 /** Classify one statement line. Bills win first, then Gino's merchant labels,
- *  then keyword fallback. Positive amounts (deposits, refunds, transfers-in)
- *  are skipped — they aren't living spend. */
+ *  then keyword fallback. `raw` is the untouched bank descriptor when we have one
+ *  — it resolves same-brand departments (a warehouse club's pump vs its store)
+ *  that the clean merchant name flattens together.
+ *
+ *  When the merchant sells fuel AND groceries but the descriptor doesn't say which,
+ *  the honest answer is "I don't know": the result is forced to low confidence so
+ *  the importer files it needs_review and asks once, instead of guessing and being
+ *  quietly wrong on half of them. */
 export function classify(
   desc: string,
   amount: number,
   learned?: LearnedRules,
+  raw?: string,
+): Classification {
+  const out = classifyCore(desc, amount, learned, raw);
+  // A user-taught rule is an explicit answer for this merchant — don't second-guess
+  // it. Everything else at a multi-department merchant gets flagged rather than
+  // guessed.
+  if (out.reason !== "you taught it" && out.kind === "variable" &&
+      resolveDepartment(desc, raw) === "ambiguous") {
+    return { ...out, confidence: "low", reason: out.reason + " — fuel or store? confirm" };
+  }
+  return out;
+}
+
+function classifyCore(
+  desc: string,
+  amount: number,
+  learned?: LearnedRules,
+  raw?: string,
 ): Classification {
   if (!Number.isFinite(amount) || amount >= 0) {
     return { kind: "skip", reason: "credit / deposit", confidence: "high" };
   }
 
   const key = merchantKey(desc);
+
+  // A charge at a merchant that runs SEPARATE DEPARTMENTS under one brand — a
+  // warehouse club with its own fuel station, a supermarket with pumps out front.
+  // The clean merchant name is identical for both, so a merchant->category rule is
+  // structurally incapable of telling them apart; only the RAW bank descriptor
+  // carries the "GAS" / "FUEL" token that distinguishes them.
+  //
+  // What this cost before the fix: $143 of Sam's Club grocery runs sat in the gas
+  // line for July, making fuel read $402 against a real ~$259 — and the wrong number
+  // drove a budget re-cut. The fuel token was being thrown away in normalize()
+  // before the categorizer ever ran.
+  const dept = resolveDepartment(desc, raw);
+  if (dept === "fuel") {
+    return { kind: "variable", appCategory: "transport", reason: "bank tagged this pump, not the store", confidence: "high" };
+  }
 
   // Descriptors whose correct answer depends on the AMOUNT, not just the merchant:
   // Anthropic bills an identical line for a $21.62 Pro seat and a $108.10 Max seat,

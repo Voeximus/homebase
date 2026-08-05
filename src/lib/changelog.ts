@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.05a",
+    date: "August 5, 2026",
+    notes: [
+      "Gas at Sam's Club now lands in the gas line and groceries at Sam's Club land in groceries. Your bank labels which pump-vs-store a charge was, and the app was throwing that label away — it had put $143 of July groceries into gas, making gas read $402 instead of $259.",
+      "When a store sells both fuel and food and the bank doesn't say which, the app now asks you instead of quietly guessing.",
+      "Tap any transaction to see exactly what the bank wrote — handy when a category looks wrong.",
+      "Your dental plan and the two new Affirm plans are tracked now, and the card minimum is corrected to $134.",
+    ],
+  },
+  {
     version: "2026.07.28a",
     date: "July 28, 2026",
     notes: [

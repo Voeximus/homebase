@@ -37,6 +37,12 @@ export interface NormalRow {
   accountId: string;
   date: string;
   description: string;
+  // The FULL bank descriptor, kept alongside the clean merchant name. Plaid's
+  // `merchant_name` is tidy but lossy: it reports both "SAMSCLUB 4956 GAS 07/16"
+  // and "SAMS CLUB #4956" as plain "Sam's Club", throwing away the one token that
+  // says whether the charge was fuel or a grocery run. Classification reads this;
+  // the UI still shows `description`. See resolveDepartment in categorize.ts.
+  raw: string;
   amount: number; // signed, − = spend  (= −plaid.amount)
   pending: boolean;
 }
@@ -47,6 +53,7 @@ export function normalize(t: PlaidTxn): NormalRow {
     accountId: t.account_id,
     date: t.date,
     description: t.merchant_name || t.name,
+    raw: t.name,
     amount: -t.amount, // flip Plaid's sign to ours
     pending: !!t.pending,
   };

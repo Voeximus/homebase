@@ -348,6 +348,7 @@ async function syncConnection(connId: string, force = false) {
           type: "income",
           category_id: isPaycheck(row.description) ? "paycheck" : "other-income",
           description: row.description,
+          raw_description: row.raw,
           needs_review: false,
         });
         continue;
@@ -366,12 +367,13 @@ async function syncConnection(connId: string, force = false) {
           type: "expense",
           category_id: "other",
           description: row.description,
+          raw_description: row.raw,
           applies_to: { kind: "debt", debtId: td.id, settled: true },
           needs_review: false,
         });
         continue;
       }
-      const c = classify(row.description, row.amount, learned);
+      const c = classify(row.description, row.amount, learned, row.raw);
       if (c.kind === "skip") continue;
       if (c.kind === "bill") {
         // Resolve to a recurring row tolerant of name drift (normalized / merchant
@@ -397,6 +399,7 @@ async function syncConnection(connId: string, force = false) {
             type: "expense",
             category_id: c.appCategory ?? "other",
             description: row.description,
+          raw_description: row.raw,
             applies_to: at,
             needs_review: false,
           });
@@ -412,6 +415,7 @@ async function syncConnection(connId: string, force = false) {
           type: "expense",
           category_id: "other",
           description: row.description,
+          raw_description: row.raw,
           needs_review: true,
         });
         continue;
@@ -425,6 +429,7 @@ async function syncConnection(connId: string, force = false) {
         type: "expense",
         category_id: c.appCategory ?? "other",
         description: row.description,
+          raw_description: row.raw,
         needs_review: c.confidence === "low",
       });
     }
@@ -514,7 +519,7 @@ async function syncConnection(connId: string, force = false) {
       const acctId = acctIdByProv[row.accountId];
       if (!acctId) continue;
       if (row.amount >= 0) continue; // outflows (spend) only — skip pending credits
-      const c = classify(row.description, row.amount, learned);
+      const c = classify(row.description, row.amount, learned, row.raw);
       if (c.kind === "skip") continue;
       pendingRows.push({
         date: row.date,
@@ -522,6 +527,7 @@ async function syncConnection(connId: string, force = false) {
         type: "expense",
         category_id: c.appCategory ?? "other",
         description: row.description,
+          raw_description: row.raw,
         account_id: acctId,
         provider: "plaid",
         provider_txn_id: row.providerTxnId,

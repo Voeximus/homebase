@@ -56,6 +56,11 @@ export interface Transaction {
   type: TxnType;
   categoryId: string; // the primary/dominant category (used for the row's color + icon)
   description: string;
+  // What the bank actually wrote, when the feed gave it to us. `description` is
+  // Plaid's clean merchant name (good for display, lossy for meaning); this is the
+  // untouched descriptor, and it is the only place a same-brand fuel station is
+  // distinguishable from the store. Absent on manual rows.
+  rawDescription?: string;
   account?: string;
   accountId?: string; // which account this hit
   appliesTo?: AppliesTo; // what this entry satisfies (bill / debt / goal / …)

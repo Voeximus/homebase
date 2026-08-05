@@ -41,6 +41,7 @@ function mapTxn(r: any): Transaction {
     type: r.type,
     categoryId: r.category_id,
     description: r.description ?? "",
+    rawDescription: r.raw_description ?? undefined,
     account: r.account ?? undefined,
     accountId: r.account_id ?? undefined,
     appliesTo: r.applies_to ?? undefined,

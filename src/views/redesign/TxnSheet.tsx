@@ -76,6 +76,18 @@ export function TxnSheet({
             <div className="mt-0.5 text-[12px]" style={{ color: "#8b97a6" }}>
               {fmtDate(txn.date)} · {money2(txn.amount)}
             </div>
+            {/* What the bank actually wrote. Shown only when it says more than the
+                clean merchant name — that extra text is often the only way to tell
+                a warehouse club's pump from its store, so it settles "why is this
+                in the wrong category?" without downloading a statement. */}
+            {!splitting && txn.rawDescription && txn.rawDescription !== txn.description && (
+              <div
+                className="mt-1 break-words font-mono text-[10.5px] leading-snug"
+                style={{ color: "#6b7686" }}
+              >
+                {txn.rawDescription}
+              </div>
+            )}
           </div>
           <button onClick={onClose} style={{ color: "#6b7686" }}>
             <X size={20} />
