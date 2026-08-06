@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { BRAND_GRADIENT } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
-import { disablePush, enablePush, getPushStatus, type PushStatus } from "../../lib/push";
+import { disablePush, enablePush, getPushStatus, syncPushSubscription, type PushStatus } from "../../lib/push";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -93,7 +93,13 @@ function PushRow() {
   const [status, setStatus] = useState<PushStatus>("default");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    getPushStatus().then(setStatus);
+    // Repair first, then report. Someone opening this row is usually here BECAUSE
+    // notifications stopped, so it's the one screen that must not just re-read a
+    // stale "On" back to them.
+    syncPushSubscription()
+      .catch(() => {})
+      .then(getPushStatus)
+      .then(setStatus);
   }, []);
   const on = status === "subscribed";
   const locked = status === "unsupported" || status === "denied";

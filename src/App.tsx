@@ -11,6 +11,7 @@ import { getOwner, type Owner } from "./lib/owner";
 import { getLens, saveLens, type Lens } from "./lib/lens";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 import { syncNow } from "./lib/plaidClient";
+import { syncPushSubscription } from "./lib/push";
 import { FinanceTabs } from "./views/redesign/FinanceTabs";
 import { UpdatePrompt } from "./components/UpdatePrompt";
 import { WhatsNew } from "./components/WhatsNew";
@@ -95,6 +96,13 @@ function Shell() {
   // Sync the bank feed once on open, so the day's purchases are waiting to train.
   useEffect(() => {
     syncNow().catch(() => {});
+  }, []);
+  // Re-assert this phone's push registration on every open. The stored row is
+  // what the sender actually delivers to, and it can vanish without the browser
+  // noticing (see syncPushSubscription) — so it gets re-asserted rather than
+  // written once and trusted.
+  useEffect(() => {
+    syncPushSubscription().catch(() => {});
   }, []);
   const onLens = (l: Lens) => {
     saveLens(l);

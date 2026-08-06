@@ -15,6 +15,25 @@ function paidKey(at: any) {
   return at?.kind === "bill" ? `${at.recurringId}|${at.monthKey}|${at.day}` : null;
 }
 
+// How many months apart a bill repeats, for the cadences that DON'T fire every
+// month. Mirrors PERIOD_MONTHS in src/lib/schedule.ts — the app learned this in
+// schema_v23 and this function did not, so a semiannual insurance bill and a
+// yearly membership were pinging the phones on their due DAY of EVERY month.
+const PERIOD_MONTHS: Record<string, number> = { quarterly: 3, semiannual: 6, yearly: 12 };
+
+/** Does a longer-than-monthly bill fire in this month? Its anchor names one month
+ *  it's known to hit and it repeats every `period` months from there. No anchor →
+ *  let it through rather than silently hide a real bill. */
+function firesInMonth(cadence: string, anchorDate: string | null, monthKey: string): boolean {
+  const period = PERIOD_MONTHS[cadence];
+  if (!period) return true;
+  if (!anchorDate) return true;
+  const [ay, am] = anchorDate.slice(0, 7).split("-").map(Number);
+  const [y, m] = monthKey.split("-").map(Number);
+  const delta = (y - ay) * 12 + (m - am);
+  return ((delta % period) + period) % period === 0;
+}
+
 Deno.serve(async (req) => {
   // fail CLOSED: a missing/empty CRON_TOKEN denies everything (never disables auth)
   if (!TOKEN || new URL(req.url).searchParams.get("token") !== TOKEN) {
@@ -54,9 +73,17 @@ Deno.serve(async (req) => {
     // 2) bills due today / tomorrow that aren't recorded paid this month
     const { data: recs } = await admin
       .from("recurring")
-      .select("id, name, due_days, amount, direction, active")
+      .select("id, name, due_days, amount, direction, active, cadence, anchor_date, linked_debt_id")
       .eq("active", true);
     const { data: paid } = await admin.from("transactions").select("applies_to").not("applies_to", "is", null);
+    // A card-payment bill exists only to service its debt: clear the debt and the
+    // minimum stops existing, so the reminder must stop too. The app gates on this
+    // live (src/lib/schedule.ts); without it here, a paid-off card kept pinging its
+    // $35 minimum every month.
+    const { data: debts } = await admin.from("debts").select("id, balance");
+    const clearedDebts = new Set(
+      (debts ?? []).filter((d: { balance: number }) => Number(d.balance) <= 0).map((d: { id: string }) => d.id),
+    );
     const paidSet = new Set<string>();
     for (const t of paid ?? []) {
       const k = paidKey((t as { applies_to: unknown }).applies_to);
@@ -65,6 +92,8 @@ Deno.serve(async (req) => {
     const due: { name: string; amount: number; rel: string }[] = [];
     for (const r of recs ?? []) {
       if (r.direction !== "out" || !Array.isArray(r.due_days)) continue;
+      if (r.linked_debt_id && clearedDebts.has(r.linked_debt_id)) continue;
+      if (!firesInMonth(r.cadence ?? "monthly", r.anchor_date ?? null, monthKey)) continue;
       for (const d of r.due_days) {
         const dd = Math.min(d, daysInMonth);
         const rel = dd === dom ? "today" : dd === dom + 1 ? "tomorrow" : null;

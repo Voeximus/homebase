@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.06a",
+    date: "August 6, 2026",
+    notes: [
+      "Notifications are fixed. Both phones had quietly fallen off the notification list — the switch still read On, but nothing could actually be delivered. The app now re-registers your phone every time you open it, so it can't silently drop off again.",
+      "Bill reminders stop nagging about bills that aren't due. The car insurance was going to remind you every month instead of every six, and the paid-off card was still asking for its $35 minimum.",
+      "A store that sells both gas and groceries now always asks which one it was, even if you've answered for that store before — one answer can't be right for both the pump and the aisles.",
+    ],
+  },
+  {
     version: "2026.08.05b",
     date: "August 5, 2026",
     notes: [

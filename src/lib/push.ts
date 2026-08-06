@@ -15,6 +15,14 @@ function ownerOfDevice(): string {
   return o === "gino" ? "Gino" : o === "xinyan" ? "Xinyan" : "Joint";
 }
 
+// Turning the toggle OFF unsubscribes the browser but can't revoke the OS
+// permission, so "permission granted + no subscription" is ambiguous: it means
+// either "the user switched this off" or "it broke". This flag records the
+// intent, so the self-heal below can repair the second case without ever
+// undoing the first.
+const OFF_KEY = "hb-push-off";
+const optedOut = () => localStorage.getItem(OFF_KEY) === "1";
+
 export type PushStatus = "unsupported" | "default" | "denied" | "subscribed";
 
 export function pushSupported(): boolean {
@@ -39,6 +47,22 @@ export async function getPushStatus(): Promise<PushStatus> {
     }
   }
   return "default";
+}
+
+/** Does this browser subscription still speak the CURRENT VAPID key? A push
+ *  subscription is bound to the applicationServerKey it was created with. Rotate
+ *  the key pair and every existing subscription keeps looking perfectly healthy to
+ *  the browser while the sender gets a 403 forever — and 403 is not 404/410, so the
+ *  row is never pruned and never repaired. Comparing the bytes is the only way to
+ *  see it from this side. */
+function keyMatchesCurrentVapid(sub: PushSubscription): boolean {
+  const raw = sub.options?.applicationServerKey;
+  if (!raw) return true; // browser doesn't expose it — assume fine, don't churn
+  const have = new Uint8Array(raw);
+  const want = urlBase64ToUint8Array(VAPID_PUBLIC);
+  if (have.length !== want.length) return false;
+  for (let i = 0; i < have.length; i++) if (have[i] !== want[i]) return false;
+  return true;
 }
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
@@ -78,12 +102,66 @@ export async function enablePush(): Promise<PushStatus> {
     console.error("push subscribe save", error);
     return "default";
   }
+  localStorage.removeItem(OFF_KEY);
   return "subscribed";
+}
+
+/** Re-assert this device's stored subscription. Safe to call on every open.
+ *
+ *  WHY THIS EXISTS. The browser's push subscription and the `push_subscriptions`
+ *  row are two independent facts, and they drift apart silently:
+ *    • the sender PRUNES the row on a 404/410 from the push service (correct — the
+ *      endpoint really is dead), but nothing ever writes it back;
+ *    • reinstalling the PWA mints a brand-new endpoint and abandons the old row;
+ *    • the upsert in enablePush() can simply fail (offline, expired session).
+ *  In every one of those cases the browser still reports a subscription, so
+ *  getPushStatus() — which only ever asked the BROWSER — kept showing "On" while
+ *  the row that makes a push deliverable was gone. That is exactly how this
+ *  household ended up with a healthy notify function, a cron job succeeding every
+ *  night, and ZERO registered devices, with no symptom anywhere in the UI.
+ *
+ *  The row is the deliverable half, so the app has to re-assert it rather than
+ *  trust that it was written once. One idempotent upsert per open, keyed on the
+ *  endpoint. */
+export async function syncPushSubscription(): Promise<void> {
+  if (!pushSupported() || Notification.permission !== "granted") return;
+  if (optedOut()) return; // switched off on purpose — leave it off
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    // A subscription signed with a retired VAPID key can never be delivered to.
+    // Trade it in for one the current key can reach — permission is already
+    // granted, so this is silent.
+    if (sub && !keyMatchesCurrentVapid(sub)) {
+      await sub.unsubscribe().catch(() => {});
+      sub = null;
+    }
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC) as BufferSource,
+      });
+    }
+    const json = sub.toJSON() as { keys?: { p256dh?: string; auth?: string } };
+    const { error } = await supabase.from("push_subscriptions").upsert(
+      {
+        owner: ownerOfDevice(),
+        endpoint: sub.endpoint,
+        p256dh: json.keys?.p256dh ?? "",
+        auth: json.keys?.auth ?? "",
+      },
+      { onConflict: "endpoint" },
+    );
+    if (error) console.error("push resync", error);
+  } catch (e) {
+    console.error("push resync", e);
+  }
 }
 
 /** Unsubscribe this device + drop its stored subscription. */
 export async function disablePush(): Promise<void> {
   if (!pushSupported()) return;
+  localStorage.setItem(OFF_KEY, "1");
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();

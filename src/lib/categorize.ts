@@ -261,11 +261,18 @@ export function classify(
   raw?: string,
 ): Classification {
   const out = classifyCore(desc, amount, learned, raw);
-  // A user-taught rule is an explicit answer for this merchant — don't second-guess
-  // it. Everything else at a multi-department merchant gets flagged rather than
-  // guessed.
-  if (out.reason !== "you taught it" && out.kind === "variable" &&
-      resolveDepartment(desc, raw) === "ambiguous") {
+  // Flag rather than guess at a multi-department merchant — INCLUDING when a
+  // learned rule fired. A learned rule is keyed by MERCHANT, and this whole branch
+  // exists because one merchant runs two departments, so such a rule is
+  // structurally incapable of being the answer here: "Sam's Club → transport" is
+  // the correct answer at the pump and the wrong one in the aisles, and it fires
+  // identically for both. Exempting it (as this did) meant a single "Remember" tap
+  // on one fill-up silently re-filed every grocery run as fuel from then on —
+  // which is the exact failure the raw descriptor was added to end.
+  //
+  // The learned category still rides along as the PRE-FILL, so confirming is one
+  // tap; only the certainty is withdrawn.
+  if (out.kind === "variable" && resolveDepartment(desc, raw) === "ambiguous") {
     return { ...out, confidence: "low", reason: out.reason + " — fuel or store? confirm" };
   }
   return out;
