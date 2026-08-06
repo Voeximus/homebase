@@ -431,6 +431,10 @@ async function syncConnection(connId: string, force = false) {
         description: row.description,
           raw_description: row.raw,
         needs_review: c.confidence === "low",
+        // At a multi-department merchant the category above is a GUESS, so it may
+        // seed a new row but must never overwrite one that already has an answer.
+        // Without this a re-sync silently re-decides months of history at once.
+        keep_category: c.ambiguous === true,
       });
     }
 

@@ -17,6 +17,10 @@ export interface Classification {
   hisCategory?: string; // the raw label we matched (for display / debugging)
   reason: string;
   confidence: "high" | "low"; // "low" → worth a one-tap clarify question
+  // The merchant runs multiple departments and the descriptor doesn't say which,
+  // so `appCategory` here is a PRE-FILL, not a finding. The importer must not use
+  // it to overwrite a category an existing row already carries — see classify().
+  ambiguous?: boolean;
 }
 
 // A learned rule, keyed by merchant key. Checked before everything else, so a
@@ -159,6 +163,9 @@ export function resolveDepartment(desc: string, raw?: string): Department {
   if (!MULTI_DEPARTMENT.test(desc) && !(raw && MULTI_DEPARTMENT.test(raw))) return null;
   if (!raw) return null;
   if (FUEL_TOKEN.test(raw)) return "fuel";
+  // An ONLINE order at the same brand has no pump to be confused with, so it isn't
+  // ambiguous at all — "SAMS CLUB.COM" is the membership or a shipped order.
+  if (/\.COM|\bONLINE\b/i.test(raw)) return null;
   return "ambiguous";
 }
 
@@ -270,10 +277,24 @@ export function classify(
   // on one fill-up silently re-filed every grocery run as fuel from then on —
   // which is the exact failure the raw descriptor was added to end.
   //
-  // The learned category still rides along as the PRE-FILL, so confirming is one
-  // tap; only the certainty is withdrawn.
+  // The category still rides along as a PRE-FILL for a brand-new row, but it is
+  // marked `ambiguous` so the importer never uses it to OVERWRITE a category an
+  // existing row already carries. That distinction is load-bearing: a bulk re-sync
+  // once re-decided 12 of these at once and moved $702 — mostly into fuel — on what
+  // is, by construction, a coin flip.
+  //
+  // And it really is a coin flip. Measured against Gino's own hand-labels: the bank
+  // writes the GAS token on only SOME pump charges (the descriptor is truncated at
+  // ~28 chars, so "SAMS CLUB #495" may have lost it), and he confirmed four
+  // token-less charges as fuel and three as store. Absence of the token carries no
+  // information in either direction — which is exactly why this asks instead.
   if (out.kind === "variable" && resolveDepartment(desc, raw) === "ambiguous") {
-    return { ...out, confidence: "low", reason: out.reason + " — fuel or store? confirm" };
+    return {
+      ...out,
+      confidence: "low",
+      ambiguous: true,
+      reason: out.reason + " — fuel or store? confirm",
+    };
   }
   return out;
 }
