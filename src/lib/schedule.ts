@@ -336,3 +336,40 @@ export function monthCalendar(
     bills,
   };
 }
+
+/** The unpaid bills still to come out of the CURRENT paycheck: due from `todayISO`
+ *  through `cycleEndISO` (the day before the next payday), inclusive.
+ *
+ *  Bills stay calendar-monthly on purpose — rent really is due on the 1st — so this
+ *  deliberately does NOT re-scope the bill list. It answers the separate question a
+ *  pay cycle raises: of the money already in the account, how much is spoken for
+ *  before more arrives.
+ *
+ *  Pass every MonthCalendar the window touches. It can cross a month boundary (a
+ *  cycle opening on the 31st runs into the next month), and a caller that passes
+ *  only the current month would silently under-report exactly when the answer
+ *  matters most. */
+export function dueBeforeNextPayday(
+  months: readonly MonthCalendar[],
+  todayISO: string,
+  cycleEndISO: string,
+): { bills: MonthCalBill[]; total: number } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const seen = new Set<string>();
+  const bills: MonthCalBill[] = [];
+  for (const m of months) {
+    for (const b of m.bills) {
+      if (b.paid) continue;
+      const on = `${m.year}-${pad(m.month + 1)}-${pad(b.day)}`;
+      if (on < todayISO || on > cycleEndISO) continue;
+      // `b.id` is recurringId@day, which repeats across months — so the guard has
+      // to key on the RESOLVED date, or overlapping calendars would collapse two
+      // genuinely separate installments into one.
+      const key = `${on}|${b.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      bills.push(b);
+    }
+  }
+  return { bills, total: bills.reduce((s, b) => s + b.amount, 0) };
+}

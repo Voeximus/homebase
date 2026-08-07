@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Receipt, X, CalendarDays, ChevronDown, ChevronRight } from "lucide-react";
 import { t } from "../../lib/i18n";
 import { catColor, catIcon } from "../../lib/catColor";
-import type { MonthCalendar, MonthCalBill } from "../../lib/schedule";
+import { dueBeforeNextPayday, type MonthCalendar, type MonthCalBill } from "../../lib/schedule";
 import { BillCalendar } from "./BillCalendar";
+import { payCycleFor } from "../../lib/plan";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -126,6 +127,20 @@ export function BillsSheet({
   const unpaid = mc.bills.filter((b) => !b.paid);
   const paid = mc.bills.filter((b) => b.paid);
 
+  // The list below stays CALENDAR-MONTHLY on purpose — rent really is due on the
+  // 1st, and that decision is why bills didn't move to pay cycles with the budget.
+  // What the cycle answers here is a different question: of the check that's
+  // already landed, how much is still spoken for before the next one arrives.
+  const cycle = payCycleFor(base);
+  const daysLeft = Math.max(0, cycle.days - cycle.dayIndex);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const todayISO = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
+  // The window can cross a month boundary, so hand over every month it touches.
+  const [endY, endM] = cycle.end.split("-").map(Number);
+  const windowMonths =
+    endY === mc.year && endM - 1 === mc.month ? [mc] : [mc, getMonth(endY, endM - 1)];
+  const beforePayday = dueBeforeNextPayday(windowMonths, todayISO, cycle.end);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-3"
@@ -160,6 +175,25 @@ export function BillsSheet({
             <X size={20} />
           </button>
         </div>
+
+        {!showCal && (
+          <div
+            className="mb-3 rounded-[14px] px-3 py-2.5"
+            style={{ background: "#141a24", border: "1px solid #232d3a" }}
+          >
+            <div className="text-[11.5px]" style={{ color: "#8b97a6" }}>
+              {cycle.label} ·{" "}
+              {daysLeft === 0 ? t("last day") : t("{n} days left", { n: daysLeft })}
+            </div>
+            <div className="mt-0.5 text-[13.5px] font-semibold" style={{ color: "#fb923c" }}>
+              {beforePayday.total > 0
+                ? t("{amount} still due before payday", {
+                    amount: money2(beforePayday.total),
+                  })
+                : t("Nothing else due before payday")}
+            </div>
+          </div>
+        )}
 
         {showCal ? (
           <BillCalendar getMonth={getMonth} baseDate={base} onBack={() => setShowCal(false)} />

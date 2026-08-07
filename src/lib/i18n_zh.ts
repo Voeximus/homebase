@@ -73,6 +73,8 @@ const SEED: Record<string, string> = {
   "day {n} of {total}": "第 {n} 天 / 共 {total} 天",
   "{n} days left": "还剩 {n} 天",
   "last day": "最后一天",
+  "{amount} still due before payday": "发薪前还需支付 {amount}",
+  "Nothing else due before payday": "发薪前没有其他账单",
   "This month's envelopes": "本月预算信封",
   "This month's bills": "本月账单",
   "Upcoming bills": "即将到来的账单",
