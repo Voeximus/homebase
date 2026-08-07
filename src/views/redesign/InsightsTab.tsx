@@ -1,4 +1,4 @@
-import { ChevronDown, CircleCheck, Flame } from "lucide-react";
+import { CircleCheck, Flame } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 
@@ -31,6 +31,9 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
   const donutSegs = vm.donut.map((d) => ({ color: catColor(d.catId), value: d.amount }));
   const onTrack = vm.budgetSpent <= vm.budgetTarget;
   const leftInBudget = vm.budgetTarget - vm.budgetSpent;
+  // Days AFTER today, so `day n of total` + `days left` reconciles to the cycle
+  // length instead of overlapping on today and reading one too many.
+  const daysLeft = Math.max(0, vm.budgetCycleDays - vm.budgetCycleDay);
 
   return (
     <div className="flex flex-col gap-0">
@@ -43,8 +46,16 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
           <div className="text-[12px] opacity-90">{t("where the money goes")}</div>
           <div className="text-[26px] font-bold leading-none tracking-tight">{t("Insights")}</div>
         </div>
-        <div className="flex items-center gap-1 pb-1 text-[13px] font-medium opacity-90">
-          {t("June")} <ChevronDown size={15} />
+        {/* The pay cycle these figures are graded against. Was a hardcoded "June"
+            with a dropdown chevron that opened nothing — and after the budget moved
+            to pay cycles it named the wrong PERIOD as well as the wrong month. */}
+        <div className="pb-1 text-right">
+          <div className="text-[13px] font-semibold leading-tight">{vm.budgetCycleLabel}</div>
+          <div className="text-[11px] leading-tight opacity-80">
+            {daysLeft === 0
+              ? t("last day")
+              : t("{n} days left", { n: daysLeft })}
+          </div>
         </div>
       </div>
 
@@ -74,7 +85,12 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
               className="text-[10.5px] font-semibold uppercase"
               style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
             >
-              {t("Spent this month")}
+              {t("Spent this cycle")}
+            </div>
+            {/* Which paycheck's run this is, and how far into it — the same pace
+                line the Home tile carries, so the two screens agree. */}
+            <div className="mt-0.5 text-[11px]" style={{ color: "#8b97a6" }}>
+              {t("day {n} of {total}", { n: vm.budgetCycleDay, total: vm.budgetCycleDays })}
             </div>
             <div
               className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"

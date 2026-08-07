@@ -18,6 +18,7 @@ export const CHANGELOG: Release[] = [
       "Notifications are fixed. Both phones had quietly fallen off the notification list — the switch still read On, but nothing could actually be delivered. The app now re-registers your phone every time you open it, so it can't silently drop off again.",
       "Bill reminders stop nagging about bills that aren't due. The car insurance was going to remind you every month instead of every six, and the paid-off card was still asking for its $35 minimum.",
       "A store that sells both gas and groceries now always asks which one it was, even if you've answered for that store before — one answer can't be right for both the pump and the aisles.",
+      "Insights now shows the pay cycle it's grading: the dates, how many days are left, and which day of the cycle you're on. It used to just say \"June\".",
     ],
   },
   {
