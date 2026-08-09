@@ -20,6 +20,7 @@ export const CHANGELOG: Release[] = [
       "A store that sells both gas and groceries now always asks which one it was, even if you've answered for that store before — one answer can't be right for both the pump and the aisles.",
       "Insights now shows the pay cycle it's grading: the dates, how many days are left, and which day of the cycle you're on. It used to just say \"June\".",
       "Bills now shows the cycle dates, days left, and how much is still due before your next check lands. The bill list itself stays monthly — rent really is due on the 1st.",
+      "Activity now opens on THIS CYCLE, not the calendar month. A purchase on the 31st counts toward the current cycle’s budget, but it used to file under last month — so the dining total showed charges you couldn’t find in the list. Now the list matches the number.",
     ],
   },
   {

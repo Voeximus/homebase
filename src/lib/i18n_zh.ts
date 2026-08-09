@@ -70,6 +70,7 @@ const SEED: Record<string, string> = {
   "Firepower / mo": "每月火力",
   "Spent this month": "本月已花",
   "Spent this cycle": "本发薪周期已花",
+  "This cycle": "本发薪周期",
   "day {n} of {total}": "第 {n} 天 / 共 {total} 天",
   "{n} days left": "还剩 {n} 天",
   "last day": "最后一天",

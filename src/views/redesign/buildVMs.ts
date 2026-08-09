@@ -491,12 +491,8 @@ export function buildFinanceVMs(
   // Group activity by month so the tab can flip back through prior months. Every
   // month present in the visible ledger (plus the current one) gets a group,
   // newest first; [0] is the current month.
-  const activityMonthKeys = Array.from(new Set([monthKey, ...visible.map((tx) => tx.date.slice(0, 7))]))
-    .sort()
-    .reverse();
-  const months: ActivityMonth[] = activityMonthKeys.map((mk) => {
-    const mv = visible.filter((tx) => tx.date.slice(0, 7) === mk);
-    const mrows: ActivityRow[] = mv.map((tx) => {
+  const toRows = (txns: typeof visible): ActivityRow[] =>
+    txns.map((tx) => {
       const f = fateOf(tx);
       return {
         id: tx.id,
@@ -509,6 +505,12 @@ export function buildFinanceVMs(
         pending: !!tx.pending,
       };
     });
+
+  const activityMonthKeys = Array.from(new Set([monthKey, ...visible.map((tx) => tx.date.slice(0, 7))]))
+    .sort()
+    .reverse();
+  const monthGroups: ActivityMonth[] = activityMonthKeys.map((mk) => {
+    const mrows = toRows(visible.filter((tx) => tx.date.slice(0, 7) === mk));
     const [yy, mm] = mk.split("-").map(Number);
     return {
       monthKey: mk,
@@ -518,6 +520,23 @@ export function buildFinanceVMs(
       needsReview: mrows.filter((r) => r.fate === "review").length,
     };
   });
+
+  // The budget grades a PAY CYCLE; the ledger grouped by calendar month. At every
+  // month boundary those disagree — a charge on the 31st counts toward this
+  // cycle's spend but files under last month, so the budget number can't be
+  // reconciled against anything you can see. This puts the cycle first, so the
+  // list you scroll IS the list the envelope is adding up.
+  const cycleRows = toRows(
+    visible.filter((tx) => tx.date >= cycle.start && tx.date <= cycle.end),
+  );
+  const cycleGroup: ActivityMonth = {
+    monthKey: `cycle:${cycle.start}`,
+    monthLabel: `${t("This cycle")} · ${cycle.label}`,
+    rows: cycleRows,
+    counted: variableSpentBetween(visible, cycle.start, cycle.end),
+    needsReview: cycleRows.filter((r) => r.fate === "review").length,
+  };
+  const months: ActivityMonth[] = [cycleGroup, ...monthGroups];
   const activity: ActivityVM = { sinceMonday, processing, months };
 
   // ── Profile ──
