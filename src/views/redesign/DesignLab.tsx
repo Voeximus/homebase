@@ -112,6 +112,7 @@ const MOCK_PROFILE: ProfileVM = {
 };
 
 const ENV: EnvelopeVM = {
+  key: "groceries",
   label: "Groceries",
   catId: "groceries",
   spent: 492.02,

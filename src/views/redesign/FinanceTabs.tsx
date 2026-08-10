@@ -29,7 +29,7 @@ import { TxnSheet } from "./TxnSheet";
 import { OwedSheet } from "./OwedSheet";
 import { AnomalySheet } from "./AnomalySheet";
 import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
-import { LEAN_VARIABLE, payCycleFor, perCycle, type BudgetLine } from "../../lib/plan";
+import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
 import { merchantKey } from "../../lib/categorize";
 
 function Seg({
@@ -182,10 +182,6 @@ export function FinanceTabs({
   );
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  // The envelopes grade a PAY CYCLE, so the drill-in has to use the same window —
-  // otherwise a charge on the 31st is inside the bar but missing from the list it
-  // opens, and the two totals never agree.
-  const cycle = payCycleFor(now);
 
   const refresh = async () => {
     setSyncing(true);
@@ -208,46 +204,10 @@ export function FinanceTabs({
   const payRec = payBillEntry
     ? data.recurring.find((r) => r.id === payBillEntry.recurringId)
     : undefined;
-  const envVM: EnvelopeVM | null = useMemo(() => {
-    if (!envLine) return null;
-    const inLine = (catId: string) => envLine.cats.includes(catId);
-    // Split-aware, so the drill-in total equals the split-aware budget bar: a
-    // split txn contributes only the slices in this line (at their slice amount),
-    // an unsplit txn its full amount. Same partition as spentByCategory.
-    const rows: { id: string; name: string; date: string; amount: number }[] = [];
-    let spent = 0;
-    for (const t of data.transactions) {
-      if (t.type !== "expense" || t.date < cycle.start || t.date > cycle.end || t.appliesTo) continue;
-      const amt =
-        t.splits && t.splits.length
-          ? t.splits.filter((s) => inLine(s.categoryId)).reduce((s, x) => s + x.amount, 0)
-          : inLine(t.categoryId)
-            ? t.amount
-            : 0;
-      if (amt <= 0) continue;
-      spent += amt;
-      rows.push({ id: t.id, name: t.description || t.categoryId, date: t.date, amount: amt });
-    }
-    return {
-      label: envLine.label,
-      catId: envLine.cats[0],
-      spent,
-      target: perCycle(envLine.target),
-      txns: rows
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .map((r) => ({
-          id: r.id,
-          name: r.name,
-          dateLabel: new Date(r.date + "T00:00:00").toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          }),
-          amount: r.amount,
-        })),
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envLine, data.transactions, cycle.start, cycle.end]);
+  // Read, never recompute: the bar and this list must be the same calculation.
+  const envVM: EnvelopeVM | null = envLine
+    ? (vms.envelopes.find((e) => e.key === envLine.key) ?? null)
+    : null;
 
   return (
     <div

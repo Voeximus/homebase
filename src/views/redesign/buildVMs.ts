@@ -36,6 +36,7 @@ import type { HomeVM, BillsVM } from "./vm";
 import type { InsightsVM } from "./InsightsTab";
 import type { ActivityVM, ActivityMonth, ActivityRow, ActivityFate } from "./ActivityTab";
 import type { ProfileVM } from "./ProfileTab";
+import type { EnvelopeVM } from "./CategorySheet";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const monthKeyOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
@@ -66,6 +67,9 @@ export interface FinanceVMs {
   activity: ActivityVM;
   profile: ProfileVM;
   bills: BillsVM;
+  // The budget envelopes — each bar AND the transactions behind it, from one
+  // calculation. FinanceTabs looks one up by key; it must never recompute.
+  envelopes: EnvelopeVM[];
   // The single shared deploy plan — Home, the attack ladder, and the deploy slip
   // all read THIS, so their send-amounts and debt-free date never diverge.
   deploy: {
@@ -144,11 +148,55 @@ export function buildFinanceVMs(
     : totalPendingHold(data.accounts);
 
   // ── per-line budget (the 6 lean envelopes) ──
-  const lineRows = LEAN_VARIABLE.map((l) => ({
-    catId: l.cats[0],
-    label: l.label,
-    spent: lineSpent(l, byCat),
-    target: perCycle(l.target),
+  //
+  // The bar AND the transactions behind it are built together, from the same
+  // `cycle` window and the same `perCycle` target. They used to be computed in
+  // two places — the bar here, the drill-in list in FinanceTabs — and the two
+  // drifted apart when the budget moved to pay cycles: the bar read $79.58 for
+  // the cycle while the list it opened read $44.13 for the calendar month, of a
+  // monthly $250 target. A number and the rows that justify it have to come from
+  // one calculation, or the next horizon change silently splits them again.
+  const envelopes: EnvelopeVM[] = LEAN_VARIABLE.map((l) => {
+    const inLine = (catId: string) => l.cats.includes(catId);
+    const raw: { id: string; name: string; date: string; amount: number }[] = [];
+    for (const t of data.transactions) {
+      if (t.type !== "expense" || t.date < cycle.start || t.date > cycle.end || t.appliesTo) continue;
+      // Split-aware: a split txn contributes only the slices this line claims, at
+      // their slice amount — the same partition spentByCategoryBetween uses, so
+      // the rows always sum to the bar.
+      const amt =
+        t.splits && t.splits.length
+          ? t.splits.filter((s) => inLine(s.categoryId)).reduce((s, x) => s + x.amount, 0)
+          : inLine(t.categoryId)
+            ? t.amount
+            : 0;
+      if (amt <= 0) continue;
+      raw.push({ id: t.id, name: t.description || t.categoryId, date: t.date, amount: amt });
+    }
+    raw.sort((a, b) => b.date.localeCompare(a.date));
+    return {
+      key: l.key,
+      label: l.label,
+      catId: l.cats[0],
+      spent: lineSpent(l, byCat),
+      target: perCycle(l.target),
+      txns: raw.map((r) => ({
+        id: r.id,
+        name: r.name,
+        amount: r.amount,
+        dateLabel: new Date(r.date + "T00:00:00").toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        }),
+      })),
+    };
+  });
+  const lineRows = envelopes.map((e) => ({
+    catId: e.catId,
+    label: e.label,
+    spent: e.spent,
+    target: e.target,
   }));
   const donut = lineRows.filter((r) => r.spent > 0).map((r) => ({ catId: r.catId, amount: r.spent }));
 
@@ -578,5 +626,5 @@ export function buildFinanceVMs(
       })),
   };
 
-  return { home, insights, activity, profile, bills, deploy };
+  return { home, insights, activity, profile, bills, envelopes, deploy };
 }

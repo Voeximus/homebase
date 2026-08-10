@@ -6,6 +6,7 @@ const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export interface EnvelopeVM {
+  key: string; // the BudgetLine key — how FinanceTabs looks one up
   label: string;
   catId: string;
   spent: number;
