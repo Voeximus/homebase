@@ -12,6 +12,13 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.08b",
+    date: "August 8, 2026",
+    notes: [
+      "Tapping a budget category now shows the same period the bar is measuring. Dining read \"$80\" on the summary but \"$44.13 of $250\" when you opened it — the bar was grading your pay cycle while the list underneath was still on the calendar month, and showing the monthly target instead of the per-cycle one.",
+    ],
+  },
+  {
     version: "2026.08.08a",
     date: "August 8, 2026",
     notes: [

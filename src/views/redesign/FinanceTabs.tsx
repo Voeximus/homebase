@@ -29,7 +29,7 @@ import { TxnSheet } from "./TxnSheet";
 import { OwedSheet } from "./OwedSheet";
 import { AnomalySheet } from "./AnomalySheet";
 import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
-import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
+import { LEAN_VARIABLE, payCycleFor, perCycle, type BudgetLine } from "../../lib/plan";
 import { merchantKey } from "../../lib/categorize";
 
 function Seg({
@@ -182,6 +182,10 @@ export function FinanceTabs({
   );
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // The envelopes grade a PAY CYCLE, so the drill-in has to use the same window —
+  // otherwise a charge on the 31st is inside the bar but missing from the list it
+  // opens, and the two totals never agree.
+  const cycle = payCycleFor(now);
 
   const refresh = async () => {
     setSyncing(true);
@@ -213,7 +217,7 @@ export function FinanceTabs({
     const rows: { id: string; name: string; date: string; amount: number }[] = [];
     let spent = 0;
     for (const t of data.transactions) {
-      if (t.type !== "expense" || t.date.slice(0, 7) !== monthKey || t.appliesTo) continue;
+      if (t.type !== "expense" || t.date < cycle.start || t.date > cycle.end || t.appliesTo) continue;
       const amt =
         t.splits && t.splits.length
           ? t.splits.filter((s) => inLine(s.categoryId)).reduce((s, x) => s + x.amount, 0)
@@ -228,7 +232,7 @@ export function FinanceTabs({
       label: envLine.label,
       catId: envLine.cats[0],
       spent,
-      target: envLine.target,
+      target: perCycle(envLine.target),
       txns: rows
         .sort((a, b) => b.date.localeCompare(a.date))
         .map((r) => ({
@@ -243,7 +247,7 @@ export function FinanceTabs({
         })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envLine, data.transactions, monthKey]);
+  }, [envLine, data.transactions, cycle.start, cycle.end]);
 
   return (
     <div
