@@ -11,6 +11,7 @@ import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { TabNav, type TabKey } from "./TabNav";
 import { HomeTab } from "./HomeTab";
 import { InsightsTab } from "./InsightsTab";
+import { ForecastTab } from "./ForecastTab";
 import { ActivityTab } from "./ActivityTab";
 import { ProfileTab } from "./ProfileTab";
 import { buildFinanceVMs } from "./buildVMs";
@@ -115,7 +116,7 @@ export function FinanceTabs({
   const [tab, setTabState] = useState<TabKey>(() => {
     try {
       const t = localStorage.getItem("hb-fin-tab");
-      return t === "insights" || t === "activity" || t === "profile" ? t : "home";
+      return t === "insights" || t === "forecast" || t === "activity" || t === "profile" ? t : "home";
     } catch {
       return "home";
     }
@@ -237,6 +238,12 @@ export function FinanceTabs({
           />
         ) : tab === "insights" ? (
           <InsightsTab vm={vms.insights} taps={{ onCategory: openCategory }} />
+        ) : tab === "forecast" ? (
+          <ForecastTab
+            recurring={data.recurring}
+            transactions={data.transactions}
+            debts={data.debts}
+          />
         ) : tab === "activity" ? (
           <ActivityTab
             vm={vms.activity}

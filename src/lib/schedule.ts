@@ -71,6 +71,23 @@ export function biweeklyDaysIn(anchorDate: string, monthKey: string): number[] {
   return days;
 }
 
+/** Is this bill alive on `day` of `monthKey`? startsOn / endsOn give a recurring
+ *  row a lifetime, so a support payment paused until November, or a dental plan
+ *  with a known last payment, schedules ITSELF instead of relying on someone to
+ *  remember. Either bound may be absent, meaning unbounded. With no month in
+ *  hand we can't place the row in time, so we let it through rather than hide a
+ *  real bill — the same call firesInMonth() makes for an un-anchored period. */
+export function inWindow(r: Recurring, monthKey: string | undefined, day: number): boolean {
+  if (!r.startsOn && !r.endsOn) return true;
+  if (!monthKey) return true;
+  const [y, m] = monthKey.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month
+  const iso = `${monthKey}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+  if (r.startsOn && iso < r.startsOn) return false;
+  if (r.endsOn && iso > r.endsOn) return false;
+  return true;
+}
+
 /** A biweekly row can only be placed on real dates if it carries an anchor. */
 function biweeklyDays(r: Recurring, monthKey?: string): number[] | null {
   if (r.cadence !== "biweekly" || !r.anchorDate || !monthKey) return null;
@@ -119,12 +136,16 @@ export function monthlySchedule(
       // dates come from the anchor and each entry is one whole check. Splitting
       // the monthly figure across the days would be wrong in a 3-check month.
       const bw = biweeklyDays(r, monthKey);
-      const inDays = bw ?? r.dueDays ?? PAY_DAYS;
-      for (const d of inDays) {
+      // Split the monthly figure across ALL the row's paydays, then drop the ones
+      // outside its window. Dividing by the surviving count instead would inflate
+      // every remaining check in the month a bill starts or stops mid-way.
+      const allDays = bw ?? r.dueDays ?? PAY_DAYS;
+      for (const d of allDays) {
+        if (!inWindow(r, monthKey, d)) continue;
         entries.push({
           day: d,
           label: r.name,
-          amount: bw ? r.amount : monthly / inDays.length,
+          amount: bw ? r.amount : monthly / allDays.length,
           direction: "in",
           owner: r.owner,
           recurringId: r.id,
@@ -169,6 +190,9 @@ export function monthlySchedule(
         else if (r.name === "Rent") perPayment = 1232.44;
       }
       for (const d of days) {
+        // perPayment is already divided by the FULL day count above, so dropping
+        // out-of-window days here shrinks the month without inflating what's left.
+        if (!inWindow(r, monthKey, d)) continue;
         entries.push({
           day: d,
           label: r.name,

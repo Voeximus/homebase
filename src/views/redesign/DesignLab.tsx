@@ -5,11 +5,12 @@ import { HomeTab } from "./HomeTab";
 import { InsightsTab, type InsightsVM } from "./InsightsTab";
 import { ActivityTab, type ActivityVM } from "./ActivityTab";
 import { ProfileTab, type ProfileVM } from "./ProfileTab";
+import { ForecastTab } from "./ForecastTab";
 import { BillsSheet } from "./BillsSheet";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { OwedSheet } from "./OwedSheet";
 import type { HomeVM } from "./vm";
-import type { Recurring } from "../../types";
+import type { Debt, Recurring } from "../../types";
 import { monthCalendar } from "../../lib/schedule";
 
 // ── Mock view-models. These live ONLY in this dev-only harness (App.tsx lazy-
@@ -22,7 +23,13 @@ const MOCK_RECURRING: Recurring[] = [
   { id: "mom", name: "Mom", amount: 600, direction: "out", cadence: "monthly", active: true, dueDays: [15, 30], variable: false, categoryId: "other" } as Recurring,
   { id: "spotify", name: "Spotify", amount: 11.99, direction: "out", cadence: "monthly", active: true, dueDays: [10], variable: false, categoryId: "subscriptions" } as Recurring,
   { id: "verizon", name: "Verizon", amount: 83, direction: "out", cadence: "monthly", active: true, dueDays: [17], variable: false, categoryId: "utilities" } as Recurring,
+  { id: "cardpay", name: "Card payment (…4728)", amount: 134, direction: "out", cadence: "monthly", active: true, dueDays: [15], variable: false, categoryId: "other", linkedDebtId: "card" } as Recurring,
   { id: "pay", name: "Paycheck", amount: 5975, direction: "in", cadence: "monthly", active: true, dueDays: [15, 31] } as Recurring,
+];
+// Mock debts so the Forecast lab has a card to pay down and a payoff to reach.
+const MOCK_DEBTS: Debt[] = [
+  { id: "card", name: "Card (…4728)", balance: 4218.23, apr: 26.49, minPayment: 134 } as Debt,
+  { id: "cherry", name: "Cherry (dental)", balance: 910.29, apr: 0, minPayment: 151.72 } as Debt,
 ];
 const LAB_NOW = new Date(2026, 5, 30); // June 30 2026
 
@@ -223,6 +230,8 @@ export function DesignLab() {
           <HomeTab vm={HOME} taps={{ onBills: () => setBillsOpen(true), onOwed: () => setOwedOpen(true) }} />
         ) : tab === "insights" ? (
           <InsightsTab vm={MOCK_INSIGHTS} taps={{ onCategory: () => setEnvOpen(true) }} />
+        ) : tab === "forecast" ? (
+          <ForecastTab recurring={MOCK_RECURRING} transactions={[]} debts={MOCK_DEBTS} />
         ) : tab === "activity" ? (
           <ActivityTab vm={MOCK_ACTIVITY} />
         ) : (

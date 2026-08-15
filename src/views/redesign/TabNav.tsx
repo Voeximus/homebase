@@ -1,11 +1,12 @@
-import { Home, PieChart, LayoutGrid, User, type LucideIcon } from "lucide-react";
+import { Home, PieChart, TrendingUp, LayoutGrid, User, type LucideIcon } from "lucide-react";
 import { t } from "../../lib/i18n";
 
-export type TabKey = "home" | "insights" | "activity" | "profile";
+export type TabKey = "home" | "insights" | "forecast" | "activity" | "profile";
 
 const TABS: { key: TabKey; label: string; Icon: LucideIcon }[] = [
   { key: "home", label: "Home", Icon: Home },
   { key: "insights", label: "Insights", Icon: PieChart },
+  { key: "forecast", label: "Forecast", Icon: TrendingUp },
   { key: "activity", label: "Activity", Icon: LayoutGrid },
   { key: "profile", label: "Profile", Icon: User },
 ];

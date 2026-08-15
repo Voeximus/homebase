@@ -148,6 +148,11 @@ export function lineSpent(line: BudgetLine, byCat: Record<string, number>): numb
  *  the bank feed and the import path write. One source of truth (the ledger). */
 export function billExpected(bill: Recurring, transactions: Transaction[]): number {
   if (!bill.variable) return bill.amount;
+  // You told us what it actually is. A rolling average of three past charges is a
+  // guess about the future; a bill you've read is not. The override wins until
+  // it's cleared — it's what stops a one-off catch-up payment (Verizon's $209
+  // covering two months) from reading as the new normal for a whole quarter.
+  if (bill.knownAmount != null) return bill.knownAmount;
   const actuals = transactions
     .filter(
       (t) => t.appliesTo?.kind === "bill" && t.appliesTo.recurringId === bill.id && t.type === "expense",

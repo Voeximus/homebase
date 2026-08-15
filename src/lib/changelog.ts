@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.15b",
+    date: "August 15, 2026",
+    notes: [
+      "New Forecast tab. It runs your bills forward twelve months instead of showing one, so you can see that support payments restart in November, the dental plan ends in January, and two months a year carry a third paycheck. Tap any month to see the bills behind it.",
+      "Three dials on it: how much goes at the card, a car payment you don't have yet, and your spending per cycle. Drag them and every month re-runs. It also pays the card down as it walks forward, so the month the balance hits zero is the month its payment disappears and your surplus jumps. Nothing you drag is saved — they're what-ifs.",
+      "Bills can now have a start and end date. That's how a payment paused until November turns itself back on with nobody remembering, and how a dental plan with six payments left knows to stop. It replaces switching a bill off and leaving a note.",
+      "You can tell the app what a variable bill actually is. Verizon was projecting $130 because it was averaging in a $209 catch-up payment that covered two months. Now a bill you've actually read beats the estimate.",
+    ],
+  },
+  {
     version: "2026.08.15a",
     date: "August 15, 2026",
     notes: [

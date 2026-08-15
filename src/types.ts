@@ -150,6 +150,16 @@ export interface Recurring {
   // the due-day alone can't express: due_days says the 16th, the anchor says WHICH
   // month. Without it a yearly membership renders in all twelve.
   anchorDate?: string; // "YYYY-MM-DD"
+  // A bill's LIFETIME. Either side may be absent, meaning unbounded. A future
+  // startsOn is a bill that is scheduled but dormant — it turns itself on, so a
+  // support payment paused until November needs nobody to remember to restore
+  // it. An endsOn is a finite plan (a dental loan's last payment) or a
+  // subscription with a known cancel date.
+  startsOn?: string; // "YYYY-MM-DD" — first date it may fire
+  endsOn?: string; // "YYYY-MM-DD" — last date it may fire
+  // For a VARIABLE bill: the amount you know it actually is, which beats the
+  // rolling average of past charges. Clear it to hand the estimate back.
+  knownAmount?: number;
   linkedDebtId?: string; // if this bill is a payment on a debt, the debt it pays down
   createdAt: string;
 }
