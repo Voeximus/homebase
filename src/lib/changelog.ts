@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.15a",
+    date: "August 15, 2026",
+    notes: [
+      "Xinyan's paycheck now lands on the days it actually lands. The app had her on the 15th and 29th; she's really paid every 14 days — Aug 7, Aug 21, Sep 4 — so every forecast was off by up to six days. It also now shows the months that carry a THIRD paycheck (October has one). Your budget still plans on two checks a month on purpose, so the extra one shows up as upside instead of getting spent in advance.",
+      "Two charges that never happened are off your books. The car insurance and one Cherry payment were each counted twice — once as the real bank charge, once as a manual \"already paid\" note on top of it. That was $791.14 of spending that never left your account. The real bank charge now marks the bill paid on its own, so it can't happen again.",
+      "Rent reads $1,732.16 instead of $1,715 — the actual amount for the last two months.",
+      "Verizon moved to the 24th, Claude Max is switched off, payments to your mom are paused through October, and the ALEKS math subscription is tracked at $21.57.",
+    ],
+  },
+  {
     version: "2026.08.08b",
     date: "August 8, 2026",
     notes: [

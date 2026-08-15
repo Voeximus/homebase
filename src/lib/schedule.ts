@@ -46,6 +46,38 @@ export function firesInMonth(r: Recurring, monthKey: string): boolean {
   return ((delta % period) + period) % period === 0;
 }
 
+/** Which days of `monthKey` a TRUE biweekly row lands on, stepping 14 days out
+ *  from its anchor (a date it's KNOWN to have hit), forwards and backwards so
+ *  past months render correctly too. Returns 2 days in most months and 3 in the
+ *  ~2 months a year that carry an extra check.
+ *
+ *  This is deliberately NOT wired to CADENCE_TO_MONTHLY, which keeps biweekly at
+ *  ×2 on purpose — the budget plans on two checks and treats the third as upside.
+ *  So the calendar shows the real dates while the plan stays conservative. */
+export function biweeklyDaysIn(anchorDate: string, monthKey: string): number[] {
+  const [ay, am, ad] = anchorDate.split("-").map(Number);
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!ay || !am || !ad || !y || !m) return [];
+  const DAY = 86_400_000;
+  const STEP = 14 * DAY;
+  const anchor = Date.UTC(ay, am - 1, ad);
+  const first = Date.UTC(y, m - 1, 1);
+  const last = Date.UTC(y, m, 0); // day 0 of the next month == last day of this one
+  // Jump straight to the first occurrence on/after the 1st (k is negative for
+  // months before the anchor, so this walks backwards just as well).
+  const k = Math.ceil((first - anchor) / STEP);
+  const days: number[] = [];
+  for (let t = anchor + k * STEP; t <= last; t += STEP) days.push(new Date(t).getUTCDate());
+  return days;
+}
+
+/** A biweekly row can only be placed on real dates if it carries an anchor. */
+function biweeklyDays(r: Recurring, monthKey?: string): number[] | null {
+  if (r.cadence !== "biweekly" || !r.anchorDate || !monthKey) return null;
+  const days = biweeklyDaysIn(r.anchorDate, monthKey);
+  return days.length ? days : null;
+}
+
 export type FlowDir = "in" | "out" | "transfer";
 
 export interface ScheduleEntry {
@@ -83,12 +115,16 @@ export function monthlySchedule(
         : monthlyAmount(r);
 
     if (r.direction === "in") {
-      const inDays = r.dueDays ?? PAY_DAYS;
+      // A true biweekly paycheck lands every 14 days, NOT twice a month — so its
+      // dates come from the anchor and each entry is one whole check. Splitting
+      // the monthly figure across the days would be wrong in a 3-check month.
+      const bw = biweeklyDays(r, monthKey);
+      const inDays = bw ?? r.dueDays ?? PAY_DAYS;
       for (const d of inDays) {
         entries.push({
           day: d,
           label: r.name,
-          amount: monthly / inDays.length,
+          amount: bw ? r.amount : monthly / inDays.length,
           direction: "in",
           owner: r.owner,
           recurringId: r.id,
@@ -118,14 +154,16 @@ export function monthlySchedule(
     }
     // Read the row's own due day(s); fall back to the legacy map so it still
     // works before a re-seed bakes due_days onto the rows.
-    const days = r.dueDays ?? DUE_DAYS[r.name];
+    const bw = biweeklyDays(r, monthKey);
+    const days = bw ?? r.dueDays ?? DUE_DAYS[r.name];
     if (days && days.length) {
       // Known step-downs through June 2026 (the calendar shows the real older
       // amount; the budget already runs on the going-forward figure):
       //  · Mom's support is $400/check through June, then $300/check from July.
       //  · Rent is the discounted $1,232.44 through June (move-in concession),
       //    then the full $1,715 from July.
-      let perPayment = period ? r.amount : monthly / days.length;
+      // A biweekly bill, like a biweekly paycheck, charges its full amount each time.
+      let perPayment = bw || period ? r.amount : monthly / days.length;
       if (monthKey && monthKey <= "2026-06") {
         if (r.name === "Mom") perPayment = 400;
         else if (r.name === "Rent") perPayment = 1232.44;
