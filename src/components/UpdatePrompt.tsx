@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { RefreshCw } from "lucide-react";
 import { t } from "../lib/i18n";
@@ -52,25 +53,56 @@ export function UpdatePrompt() {
     },
   });
 
+  const [busy, setBusy] = useState(false);
+
+  // The graceful path (tell the waiting worker to take over, reload when it does)
+  // fails silently in two different ways: the worker never reaches `waiting`, or
+  // it does and the reload is still answered from the old precache. Both look the
+  // same from the outside — a flicker and no new version. So the button ALWAYS
+  // ends in a hard reset: drop every cache, unregister the worker, reload. That
+  // costs one re-download of the shell and cannot get stuck. Nothing durable
+  // lives in the Cache API — data is Supabase + localStorage — so it's safe.
+  const nuke = async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch {
+      /* private mode / no cache API — reload anyway */
+    }
+    try {
+      const regs = await navigator.serviceWorker?.getRegistrations();
+      await Promise.all((regs ?? []).map((r) => r.unregister()));
+    } catch {
+      /* ignore */
+    }
+    // cache-busting query so the navigation can't be answered from HTTP cache
+    const u = new URL(window.location.href);
+    u.searchParams.set("v", Date.now().toString(36));
+    window.location.replace(u.toString());
+  };
+
   const doUpdate = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       // reload the moment the new worker takes control (push-sw.js claims it)
       navigator.serviceWorker?.addEventListener("controllerchange", () => window.location.reload(), { once: true });
       const reg = await navigator.serviceWorker?.getRegistration();
       reg?.waiting?.postMessage({ type: "SKIP_WAITING" });
     } catch {
-      /* fall through to the hook + hard fallback below */
+      /* fall through */
     }
     updateServiceWorker(true).catch(() => {});
-    // last resort: if the SW handshake didn't reload us, force it (the new worker
-    // has activated by now, so this lands on the fresh version)
-    window.setTimeout(() => window.location.reload(), 2500);
+    // If the handshake hasn't navigated us away by now, it isn't going to.
+    window.setTimeout(() => void nuke(), 3000);
   };
 
   if (!needRefresh) return null;
   return (
     <button
       onClick={doUpdate}
+      disabled={busy}
+      aria-live="polite"
       className="hb-update-pulse fixed left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-bold transition active:scale-95"
       style={{
         top: "calc(env(safe-area-inset-top, 0px) + 10px)",
@@ -79,9 +111,11 @@ export function UpdatePrompt() {
         background: "linear-gradient(150deg,#fbbf24,#f97316)",
         color: "#3a1d02",
         boxShadow: "0 10px 26px -6px rgba(249,115,22,.65)",
+        opacity: busy ? 0.75 : 1,
       }}
     >
-      <RefreshCw size={15} /> {t("Update available — tap to refresh")}
+      <RefreshCw size={15} className={busy ? "animate-spin" : undefined} />
+      {busy ? t("Updating…") : t("Update available — tap to refresh")}
     </button>
   );
 }

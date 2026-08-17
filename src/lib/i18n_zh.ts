@@ -550,6 +550,7 @@ const SEED: Record<string, string> = {
   "1 {unit} ≈ {g} g": "1 {unit} ≈ {g} 克",
   Processing: "处理中",
   "Update available — tap to refresh": "有更新 — 点击刷新",
+  "Updating…": "正在更新…",
   "⬆️ Homebase update ready": "⬆️ Homebase 有更新",
   "A new version is ready — open Homebase and tap Update.": "新版本已就绪 — 打开 Homebase 点击更新。",
   Today: "今天",

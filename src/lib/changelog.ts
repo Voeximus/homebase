@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.16b",
+    date: "August 16, 2026",
+    notes: [
+      "The Update button actually updates now. It could quietly fail two different ways — the new version never took over, or it took over and the page still loaded the old one from cache — and both looked the same from your side: a flicker and nothing changed. It now clears the cache and re-registers as a guaranteed fallback, so tapping it always lands you on the new version.",
+      "It also tells you it's working. The button spins and says \"Updating…\" instead of sitting there looking ignored for three seconds.",
+      "Electric reads $100 instead of $83 — it was averaging old bills because August's $132 hadn't synced from the bank yet.",
+    ],
+  },
+  {
     version: "2026.08.16a",
     date: "August 16, 2026",
     notes: [
