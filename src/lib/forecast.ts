@@ -13,7 +13,6 @@ import { monthlySchedule } from "./schedule";
 export interface ForecastLine {
   name: string;
   amount: number;
-  synthetic?: boolean; // a what-if the user dialled in, not a row in the database
 }
 
 export interface ForecastMonth {
@@ -31,8 +30,6 @@ export interface ForecastMonth {
 export interface ForecastOpts {
   /** Monthly payment at the tracked card. Overrides the row's contracted amount. */
   cardPay?: number;
-  /** A car payment that doesn't exist in the database yet. */
-  carPay?: number;
   /** Variable spending PER PAY CYCLE. Two cycles a month. */
   cycleSpend: number;
   /** The debt the card-payment row services, so payoff can be simulated. */
@@ -96,7 +93,6 @@ export function forecast(
     }
 
     for (const [name, amount] of byName) lines.push({ name, amount });
-    if (opts.carPay) lines.push({ name: "Car payment", amount: opts.carPay, synthetic: true });
 
     const bills = lines.reduce((s, l) => s + l.amount, 0);
     const spend = opts.cycleSpend * 2;

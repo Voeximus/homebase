@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.16a",
+    date: "August 16, 2026",
+    notes: [
+      "The Civic is in the app. The car payment ($232.67, first one Sept 30) and the rewritten insurance are both bills now, each with its own start date — so they stay out of August and show up on their own when they begin.",
+      "Forecast is down to the two dials you actually decide each cycle: what you spend, and what goes at the card. The car payment came off the dials because it's a real bill now, not a what-if.",
+      "Insurance is modelled the way it's actually billed — three installments finishing the current term, nothing in December and January, then the new rate from February. The empty months are real, not a mistake.",
+      "Verizon reads $93 instead of $130. The app was averaging in a catch-up payment that covered two months, so you can now tell it what a bill actually is.",
+    ],
+  },
+  {
     version: "2026.08.15b",
     date: "August 15, 2026",
     notes: [

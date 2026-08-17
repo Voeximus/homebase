@@ -66,8 +66,11 @@ export function ForecastTab({
     [recurring, cardDebt],
   );
 
+  // Two dials only, and they are the two things he actually decides each cycle:
+  // what he spends, and what he throws at the card. Everything else — rent, the
+  // car note, insurance — is a real row in the database and shouldn't pretend to
+  // be a what-if.
   const [cardPay, setCardPay] = useState(() => Math.round(cardRow?.amount ?? 134));
-  const [carPay, setCarPay] = useState(0);
   const [cycleSpend, setCycleSpend] = useState(700);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -79,9 +82,9 @@ export function ForecastTab({
   const months = useMemo(
     () =>
       forecast(recurring, transactions, debts, startMonth, 12, {
-        cardPay, carPay, cycleSpend, cardDebtId: cardDebt?.id,
+        cardPay, cycleSpend, cardDebtId: cardDebt?.id,
       }),
-    [recurring, transactions, debts, startMonth, cardPay, carPay, cycleSpend, cardDebt],
+    [recurring, transactions, debts, startMonth, cardPay, cycleSpend, cardDebt],
   );
   const sum = useMemo(() => summarize(months), [months]);
   const next = months[1] ?? months[0];
@@ -92,18 +95,17 @@ export function ForecastTab({
     <div className="px-4 pb-8 pt-3" style={{ background: C.bg, color: C.ink }}>
       {/* ── dials ── */}
       <div className="rounded-2xl p-4" style={{ background: C.card, border: `1px solid ${C.line}` }}>
-        <div className="flex flex-wrap gap-x-5 gap-y-4">
+        <div className="flex flex-col gap-4">
           <Dial
-            label="To the card" value={cardPay} min={minCard} max={1500} step={1}
-            onChange={setCardPay} display={money(cardPay)} tint={C.warm}
+            label="Spending, per pay cycle" value={cycleSpend} min={300} max={1400} step={5}
+            onChange={setCycleSpend} display={money(cycleSpend) + " · " + money(cycleSpend * 2) + "/mo"}
+            tint={C.good}
           />
           <Dial
-            label="Car payment" value={carPay} min={0} max={600} step={5}
-            onChange={setCarPay} display={carPay ? money(carPay) : "none"} tint={C.accent}
-          />
-          <Dial
-            label="Spending / cycle" value={cycleSpend} min={300} max={1400} step={5}
-            onChange={setCycleSpend} display={money(cycleSpend)} tint={C.good}
+            label="To the card, per month" value={cardPay} min={minCard} max={1500} step={1}
+            onChange={setCardPay}
+            display={money(cardPay) + (cardPay <= minCard ? " · minimum" : "")}
+            tint={C.warm}
           />
         </div>
 
@@ -159,9 +161,9 @@ export function ForecastTab({
       </div>
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: C.dim }}>
-        Surplus is income minus bills minus spending — what isn't already committed, after the
-        card payment. The dials are what-ifs; nothing here is saved. Bills come from your recurring
-        rows, so a bill that starts or ends on a date shows up in the right months on its own.
+        Surplus is income minus bills minus spending — what isn't already committed, after the card
+        payment. Both dials are what-ifs; nothing here is saved. Everything else comes from your
+        real bills, so anything that starts or ends on a date lands in the right month by itself.
       </p>
     </div>
   );
@@ -212,10 +214,7 @@ function MonthRow({
         <div className="px-3.5 pb-3" style={{ background: C.bg }}>
           {m.lines.map((l) => (
             <div key={l.name} className="flex justify-between py-1 text-[12px]">
-              <span style={{ color: l.synthetic ? C.accent : C.dim }}>
-                {l.name}
-                {l.synthetic && " (what-if)"}
-              </span>
+              <span style={{ color: C.dim }}>{l.name}</span>
               <span className="tabular-nums" style={{ color: C.ink }}>{money(l.amount)}</span>
             </div>
           ))}
