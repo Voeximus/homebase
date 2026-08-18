@@ -48,6 +48,10 @@ export function AccountsSheet({
   const { data, setAccountBalance } = useStore();
   const [edit, setEdit] = useState<Account | null>(null);
   const [val, setVal] = useState("");
+  const [saving, setSaving] = useState(false);
+  // Set when the write came back unconfirmed — the typed figure is still only on
+  // this phone, so the editor has to stay open and say so.
+  const [failed, setFailed] = useState(false);
   return (
     <Sheet open={open} onClose={onClose} title={t("Cash & accounts")}>
       <div className="space-y-2">
@@ -73,6 +77,7 @@ export function AccountsSheet({
                     onClick={() => {
                       setEdit(a);
                       setVal(a.balance.toFixed(2));
+                      setFailed(false);
                     }}
                     className="text-right"
                   >
@@ -95,17 +100,31 @@ export function AccountsSheet({
                   />
                   <Button
                     onClick={async () => {
-                      await setAccountBalance(
+                      setSaving(true);
+                      setFailed(false);
+                      const ok = await setAccountBalance(
                         a.id,
                         Math.round(parseFloat(val) * 100) / 100,
                       );
-                      setEdit(null);
+                      setSaving(false);
+                      // Close ONLY on a confirmed write. This used to call
+                      // setEdit(null) unconditionally, so a save that never
+                      // reached the database (offline, RLS, expired token) still
+                      // looked like it worked — and every derived number then ran
+                      // off a balance the bank had never seen.
+                      if (ok) setEdit(null);
+                      else setFailed(true);
                     }}
-                    disabled={val === "" || isNaN(parseFloat(val))}
+                    disabled={saving || val === "" || isNaN(parseFloat(val))}
                   >
-                    {t("Set")}
+                    {saving ? t("Setting…") : t("Set")}
                   </Button>
                 </div>
+              )}
+              {editing && failed && (
+                <p className="mt-2 rounded-lg bg-ember/10 px-3 py-2 text-[11px] text-ember">
+                  {t("Couldn't save that balance — it's still only on this phone. Check your connection and tap Set again.")}
+                </p>
               )}
             </div>
           );

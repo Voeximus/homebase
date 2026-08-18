@@ -14,8 +14,11 @@ import type { MacroTarget } from "../lib/nutrition";
 //
 // Documents-per-entity: a meal_days row holds a whole day's meals; a workouts
 // row a whole session. Writes are OPTIMISTIC + debounced; a Realtime change from
-// the other device refetches but SKIPS keys with a pending local write (dirty),
-// so it can never undo an edit you're in the middle of.
+// the other device refetches and MERGES into keys with a pending local write
+// (dirty). It used to SKIP those keys, which protected the writer but silently
+// threw away the reader's copy — the other phone's meals never entered state,
+// and the whole-document upsert that followed then wrote them out of existence.
+// Both phones are in this app at the same time, so that is the normal case.
 
 const dayKey = (p: string, d: string) => `${p}|${d}`;
 const mdDirty = (p: string, d: string) => `md|${p}|${d}`;
@@ -48,6 +51,23 @@ function mapSavedMeal(r: any): SavedMeal {
 }
 function mapMacroTarget(r: any): MacroTarget {
   return { kcal: Number(r.kcal), p: Number(r.p), c: Number(r.c), f: Number(r.f) };
+}
+
+// ── document merge ───────────────────────────────────────────────────────────
+// meal_days / workouts rows are DOCUMENTS — one row carries a whole day's meals
+// or a whole session's exercises — so every write replaces the lot and the last
+// writer's document wins whole. Union the children by id instead: LOCAL wins for
+// an id both sides have (this device is the one writing right now), and children
+// only the REMOTE has are kept rather than erased — that is the other phone's
+// edit. `removed` holds ids this device deleted on purpose, which must not sail
+// back in from the remote copy. Remote-only children land at the END: neither a
+// meal nor an exercise carries a timestamp, so there is no honest way to
+// interleave them. Returns `local` itself when there is nothing to adopt, so a
+// refetch that changes nothing doesn't churn state.
+function unionById<T extends { id: string }>(local: T[], remote: T[], removed?: Set<string>): T[] {
+  const mine = new Set(local.map((x) => x.id));
+  const extra = remote.filter((x) => !mine.has(x.id) && !removed?.has(x.id));
+  return extra.length ? [...local, ...extra] : local;
 }
 
 interface HealthState {
@@ -97,9 +117,25 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   // (not dropped) when the provider unmounts mid-debounce.
   const pending = useRef<Map<string, () => void>>(new Map());
   const migrated = useRef(false);
+  // Unmount latch. A failed write re-arms its retry from an ASYNC callback, so
+  // the new timer is created AFTER cleanup has already emptied the timer map —
+  // and cleanup never runs again. The chain (6 attempts, ~61s) then outlives the
+  // provider, and HealthView is unmounted on every Finance/Health toggle: a
+  // retry firing after a remount would upsert the OLD provider's frozen dataRef
+  // over whatever the new one has since written. Clearing the map a second time
+  // can't fix that (the timer doesn't exist yet), so the latch is the gate.
+  const alive = useRef(true);
+  // Per dirty key, the child ids this device deleted on purpose. The merge below
+  // adopts remote-only children, and without this record a meal or exercise you
+  // just deleted would come straight back from the not-yet-updated remote copy.
+  // Never cleared: ids are minted fresh (rowId/uuid) and never reused, so a stale
+  // tombstone can only ever gate an id that no longer exists — and it costs a
+  // string per deletion for the life of the session.
+  const removed = useRef<Map<string, Set<string>>>(new Map());
 
   useEffect(() => {
     let active = true;
+    alive.current = true; // re-arm on remount (StrictMode mounts the effect twice)
 
     async function reloadMealDays() {
       const { data: rows, error } = await supabase.from("meal_days").select("*");
@@ -107,7 +143,23 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       setState((s) => {
         const next = { ...s.mealDays };
         for (const r of rows ?? []) {
-          if (!dirty.current.has(mdDirty(r.person, r.date))) next[dayKey(r.person, r.date)] = mapDay(r);
+          const k = dayKey(r.person, r.date);
+          const dk = mdDirty(r.person, r.date);
+          const remote = mapDay(r);
+          const local = s.mealDays[k];
+          // Clean key (or nothing local yet) → remote is truth.
+          if (!dirty.current.has(dk) || !local) {
+            next[k] = remote;
+            continue;
+          }
+          // Dirty key: a local edit is mid-flight. We used to SKIP the row, which
+          // meant the other phone's meals never reached this state and the whole-
+          // document upsert waiting behind this edit then erased them from the DB.
+          // Merge instead — every local meal stays (the edit is untouched) and the
+          // meals only she has are adopted. status/note stay local-first for the
+          // same reason; the write path re-fills them from remote when unset.
+          const meals = unionById(local.meals, remote.meals, removed.current.get(dk));
+          if (meals !== local.meals) next[k] = { ...local, meals };
         }
         return { ...s, mealDays: next };
       });
@@ -118,7 +170,18 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       setState((s) => {
         const remote = (rows ?? []).map(mapWorkout);
         const remoteIds = new Set(remote.map((w) => w.id));
-        const merged = remote.map((w) => (dirty.current.has(wDirty(w.id)) ? s.workouts.find((x) => x.id === w.id) ?? w : w));
+        // Same document-merge as meal days: for a session with a pending local
+        // write, keeping the local copy WHOLE (the old behaviour) dropped any
+        // exercise the other device had already added to that session, and the
+        // whole-session upsert behind it then deleted them for good. Local wins
+        // per exercise id; remote-only exercises are adopted.
+        const merged = remote.map((w) => {
+          if (!dirty.current.has(wDirty(w.id))) return w;
+          const local = s.workouts.find((x) => x.id === w.id);
+          if (!local) return w;
+          const exercises = unionById(local.exercises, w.exercises, removed.current.get(wDirty(w.id)));
+          return exercises === local.exercises ? local : { ...local, exercises };
+        });
         const pendingLocal = s.workouts.filter((w) => dirty.current.has(wDirty(w.id)) && !remoteIds.has(w.id));
         return { ...s, workouts: [...pendingLocal, ...merged] };
       });
@@ -235,6 +298,11 @@ export function HealthProvider({ children }: { children: ReactNode }) {
           /* best effort */
         }
       }
+      // Latch AFTER the flush, not before: the flush is a deliberate last-second
+      // save and must still write. What must NOT survive is what the flush might
+      // schedule later — its failure retry lands in a later task, by which time
+      // this line has run and scheduleWrite/writeDay refuse it.
+      alive.current = false;
     };
   }, []);
 
@@ -242,6 +310,11 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   const store = useMemo<Actions>(() => {
     // Debounce a write by key; remember the write fn so unmount can flush it.
     const scheduleWrite = (key: string, doWrite: () => Promise<void>, delay = 700) => {
+      // The provider is gone: its timer map has already been cleared and will
+      // never be cleared again, so a timer armed here would fire into a dead
+      // closure (frozen dataRef, orphaned dirty Set) minutes later and overwrite
+      // whatever the live provider has written since.
+      if (!alive.current) return;
       const prev = timers.current.get(key);
       if (prev) clearTimeout(prev);
       pending.current.set(key, doWrite);
@@ -270,32 +343,86 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     };
 
     const writeDay = async (person: string, date: string, attempt = 0): Promise<void> => {
+      // Second gate for the unmount latch: a retry chain scheduled by the old
+      // provider must never reach the network with that provider's stale state.
+      if (!alive.current) return;
       const key = mdDirty(person, date);
       const day = dataRef.current.mealDays[dayKey(person, date)];
       if (!day) {
         dirty.current.delete(key);
         return;
       }
+      // READ BEFORE WRITE. The upsert below replaces the whole document, so
+      // writing local state blind erases any meal the other phone logged since
+      // this edit began — and each backoff retry re-wrote the same stale
+      // document for up to a minute. Merging HERE (not once at edit time) means
+      // every attempt carries the freshest remote copy.
+      const { data: row, error: readErr } = await supabase
+        .from("meal_days")
+        .select("*")
+        .eq("person", person)
+        .eq("date", date)
+        .maybeSingle();
+      if (readErr) {
+        // Do NOT fall back to a blind write: whatever stops the read (offline,
+        // RLS) is exactly the condition under which the write is destructive.
+        // Retry the pair instead — the local edit stays dirty and safe.
+        onWriteResult(key, readErr, attempt, (n) => void writeDay(person, date, n));
+        return;
+      }
+      const remote = row ? mapDay(row) : null;
+      const meals = remote ? unionById(day.meals, remote.meals, removed.current.get(key)) : day.meals;
       const { error } = await supabase
         .from("meal_days")
         .upsert(
-          { person, date, meals: day.meals, status: day.status ?? null, note: day.note ?? null, updated_at: new Date().toISOString() },
+          {
+            person,
+            date,
+            meals,
+            // local first, remote as the fallback: nothing clears a status, so a
+            // day the other phone marked skipped/estimated survives our write.
+            status: day.status ?? remote?.status ?? null,
+            note: day.note ?? remote?.note ?? null,
+            updated_at: new Date().toISOString(),
+          },
           { onConflict: "person,date" },
         );
       onWriteResult(key, error, attempt, (n) => void writeDay(person, date, n));
     };
     const writeWorkout = async (id: string, attempt = 0): Promise<void> => {
+      if (!alive.current) return; // see writeDay
       const key = wDirty(id);
       const w = dataRef.current.workouts.find((x) => x.id === id);
       if (!w) {
         dirty.current.delete(key);
         return;
       }
+      // Read-before-write for the same reason as writeDay: a session row is one
+      // document, so a blind upsert drops any exercise the other device added.
+      const { data: row, error: readErr } = await supabase.from("workouts").select("*").eq("id", id).maybeSingle();
+      if (readErr) {
+        onWriteResult(key, readErr, attempt, (n) => void writeWorkout(id, n));
+        return;
+      }
+      const remote = row ? mapWorkout(row) : null;
+      const exercises = remote ? unionById(w.exercises, remote.exercises, removed.current.get(key)) : w.exercises;
       const { error } = await supabase.from("workouts").upsert(
-        { id: w.id, person: w.person, date: w.date, name: w.name, notes: w.notes, exercises: w.exercises, done: w.done, updated_at: new Date().toISOString() },
+        { id: w.id, person: w.person, date: w.date, name: w.name, notes: w.notes, exercises, done: w.done, updated_at: new Date().toISOString() },
         { onConflict: "id" },
       );
       onWriteResult(key, error, attempt, (n) => void writeWorkout(id, n));
+    };
+    // Record what this device deliberately deleted, so the union above doesn't
+    // adopt it straight back from a remote copy that hasn't caught up yet.
+    const noteRemovals = (key: string, prev: { id: string }[] | undefined, next: { id: string }[]) => {
+      if (!prev?.length) return;
+      const kept = new Set(next.map((x) => x.id));
+      for (const x of prev) {
+        if (kept.has(x.id)) continue;
+        let set = removed.current.get(key);
+        if (!set) removed.current.set(key, (set = new Set()));
+        set.add(x.id);
+      }
     };
     const flushDay = (person: string, date: string) => scheduleWrite(mdDirty(person, date), () => writeDay(person, date));
     const flushWorkout = (id: string) => scheduleWrite(wDirty(id), () => writeWorkout(id));
@@ -305,11 +432,14 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         return dataRef.current.mealDays[dayKey(person, date)] ?? { date, person, meals: [] };
       },
       setDay(day) {
-        dirty.current.add(mdDirty(day.person, day.date));
+        const key = mdDirty(day.person, day.date);
+        noteRemovals(key, dataRef.current.mealDays[dayKey(day.person, day.date)]?.meals, day.meals);
+        dirty.current.add(key);
         setState((s) => ({ ...s, mealDays: { ...s.mealDays, [dayKey(day.person, day.date)]: day } }));
         flushDay(day.person, day.date);
       },
       upsertWorkout(w) {
+        noteRemovals(wDirty(w.id), dataRef.current.workouts.find((x) => x.id === w.id)?.exercises, w.exercises);
         dirty.current.add(wDirty(w.id));
         setState((s) => {
           const exists = s.workouts.some((x) => x.id === w.id);

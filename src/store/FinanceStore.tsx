@@ -20,7 +20,9 @@ import type {
   Transaction,
   TxnSplit,
 } from "../types";
+import { REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { todayISO } from "../lib/format";
 import { DEFAULT_CATEGORIES } from "../lib/seed";
 import { merchantKey } from "../lib/categorize";
 import { SEED_ACCOUNTS, SEED_DEBTS, SEED_RECURRING } from "../lib/household";
@@ -167,6 +169,48 @@ function foodToRow(f: Omit<Food, "id" | "custom">) {
 
 const IMPOSSIBLE_ID = "00000000-0000-0000-0000-000000000000";
 
+// ── refetch sequencing ───────────────────────────────────────────────────────
+// Realtime fires one event per changed ROW, so a 20-row Plaid sync used to
+// issue 20 overlapping full-table SELECTs. HTTP responses do NOT come back in
+// issue order on a phone, and every loader replaces the whole array, so a
+// snapshot captured BEFORE the last inserts could resolve LAST and overwrite
+// newer state. Nothing re-fires afterwards, so the wrong totals stuck for the
+// rest of the session. The old `active` flag only guarded unmount, never
+// staleness.
+//
+// Each table carries a monotonic ticket. A reader claims one before its SELECT
+// and applies the result only while that ticket is still the newest claim. An
+// optimistic WRITER claims one too — that is what stops a SELECT issued before
+// a local edit from resolving after it and restoring the pre-edit value.
+type SyncTable =
+  | "transactions"
+  | "debts"
+  | "savings_goals"
+  | "accounts"
+  | "recurring"
+  | "paid_bills"
+  | "merchant_rules"
+  | "foods";
+type TicketMap = Partial<Record<SyncTable, number>>;
+
+/** Take the newest ticket for a table; every older in-flight read is now stale. */
+function claimTicket(m: TicketMap, table: SyncTable): number {
+  const next = (m[table] ?? 0) + 1;
+  m[table] = next;
+  return next;
+}
+/** True while `ticket` is still the newest claim — i.e. this read may be applied. */
+function isNewest(m: TicketMap, table: SyncTable, ticket: number): boolean {
+  return m[table] === ticket;
+}
+/** A local (optimistic) write outranks every read already in flight. */
+function invalidate(m: TicketMap, ...tables: SyncTable[]): void {
+  for (const table of tables) claimTicket(m, table);
+}
+
+/** Trailing-edge window that folds a burst of realtime events into one refetch. */
+const REFETCH_DEBOUNCE_MS = 250;
+
 export interface FinanceStore {
   data: AppData;
   loading: boolean;
@@ -188,7 +232,10 @@ export interface FinanceStore {
   unsettleReimbursable: (reimbursableId: string) => Promise<void>;
   makeRecurringBill: (txnId: string, cadence: "monthly" | "yearly") => Promise<void>;
   setRecurringVariable: (id: string, variable: boolean) => Promise<void>;
-  setAccountBalance: (accountId: string, balance: number) => Promise<void>;
+  // Reconcile an account to the real bank figure. Resolves TRUE only when the
+  // DB confirms the row changed — false means the value is still local-only, and
+  // the caller must keep its editor open rather than pretend the save landed.
+  setAccountBalance: (accountId: string, balance: number) => Promise<boolean>;
   addDebt: (d: {
     name: string;
     balance: number;
@@ -268,68 +315,87 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   // Resolves when the initial foods load finishes, so add/delete never run
   // against an undetermined sync mode.
   const foodsReady = useRef<Promise<void> | null>(null);
+  // Per-table refetch tickets (see claimTicket). Deliberately lives on the
+  // provider, not inside the effect, so the effect's loaders, resyncLedger and
+  // every optimistic writer are ordered against EACH OTHER — resyncLedger fires
+  // its own four SELECTs outside the effect and would otherwise be a third,
+  // unsequenced racer.
+  const seq = useRef<TicketMap>({});
 
   // Initial load + live sync. Any change (from either device) refetches the
   // affected table so both screens stay in step.
   useEffect(() => {
     let active = true;
 
+    // Every loader claims a ticket BEFORE its SELECT and applies the rows only
+    // if that ticket is still the newest (see claimTicket). `active` alone only
+    // guarded unmount, never staleness.
     async function loadTransactions() {
+      const ticket = claimTicket(seq.current, "transactions");
       const { data: rows } = await supabase
         .from("transactions")
         .select("*")
         .order("date", { ascending: false })
         .order("created_at", { ascending: false });
-      if (active) {
+      if (active && isNewest(seq.current, "transactions", ticket)) {
         setData((p) => ({ ...p, transactions: (rows ?? []).map(mapTxn) }));
       }
     }
     async function loadDebts() {
+      const ticket = claimTicket(seq.current, "debts");
       const { data: rows } = await supabase
         .from("debts")
         .select("*")
         .order("created_at", { ascending: true });
-      if (active) setData((p) => ({ ...p, debts: (rows ?? []).map(mapDebt) }));
+      if (active && isNewest(seq.current, "debts", ticket))
+        setData((p) => ({ ...p, debts: (rows ?? []).map(mapDebt) }));
     }
     async function loadGoals() {
+      const ticket = claimTicket(seq.current, "savings_goals");
       const { data: rows } = await supabase
         .from("savings_goals")
         .select("*")
         .order("created_at", { ascending: true });
-      if (active) setData((p) => ({ ...p, goals: (rows ?? []).map(mapGoal) }));
+      if (active && isNewest(seq.current, "savings_goals", ticket))
+        setData((p) => ({ ...p, goals: (rows ?? []).map(mapGoal) }));
     }
     async function loadAccounts() {
+      const ticket = claimTicket(seq.current, "accounts");
       const { data: rows } = await supabase
         .from("accounts")
         .select("*")
         .order("sort_order", { ascending: true });
-      if (active)
+      if (active && isNewest(seq.current, "accounts", ticket))
         setData((p) => ({ ...p, accounts: (rows ?? []).map(mapAccount) }));
     }
     async function loadRecurring() {
+      const ticket = claimTicket(seq.current, "recurring");
       const { data: rows } = await supabase
         .from("recurring")
         .select("*")
         .order("created_at", { ascending: true });
-      if (active)
+      if (active && isNewest(seq.current, "recurring", ticket))
         setData((p) => ({ ...p, recurring: (rows ?? []).map(mapRecurring) }));
     }
     async function loadPaidBills() {
+      const ticket = claimTicket(seq.current, "paid_bills");
       const { data: rows } = await supabase.from("paid_bills").select("*");
-      if (active)
+      if (active && isNewest(seq.current, "paid_bills", ticket))
         setData((p) => ({ ...p, paidBills: (rows ?? []).map(mapPaidBill) }));
     }
     async function loadMerchantRules() {
+      const ticket = claimTicket(seq.current, "merchant_rules");
       const { data: rows } = await supabase.from("merchant_rules").select("*");
-      if (active)
+      if (active && isNewest(seq.current, "merchant_rules", ticket))
         setData((p) => ({ ...p, merchantRules: (rows ?? []).map(mapMerchantRule) }));
     }
     async function loadFoods() {
+      let ticket = claimTicket(seq.current, "foods");
       const { data: rows, error } = await supabase
         .from("foods")
         .select("*")
         .order("created_at", { ascending: true });
-      if (!active) return;
+      if (!active || !isNewest(seq.current, "foods", ticket)) return;
       if (error) {
         // `foods` table not created yet → fall back to this device's localStorage.
         foodsSynced.current = false;
@@ -360,17 +426,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           if (insErr) {
             // Keep localStorage intact; show local + cloud merged, retry next load.
             console.error("Food library migration failed:", insErr);
-            if (active)
+            if (active && isNewest(seq.current, "foods", ticket))
               setData((p) => ({ ...p, foods: [...dbFoods, ...loadCustomFoods()] }));
             return;
           }
           clearCustomFoods();
           migrationDone.current = true;
+          // Fresh read after the migration insert → fresh ticket, so a load that
+          // started later still wins over this one.
+          ticket = claimTicket(seq.current, "foods");
           const { data: rows2 } = await supabase
             .from("foods")
             .select("*")
             .order("created_at", { ascending: true });
-          if (active) setData((p) => ({ ...p, foods: (rows2 ?? []).map(mapFood) }));
+          if (active && isNewest(seq.current, "foods", ticket))
+            setData((p) => ({ ...p, foods: (rows2 ?? []).map(mapFood) }));
           return;
         }
         migrationDone.current = true;
@@ -393,52 +463,110 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (active) setLoading(false);
     });
 
+    // Realtime delivers one event per changed ROW: a Plaid sync that inserts 20
+    // transactions used to mean 20 full-table refetches racing each other.
+    // Coalesce a burst into a single trailing refetch per table.
+    const bursts = new Map<SyncTable, ReturnType<typeof setTimeout>>();
+    const refetch = (table: SyncTable, load: () => void) => {
+      const pending = bursts.get(table);
+      if (pending) clearTimeout(pending);
+      bursts.set(
+        table,
+        setTimeout(() => {
+          bursts.delete(table);
+          if (active) load();
+        }, REFETCH_DEBOUNCE_MS),
+      );
+    };
+
+    // Re-anchor every table from the server. Safe to call at any time — the
+    // tickets make a redundant round of reads harmless.
+    const refetchAll = () => {
+      loadTransactions();
+      loadDebts();
+      loadGoals();
+      loadAccounts();
+      loadRecurring();
+      loadPaidBills();
+      loadMerchantRules();
+      loadFoods();
+    };
+
     const channel = supabase
       .channel("homebase-sync")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "transactions" },
-        () => loadTransactions(),
+        () => refetch("transactions", loadTransactions),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "debts" },
-        () => loadDebts(),
+        () => refetch("debts", loadDebts),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "savings_goals" },
-        () => loadGoals(),
+        () => refetch("savings_goals", loadGoals),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "accounts" },
-        () => loadAccounts(),
+        () => refetch("accounts", loadAccounts),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "recurring" },
-        () => loadRecurring(),
+        () => refetch("recurring", loadRecurring),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "paid_bills" },
-        () => loadPaidBills(),
+        () => refetch("paid_bills", loadPaidBills),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "merchant_rules" },
-        () => loadMerchantRules(),
+        () => refetch("merchant_rules", loadMerchantRules),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "foods" },
-        () => loadFoods(),
+        () => refetch("foods", loadFoods),
       )
-      .subscribe();
+      .subscribe((status) => {
+        // The SELECTs above are issued BEFORE the websocket JOIN completes, so
+        // anything the other phone wrote inside that window was in neither the
+        // snapshot nor the event stream — it never arrived, for the whole
+        // session. Re-anchoring on every SUBSCRIBED closes that window, and
+        // because realtime-js reconnects on its own after a background or
+        // network flap, the same callback heals a dropped channel too.
+        //
+        // Deliberately NOT resubscribing by hand on CHANNEL_ERROR/TIMED_OUT:
+        // the client already retries with backoff and re-auths on reconnect, so
+        // a hand-rolled retry would only race it into duplicate channels. Log
+        // it, and let the rejoin's SUBSCRIBED do the recovery.
+        if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) refetchAll();
+        else
+          console.warn(
+            `homebase-sync realtime ${status} — live updates paused until it rejoins`,
+          );
+      });
+
+    // Backstop for the installed PWA: phones freeze a backgrounded tab and can
+    // drop the socket without any status callback firing, so pull fresh state
+    // whenever the app comes back to the foreground. (UpdatePrompt has its own
+    // visibilitychange listener, but it only checks the service worker.)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetchAll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", onVisible);
+      for (const timer of bursts.values()) clearTimeout(timer);
+      bursts.clear();
       supabase.removeChannel(channel);
     };
   }, []);
@@ -449,6 +577,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     // tables back from the server so the UI can never keep an optimistic value
     // that did not actually persist (the deleteFood refetch-on-error pattern).
     const resyncLedger = async () => {
+      // These four SELECTs live outside the sync effect, so they must claim the
+      // SAME per-table tickets the loaders use — otherwise resync is a third
+      // unsequenced racer and can either clobber, or be clobbered by, a realtime
+      // refetch issued at the same moment.
+      const tTx = claimTicket(seq.current, "transactions");
+      const tAc = claimTicket(seq.current, "accounts");
+      const tDe = claimTicket(seq.current, "debts");
+      const tGo = claimTicket(seq.current, "savings_goals");
       const [tx, ac, de, go] = await Promise.all([
         supabase.from("transactions").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }),
         supabase.from("accounts").select("*").order("sort_order", { ascending: true }),
@@ -457,10 +593,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       ]);
       setData((p) => ({
         ...p,
-        transactions: tx.data ? tx.data.map(mapTxn) : p.transactions,
-        accounts: ac.data ? ac.data.map(mapAccount) : p.accounts,
-        debts: de.data ? de.data.map(mapDebt) : p.debts,
-        goals: go.data ? go.data.map(mapGoal) : p.goals,
+        transactions:
+          tx.data && isNewest(seq.current, "transactions", tTx) ? tx.data.map(mapTxn) : p.transactions,
+        accounts:
+          ac.data && isNewest(seq.current, "accounts", tAc) ? ac.data.map(mapAccount) : p.accounts,
+        debts: de.data && isNewest(seq.current, "debts", tDe) ? de.data.map(mapDebt) : p.debts,
+        goals: go.data && isNewest(seq.current, "savings_goals", tGo) ? go.data.map(mapGoal) : p.goals,
       }));
     };
 
@@ -475,8 +613,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       categoryId: string;
       description: string;
       appliesTo?: AppliesTo;
+      // Manual entry can be back-dated; everything else stamps today.
+      date?: string;
     }) => {
-      const date = new Date().toISOString().slice(0, 10);
+      // todayISO() is the LOCAL calendar date. This was
+      // `new Date().toISOString().slice(0, 10)` — UTC — so every event logged
+      // after 5pm Arizona time was filed under tomorrow, landing in the wrong
+      // month's budget and the wrong pay cycle.
+      const date = ev.date ?? todayISO();
 
       // Resolve the debt this event pays (explicit, or a bill's linked card) and
       // the EXACT amount that will come off it — BEFORE writing the row. We store
@@ -529,6 +673,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       }
       // The RPC inserted the ledger row AND moved cash/debt/goal in ONE
       // transaction; mirror it locally for instant UI (realtime reconciles).
+      // Outrank any SELECT already in flight, or one issued before this write
+      // could resolve after it and drop the new row back out of view.
+      invalidate(seq.current, "transactions", "accounts", "debts", "savings_goals");
       setData((p) => ({
         ...p,
         transactions: [mapTxn(row), ...p.transactions],
@@ -572,7 +719,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (!rec) return;
         // A settled marker only records paid-state. No cash moves (account null),
         // no debt fan-out — the payment is already in your anchored balance.
-        const date = new Date().toISOString().slice(0, 10);
+        // LOCAL date, not UTC: marking a bill paid at 8pm on the 31st used to
+        // stamp the 1st and file the marker into the following month.
+        const date = todayISO();
         const { data: row, error } = await supabase
           .from("transactions")
           .insert({
@@ -587,6 +736,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .select()
           .single();
         if (error || !row) return console.error(error);
+        invalidate(seq.current, "transactions");
         setData((p) => ({ ...p, transactions: [mapTxn(row), ...p.transactions] }));
       },
       async commitImport(items, accountId) {
@@ -611,6 +761,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           console.error(error);
           return { ok: false, count: 0 };
         }
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: [...(inserted ?? []).map(mapTxn), ...p.transactions],
@@ -648,6 +799,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           bill_name: rule.billName ?? null,
         };
         // Optimistic: replace any existing rule for this merchant.
+        invalidate(seq.current, "merchant_rules");
         setData((p) => ({
           ...p,
           merchantRules: [
@@ -661,7 +813,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .select()
           .single();
         if (error) return console.error(error);
-        if (saved)
+        if (saved) {
+          invalidate(seq.current, "merchant_rules");
           setData((p) => ({
             ...p,
             merchantRules: [
@@ -669,12 +822,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               mapMerchantRule(saved),
             ],
           }));
+        }
       },
       async addFood(food) {
         await foodsReady.current;
         if (!foodsSynced.current) {
           const f: Food = { ...food, id: `c-${Date.now()}`, custom: true };
           saveCustomFoods([...loadCustomFoods(), f]);
+          invalidate(seq.current, "foods");
           setData((p) => ({ ...p, foods: [...p.foods, f] }));
           return;
         }
@@ -684,10 +839,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .select()
           .single();
         if (error || !row) return console.error(error);
+        invalidate(seq.current, "foods");
         setData((p) => ({ ...p, foods: [...p.foods, mapFood(row)] }));
       },
       async deleteFood(id) {
         await foodsReady.current;
+        invalidate(seq.current, "foods");
         setData((p) => ({ ...p, foods: p.foods.filter((x) => x.id !== id) }));
         if (!foodsSynced.current) {
           saveCustomFoods(loadCustomFoods().filter((x) => x.id !== id));
@@ -697,54 +854,46 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error) {
           // Delete failed → restore truth from the cloud so the UI doesn't lie.
           console.error(error);
+          const ticket = claimTicket(seq.current, "foods");
           const { data: rows } = await supabase
             .from("foods")
             .select("*")
             .order("created_at", { ascending: true });
-          setData((p) => ({ ...p, foods: (rows ?? []).map(mapFood) }));
+          if (isNewest(seq.current, "foods", ticket))
+            setData((p) => ({ ...p, foods: (rows ?? []).map(mapFood) }));
         }
       },
       async addTransaction(t) {
-        const { data: row, error } = await supabase
-          .from("transactions")
-          .insert({
-            date: t.date,
-            amount: t.amount,
-            type: t.type,
-            category_id: t.categoryId,
-            description: t.description,
-            account: t.account ?? null,
-            account_id: t.accountId ?? null,
-          })
-          .select()
-          .single();
-        if (error || !row) return console.error(error);
-        setData((p) => ({ ...p, transactions: [mapTxn(row), ...p.transactions] }));
-        // Cash is a living number: move the chosen account's balance.
-        if (t.accountId) {
-          const acct = dataRef.current.accounts.find((a) => a.id === t.accountId);
-          if (acct) {
-            const nb = acct.balance + (t.type === "income" ? t.amount : -t.amount);
-            setData((p) => ({
-              ...p,
-              accounts: p.accounts.map((a) =>
-                a.id === t.accountId ? { ...a, balance: nb } : a,
-              ),
-            }));
-            const { error: balErr } = await supabase
-              .from("accounts")
-              .update({ balance: nb })
-              .eq("id", t.accountId);
-            if (balErr) {
-              console.error("addTransaction: balance update failed — resyncing", balErr);
-              await resyncLedger();
-            }
-          }
-        }
+        // Manual entry is a money event like any other, so it goes down the SAME
+        // atomic pipeline as payBill/markSent: one server-side transaction that
+        // inserts the ledger row and moves cash with a RELATIVE delta
+        // (balance = balance + x).
+        //
+        // It used to insert the row, then read the account balance out of client
+        // state and write back an ABSOLUTE number. Two phones adding a charge in
+        // the same second each read the same pre-write balance and each wrote
+        // their own snapshot minus their own amount — so one of the two charges
+        // vanished from cash permanently. Nothing self-corrected, because the
+        // written value was absolute: the next refetch simply re-read the wrong
+        // number. A Plaid sync SETting the balance from bank truth between the
+        // read and the write lost money the same way on a single device.
+        //
+        // The legacy free-text `account` column is dropped on this path — the
+        // RPC does not carry it, no caller sets it, and nothing in the app reads
+        // Transaction.account (account_id is what every screen uses).
+        await applyMoneyEvent({
+          date: t.date, // manual entry may be back-dated; don't stamp today
+          accountId: t.accountId,
+          amount: t.amount,
+          type: t.type,
+          categoryId: t.categoryId,
+          description: t.description,
+        });
       },
       async deleteTransaction(id) {
         const txn = dataRef.current.transactions.find((x) => x.id === id);
         // optimistic remove
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.filter((x) => x.id !== id),
@@ -768,6 +917,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           const rdebt = debtId ? dataRef.current.debts.find((d) => d.id === debtId) : undefined;
           const debtAutoTracked = !!rdebt && (!!rdebt.providerAccountId || !!rdebt.trackPattern);
           const back = at?.appliedAmount ?? txn.amount;
+          invalidate(seq.current, "accounts", "debts", "savings_goals");
           setData((p) => ({
             ...p,
             // A settled row moved no cash (reverse_money_event short-circuits on
@@ -800,6 +950,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         }
       },
       async setTransactionCategory(id, categoryId) {
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -826,6 +977,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           : clean && clean.length === 1
             ? clean[0].categoryId
             : undefined;
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -844,6 +996,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       async acknowledgeAnomaly(id) {
         // dismiss the unusual-purchase flag; optimistic + persisted so it never
         // re-flags this charge (on this or the other phone).
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) => (t.id === id ? { ...t, anomalyAck: true } : t)),
@@ -855,6 +1008,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         // Mark a one-off (a travel/remittance anomaly) as a transfer so it drops
         // out of the variable-budget gate (type expense && !appliesTo) — without
         // deleting the record or touching any balance.
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -872,6 +1026,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         // totals/history. A marker only — moves no cash (the expense already
         // posted). "reimbursable" stays in the "owed to you" ledger until settled.
         const at: AppliesTo = { kind: "setaside", reason, settled: false, ...(note ? { note } : {}) };
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) => (t.id === id ? { ...t, appliesTo: at } : t)),
@@ -906,6 +1061,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           settledByTxnId: reimbursableId,
           settledAt: now,
         };
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -931,6 +1087,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           settled: false,
           ...(reimb?.appliesTo?.note ? { note: reimb.appliesTo.note } : {}),
         };
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -983,9 +1140,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           if (rErr || !rec) return console.error(rErr);
           recId = rec.id;
           billName = rec.name;
+          invalidate(seq.current, "recurring");
           setData((p) => ({ ...p, recurring: [...p.recurring, mapRecurring(rec)] }));
         }
         const appliesTo: AppliesTo = { kind: "bill", recurringId: recId, monthKey, day };
+        invalidate(seq.current, "transactions");
         setData((p) => ({
           ...p,
           transactions: p.transactions.map((t) =>
@@ -1002,6 +1161,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       },
       async setRecurringVariable(id, variable) {
         // Flag a bill as variable-amount — display/projection only, moves no money.
+        invalidate(seq.current, "recurring");
         setData((p) => ({
           ...p,
           recurring: p.recurring.map((r) => (r.id === id ? { ...r, variable } : r)),
@@ -1010,17 +1170,39 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error) console.error(error);
       },
       async setAccountBalance(accountId, balance) {
+        invalidate(seq.current, "accounts");
         setData((p) => ({
           ...p,
           accounts: p.accounts.map((a) =>
             a.id === accountId ? { ...a, balance } : a,
           ),
         }));
-        const { error } = await supabase
+        // .select() is load-bearing, not decoration. An UPDATE whose row is
+        // filtered out by RLS (or run with an expired JWT) matches ZERO rows and
+        // comes back `{ error: null }` — so testing `error` alone reported a
+        // write that changed nothing as a success. Asking for the changed row
+        // back turns "nothing matched" into a failure we can actually see.
+        //
+        // This is the bank-truth anchor every other number is derived from —
+        // safe-to-spend, the per-cycle variable budget, the bills runway. A
+        // value that only ever existed on this phone used to survive the whole
+        // session (no DB change → no realtime event → no refetch), and reverted
+        // silently on the next app open. So on failure: drop back to server
+        // truth and tell the caller, which keeps the editor open.
+        const { data: rows, error } = await supabase
           .from("accounts")
           .update({ balance })
-          .eq("id", accountId);
-        if (error) console.error(error);
+          .eq("id", accountId)
+          .select();
+        if (error || !rows?.length) {
+          console.error(
+            "setAccountBalance did not persist — resyncing to server truth",
+            error ?? `UPDATE matched no row for account ${accountId}`,
+          );
+          await resyncLedger();
+          return false;
+        }
+        return true;
       },
       async addDebt(input) {
         const { data: row, error } = await supabase
@@ -1036,6 +1218,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .select()
           .single();
         if (error || !row) return console.error(error);
+        invalidate(seq.current, "debts");
         setData((p) => ({ ...p, debts: [...p.debts, mapDebt(row)] }));
       },
       // Point an existing debt at a connected credit card. Snap its balance to
@@ -1044,6 +1227,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const acct = dataRef.current.accounts.find((a) => a.id === accountId);
         if (!acct?.providerAccountId) return;
         const bal = Math.max(0, acct.balance);
+        invalidate(seq.current, "debts");
         setData((p) => ({
           ...p,
           debts: p.debts.map((d) =>
@@ -1059,6 +1243,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error) console.error(error);
       },
       async unlinkDebtCard(debtId) {
+        invalidate(seq.current, "debts");
         setData((p) => ({
           ...p,
           debts: p.debts.map((d) =>
@@ -1090,6 +1275,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .select()
           .single();
         if (error || !row) return console.error(error);
+        invalidate(seq.current, "debts");
         setData((p) => ({ ...p, debts: [...p.debts, mapDebt(row)] }));
       },
       async seedHousehold() {
@@ -1179,6 +1365,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           supabase.from("accounts").delete().neq("id", IMPOSSIBLE_ID),
           supabase.from("paid_bills").delete().neq("id", IMPOSSIBLE_ID),
         ]);
+        invalidate(
+          seq.current,
+          "transactions",
+          "debts",
+          "savings_goals",
+          "recurring",
+          "accounts",
+          "paid_bills",
+        );
         setData((p) => ({
           ...p,
           transactions: [],
@@ -1190,6 +1385,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         }));
       },
       async setPaidBill(month, key, paid) {
+        invalidate(seq.current, "paid_bills");
         setData((p) => {
           const others = p.paidBills.filter(
             (b) => !(b.month === month && b.billKey === key),
