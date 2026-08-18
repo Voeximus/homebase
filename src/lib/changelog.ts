@@ -12,6 +12,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.18a",
+    date: "August 18, 2026",
+    notes: [
+      "Home was telling you that you had about $1,000 less to work with than you actually did — every month. It was counting bills that hadn't started yet: both car insurance payments, the Civic payment, and your mom's support that's paused until November. Bills and Forecast had it right the whole time, and nothing told you which screen to believe. Fixed, and the app now checks the two against each other so it can't drift apart again.",
+      "A security hole is closed. There was a way for someone outside the household to delete every transaction and account in Homebase, and to read your bank descriptions and amounts. Nothing suggests it was ever used, and it's now shut. Your bank feed still works exactly as before — if anything looks off when you refresh, tell me immediately.",
+      "Your phone stops nagging about bills that aren't due. No more reminders for the paused support payment, the car payment a month before it starts, or 2027 insurance. And rent finally gets its day-before warning, which had never once worked — the reminder always arrived at 8pm ON the 1st, after the payment had already been attempted.",
+      "Anything you enter after 5pm now files under today, not tomorrow. An evening purchase on the last of the month was landing in the next month's budget and the wrong pay cycle.",
+      "Deleting a charge no longer invents money. Deleting an imported or bank-fed charge was adding its amount back to your balance even though that money never moved — a $63 duplicate made an account read $63 higher than the bank, and stayed that way.",
+      "Setting your balance can no longer fail silently. If the save doesn't land, the editor stays open and says so, instead of closing as though it worked. And when you and Xinyan add something at the same moment, both are kept — one used to quietly erase the other.",
+      "New: Does this add up? At the top of Profile. The app now works out five of its own key numbers a second, separate way and tells you if they disagree. It's quiet when everything matches and never sends a notification. It found a real mistake the first time it ran: Electric and Verizon were priced from old amounts on one screen and the amounts you'd actually read on another.",
+      "The forecast's first row now says \"rest of Aug\" and means it. It used to count the whole month, so rent already paid and paychecks already banked were both shown as still to come.",
+    ],
+  },
+  {
     version: "2026.08.17a",
     date: "August 17, 2026",
     notes: [
