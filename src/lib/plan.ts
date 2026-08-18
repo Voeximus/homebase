@@ -6,7 +6,8 @@
 // LIVE from the store, so the countdown and progress update as he pays them down.
 
 import type { Debt, Recurring, Transaction } from "../types";
-import { householdMonthly, monthlyAmount } from "./recurring";
+import { householdMonthly, liveOn, monthlyAmount } from "./recurring";
+import { todayISO } from "./format";
 
 export interface BudgetLine {
   key: string;
@@ -61,17 +62,35 @@ export const LEAN_VARIABLE: BudgetLine[] = [
 ];
 
 /** Ungraded, but still real cash out the door — so it can't go at the debt either.
- *  Electronics is Gino's deliberate carve-out ("outside the budget, but it still
- *  takes from what can go at debt"), so it skips the envelope and cuts firepower
- *  directly. `car` joins it for the same reason: the Civic's down payment, its
- *  pre-purchase inspection and its registration are one-time capital costs of a
- *  decision already made — grading them would blow a month's envelope to no
- *  purpose, while ignoring them entirely would overstate what can go at the debt.
- *  (Gas is NOT here — that's `transport`, ongoing consumption, graded every cycle.)
+ *  These skip the envelope and cut firepower directly. The common thread is NOT
+ *  "one-time": it is spending the envelope has no business grading, either
+ *  because it wasn't a discretionary choice or because grading it would blow a
+ *  month over a decision already made.
+ *
+ *   · `electronics` — Gino's original carve-out: "outside the budget, but it
+ *     still takes from what can go at debt".
+ *   · `car` — the Civic's down payment, its inspection, its registration.
+ *     One-time capital costs of a purchase already committed to.
+ *   · `utilities` — recurring, and the reason it is HERE rather than on a budget
+ *     line: you cannot choose not to pay the water bill, so folding it into the
+ *     discretionary Household + Hygiene envelope would make that line fail for a
+ *     charge nobody could have avoided. Until it was listed here it was on no
+ *     line AND not in this set, so a $180 city water charge the user categorised
+ *     as "Utilities" vanished from the budget bars, the donut AND firepower —
+ *     real cash gone, invisible on every finance screen.
+ *
+ *  Gas is NOT here — that's `transport`, ongoing consumption, graded every cycle.
  *  `interest` is deliberately NOT here either: it never leaves checking — the
  *  bank folds it into the card balance, which the debt total already reads, so
- *  charging it against firepower too would count it twice. */
-export const OUTSIDE_BUDGET_CASH_CATS = ["electronics", "car"];
+ *  charging it against firepower too would count it twice.
+ *
+ *  KNOWN residual: a utility BILL that the categorizer failed to name-match has
+ *  no appliesTo, so it is already inside `fixed` via householdMonthly and will
+ *  now also cut firepower here. That double-count is the deliberate choice over
+ *  the alternative (grading a non-discretionary bill against a discretionary
+ *  envelope). The real fix is to model SW Gas / city water as recurring rows so
+ *  their payments get an appliesTo and land in `fixed` once. */
+export const OUTSIDE_BUDGET_CASH_CATS = ["electronics", "car", "utilities"];
 
 /** Is this category graded against the lean budget? True iff some line claims it.
  *  `electronics`, `car` and `interest` deliberately belong to NO line: electronics
@@ -82,9 +101,14 @@ export function inAnyLine(catId: string): boolean {
   return LEAN_VARIABLE.some((l) => l.cats.includes(catId));
 }
 
-// Renters insurance — a fixed cost found during the audit, not yet in the live
-// recurring table, so it's folded into the plan's fixed total here.
-export const RENTERS_INSURANCE = 10.59;
+// (Renters insurance used to be a hardcoded $10.59 constant here, on the premise
+// that it was "not yet in the live recurring table". That premise was false — the
+// LEMONADE INSURANCE row exists, active, $10.59 monthly, due on the 18th — so
+// planMath was adding it a second time on top of hh.bills and firepower read
+// $10.59/mo too low, disagreeing with the Bills and Forecast tabs which read the
+// row once. A fixed cost must never live only inside planMath: nothing else in
+// the app — not the calendar, not the forecast, not the bill reminders — can see
+// it there. If a bill is missing, add the recurring row.)
 
 // Debt attack order (Gino's snowball — smallest first; clears the Affirms,
 // Xinyan's card and the family debt fast, then crushes the 19.99% card).
@@ -122,12 +146,23 @@ export function planMath(
   recurring: Recurring[],
   debts: Debt[],
   variable: number,
+  isoDate: string = todayISO(),
 ): PlanMath {
-  const hh = householdMonthly(recurring);
+  const hh = householdMonthly(recurring, isoDate);
   const income = hh.income;
-  const fixed = hh.bills + RENTERS_INSURANCE;
+  const fixed = hh.bills;
+  // The SAME window guard householdMonthly now applies, and it has to be here or
+  // the fix makes things worse in the other direction: this reduce is subtracted
+  // (`fixedNonDebt = fixed - debtPaymentsInFixed`), so if `bills` stops counting a
+  // windowed-out card/Affirm row while this keeps subtracting it, fixedNonDebt
+  // falls below reality and firepower reads TOO HIGH — overstating available cash,
+  // which is the more damaging way to be wrong. Latent today (no row matching
+  // /card payment|affirm/i carries a window), live the moment a finite loan gets
+  // its ends_on — exactly what schema_v27 was written for.
   const debtPaymentsInFixed = recurring
-    .filter((r) => r.active && r.direction === "out" && DEBT_PAYMENT_RX.test(r.name))
+    .filter(
+      (r) => r.active && liveOn(r, isoDate) && r.direction === "out" && DEBT_PAYMENT_RX.test(r.name),
+    )
     .reduce((s, r) => s + monthlyAmount(r), 0);
   const fixedNonDebt = fixed - debtPaymentsInFixed;
   const firepower = income - fixedNonDebt - variable;
@@ -305,6 +340,19 @@ export function previousPayday(before: Date, payDays: number[] = PAY_DAYS): Date
  * Payday-by-payday snowball schedule. Returns one event per payday: the date,
  * which debts got hit and by how much, the interest that accrued, and the total
  * left. This is the concrete "here's exactly what to send, and when" plan.
+ *
+ * KNOWN LIMITATION — monthlyFirepower is a SCALAR, held constant across every
+ * projected payday, but it comes from planMath which now evaluates each bill's
+ * window at ONE date (today). So the projection is right about this month and
+ * wrong about later ones: as of Aug 2026 it cannot see the $573.33/mo of car
+ * lines that begin Sept 30, and the debt-free date reads optimistic by exactly
+ * that much. Before the window fix it read pessimistic instead — the error moved
+ * direction, it did not disappear.
+ *
+ * A single today-snapshot figure cannot be correct for both horizons. The real
+ * fix is to evaluate the window per projected month, which forecast.ts already
+ * does correctly by rebuilding monthlySchedule for each monthKey. Doing that here
+ * means giving payoffSchedule a per-month firepower series instead of a number.
  */
 export function payoffSchedule(
   debtsOrdered: Debt[],
