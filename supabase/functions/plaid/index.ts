@@ -8,7 +8,12 @@
 // The Plaid secret and the bank access_token live server-side ONLY — never sent
 // to the browser. Triggers that hit `sync`: the Plaid webhook (real-time, app
 // closed — see plaid-webhook), the daily pg_cron job, and a client "refresh".
-// JWT-verified (no unauthenticated surface); `set_webhook` points items at us.
+//
+// AUTHORIZATION: every request must pass denyUnlessCaller() — a signed-in
+// household user, or an internal service-role call. `verify_jwt = true` alone is
+// NOT an authorization check: it accepts the publishable key, which ships in the
+// public browser bundle, so it left `disconnect` (a service-role hard delete of
+// the entire ledger) reachable by anyone on the internet. See _shared/callerAuth.ts.
 //
 // Categorization reuses your full trained library (categorizeData + classify +
 // learned merchant_rules); low-confidence rows are flagged needs_review for the
@@ -17,6 +22,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { reconcile, type NormalRow, type PlaidTxn } from "../_shared/plaidSync.ts";
 import { classify, classifyCredit, isPaycheck, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import { denyUnlessCaller } from "../_shared/callerAuth.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
 const PLAID_BASE = `https://${PLAID_ENV}.plaid.com`;
@@ -612,6 +618,9 @@ async function disconnect(p: any) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  // BEFORE the body is read: an unauthorized caller must never reach an action.
+  const denied = await denyUnlessCaller(req, admin, CORS);
+  if (denied) return denied;
   try {
     const payload = await req.json();
     switch (payload.action) {
