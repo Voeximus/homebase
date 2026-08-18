@@ -41,7 +41,7 @@ Nothing secret is stored in this repo, by design.
 |---|---|---|
 | **GitHub repo** | `github.com/Voeximus/homebase` | Push to `main` = deploy. Needs collaborator access. |
 | **Supabase project** | ref `ganzefaciiyibselizqi` (free tier) | The database. Dashboard login. |
-| **Supabase PAT** | Gino generates: supabase.com → Account → Access Tokens | Needed to run SQL outside the dashboard. **Never commit it.** |
+| **Supabase PAT** | supabase.com, under account/profile settings → Access Tokens. Starts `sbp_`. The dashboard's navigation moves — search its settings for "access token" rather than following a fixed path. | Needed to run SQL outside the dashboard, and by CI to deploy edge functions (`SUPABASE_ACCESS_TOKEN`). **Never commit it.** |
 | **`.env.local`** | repo root, gitignored | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. |
 | **GitHub Actions secrets** | repo → Settings → Secrets | Same two, plus `ANNOUNCE_TOKEN`. Build fails without them. |
 | **Plaid credentials** | Supabase edge function secrets | Live Bank of America feed. **Production keys — there is no sandbox.** |
