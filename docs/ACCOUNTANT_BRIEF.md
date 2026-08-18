@@ -91,9 +91,12 @@ the realtime websocket, so screenshots frequently time out — read the DOM inst
 
 ### People
 
-- **Gino** — night shift at "Treasure of Tech", variable hourly, modeled at an
-  **$1,800/check floor**, paid **semi-monthly** (15th + month end) → $3,600/mo.
-  Starting at ASU. Owns Knotted Studios LLC.
+- **Gino** — night shift at "Treasure of Tech", variable hourly, modelled at
+  **$1,400/check**, paid **semi-monthly** (15th + month end) → $2,800/mo. Confirmed
+  by him on 2026-08-18; an earlier version of this file said $1,800 and was wrong.
+  His actual deposits have run $1,349.93 to $2,612.79, so $1,400 is a deliberate
+  floor, not an average — do NOT "correct" it upward. Starting at ASU. Owns
+  Knotted Studios LLC.
 - **Xinyan** — PhD student at ASU (Data Science, Analytics & Engineering), funded
   as a 50% FTE Graduate Research Associate. **$1,346.40 gross biweekly, ~$1,187.42
   net**, 26 pay periods/yr. Tuition fully remitted, health insurance covered. The
@@ -247,11 +250,11 @@ When a bill has multiple due days and a start/end window, compute
 survivors doubles the remaining payment in a month the bill starts or stops
 partway.
 
-> **Correction (2026-08-18):** an earlier version of this file said "there is a
-> fixture that fails on the naive version. Leave it there." **There is no such
-> fixture.** There is no test framework in this repo at all. The claim was written
-> from memory of a conversation and never verified — exactly the failure this
-> document warns about in §0. The rule is real; the guard protecting it is not.
+> **History (2026-08-18):** an earlier version of this file claimed a fixture
+> guarded this rule when no test framework existed at all — written from memory and
+> never verified, the exact failure §0 warns about. There is now a real suite
+> (`npm test`, 110 tests), and Rule 5 IS covered: a bill starting mid-month drops an
+> installment without inflating the survivor.
 
 ### Rule 6a — Windows are enforced on **both** paths now
 The window columns were originally enforced on the calendar path only
@@ -345,6 +348,49 @@ incremental typechecks give false greens. The user test is the gate. When your
 probe and his experience disagree, **he is right.**
 
 ---
+
+## 5a. Testing — `npm test`
+
+110 tests, vitest, **TZ pinned to America/Phoenix in `vitest.config.ts`** and
+enforced by `tests/setup.ts`, which throws if the offset is not UTC-7. That pin is
+load-bearing: in a UTC runner a local date stamp and a UTC one agree, so the app's
+worst money bug is invisible and the date tests pass vacuously.
+
+A red test blocks the deploy — `npm test` runs in CI ahead of the build.
+
+| File | What it locks down |
+|---|---|
+| `tests/dates.test.ts` | the LOCAL stamp, biweekly stepping, windows, cadence anchors, pay cycles, bill-cycle attribution, `dueBeforeNextPayday` |
+| `tests/money.test.ts` | the deliberate conventions (with failure messages saying so), `billExpected`, the budget partition, Rule 5 |
+| `tests/forecast.test.ts` | the partial first month, `summarize` excluding it, windows, card payoff |
+| `tests/selfAudit.test.ts` | each self-check, including that it CATCHES its bug |
+| `tests/cycleSpend.test.ts` | the spending-history reference and the reality check |
+| `tests/live-selfaudit.test.ts` | runs the self-audit against the LIVE database — skipped without `SUPABASE_PAT` |
+| `tests/backtest.test.ts` | runs the model over months that already happened and diffs it against the bank |
+
+**The two live ones matter most.** They can catch a defect nobody thought to write
+a unit test for. The backtest is how you answer "can I trust this?" without taking
+anyone's word: as of 2026-08-18 the model expected $2,163.51 of August bills whose
+due day had passed and $2,206.47 actually left — **2%**.
+
+## 5b. What the app now says about itself
+
+- **`src/lib/selfAudit.ts`** — computes five key figures a SECOND independent way
+  and reports the gap. Every check is EXACT, so a non-zero result is definitionally
+  a defect. Surfaced at the top of Profile. It found a real bug on its first live
+  run (the plan pricing a variable bill from its stale stored amount while the
+  calendar used `known_amount`).
+- **The forecast leads with the LOW POINT**, not the surplus. A surplus is income
+  minus outgoings inside one calendar month, but rent lands on the 1st out of the
+  paycheck from the 31st before — so a healthy surplus can sit on cash that is gone
+  three days later. `forecast()` carries a running balance across that boundary.
+- **A "Reality check" panel** shows the projection against the last four real
+  months. The model projects about +$500/mo; the real months averaged −$314,
+  because a recurring-bill model cannot see a car down payment. Say this out loud
+  to anyone who asks the forecast for a promise.
+- **Spending is labelled as the one assumed number.** Income and bills are
+  measured; the dial opens on the household's own median cycle spend ($837), not a
+  round number somebody picked.
 
 ## 6. Codebase map
 

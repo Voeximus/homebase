@@ -65,11 +65,10 @@ Details in FINDINGS.md; the numbers there are authoritative.
 
 ### Then, still outstanding
 
-1. **No test framework at all.** Zero tests under intricate date and money logic.
-   This is the largest remaining gap to production-grade. Highest-value targets,
-   in order: `biweeklyDaysIn`, `inWindow`, `firesInMonth`, `billCycleFor`,
-   `payCycleFor`, `billExpected`, `spentByCategoryBetween`, `forecast`.
-   Use vitest — the project already runs vite, so it needs no new config.
+1. ~~No test framework~~ **DONE.** 110 vitest tests, TZ pinned to Phoenix, gating
+   the deploy. Plus two live harnesses: `tests/live-selfaudit.test.ts` and
+   `tests/backtest.test.ts`. **Still untested: `src/views/redesign/buildVMs.ts`** —
+   the largest untested file and the one computing most of what the user sees.
 2. **Round 1 findings not yet fixed:** #2 (`reverse_money_event` credits balances
    for rows that never debited — `schema_v18_finalization.sql:36`), #5/#6
    (`planMath`/`householdMonthly` ignore `starts_on`/`ends_on`, so dormant bills
