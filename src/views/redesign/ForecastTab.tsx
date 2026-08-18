@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Debt, Recurring, Transaction } from "../../types";
 import { forecast, summarize, type ForecastMonth } from "../../lib/forecast";
+import { recentCycleSpend, typicalCycleSpend } from "../../lib/plan";
 import { monthKeyOf } from "../../lib/format";
 
 // ── Forecast ─────────────────────────────────────────────────────────────────
@@ -72,8 +73,17 @@ export function ForecastTab({
   // car note, insurance — is a real row in the database and shouldn't pretend to
   // be a what-if.
   const [cardPay, setCardPay] = useState(() => Math.round(cardRow?.amount ?? 134));
-  const [cycleSpend, setCycleSpend] = useState(700);
   const [open, setOpen] = useState<string | null>(null);
+
+  // The user's OWN spending history, so the dial has a reference point instead of
+  // being a number in a vacuum.
+  const cycles = useMemo(() => recentCycleSpend(transactions), [transactions]);
+  const typical = useMemo(() => typicalCycleSpend(cycles), [cycles]);
+
+  // Open on what they ACTUALLY spend, not a round number somebody picked. The old
+  // default was a hardcoded 700 — below this household's real median — so the very
+  // first surplus the screen ever showed was optimistic, and nothing said why.
+  const [cycleSpend, setCycleSpend] = useState(() => (typical > 0 ? Math.round(typical) : 700));
 
   const startMonth = useMemo(() => {
     const d = new Date();
@@ -110,17 +120,60 @@ export function ForecastTab({
           />
         </div>
 
-        {/* the equation, spelled out — surplus is never just a word */}
+        {/* What you have actually spent, beside the dial that guesses it.
+            A surplus is two different kinds of number added together: income and
+            bills are MEASURED from the bank, spending is ASSUMED. Showing one
+            figure hides which half is a fact, and a projection built on $800 a
+            cycle is a different claim from one built on $1,050. */}
+        {cycles.length > 0 && (
+          <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: C.bg }}>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] uppercase tracking-[0.11em]" style={{ color: C.dim }}>
+                What you actually spent
+              </span>
+              <button
+                onClick={() => setCycleSpend(Math.round(typical))}
+                className="text-[11px] font-semibold active:opacity-60"
+                style={{ color: C.accent }}
+              >
+                use {money(typical)}
+              </button>
+            </div>
+            <div className="mt-1.5 flex items-end gap-1" style={{ height: 34 }}>
+              {cycles.map((c) => {
+                const peak = Math.max(...cycles.map((x) => x.spent), cycleSpend, 1);
+                return (
+                  <div key={c.start} className="flex-1" title={`${c.label} · ${money(c.spent)}`}>
+                    <div
+                      style={{
+                        height: Math.max(2, (c.spent / peak) * 34),
+                        borderRadius: "3px 3px 0 0",
+                        background: c.spent > cycleSpend ? C.warm : C.good,
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-1.5 text-[11px]" style={{ color: C.dim }}>
+              Last {cycles.length} cycles · typically {money(typical)} · you're planning{" "}
+              <span style={{ color: cycleSpend < typical ? C.warm : C.good }}>{money(cycleSpend)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* the equation, spelled out — surplus is never just a word, and each
+            term says where it came from */}
         {next && (
           <div
-            className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl px-3 py-2.5 text-[11px]"
+            className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl px-3 py-2.5 text-[11px]"
             style={{ background: C.bg, color: C.dim }}
           >
-            <Term label="income" value={money(next.income)} />
+            <Term label="income · measured" value={money(next.income)} />
             <span style={{ color: C.line }}>−</span>
-            <Term label="bills" value={money(next.bills)} />
+            <Term label="bills · measured" value={money(next.bills)} />
             <span style={{ color: C.line }}>−</span>
-            <Term label="spending" value={money(next.spend)} />
+            <Term label="spending · your setting" value={money(next.spend)} tint={C.warm} />
             <span style={{ color: C.line }}>=</span>
             <Term
               label={next.surplus < 0 ? "short" : "surplus"}
@@ -129,6 +182,11 @@ export function ForecastTab({
             />
           </div>
         )}
+        <p className="mt-2 px-1 text-[10.5px] leading-relaxed" style={{ color: C.dim }}>
+          Income and bills come from your bank. Spending is the one number you set —
+          so the surplus moves when you move it, and it is only ever as right as that
+          guess.
+        </p>
       </div>
 
       {/* ── headline ── */}

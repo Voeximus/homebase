@@ -576,6 +576,59 @@ export function spentByCategoryBetween(
   return out;
 }
 
+export interface CycleSpend {
+  start: string;
+  end: string;
+  label: string;
+  spent: number;
+}
+
+/**
+ * What was actually spent in each of the last `count` COMPLETE pay cycles.
+ *
+ * This exists to stop a dial being a number in a vacuum. The forecast's spending
+ * figure is an assumption the user types in, sitting beside bills that are
+ * measured from the bank — and presenting both as one surplus hides which half is
+ * a fact. A projection built on "$800 a cycle" and one built on "$1,050 a cycle"
+ * are different claims, and only the person who knows their own month can pick.
+ *
+ * Complete cycles only: the current one is partly spent and would read low,
+ * making the user's own history look better than it is at exactly the moment
+ * they are deciding what to spend.
+ */
+export function recentCycleSpend(
+  transactions: Transaction[],
+  now: Date = new Date(),
+  count = 6,
+): CycleSpend[] {
+  const out: CycleSpend[] = [];
+  // Walk back from the day before the current cycle opened, so the partial
+  // cycle in progress is never included.
+  let cursor = new Date(payCycleFor(now).start + "T12:00:00");
+  for (let i = 0; i < count; i++) {
+    cursor = new Date(+cursor - 86400000); // step into the previous cycle
+    const c = payCycleFor(cursor);
+    out.push({
+      start: c.start,
+      end: c.end,
+      label: c.label,
+      spent: variableSpentBetween(transactions, c.start, c.end),
+    });
+    cursor = new Date(c.start + "T12:00:00");
+  }
+  return out.reverse(); // oldest first, the way a history reads
+}
+
+/** The middle of `recentCycleSpend` — the honest "what you usually do" figure.
+ *  A median rather than a mean because one heavy cycle (a car down payment, a
+ *  trip) would drag an average somewhere the household never actually lives. */
+export function typicalCycleSpend(cycles: CycleSpend[]): number {
+  if (!cycles.length) return 0;
+  const s = cycles.map((c) => c.spent).sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
 /** Graded variable spend over a date range — the pay-cycle counterpart of
  *  variableSpentThisMonth. Same rule: only categories a budget line claims. */
 export function variableSpentBetween(
