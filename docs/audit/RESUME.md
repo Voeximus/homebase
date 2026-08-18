@@ -9,18 +9,16 @@ Paused mid-flight for a connection drop. This file is the handoff. Read it, then
 
 **Everything through batch 1 is COMMITTED AND PUSHED and is live.**
 
-⚠️ **Batch 2 was running in the background when the pause hit.** The working tree
-may contain PARTIAL, UNREVIEWED edits from up to 4 agents to these files:
+**The tree is CLEAN and everything is pushed.** Batch 2 was stopped deliberately
+rather than left to die mid-write.
 
-```
-src/store/FinanceStore.tsx
-src/lib/format.ts
-src/views/sheets.tsx
-src/views/redesign/buildVMs.ts
-src/store/HealthStore.tsx
-src/lib/forecast.ts
-src/lib/schedule.ts
-```
+Of batch 2's four groups, only `buildvms` finished before the stop. Its work was
+inspected, verified against the authoritative skeptic correction, and committed
+(`d1f7cd7`) — findings **#22 and #27 are done**. It never got its independent
+review pass, so it is the one commit here worth a second look on resume.
+
+The other three groups (`store`, `health`, `forecast`) **wrote nothing**. Their
+findings are untouched and listed below.
 
 **First thing on resume:**
 
@@ -28,10 +26,8 @@ src/lib/schedule.ts
 cd /c/Users/ginoc/Documents/homebase && git status --short && npm run build
 ```
 
-- Clean tree → batch 2 never wrote. Re-run it.
-- Dirty tree → the edits are UNREVIEWED. Do not commit them blind. Either review
-  each diff against its finding below, or `git checkout -- <file>` and redo.
-- Build fails → almost certainly a half-written file. Revert that file.
+Expect a clean tree and a passing build. If either surprises you, something wrote
+after this file was saved — inspect before committing anything.
 
 ---
 
@@ -51,18 +47,18 @@ Commits: `4eadb60` (security) → `7231c54` (cron-notify) → `2b31d51` (batch 1
 
 ## NOT done — pick up here
 
-### Batch 2 findings (details in FINDINGS.md, numbers are authoritative)
+### Batch 2 findings still open (#22 and #27 are DONE, commit `d1f7cd7`)
+
+Details in FINDINGS.md; the numbers there are authoritative.
 
 | # | Sev | File | Defect |
 |---|---|---|---|
 | 25 | HIGH | `src/lib/format.ts:15` | `todayISO()` is UTC; in Arizona anything after 5pm is stamped **tomorrow**, so an evening purchase on the 31st files into next month's budget and the wrong pay cycle. `FinanceStore.tsx:479,575` repeat it inline. `src/lib/mealLog.ts:127` already does it right — copy that, don't edit it. |
 | 23 | HIGH | `FinanceStore.tsx:989` | `setAccountBalance` can silently not persist. **Checking `error` is not enough** — an RLS-filtered UPDATE returns `error:null` with 0 rows. Use `.select()`, treat `error \|\| !data?.length` as failure, resync, and keep the editor open in `sheets.tsx`. |
 | 24 | HIGH | `FinanceStore.tsx:704` | `addTransaction` read-modify-writes the balance from client state; two phones at once lose money. |
-| 22 | HIGH | `buildVMs.ts:370` | `monthDent` compares a pay-cycle total to a monthly pace → evaluates 0 for every input, so the overspend penalty is dead code. `spentMonth` is computed nearby and unused. **Convention 9**: the hero tile's disagreement with the projection is deliberate — must survive. |
 | 26 | HIGH | `HealthStore.tsx:268` | retries scheduled after unmount overwrite newer data with a frozen snapshot. |
 | 30 | MED | `HealthStore.tsx:110` | meal-day dirty guard blocks the merge instead of merging → a whole-document write destroys the other phone's edits. |
 | 28 | MED | `forecast.ts:70` | month 0 counted whole, so income already received and bills already paid project as still to come. |
-| 27 | MED | `buildVMs.ts:163` | envelope drill-in lists pending charges the bar excludes → rows never sum to the number they explain. |
 | 29 | MED | `FinanceStore.tsx:283` | refetches have no request sequencing; an older SELECT can land last. |
 | 31 | MED | `FinanceStore.tsx:438` | realtime subscribed after the initial SELECTs, status never checked → events missed in the gap never recover. |
 | 32 | LOW | `schedule.ts:426` | `dueBeforeNextPayday` starts at today, so an unpaid bill already past its due day inside the cycle drops out. |
