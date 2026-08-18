@@ -147,7 +147,7 @@ export function ForecastTab({
 
       {/* ── months ── */}
       <p className="mb-2 mt-5 text-[10px] uppercase tracking-[0.12em]" style={{ color: C.dim }}>
-        Next 12 months · tap a month for its bills
+        This month's remainder + 11 ahead · tap a month for its bills
       </p>
       <div className="overflow-hidden rounded-2xl" style={{ border: `1px solid ${C.line}` }}>
         {months.map((m, i) => (
@@ -197,7 +197,12 @@ function MonthRow({
   return (
     <div style={{ borderTop: first ? "none" : `1px solid ${C.line}`, background: C.card }}>
       <button onClick={onToggle} className="flex w-full items-center gap-3 px-3.5 py-3 text-left active:opacity-70">
-        <span className="w-[52px] shrink-0 text-[13px] font-semibold">{m.label}</span>
+        {/* The current month is counted from today forward, not whole, so it says
+            so — otherwise "Aug 26" beside eleven full months invites comparing a
+            fraction of a month against a whole one. */}
+        <span className="w-[70px] shrink-0 text-[13px] font-semibold">
+          {m.partial ? `rest of ${m.label.split(" ")[0]}` : m.label}
+        </span>
         <span className="flex-1 text-[11px]" style={{ color: C.dim }}>
           in {money(m.income)} · out {money(m.bills + m.spend)}
           {m.incomeEvents > 4 && <span style={{ color: C.good }}> · extra check</span>}

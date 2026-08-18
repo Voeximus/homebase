@@ -1,5 +1,6 @@
 import type { Debt, Recurring, Transaction } from "../types";
-import { monthlySchedule } from "./schedule";
+import { monthCalendar, monthlySchedule } from "./schedule";
+import { monthKeyOf } from "./format";
 
 // ── Forward projection ────────────────────────────────────────────────────────
 // Everything the Bills screen already knows, run forward N months instead of one.
@@ -25,6 +26,10 @@ export interface ForecastMonth {
   incomeEvents: number; // how many paychecks land — 3 in the biweekly overflow months
   lines: ForecastLine[];
   cardCleared?: boolean; // the month the card balance hits zero
+  /** The CURRENT month, counted from today forward instead of whole. Its figures
+   *  are "what's left", not a full month, so it must never be compared against a
+   *  whole one — summarize() excludes it from steady/best/worst for that reason. */
+  partial?: boolean;
 }
 
 export interface ForecastOpts {
@@ -57,8 +62,30 @@ export function forecast(
   startMonth: string,
   count: number,
   opts: ForecastOpts,
+  now: Date = new Date(),
 ): ForecastMonth[] {
   const out: ForecastMonth[] = [];
+  // The first row is THE CURRENT MONTH, and the user reads it as "the rest of this
+  // month". It used to be counted whole, so rent already drafted on the 1st and
+  // paychecks already banked were both projected as still to come — the row
+  // overstated BOTH sides, and because summarize() folded it in, that one broken
+  // month could be reported as the best and the worst month of the year at once.
+  //
+  // So month 0 is now counted from today forward: bills the calendar already knows
+  // are paid drop out, paychecks that have already landed drop out, and variable
+  // spend is prorated across the days that are left.
+  const partialKey = monthKeyOf(now);
+  const todayDay = now.getDate();
+  // Which (recurringId, day) installments are already settled this month. Taken
+  // from monthCalendar because that is the one place paid-vs-unpaid is resolved
+  // properly — it matches a recorded payment to its installment and handles an
+  // early payment landing in a previous month. An unpaid bill whose due day has
+  // already passed is deliberately still counted: it is still owed.
+  const settled = new Set<string>();
+  {
+    const cal = monthCalendar(recurring, transactions, now, now.getFullYear(), now.getMonth(), debts);
+    for (const b of cal.bills) if (b.paid && b.recurringId) settled.add(`${b.recurringId}|${b.day}`);
+  }
   const card = opts.cardDebtId ? debts.find((d) => d.id === opts.cardDebtId) : undefined;
   // The card is paid down as the projection walks forward, so the month its
   // balance clears is the month its payment line disappears — and the surplus
@@ -72,6 +99,7 @@ export function forecast(
     // the same linkedDebtId gate the live calendar already applies.
     const simDebts = card ? debts.map((d) => (d.id === card.id ? { ...d, balance: cardBal } : d)) : debts;
     const sched = monthlySchedule(recurring, monthKey, transactions, simDebts);
+    const partial = monthKey === partialKey;
 
     let income = 0;
     let incomeEvents = 0;
@@ -80,11 +108,17 @@ export function forecast(
 
     for (const e of sched.entries) {
       if (e.direction === "in") {
+        // A paycheck that has already landed is not still coming.
+        if (partial && e.day < todayDay) continue;
         income += e.amount;
         incomeEvents++;
         continue;
       }
       if (e.direction === "transfer") continue; // moves money between our own accounts
+      // A bill the calendar already shows paid is not still going out. Note this
+      // keys on the installment, not the day — so Mom's 15th and 30th settle
+      // independently.
+      if (partial && e.recurringId && settled.has(`${e.recurringId}|${e.day}`)) continue;
       let amt = e.amount;
       if (card && opts.cardPay != null && e.recurringId && isCardRow(recurring, e.recurringId, card.id)) {
         amt = Math.min(opts.cardPay, cardBal + cardBal * (apr / 100) / 12);
@@ -95,7 +129,12 @@ export function forecast(
     for (const [name, amount] of byName) lines.push({ name, amount });
 
     const bills = lines.reduce((s, l) => s + l.amount, 0);
-    const spend = opts.cycleSpend * 2;
+    // Variable spend is a whole-month figure, so in a partial month it is prorated
+    // across the days that are left. Assumes the current rate continues, which is
+    // the same assumption the full months already make.
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysLeft = Math.max(0, daysInMonth - todayDay + 1); // today counts
+    const spend = partial ? (opts.cycleSpend * 2 * daysLeft) / daysInMonth : opts.cycleSpend * 2;
 
     // Walk the card forward by whatever actually went at it this month.
     let cardCleared = false;
@@ -118,6 +157,7 @@ export function forecast(
       incomeEvents,
       lines: lines.sort((a, b) => b.amount - a.amount),
       cardCleared,
+      ...(partial ? { partial: true } : {}),
     });
   }
   return out;
@@ -141,14 +181,24 @@ export interface ForecastSummary {
 
 export function summarize(months: ForecastMonth[]): ForecastSummary | null {
   if (!months.length) return null;
-  const rounded = months.map((m) => Math.round(m.surplus));
+  // A PARTIAL month is "the rest of this month" — a fraction of a month's bills
+  // and a fraction of its income. Comparing it against whole months is meaningless
+  // and actively misleading: before month 0 was excluded here, that one row could
+  // be reported as both the best and the worst month of the twelve, because it was
+  // the only row in the list measuring a different span of time.
+  //
+  // The TOTAL still includes it, because those are real dollars over the window
+  // the forecast actually covers.
+  const whole = months.filter((m) => !m.partial);
+  const cmp = whole.length ? whole : months; // never divide by nothing
+  const rounded = cmp.map((m) => Math.round(m.surplus));
   const freq = new Map<number, number>();
   for (const v of rounded) freq.set(v, (freq.get(v) ?? 0) + 1);
   const steady = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
   return {
     steady,
-    best: months.reduce((a, b) => (b.surplus > a.surplus ? b : a)),
-    worst: months.reduce((a, b) => (b.surplus < a.surplus ? b : a)),
+    best: cmp.reduce((a, b) => (b.surplus > a.surplus ? b : a)),
+    worst: cmp.reduce((a, b) => (b.surplus < a.surplus ? b : a)),
     total: months.reduce((s, m) => s + m.surplus, 0),
     clearsOn: months.find((m) => m.cardCleared)?.label,
   };
