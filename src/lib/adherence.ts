@@ -6,6 +6,7 @@
 // The 8 PM nudge marks empty days as "estimated" (followed, rough) or "skipped".
 
 import { dayTotals, type DayLog, type Macros, type Person } from "./mealLog";
+import { isoDate } from "./format";
 
 export type DayStatus = "logged" | "partial" | "estimated" | "skipped" | "none";
 
@@ -31,7 +32,7 @@ export function dayStatusOf(day: DayLog | undefined, target?: Macros): DayStatus
 export const isFollowed = (s: DayStatus) => s === "logged" || s === "estimated";
 
 function fmtLocal(dt: Date): string {
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  return isoDate(dt);
 }
 function minusDays(date: string, d: number): string {
   const dt = new Date(date + "T00:00:00");

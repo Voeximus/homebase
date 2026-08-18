@@ -7,7 +7,7 @@
 
 import type { Debt, Recurring, Transaction } from "../types";
 import { householdMonthly, liveOn, monthlyAmount } from "./recurring";
-import { todayISO } from "./format";
+import { isoDate, monthKeyOf, todayISO } from "./format";
 
 export interface BudgetLine {
   key: string;
@@ -270,8 +270,10 @@ export interface PayCycle {
   days: number; // length of the cycle in days
 }
 
-const iso = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// The pay cycle's own dates must be spelled the same way the ledger's dates are,
+// or a cycle boundary and a transaction stamped on that boundary can disagree.
+// One shared helper is the only way to guarantee that.
+const iso = isoDate;
 
 /** The pay cycle containing `now`: from the most recent payday through the day
  *  before the next one. Spans the month boundary by design. */
@@ -475,7 +477,7 @@ export function avgVariableSpend(
   const totals: number[] = [];
   for (let m = 1; m <= months; m++) {
     const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const key = monthKeyOf(d);
     if (key < floor) continue; // ignore pre-plan months
     const spent = variableSpentThisMonth(transactions, key);
     if (spent > 0) totals.push(spent); // a month with no data reads 0 → skip it

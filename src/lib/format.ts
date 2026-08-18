@@ -28,13 +28,34 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
  * internal `iso()` helper exactly.
  */
 export function todayISO(): string {
-  const d = new Date();
+  return isoDate(new Date());
+}
+
+/**
+ * Any Date as its LOCAL calendar date, "YYYY-MM-DD". The one place this
+ * conversion is written.
+ *
+ * It earned its own export because the repo had grown FOUR independent spellings
+ * of it — this one, plan.ts's internal `iso()`, mealLog.ts's `todayStr()` (via
+ * getTimezoneOffset) and an inline copy in BillsSheet.tsx. All four agree today,
+ * which is precisely why the divergence was invisible: `toISOString().slice(0,10)`
+ * is a fifth spelling that LOOKS like the others and is silently UTC, and that is
+ * how the evening-entry bug got in. One function means the next person cannot
+ * accidentally pick the wrong one.
+ */
+export function isoDate(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /** This month's "YYYY-MM" key, LOCAL — carried the identical UTC bug. */
 export function currentMonthKey(): string {
-  const d = new Date();
+  return monthKeyOf(new Date());
+}
+
+/** Any Date as its LOCAL "YYYY-MM" month key. The one place this is written —
+ *  the month key decides which month a charge is budgeted in, so a UTC spelling
+ *  here moves an evening purchase on the last of the month into the next one. */
+export function monthKeyOf(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 

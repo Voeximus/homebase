@@ -4,6 +4,8 @@
 // calendar weeks; the trend rate is a least-squares slope (robust to daily
 // noise) in lb/week. Pure.
 
+import { isoDate } from "./format";
+
 export type Person = "gino" | "xinyan";
 
 export interface BodyWeight {
@@ -13,7 +15,7 @@ export interface BodyWeight {
 }
 
 const parseDate = (d: string) => new Date(d + "T00:00:00").getTime();
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const ymd = isoDate; // shared spelling — see format.ts isoDate()
 
 /** The Monday that starts the week containing `date` (local). */
 export function weekStartOf(date: string): string {

@@ -5,6 +5,7 @@ import { catColor, catIcon } from "../../lib/catColor";
 import { dueBeforeNextPayday, type MonthCalendar, type MonthCalBill } from "../../lib/schedule";
 import { BillCalendar } from "./BillCalendar";
 import { payCycleFor } from "../../lib/plan";
+import { isoDate } from "../../lib/format";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -133,8 +134,9 @@ export function BillsSheet({
   // already landed, how much is still spoken for before the next one arrives.
   const cycle = payCycleFor(base);
   const daysLeft = Math.max(0, cycle.days - cycle.dayIndex);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const todayISO = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
+  // Shared spelling, not a local copy — this window is compared against ledger
+  // dates, so the two conversions have to be the same function.
+  const todayISO = isoDate(base);
   // The window can cross a month boundary, so hand over every month it touches.
   const [endY, endM] = cycle.end.split("-").map(Number);
   const windowMonths =

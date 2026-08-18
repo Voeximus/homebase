@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Debt, Recurring, Transaction } from "../../types";
 import { forecast, summarize, type ForecastMonth } from "../../lib/forecast";
+import { monthKeyOf } from "../../lib/format";
 
 // ── Forecast ─────────────────────────────────────────────────────────────────
 // The one screen that answers "what does this look like in three months". Every
@@ -76,7 +77,7 @@ export function ForecastTab({
 
   const startMonth = useMemo(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return monthKeyOf(d);
   }, []);
 
   const months = useMemo(

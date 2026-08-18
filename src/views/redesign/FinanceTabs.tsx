@@ -32,6 +32,7 @@ import { AnomalySheet } from "./AnomalySheet";
 import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
 import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
 import { merchantKey } from "../../lib/categorize";
+import { monthKeyOf } from "../../lib/format";
 
 function Seg({
   active,
@@ -182,7 +183,7 @@ export function FinanceTabs({
     [data.accounts, personal, owner],
   );
   const now = new Date();
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthKey = monthKeyOf(now);
 
   const refresh = async () => {
     setSyncing(true);

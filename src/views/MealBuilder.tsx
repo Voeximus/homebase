@@ -45,6 +45,7 @@ import { adherenceStats, weeklyAdherence, type DayStatus, type WeekBucket } from
 import { latestWeight, ratePerWeek } from "../lib/weightLog";
 import { CalibrationGauge } from "./CalibrationGauge";
 import { t } from "../lib/i18n";
+import { isoDate } from "../lib/format";
 
 // ── palette ───────────────────────────────────────────────────────────────────
 const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
@@ -105,7 +106,7 @@ export function MealBuilder({ owner, person }: { owner: Person; person: Person }
   const shiftDate = (d: string, by: number) => {
     const dt = new Date(d + "T00:00:00");
     dt.setDate(dt.getDate() + by);
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    return isoDate(dt);
   };
   const isToday = viewDate === today;
   const canNext = viewDate < today;
@@ -150,7 +151,7 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
   const shiftDate = (d: string, by: number) => {
     const dt = new Date(d + "T00:00:00");
     dt.setDate(dt.getDate() + by);
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    return isoDate(dt);
   };
   const isToday = viewDate === today;
   const dateLabel = isToday

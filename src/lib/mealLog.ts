@@ -7,6 +7,7 @@
 
 import type { Food, FoodUnit } from "./nutrition";
 import { SEED_FOODS } from "./nutrition";
+import { todayISO } from "./format";
 
 export type Person = "gino" | "xinyan";
 
@@ -121,10 +122,12 @@ export function remaining(target: Macros, eaten: Macros): Macros {
 // ── persistence (local-first; Supabase sync is a later upgrade like foods) ─────
 const dayKey = (person: Person, date: string) => `hb-meallog-${person}-${date}`;
 
-/** Local calendar date (not UTC) so "today" rolls at the user's midnight. */
+/** Local calendar date (not UTC) so "today" rolls at the user's midnight.
+ *  Delegates to the one shared spelling — this used to be a separate
+ *  getTimezoneOffset implementation, identical in result but a second place the
+ *  conversion could drift. */
 export function todayStr(): string {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return todayISO();
 }
 
 export function loadDay(person: Person, date: string): DayLog {
