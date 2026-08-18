@@ -209,7 +209,14 @@ export function LedgerSheet({
                     key={c.id}
                     onClick={async () => {
                       await setTransactionCategory(edit.id, c.id);
-                      if (remember)
+                      // Never learn a merchant rule from a row that's already
+                      // linked to a bill. A learned "variable" rule outranks the
+                      // bill rules permanently (categorize.ts: a rule you taught
+                      // the app wins over everything), so recolouring one Verizon
+                      // charge would teach the app that every future Verizon
+                      // charge is ordinary spending — quietly counting a fixed
+                      // bill against the variable envelope from then on.
+                      if (remember && !edit.appliesTo)
                         await saveMerchantRule({
                           pattern: merchantKey(edit.description),
                           kind: "variable",
@@ -267,7 +274,13 @@ export function LedgerSheet({
             <button
               onClick={async () => {
                 await excludeFromBudget(edit.id);
-                if (remember)
+                // Same guard as the category grid, and it matters MORE here: a
+                // learned "skip" rule makes the bank feed drop the merchant
+                // entirely (plaid/index.ts honours kind === "skip"), so teaching
+                // it from a bill row would silently stop every future Verizon
+                // charge from ever entering the ledger. Excluding THIS row is
+                // still fine — it's the generalisation that's destructive.
+                if (remember && !edit.appliesTo)
                   await saveMerchantRule({ pattern: merchantKey(edit.description), kind: "skip" });
                 setEdit(null);
               }}

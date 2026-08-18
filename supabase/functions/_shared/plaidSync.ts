@@ -64,14 +64,41 @@ export interface LedgerOps {
   reverse: string[];
   pendingUpsert: NormalRow[];
   pendingRemove: string[];
+  // Rows we did NOT post because the same purchase is already in the ledger
+  // under different provenance (see the content-key guard below). Returned so a
+  // dedup is never invisible — dropping money rows silently is how a ledger
+  // starts lying quietly instead of loudly.
+  absorbed: NormalRow[];
 }
 
+// `existingContentKeys` is the second line of defence, for the duplicate a
+// transaction_id CANNOT see: the same purchase already in the ledger under a
+// different identity — hand-entered, CSV/PDF-imported, or fed by an OLDER Plaid
+// item after a re-link (a re-link mints brand-new ids, so the DB's unique index
+// on (provider, provider_txn_id) never fires and the whole history lands twice).
+// The parameter existed from the start but no caller ever passed it, so the
+// guard on the last line of this function was dead code protecting nothing.
+//
+// Two rules keep it from eating rows it must not:
+//   • `knownProviderIds` — an id we already store is THIS row coming back, not a
+//     duplicate of a different row. A deliberate cursor reset (the operational
+//     tool used for the v25 raw_description and v26 keep_category backfills)
+//     re-sends the entire history in `added`; without this skip every row would
+//     match its OWN ledger row and the healing upsert would never run.
+//   • keys are CONSUMED on first match, so one existing row absorbs at most one
+//     incoming row. Two genuinely identical charges (two $5 coffees, same shop,
+//     same day) still land the second one. The residual error leans toward an
+//     extra VISIBLE row rather than silently deleting real spend — a duplicate
+//     on screen gets fixed in one tap; hidden spend is never noticed.
 export function reconcile(
   sync: SyncResponse,
   contentKey: (r: NormalRow) => string,
   existingContentKeys: Set<string> = new Set(),
+  knownProviderIds: Set<string> = new Set(),
 ): LedgerOps {
-  const ops: LedgerOps = { upsertPosted: [], reverse: [], pendingUpsert: [], pendingRemove: [] };
+  const ops: LedgerOps = { upsertPosted: [], reverse: [], pendingUpsert: [], pendingRemove: [], absorbed: [] };
+  // Consume from a copy: the caller's set is theirs, and it may be reused.
+  const unclaimed = new Set(existingContentKeys);
 
   for (const r of sync.removed) {
     ops.reverse.push(r.transaction_id);
@@ -86,7 +113,13 @@ export function reconcile(
       ops.pendingUpsert.push(row);
     } else {
       ops.pendingRemove.push(row.providerTxnId);
-      if (!existingContentKeys.has(contentKey(row))) ops.upsertPosted.push(row);
+      const key = contentKey(row);
+      if (!knownProviderIds.has(row.providerTxnId) && unclaimed.has(key)) {
+        unclaimed.delete(key); // spent: the next row with this key posts normally
+        ops.absorbed.push(row);
+      } else {
+        ops.upsertPosted.push(row);
+      }
     }
   }
 

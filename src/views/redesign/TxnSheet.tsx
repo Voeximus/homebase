@@ -44,6 +44,19 @@ export function TxnSheet({
   const expenseCats = data.categories.filter((c) => c.type === "expense" || c.type === "both");
   const canSplit = txn.type === "expense" && !txn.appliesTo;
   const hasSplits = !!txn.splits && txn.splits.length > 1;
+  // A LINKED row (a bill payment, a debt/goal contribution, a transfer, a
+  // set-aside) says nothing about what the merchant is — it says what this one
+  // money event satisfied. Teaching a merchant rule off one is a lie that then
+  // outranks every later reading: the learned-rule lookup is step 1 of
+  // classifyCore, ~57 lines ahead of BILL_RULES, and there is no delete-rule UI
+  // to undo it. payBill writes `description: rec.name` ("Verizon"), whose
+  // merchantKey is exactly the one Plaid's clean merchant_name produces — so one
+  // "Remember merchant" tap on a Verizon bill payment makes every future Verizon
+  // charge variable: $103.40/mo eats the budget envelope, the bill reads unpaid
+  // on the calendar, and billExpected stops seeing actuals. Same failure the
+  // `amountGated` carve-out exists to stop, reached through the UI instead.
+  // Recategorizing THIS row stays allowed — only the permanent rule is withheld.
+  const linked = !!txn.appliesTo;
   const catName = (id: string) => data.categories.find((c) => c.id === id)?.name ?? id;
 
   return (
@@ -147,17 +160,22 @@ export function TxnSheet({
                   <span className="eyebrow" style={{ color: "#8b97a6" }}>
                     {t("Category")}
                   </span>
-                  <button
-                    onClick={() => setRemember((r) => !r)}
-                    className="rounded-full px-2.5 py-1 text-[11px] font-medium transition"
-                    style={
-                      remember
-                        ? { background: "#0e2230", color: "#34c5e8" }
-                        : { background: "#1b232e", color: "#7e8a98" }
-                    }
-                  >
-                    {remember ? t("✓ Remember merchant") : t("Just this one")}
-                  </button>
+                  {/* No "Remember" offer on a linked row — a toggle that reads
+                      "✓ Remember merchant" while the rule is refused would be
+                      worse than no toggle at all. */}
+                  {!linked && (
+                    <button
+                      onClick={() => setRemember((r) => !r)}
+                      className="rounded-full px-2.5 py-1 text-[11px] font-medium transition"
+                      style={
+                        remember
+                          ? { background: "#0e2230", color: "#34c5e8" }
+                          : { background: "#1b232e", color: "#7e8a98" }
+                      }
+                    >
+                      {remember ? t("✓ Remember merchant") : t("Just this one")}
+                    </button>
+                  )}
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {expenseCats.map((c) => {
@@ -169,7 +187,11 @@ export function TxnSheet({
                         key={c.id}
                         onClick={async () => {
                           await setTransactionCategory(txn.id, c.id);
-                          if (remember)
+                          // The `!linked` test here is the guard, not the hidden
+                          // toggle: `remember` survives across opens (it's only
+                          // reset on mount), so a sheet reopened on a bill row
+                          // can still be carrying remember=true from a normal one.
+                          if (remember && !linked)
                             await saveMerchantRule({
                               pattern: merchantKey(txn.description),
                               kind: "variable",
@@ -191,9 +213,11 @@ export function TxnSheet({
                     );
                   })}
                 </div>
-                {!remember && (
+                {(linked || !remember) && (
                   <p className="mt-1.5 text-[11px]" style={{ color: "#6b7686" }}>
-                    {t("Sets only this charge — other charges from this merchant stay as they are.")}
+                    {linked
+                      ? t("Sets only this charge — a bill or transfer payment doesn't teach the merchant.")
+                      : t("Sets only this charge — other charges from this merchant stay as they are.")}
                   </p>
                 )}
               </>

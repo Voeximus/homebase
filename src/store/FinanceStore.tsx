@@ -618,6 +618,29 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         return { ok: true, count: inserted?.length ?? 0 };
       },
       async saveMerchantRule(rule) {
+        // BACKSTOP: never learn a "this is ordinary spending" or "skip this"
+        // rule for a merchant that is one of our BILLS. A learned rule outranks
+        // every built-in rule (categorize.ts), so such a rule permanently
+        // re-teaches the feed: `variable` starts counting a fixed bill against
+        // the variable envelope, and `skip` is worse still — the feed drops the
+        // charge entirely and a real payment never enters the ledger at all.
+        //
+        // Each sheet that writes a rule is supposed to gate on the row being
+        // unlinked, and three call sites need that guard. Two of them didn't
+        // have it. So the invariant lives HERE too, where it cannot be forgotten
+        // by the next screen that learns a rule — including the import
+        // clarify-card path, which has no transaction in hand to check.
+        if (rule.kind !== "bill") {
+          const isBillMerchant = dataRef.current.recurring.some(
+            (r) => r.active && r.direction === "out" && merchantKey(r.name) === rule.pattern,
+          );
+          if (isBillMerchant) {
+            console.warn(
+              `saveMerchantRule: refusing to learn kind="${rule.kind}" for "${rule.pattern}" — it matches the recurring bill of the same name.`,
+            );
+            return;
+          }
+        }
         const row = {
           pattern: rule.pattern,
           kind: rule.kind,

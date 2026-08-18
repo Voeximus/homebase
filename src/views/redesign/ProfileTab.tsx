@@ -18,7 +18,14 @@ import {
 } from "lucide-react";
 import { BRAND_GRADIENT } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
-import { disablePush, enablePush, getPushStatus, syncPushSubscription, type PushStatus } from "../../lib/push";
+import {
+  disablePush,
+  enablePush,
+  getPushStatus,
+  syncPushSubscription,
+  type PushStatus,
+  type PushSyncResult,
+} from "../../lib/push";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -91,27 +98,52 @@ const ROW_BORDER = "#1d2530";
 // push lib). Subscribing once covers transaction + health + bill alerts.
 function PushRow() {
   const [status, setStatus] = useState<PushStatus>("default");
+  // What the SERVER says about this device's row. getPushStatus() only ever asks
+  // the browser, and the browser stays cheerfully "subscribed" long after the row
+  // that makes a push deliverable is gone — which is how the 44-night outage hid
+  // from the one screen built to show it.
+  const [row, setRow] = useState<PushSyncResult>("unknown");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    let alive = true;
     // Repair first, then report. Someone opening this row is usually here BECAUSE
     // notifications stopped, so it's the one screen that must not just re-read a
-    // stale "On" back to them.
+    // stale "On" back to them. The .catch is not dead code: syncPushSubscription
+    // reads localStorage before entering its own try block, and that can throw.
     syncPushSubscription()
-      .catch(() => {})
-      .then(getPushStatus)
-      .then(setStatus);
+      .catch(() => "unknown" as const)
+      .then(async (r) => {
+        const s = await getPushStatus();
+        if (!alive) return; // Profile can be closed mid round-trip
+        setRow(r);
+        setStatus(s);
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
-  const on = status === "subscribed";
+  // Registered means BOTH halves agree. "missing" is only ever set when the server
+  // was reached and had no row, so it's safe to contradict the browser here; an
+  // offline phone reports "unknown" and keeps its "On".
+  const registered = status === "subscribed" && row !== "missing";
   const locked = status === "unsupported" || status === "denied";
+  // The two states where the browser is subscribed but the server isn't holding a
+  // row. A retry is the only thing that can help, so tapping runs enablePush().
+  const broken = status === "save-failed" || (status === "subscribed" && row === "missing");
   const toggle = async () => {
     if (busy || locked) return;
     setBusy(true);
     try {
-      if (on) {
+      if (registered) {
         await disablePush();
         setStatus("default");
+        setRow("unknown");
       } else {
-        setStatus(await enablePush());
+        const s = await enablePush();
+        setStatus(s);
+        // enablePush only reports "subscribed" once its upsert came back clean, so
+        // that path is confirmed; anything else leaves the row unverified.
+        setRow(s === "subscribed" ? "confirmed" : "unknown");
       }
     } finally {
       setBusy(false);
@@ -122,9 +154,15 @@ function PushRow() {
       ? t("Add Homebase to your home screen to enable")
       : status === "denied"
         ? t("Blocked — allow notifications in your phone's settings")
-        : on
-          ? t("On — transaction & health alerts on this phone")
-          : t("Off — tap to get alerts on this phone");
+        : status === "save-failed"
+          ? t("Couldn't save — tap to retry")
+          : status !== "subscribed"
+            ? t("Off — tap to get alerts on this phone")
+            : row === "missing"
+              ? t("Not registered on the server — tap to fix")
+              : row === "unknown"
+                ? t("On · couldn't verify with the server")
+                : t("On — transaction & health alerts on this phone");
   return (
     <div className="flex items-center gap-3 border-b p-4" style={{ borderColor: ROW_BORDER }}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#34c5e826", color: "#34c5e8" }}>
@@ -132,17 +170,19 @@ function PushRow() {
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-medium text-bone">{t("Notifications")}</div>
-        <div className="text-[11.5px]" style={{ color: "#8b97a6" }}>{sub}</div>
+        {/* Orange, not grey: "not registered" is a fault to act on, not a preference
+            that happens to be off. */}
+        <div className="text-[11.5px]" style={{ color: broken ? "#f97316" : "#8b97a6" }}>{sub}</div>
       </div>
       <button
         type="button"
         onClick={toggle}
         disabled={busy || locked}
         className="relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
-        style={{ background: on ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
-        aria-pressed={on}
+        style={{ background: registered ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
+        aria-pressed={registered}
       >
-        <span className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all" style={{ left: on ? "19px" : "3px" }} />
+        <span className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all" style={{ left: registered ? "19px" : "3px" }} />
       </button>
     </div>
   );

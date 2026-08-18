@@ -23,7 +23,18 @@ function ownerOfDevice(): string {
 const OFF_KEY = "hb-push-off";
 const optedOut = () => localStorage.getItem(OFF_KEY) === "1";
 
-export type PushStatus = "unsupported" | "default" | "denied" | "subscribed";
+// "save-failed" is NOT "off": the browser subscribed fine and only the row write
+// failed. Collapsing it into "default" told the user "Off — tap to get alerts"
+// after a tap that had already granted permission and subscribed, so the only
+// feedback for a failed enable was a toggle springing back with no explanation.
+export type PushStatus = "unsupported" | "default" | "denied" | "subscribed" | "save-failed";
+
+/** What the SERVER says about this device's row, which is the half that decides
+ *  whether a push is deliverable. Three-valued on purpose: "missing" means the
+ *  server was reached and had no row for this endpoint, "unknown" means we never
+ *  got to ask. Folding those together would let an offline phone with a perfectly
+ *  good row be told it isn't registered. */
+export type PushSyncResult = "confirmed" | "missing" | "unknown";
 
 export function pushSupported(): boolean {
   return (
@@ -37,6 +48,11 @@ export function pushSupported(): boolean {
 export async function getPushStatus(): Promise<PushStatus> {
   if (!pushSupported()) return "unsupported";
   if (Notification.permission === "denied") return "denied";
+  // An explicit OFF outranks a surviving browser subscription. disablePush() sets
+  // the flag BEFORE it unsubscribes, so a throw in between leaves the browser
+  // subscribed while the row is already deleted — asking only the browser there
+  // renders "On" for a device that is switched off and self-heal-blocked.
+  if (optedOut()) return "default";
   if (Notification.permission === "granted") {
     try {
       const reg = await navigator.serviceWorker.ready;
@@ -80,6 +96,16 @@ export async function enablePush(): Promise<PushStatus> {
   const perm = await Notification.requestPermission();
   if (perm !== "granted") return perm === "denied" ? "denied" : "default";
 
+  // Clear the opt-out HERE, at the tap — the flag records intent (see OFF_KEY),
+  // and the intent is expressed by opting in, not by a network round-trip landing.
+  // It used to be cleared only on the success path below, so an enable that got as
+  // far as a live browser subscription but failed the upsert left hb-push-off="1"
+  // set forever: syncPushSubscription() early-returned on every subsequent open and
+  // the device could never self-heal. Clearing early is safe in the other direction
+  // because only disablePush() ever sets the flag, and the sync never subscribes
+  // while it is set.
+  localStorage.removeItem(OFF_KEY);
+
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {
@@ -100,9 +126,8 @@ export async function enablePush(): Promise<PushStatus> {
   );
   if (error) {
     console.error("push subscribe save", error);
-    return "default";
+    return "save-failed"; // subscribed in the browser, unreachable from the server
   }
-  localStorage.removeItem(OFF_KEY);
   return "subscribed";
 }
 
@@ -122,10 +147,15 @@ export async function enablePush(): Promise<PushStatus> {
  *
  *  The row is the deliverable half, so the app has to re-assert it rather than
  *  trust that it was written once. One idempotent upsert per open, keyed on the
- *  endpoint. */
-export async function syncPushSubscription(): Promise<void> {
-  if (!pushSupported() || Notification.permission !== "granted") return;
-  if (optedOut()) return; // switched off on purpose — leave it off
+ *  endpoint.
+ *
+ *  It also REPORTS what it found, because the upsert's own error can't tell an
+ *  unreachable server from a server that says there is no row — and only the
+ *  second of those is the failure worth alarming a user about. The early returns
+ *  below are "unknown", never "missing": they never asked the server at all. */
+export async function syncPushSubscription(): Promise<PushSyncResult> {
+  if (!pushSupported() || Notification.permission !== "granted") return "unknown";
+  if (optedOut()) return "unknown"; // switched off on purpose — leave it off
   try {
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
@@ -153,8 +183,25 @@ export async function syncPushSubscription(): Promise<void> {
       { onConflict: "endpoint" },
     );
     if (error) console.error("push resync", error);
+    // Read the row back instead of trusting the write. This SELECT is the only
+    // place anything on the client ever looks at push_subscriptions, and it is what
+    // separates the two ways an upsert can fail: a server we couldn't reach answers
+    // with an error here too ("unknown"), while a server we DID reach answering "no
+    // row for this endpoint" is exactly the 44-night state ("missing"). Run it even
+    // when the upsert errored — that's the case it exists to diagnose.
+    const { data, error: readErr } = await supabase
+      .from("push_subscriptions")
+      .select("endpoint")
+      .eq("endpoint", sub.endpoint)
+      .maybeSingle();
+    if (readErr) {
+      console.error("push resync verify", readErr);
+      return "unknown";
+    }
+    return data ? "confirmed" : "missing";
   } catch (e) {
     console.error("push resync", e);
+    return "unknown";
   }
 }
 

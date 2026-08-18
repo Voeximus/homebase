@@ -332,7 +332,79 @@ async function syncConnection(connId: string, force = false) {
       if (!s.has_more) break;
     }
 
-    const ops = reconcile({ added, modified, removed }, contentKey);
+    // Arm the content-level dedup guard (it was built and then never passed in,
+    // so nothing was guarding anything). The DB's unique index is scoped to
+    // (provider, provider_txn_id) and therefore only stops the SAME Plaid item
+    // re-delivering a row. It cannot see the duplicate that actually hurts: the
+    // app's only bank-link path mints a NEW item — `link_token`'s connection_id
+    // branch is unreachable from the UI, so "Connect a bank" is the whole
+    // vocabulary for fixing a stale login — and a new item re-delivers the entire
+    // history under NEW ids. Unarmed, that inserted a SECOND copy of every
+    // charge: variable spend and income double, and tracked-debt payments double,
+    // which then drives those debt balances TOO LOW through the baseline − paid
+    // recompute below. The same gap re-fed any row already entered by hand or by
+    // CSV/PDF import.
+    //
+    // What goes in the set, and why the scope is this narrow:
+    //   • rows with NO provider_txn_id — hand-entered / imported: the overlap case
+    //   • feed rows this connection does NOT own — the older item after a re-link
+    //   • but NEVER this connection's own feed rows: they are already covered by
+    //     the unique index, and their keys would make a SECOND genuinely identical
+    //     charge (two same-price fills at the same station on one day, arriving in
+    //     different syncs) look like a duplicate and vanish from spend
+    //   • posted only: a pending row is display-only and excluded from budget
+    //     math, so letting a stale one absorb a posted charge would HIDE money
+    // knownProviderIds carries every id we already store — reconcile skips the
+    // content check for those, which is what keeps a cursor-reset re-pull a heal
+    // instead of a no-op.
+    const postedDelta = [...added, ...modified].filter((t) => !t.pending);
+    const existingKeys = new Set<string>();
+    const knownProviderIds = new Set<string>();
+    if (postedDelta.length) {
+      const dates = postedDelta.map((t) => t.date).sort();
+      const ourAcctIds = new Set((ourAccts ?? []).map((a: any) => a.id));
+      // Page explicitly: PostgREST caps a select (1000 rows by default) and
+      // truncates SILENTLY, and a first sync can span 24 months — a half-armed
+      // guard would look like it worked and still double part of the history.
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: prior, error: dErr } = await admin
+          .from("transactions")
+          .select("date, amount, type, description, account_id, provider_txn_id, status")
+          .gte("date", dates[0])
+          .lte("date", dates[dates.length - 1])
+          .range(from, from + PAGE - 1);
+        // Fail CLOSED. A scan we can't trust means we can't tell a new charge from
+        // a re-delivered one, and the cursor isn't persisted until the end, so the
+        // next sync simply re-pulls the same delta. A retried sync beats a doubled
+        // ledger.
+        if (dErr) throw new Error("dedup scan: " + dErr.message);
+        for (const r of prior ?? []) {
+          if (r.provider_txn_id) knownProviderIds.add(r.provider_txn_id as string);
+          if (r.status !== "posted") continue;
+          if (r.provider_txn_id && ourAcctIds.has(r.account_id)) continue;
+          // Signed the way NormalRow is (− = spend) and merchant-keyed the way
+          // importStatement's dupeKey is, so all three write paths agree on what
+          // "the same purchase" means.
+          const signed = r.type === "income" ? Number(r.amount) : -Number(r.amount);
+          existingKeys.add(`${r.date}|${signed.toFixed(2)}|${merchantKey(r.description ?? "")}`);
+        }
+        if ((prior?.length ?? 0) < PAGE) break;
+      }
+    }
+
+    const ops = reconcile({ added, modified, removed }, contentKey, existingKeys, knownProviderIds);
+    if (ops.absorbed.length) {
+      // Never silent: an absorb means the bank's copy was dropped in favour of a
+      // row already in the ledger, and that has to be readable in the logs.
+      console.log(
+        `dedup: absorbed ${ops.absorbed.length} already-in-ledger row(s) — ` +
+          ops.absorbed
+            .map((r) => `${r.date} ${r.amount.toFixed(2)} ${r.description}`)
+            .join("; ")
+            .slice(0, 500),
+      );
+    }
 
     // group posted rows: living-spend by account, and BILL payments (matched to a
     // recurring) recorded as appliesTo=bill so they auto-mark paid + log the real
@@ -546,16 +618,39 @@ async function syncConnection(connId: string, force = false) {
         needs_review: c.confidence === "low",
       });
     }
+    // A plain INSERT, not an upsert. The comment above was describing what this
+    // was SUPPOSED to do: the only unique index on (provider, provider_txn_id) is
+    // partial, PostgREST renders onConflict with no WHERE predicate, and Postgres
+    // then refuses that index as the arbiter — so the statement died at PLAN time
+    // with 42P10 on every sync, conflict or not, and no pending row was ever
+    // written. The "processing" badge could not appear for any charge while the
+    // sync still reported ok. The delete above is hard-scoped to provider='plaid'
+    // + status='pending' + these exact ids (removeIds contains every pendingUpsert
+    // id), so nothing survives for this insert to collide with.
+    let pendingErr: string | null = null;
     if (pendingRows.length) {
-      const { error: pErr } = await admin
-        .from("transactions")
-        .upsert(pendingRows, { onConflict: "provider,provider_txn_id", ignoreDuplicates: true });
-      if (pErr) console.warn("pending upsert:", pErr.message);
+      const { error: pErr } = await admin.from("transactions").insert(pendingRows);
+      // Deliberately NOT a throw: `cursor` is persisted below, so aborting here
+      // would replay this identical delta forever and wedge the connection —
+      // strictly worse than losing a display-only row. Make it visible instead.
+      if (pErr) {
+        pendingErr = `pending insert: ${pErr.message}`;
+        console.warn(pendingErr);
+      }
     }
 
     await admin
       .from("bank_connections")
-      .update({ cursor, last_sync_at: new Date().toISOString(), status: "ok", last_error: null, consecutive_failures: 0 })
+      .update({
+        cursor,
+        last_sync_at: new Date().toISOString(),
+        // The money write succeeded, so the connection is healthy — but this
+        // update used to null last_error unconditionally, which is what let the
+        // pending failure above stay invisible for as long as it did.
+        status: "ok",
+        last_error: pendingErr ? pendingErr.slice(0, 400) : null,
+        consecutive_failures: 0,
+      })
       .eq("id", connId);
 
     // Summary of what landed this sync — the webhook uses it to push a phone
@@ -569,7 +664,13 @@ async function syncConnection(connId: string, force = false) {
       .filter((r: any) => r.type !== "income")
       .map((r: any) => ({ description: r.description, amount: r.amount, pending: r.status === "pending" }));
 
-    return { posted: ops.upsertPosted.length, pending: ops.pendingUpsert.length, reversed: ops.reverse.length, newRows };
+    return {
+      posted: ops.upsertPosted.length,
+      pending: ops.pendingUpsert.length,
+      reversed: ops.reverse.length,
+      absorbed: ops.absorbed.length, // already-in-ledger rows the dedup guard held back
+      newRows,
+    };
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
     const { data: cf } = await admin

@@ -244,7 +244,12 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
 // For merchants not in Gino's history, fall back to keyword rules so new
 // merchants still land in the right bucket (lower confidence — he can fix it).
 const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
-  { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|76\b/i, appCategory: "transport" },
+  // "76" is the fuel brand and needs a word boundary on BOTH sides. With only the
+  // trailing \b it also matched the TAIL of any store number ending in 76, and this
+  // rule runs first — so "TARGET T-3176", "SPROUTS FARMERS MKT 176" and "PANERA
+  // BREAD #3876" were all filed as gas, inflating the fuel line while the line they
+  // belonged to read under. Phillips 66 is the same brand's parent name.
+  { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|PHILLIPS ?66|\b76\b/i, appCategory: "transport" },
   { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
   { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
   { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
