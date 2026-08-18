@@ -148,6 +148,46 @@ describe("planMath", () => {
     expect(m.fixedNonDebt).toBe(1000);
   });
 
+  it("prices a VARIABLE bill the way the calendar does, not at its stale amount", () => {
+    // Found by the self-audit on live data: the plan counted Electric at its
+    // stored $85 while the calendar counted the $100 read off the bill, and
+    // Verizon $83 against $93. The plan's figure being LOWER made firepower read
+    // TOO HIGH — overstating available cash, the more damaging direction.
+    const rows = [
+      bill({ id: "srp", name: "Electric (SRP)", amount: 85, variable: true, knownAmount: 100 }),
+      bill({ id: "vz", name: "Verizon", amount: 83, variable: true, knownAmount: 93 }),
+    ];
+    const m = planMath(rows, debts, 0, "2026-08-18", []);
+    expect(m.fixed).toBeCloseTo(193, 2); // 100 + 93, not 85 + 83
+  });
+
+  it("uses the rolling average when there is no override", () => {
+    const b = bill({ id: "srp", name: "Electric (SRP)", amount: 85, variable: true });
+    const paid = (amount: number, date: string, monthKey: string): Transaction =>
+      txn({
+        id: `p${date}`,
+        date,
+        amount,
+        appliesTo: { kind: "bill", recurringId: "srp", monthKey, day: 17 },
+      });
+    const history = [
+      paid(120, "2026-05-17", "2026-05"),
+      paid(130, "2026-06-17", "2026-06"),
+      paid(140, "2026-07-17", "2026-07"),
+    ];
+    const m = planMath([b], debts, 0, "2026-08-18", history);
+    expect(m.fixed).toBeCloseTo(130, 2); // the average, not the stored 85
+  });
+
+  it("leaves a PERIODIC variable bill on its contracted amount", () => {
+    // billExpected returns a PER-CHARGE figure that monthlySchedule treats as
+    // monthly; those coincide only for a monthly bill. Applying it to a
+    // semiannual row would count one charge as if it landed every month.
+    const b = bill({ id: "ins", name: "Insurance", amount: 639.42, cadence: "semiannual", variable: true, knownAmount: 700 });
+    const m = planMath([b], debts, 0, "2026-08-18", []);
+    expect(m.fixed).toBeCloseTo(639.42 / 6, 2);
+  });
+
   it("a live card payment IS added back as firepower, not counted as living cost", () => {
     const rows = [
       bill({ id: "r", name: "Rent", amount: 1000 }),

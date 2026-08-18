@@ -101,7 +101,10 @@ export function buildFinanceVMs(
   // unit money actually arrives in — a calendar month splits one paycheck's
   // spending across two reports and hides where you stand until it's too late.
   const monthlyTarget = sumTargets(LEAN_VARIABLE);
-  const math = planMath(data.recurring, data.debts, monthlyTarget);
+  // transactions are passed so a VARIABLE bill is priced the way the calendar
+  // prices it (known_amount, else the rolling average) rather than by its stale
+  // stored amount — without them the plan and the calendar disagree.
+  const math = planMath(data.recurring, data.debts, monthlyTarget, undefined, data.transactions);
   const spentMonth = variableSpentThisMonth(data.transactions, monthKey);
 
   const cycle = payCycleFor(now);

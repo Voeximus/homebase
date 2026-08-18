@@ -6,7 +6,10 @@
 // LIVE from the store, so the countdown and progress update as he pays them down.
 
 import type { Debt, Recurring, Transaction } from "../types";
-import { householdMonthly, liveOn, monthlyAmount } from "./recurring";
+// householdMonthly is deliberately NOT used here: it prices every row at its
+// stored amount, which is exactly the drift plannedMonthly() exists to close.
+import { liveOn, monthlyAmount } from "./recurring";
+import { CADENCE_TO_MONTHLY } from "./household";
 import { isoDate, monthKeyOf, todayISO } from "./format";
 
 export interface BudgetLine {
@@ -142,15 +145,66 @@ export interface PlanMath {
 // not living costs, so they're added back when computing what's aimed at the debt.
 const DEBT_PAYMENT_RX = /card payment|affirm/i;
 
+/**
+ * What the PLAN prices one recurring row at, per month. The single source of that
+ * answer, so the plan and anything auditing the plan cannot drift apart.
+ *
+ * A variable bill is worth what it actually IS — known_amount, else the rolling
+ * average of real payments — exactly as the calendar and the forecast price it.
+ * Everything else is its contracted amount normalised to a month.
+ *
+ * MONTHLY cadence only for the variable branch, and that is deliberate:
+ * billExpected() returns a PER-CHARGE figure which monthlySchedule treats as the
+ * monthly one, and those coincide only when a bill charges once a month. For a
+ * periodic bill the calendar takes its payment from `r.amount` directly and never
+ * consults billExpected, so there is nothing to reconcile and applying it would
+ * introduce a fresh error — a semiannual charge counted as if it landed monthly.
+ */
+export function plannedMonthly(r: Recurring, transactions: Transaction[] = []): number {
+  if (r.direction === "out" && r.variable && (CADENCE_TO_MONTHLY[r.cadence] ?? 1) === 1) {
+    return billExpected(r, transactions);
+  }
+  return monthlyAmount(r);
+}
+
 export function planMath(
   recurring: Recurring[],
   debts: Debt[],
   variable: number,
   isoDate: string = todayISO(),
+  transactions: Transaction[] = [],
 ): PlanMath {
-  const hh = householdMonthly(recurring, isoDate);
-  const income = hh.income;
-  const fixed = hh.bills;
+  // Computed here rather than via householdMonthly because the bills side must go
+  // through plannedMonthly(): householdMonthly prices every row at its stored
+  // amount, so a variable bill was counted at $85 by the plan while the calendar
+  // counted the $100 the user had actually read off it. The plan's figure being
+  // LOWER made firepower read TOO HIGH — overstating available cash, the more
+  // damaging direction. The self-audit caught it on live data.
+  const live = recurring.filter(
+    (r) => r.active && r.direction !== "transfer" && liveOn(r, isoDate),
+  );
+  const income = live
+    .filter((r) => r.direction === "in")
+    .reduce((s, r) => s + monthlyAmount(r), 0);
+  // A VARIABLE bill is worth what it actually is, on this path too.
+  //
+  // householdMonthly uses monthlyAmount(), i.e. the stored `amount`. But the
+  // calendar and the forecast both use billExpected(), which honours
+  // known_amount and otherwise the rolling average of real payments. So the two
+  // paths priced the same bill differently and nothing reconciled them — the
+  // self-audit caught it on live data: Electric (SRP) counted $85/mo by the plan
+  // and $100/mo by the calendar, Verizon $83 against $93.
+  //
+  // The direction matters. The plan's figure was LOWER, so `fixed` was lower,
+  // `fixedNonDebt` was lower and firepower read $25/month TOO HIGH — overstating
+  // available cash, which is the more damaging way to be wrong. It is the same
+  // shape as the window bug: a rule honoured on one path and ignored on another.
+  //
+  // Fixed here rather than in householdMonthly because billExpected lives in this
+  // module and recurring.ts is imported BY it — reaching back would be circular.
+  const fixed = live
+    .filter((r) => r.direction === "out")
+    .reduce((s, r) => s + plannedMonthly(r, transactions), 0);
   // The SAME window guard householdMonthly now applies, and it has to be here or
   // the fix makes things worse in the other direction: this reduce is subtracted
   // (`fixedNonDebt = fixed - debtPaymentsInFixed`), so if `bills` stops counting a
