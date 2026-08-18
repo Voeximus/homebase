@@ -141,7 +141,9 @@ export function BillsSheet({
   const [endY, endM] = cycle.end.split("-").map(Number);
   const windowMonths =
     endY === mc.year && endM - 1 === mc.month ? [mc] : [mc, getMonth(endY, endM - 1)];
-  const beforePayday = dueBeforeNextPayday(windowMonths, todayISO, cycle.end);
+  // cycle.start, not today — an unpaid bill whose due day has already passed
+  // inside this cycle still comes out of the paycheck already in the account.
+  const beforePayday = dueBeforeNextPayday(windowMonths, todayISO, cycle.end, cycle.start);
 
   return (
     <div
@@ -193,6 +195,14 @@ export function BillsSheet({
                     amount: money2(beforePayday.total),
                   })
                 : t("Nothing else due before payday")}
+              {/* Named separately because it is a different kind of fact: not
+                  "coming up" but "already past its date and still unpaid". */}
+              {beforePayday.overdueTotal > 0 && (
+                <span style={{ color: "#e8746a" }}>
+                  {" · "}
+                  {t("{amount} already overdue", { amount: money2(beforePayday.overdueTotal) })}
+                </span>
+              )}
             </div>
           </div>
         )}

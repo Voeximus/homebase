@@ -513,4 +513,5 @@ export const AUTO_ZH: Record<string, string> = {
   "Search activity": "搜索动态",
   "Nothing here.": "这里还没有内容。",
   "Categorize": "归类",
+  "{amount} already overdue": "{amount} 已逾期",
 };

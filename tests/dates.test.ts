@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { todayISO, currentMonthKey, isoDate, monthKeyOf } from "../src/lib/format";
-import { biweeklyDaysIn, inWindow, firesInMonth, billCycleFor } from "../src/lib/schedule";
+import {
+  biweeklyDaysIn,
+  inWindow,
+  firesInMonth,
+  billCycleFor,
+  monthCalendar,
+  dueBeforeNextPayday,
+} from "../src/lib/schedule";
 import { payCycleFor, nextPayday, previousPayday, PAY_DAYS } from "../src/lib/plan";
-import type { Recurring } from "../src/types";
+import type { Recurring, Transaction } from "../src/types";
 
 // A minimal recurring row. Only the fields a given test cares about get set.
 const row = (over: Partial<Recurring> = {}): Recurring => ({
@@ -232,5 +239,61 @@ describe("billCycleFor — which cycle a payment settles", () => {
 
   it("with no due days it uses the payment's own day", () => {
     expect(billCycleFor(undefined, "2026-07-09")).toEqual({ monthKey: "2026-07", day: 9 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("dueBeforeNextPayday — what this paycheck still owes", () => {
+  // Cycle Aug 15 → Aug 30 (day before the month-end payday). Today is the 18th.
+  // The Verizon bill fell due on the 16th and is unpaid: it is money that must
+  // come out of the check already in the account, and it used to be silently
+  // dropped for being "in the past".
+  const now = new Date(2026, 7, 18, 12);
+  const rows: Recurring[] = [
+    row({ id: "v", name: "Verizon", amount: 93, dueDays: [16] }),
+    row({ id: "s", name: "Spotify", amount: 14.04, dueDays: [24] }),
+    row({ id: "r", name: "Rent", amount: 1732.16, dueDays: [1] }), // previous cycle
+  ];
+  const cal = monthCalendar(rows, [], now, 2026, 7);
+
+  it("keeps an unpaid bill whose due day has already passed inside the cycle", () => {
+    const r = dueBeforeNextPayday([cal], "2026-08-18", "2026-08-30", "2026-08-15");
+    expect(r.bills.map((b) => b.name).sort()).toEqual(["Spotify", "Verizon"]);
+    expect(r.total).toBeCloseTo(93 + 14.04, 2);
+  });
+
+  it("names the overdue portion separately", () => {
+    const r = dueBeforeNextPayday([cal], "2026-08-18", "2026-08-30", "2026-08-15");
+    expect(r.overdueTotal).toBeCloseTo(93, 2);
+    expect(r.bills.find((b) => b.name === "Verizon")!.overdue).toBe(true);
+    expect(r.bills.find((b) => b.name === "Spotify")!.overdue).toBe(false);
+  });
+
+  it("does NOT reach back before the cycle start", () => {
+    // Rent was due on the 1st — the previous paycheck's problem, not this one's.
+    const r = dueBeforeNextPayday([cal], "2026-08-18", "2026-08-30", "2026-08-15");
+    expect(r.bills.some((b) => b.name === "Rent")).toBe(false);
+  });
+
+  it("excludes bills already recorded paid", () => {
+    const paidVerizon: Transaction = {
+      id: "p",
+      date: "2026-08-16",
+      amount: 93,
+      type: "expense",
+      categoryId: "utilities",
+      description: "Verizon",
+      appliesTo: { kind: "bill", recurringId: "v", monthKey: "2026-08", day: 16 },
+      createdAt: "2026-08-16T12:00:00Z",
+    };
+    const c = monthCalendar(rows, [paidVerizon], now, 2026, 7);
+    const r = dueBeforeNextPayday([c], "2026-08-18", "2026-08-30", "2026-08-15");
+    expect(r.bills.map((b) => b.name)).toEqual(["Spotify"]);
+    expect(r.overdueTotal).toBe(0);
+  });
+
+  it("without a cycle start it falls back to today rather than all of history", () => {
+    const r = dueBeforeNextPayday([cal], "2026-08-18", "2026-08-30");
+    expect(r.bills.map((b) => b.name)).toEqual(["Spotify"]);
   });
 });

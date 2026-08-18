@@ -399,13 +399,21 @@ export function monthCalendar(
   };
 }
 
-/** The unpaid bills still to come out of the CURRENT paycheck: due from `todayISO`
- *  through `cycleEndISO` (the day before the next payday), inclusive.
+/** The unpaid bills still to come out of the CURRENT paycheck: due anywhere from
+ *  `cycleStartISO` through `cycleEndISO` (the day before the next payday),
+ *  inclusive, and not yet recorded paid.
  *
  *  Bills stay calendar-monthly on purpose — rent really is due on the 1st — so this
  *  deliberately does NOT re-scope the bill list. It answers the separate question a
  *  pay cycle raises: of the money already in the account, how much is spoken for
  *  before more arrives.
+ *
+ *  The window used to open at TODAY, which silently dropped the most important
+ *  rows in the list. A bill due on the 16th and still unpaid on the 18th is money
+ *  that must come out of the paycheck already in the account — leaving it out
+ *  understated "still due" by exactly the amount most at risk of being forgotten.
+ *  Opening at the cycle start keeps it, and each row is flagged `overdue` so the UI
+ *  can say so rather than presenting it as merely upcoming.
  *
  *  Pass every MonthCalendar the window touches. It can cross a month boundary (a
  *  cycle opening on the 31st runs into the next month), and a caller that passes
@@ -415,23 +423,31 @@ export function dueBeforeNextPayday(
   months: readonly MonthCalendar[],
   todayISO: string,
   cycleEndISO: string,
-): { bills: MonthCalBill[]; total: number } {
+  cycleStartISO?: string,
+): { bills: (MonthCalBill & { overdue: boolean })[]; total: number; overdueTotal: number } {
   const pad = (n: number) => String(n).padStart(2, "0");
+  // Fall back to the old behaviour only if a caller has not been updated — never
+  // silently widen to "all of history" if the start is missing.
+  const from = cycleStartISO ?? todayISO;
   const seen = new Set<string>();
-  const bills: MonthCalBill[] = [];
+  const bills: (MonthCalBill & { overdue: boolean })[] = [];
   for (const m of months) {
     for (const b of m.bills) {
       if (b.paid) continue;
       const on = `${m.year}-${pad(m.month + 1)}-${pad(b.day)}`;
-      if (on < todayISO || on > cycleEndISO) continue;
+      if (on < from || on > cycleEndISO) continue;
       // `b.id` is recurringId@day, which repeats across months — so the guard has
       // to key on the RESOLVED date, or overlapping calendars would collapse two
       // genuinely separate installments into one.
       const key = `${on}|${b.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      bills.push(b);
+      bills.push({ ...b, overdue: on < todayISO });
     }
   }
-  return { bills, total: bills.reduce((s, b) => s + b.amount, 0) };
+  return {
+    bills,
+    total: bills.reduce((s, b) => s + b.amount, 0),
+    overdueTotal: bills.reduce((s, b) => (b.overdue ? s + b.amount : s), 0),
+  };
 }
