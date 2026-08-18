@@ -26,6 +26,7 @@ import {
   type PushStatus,
   type PushSyncResult,
 } from "../../lib/push";
+import type { AuditResult } from "../../lib/selfAudit";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -41,6 +42,86 @@ export interface ProfileVM {
   lang: "en" | "zh";
   lens: "me" | "all";
   variableBills: { id: string; name: string; icon: "electric" | "phone"; est: string; on: boolean }[];
+}
+
+// ── Does this add up? ─────────────────────────────────────────────────────────
+// The screen for src/lib/selfAudit.ts. It exists because a check nobody can read
+// is worth nothing — and because the reverse is also true: a red banner over a
+// rounding difference teaches you to ignore the next one. So this is silent when
+// everything reconciles (one quiet line, no colour, no badge) and specific when it
+// does not, naming the gap in dollars rather than saying "something is wrong".
+//
+// It never pushes a notification. It sits here until you look.
+function AuditPanel({ result }: { result: AuditResult }) {
+  const [open, setOpen] = useState(false);
+  const failing = result.checks.filter((c) => c.status === "fail");
+
+  return (
+    <Group label={t("Does this add up?")}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition active:bg-white/5"
+      >
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          style={{
+            background: result.clean ? "#16241c" : "#2a1618",
+            color: result.clean ? "#46d18a" : "#e8746a",
+          }}
+        >
+          {result.clean ? <CircleCheck size={17} /> : <AlertTriangle size={17} />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold" style={{ color: "#e6edf3" }}>
+            {result.clean
+              ? t("Every number checks out")
+              : t("{n} check{s} did not add up", {
+                  n: failing.length,
+                  s: failing.length > 1 ? "s" : "",
+                })}
+          </span>
+          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "#8b97a6" : "#e8a09a" }}>
+            {result.clean
+              ? t("{n} of {n} internal checks passed — the app agrees with itself.", {
+                  n: result.checks.length,
+                })
+              : failing[0].detail}
+          </span>
+        </span>
+        {open ? (
+          <ChevronDown size={16} style={{ color: "#8b97a6" }} />
+        ) : (
+          <ChevronRight size={16} style={{ color: "#8b97a6" }} />
+        )}
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-2.5 px-4 pb-4 pt-1">
+          {result.checks.map((c) => (
+            <div key={c.id} className="flex gap-2.5">
+              <span
+                className="mt-[3px] h-2 w-2 shrink-0 rounded-full"
+                style={{ background: c.status === "ok" ? "#46d18a" : "#e8746a" }}
+              />
+              <span className="min-w-0">
+                <span className="block text-[12.5px] font-medium" style={{ color: "#c9d4de" }}>
+                  {t(c.question)}
+                </span>
+                <span className="block text-[11.5px] leading-snug" style={{ color: "#8b97a6" }}>
+                  {c.detail}
+                </span>
+              </span>
+            </div>
+          ))}
+          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "#74838f" }}>
+            {t(
+              "Each of these compares one of your numbers against the same number worked out a second, separate way. They are exact — anything other than a perfect match is a real mistake, not a rounding difference, which is why there is no 'maybe' here.",
+            )}
+          </p>
+        </div>
+      )}
+    </Group>
+  );
 }
 
 interface ProfileTaps {
@@ -191,9 +272,12 @@ function PushRow() {
 export function ProfileTab({
   vm,
   taps = {},
+  audit,
 }: {
   vm: ProfileVM;
   taps?: ProfileTaps;
+  /** Result of src/lib/selfAudit.ts. Optional so the tab still renders without it. */
+  audit?: AuditResult;
 }) {
   return (
     <div className="flex flex-col gap-0">
@@ -226,6 +310,10 @@ export function ProfileTab({
       </div>
 
       <div className="flex flex-col gap-5 p-4">
+        {/* Highest first: if the app does not agree with itself, that outranks
+            every setting below it. */}
+        {audit && <AuditPanel result={audit} />}
+
         {/* ── Connections ── */}
         <Group label={t("Connections")}>
           <button

@@ -15,6 +15,7 @@ import { ForecastTab } from "./ForecastTab";
 import { ActivityTab } from "./ActivityTab";
 import { ProfileTab } from "./ProfileTab";
 import { buildFinanceVMs } from "./buildVMs";
+import { selfAudit } from "../../lib/selfAudit";
 import { LedgerSheet } from "../../components/LedgerSheet";
 import { AddTransactionSheet } from "../../components/AddTransactionSheet";
 import { ImportSheet } from "../../components/ImportSheet";
@@ -155,6 +156,11 @@ export function FinanceTabs({
     [data, owner, lens, session],
   );
 
+  // The app checking its own arithmetic. Deliberately NOT lens-filtered: an
+  // invariant either holds for the household or it does not, and hiding half the
+  // data would make a real disagreement look like a clean bill of health.
+  const audit = useMemo(() => selfAudit(data), [data]);
+
   // Lens-filtered ledger + a merchant-rule lookup, for the reused LedgerSheet.
   const personal = lens === "me";
   const ledgerTxns = useMemo(() => {
@@ -257,6 +263,7 @@ export function FinanceTabs({
         ) : (
           <ProfileTab
             vm={vms.profile}
+            audit={audit}
             taps={{
               onHealth: () => onMode("health"),
               onSignOut: () => void signOut(),

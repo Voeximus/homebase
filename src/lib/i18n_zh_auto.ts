@@ -514,4 +514,15 @@ export const AUTO_ZH: Record<string, string> = {
   "Nothing here.": "这里还没有内容。",
   "Categorize": "归类",
   "{amount} already overdue": "{amount} 已逾期",
+  // ── Self-audit panel (2026-08) ──────────────────────────────────────────
+  "Does this add up?": "这些数字对得上吗？",
+  "Every number checks out": "每个数字都对得上",
+  "{n} check{s} did not add up": "有 {n} 项核对没对上",
+  "{n} of {n} internal checks passed — the app agrees with itself.": "{n} 项内部核对全部通过——应用自己算的两遍结果一致。",
+  "Each of these compares one of your numbers against the same number worked out a second, separate way. They are exact — anything other than a perfect match is a real mistake, not a rounding difference, which is why there is no 'maybe' here.": "每一项都会把你的一个数字，跟用另一种独立算法算出的同一个数字对比。它们是精确的——只要不是完全一致，就是真的算错了，而不是四舍五入的误差，所以这里不会出现「可能有问题」。",
+  "Do your bills add up the same way on every screen?": "你的账单在每个页面上算出来都一样吗？",
+  "Does each budget line equal the charges behind it?": "每条预算是否等于它下面那些消费的总和？",
+  "Could money vanish into a category nothing watches?": "会不会有钱落进没人盯着的分类里消失了？",
+  "Do the budget lines add up to the budget?": "各条预算加起来等于总预算吗？",
+  "Do split charges still add up to what you paid?": "拆分后的消费加起来还等于你实际付的金额吗？",
 };
