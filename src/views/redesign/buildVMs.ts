@@ -160,7 +160,20 @@ export function buildFinanceVMs(
     const inLine = (catId: string) => l.cats.includes(catId);
     const raw: { id: string; name: string; date: string; amount: number }[] = [];
     for (const t of data.transactions) {
-      if (t.type !== "expense" || t.date < cycle.start || t.date > cycle.end || t.appliesTo) continue;
+      // `!t.pending` is part of the partition, not an afterthought:
+      // spentByCategoryBetween — the source of the bar — excludes still-processing
+      // charges. This list used to keep them, so a $180 pending Costco charge put
+      // $300 of visible rows under a header that read $120, and the total jumped
+      // $180 with no new row appearing the day it posted. Same predicate, or the
+      // rows stop being an explanation of the bar.
+      if (
+        t.type !== "expense" ||
+        t.pending ||
+        t.date < cycle.start ||
+        t.date > cycle.end ||
+        t.appliesTo
+      )
+        continue;
       // Split-aware: a split txn contributes only the slices this line claims, at
       // their slice amount — the same partition spentByCategoryBetween uses, so
       // the rows always sum to the bar.
@@ -367,7 +380,16 @@ export function buildFinanceVMs(
   };
 
   // ── Debt payoff projection (for the attack-ladder view + the debt-free date) ──
-  const monthDent = Math.max(0, spent - projVariable);
+  // Month-to-date against the MONTHLY pace, deliberately: `projVariable` is a
+  // 30-day average, so the overspend debited against it has to be a 30-day figure
+  // too. This used to read the per-CYCLE `spent`, comparing half a period against
+  // a whole one — a ~15-day total almost never clears a 30-day pace, so the dent
+  // came out 0 for essentially every input and a blown month never moved the
+  // debt-free date at all. NOT the same number as the hero tile's `overspendMonth`
+  // (line 117): that grades the month against the budget TARGET, this grades it
+  // against the SUSTAINABLE pace. Two different questions about one month — they
+  // are meant to differ.
+  const monthDent = Math.max(0, spentMonth - projVariable);
   const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
   const next = schedule[0] ?? null;
   const debtFreeBy = schedule.length ? fmtMY(schedule[schedule.length - 1].date) : "—";
