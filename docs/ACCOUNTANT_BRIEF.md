@@ -245,7 +245,27 @@ into the other.
 When a bill has multiple due days and a start/end window, compute
 `amount / allDays.length` **first**, then drop out-of-window days. Dividing by the
 survivors doubles the remaining payment in a month the bill starts or stops
-partway. There is a fixture that fails on the naive version. Leave it there.
+partway.
+
+> **Correction (2026-08-18):** an earlier version of this file said "there is a
+> fixture that fails on the naive version. Leave it there." **There is no such
+> fixture.** There is no test framework in this repo at all. The claim was written
+> from memory of a conversation and never verified — exactly the failure this
+> document warns about in §0. The rule is real; the guard protecting it is not.
+
+### Rule 6a — Windows are enforced on **both** paths now
+The window columns were originally enforced on the calendar path only
+(`inWindow()` in `schedule.ts`), which the Bills and Forecast screens inherit. The
+plan path — `householdMonthly()`, `accountFlow()`, `planMath()` — ignored them, so
+a bill that could not fire was still charged against firepower: **$1,163.92 too
+high for August 2026**, making Home and Insights disagree with Bills and Forecast
+by about $1,000 for the same month.
+
+Both paths now call `liveOn()`. If you add a third consumer of `recurring`, it
+needs the window too. Two things are deliberately left imperfect and documented
+in the code rather than traded silently: `liveOn` is all-or-nothing on one date
+while the calendar prorates a boundary month, and `payoffSchedule` takes a scalar
+firepower that cannot be correct for both this month and later ones.
 
 ### Rule 7 — A bill lives on its **due day**, even when paid early
 Paying the July 17 bill on June 30 still renders on July 17, labeled "paid Jun 30."
@@ -390,6 +410,10 @@ build.
 | **Fuel vs groceries** | Same merchant, both categories; $143 landed in the wrong line | `raw_description`, and ask when ambiguous |
 | **Slider snap** | Default 716 on a step-25 slider jumped to 725 on first touch | Match default to step, or `step=1` |
 | **False green typecheck** | Incremental `tsc -b` passed on code that failed a clean build | Clean build before claiming shipped |
+| **`verify_jwt` mistaken for authorization** | It authenticates *a project credential*, not *a user*. The publishable key is one, and it ships in the public bundle — so `plaid` and `notify` were reachable by anyone on the internet, and `disconnect` hard-deletes the whole ledger with a service-role client | `denyUnlessCaller()` in `_shared/callerAuth.ts` on every JWT-verified function |
+| **A constant standing in for a missing row** | `RENTERS_INSURANCE = 10.59` was hardcoded into `planMath` "because the row doesn't exist". The row existed and was active, so it counted twice | A fixed cost lives in `recurring`, never in a constant — nothing else can see it there |
+| **A category on no line and in no carve-out** | `utilities` was graded by nothing and reduced firepower by nothing, so real cash vanished from every screen | Every expense category must be on a budget line **or** in `OUTSIDE_BUDGET_CASH_CATS` |
+| **One of two identical call sites fixed** | A merchant-rule guard landed in `TxnSheet` while `LedgerSheet` kept the same hole, including a worse `skip` variant | Grep for the pattern, not the file. The invariant now also lives in `saveMerchantRule` where it can't be forgotten |
 
 **No Plaid sandbox.** The feed is production and touches real Bank of America
 accounts. Do not experiment against it.
