@@ -48,11 +48,14 @@ function Dial({
 }
 
 export function ForecastTab({
-  recurring, transactions, debts,
+  recurring, transactions, debts, openingCash,
 }: {
   recurring: Recurring[];
   transactions: Transaction[];
   debts: Debt[];
+  /** Cash on hand today. With it, every month reports a running balance and its
+   *  low point — the number a monthly surplus structurally cannot tell you. */
+  openingCash?: number;
 }) {
   // The card we model paying down: the biggest interest-bearing balance with a
   // bill attached. Picked from data so it follows a payoff instead of hardcoding.
@@ -93,12 +96,19 @@ export function ForecastTab({
   const months = useMemo(
     () =>
       forecast(recurring, transactions, debts, startMonth, 12, {
-        cardPay, cycleSpend, cardDebtId: cardDebt?.id,
+        cardPay, cycleSpend, cardDebtId: cardDebt?.id, openingCash,
       }),
-    [recurring, transactions, debts, startMonth, cardPay, cycleSpend, cardDebt],
+    [recurring, transactions, debts, startMonth, cardPay, cycleSpend, cardDebt, openingCash],
   );
   const sum = useMemo(() => summarize(months), [months]);
   const next = months[1] ?? months[0];
+
+  // The single worst moment across the whole projection.
+  const lowest = useMemo(() => {
+    const withLow = months.filter((m) => m.low);
+    if (!withLow.length) return null;
+    return withLow.reduce((a, b) => (b.low!.balance < a.low!.balance ? b : a));
+  }, [months]);
 
   const minCard = Math.round(cardDebt?.minPayment ?? 25);
 
@@ -192,13 +202,26 @@ export function ForecastTab({
       {/* ── headline ── */}
       {sum && (
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <Stat k="Typical month" v={money(sum.steady)} tint={sum.steady < 0 ? C.bad : C.good} />
+          {/* THE number, when we have real cash to walk. A surplus cannot see past
+              the end of its own month, and rent lands on the 1st funded by the
+              paycheck from the 31st before — so a healthy surplus can sit on cash
+              that is already promised three days later. The low point can't lie
+              about that, because it carries the balance across the boundary. */}
+          {lowest ? (
+            <Stat
+              k={`Lowest you get · ${lowest.label} ${lowest.low!.day}`}
+              v={money(lowest.low!.balance)}
+              tint={lowest.low!.balance < 0 ? C.bad : lowest.low!.balance < 300 ? C.warm : C.good}
+            />
+          ) : (
+            <Stat k="Typical month" v={money(sum.steady)} tint={sum.steady < 0 ? C.bad : C.good} />
+          )}
           <Stat
             k={sum.clearsOn ? "Card paid off" : "Card not cleared"}
             v={sum.clearsOn ?? "in 12 mo"}
             tint={sum.clearsOn ? C.accent : C.warm}
           />
-          <Stat k={`Best · ${sum.best.label}`} v={money(sum.best.surplus)} />
+          <Stat k="Typical month" v={money(sum.steady)} tint={sum.steady < 0 ? C.bad : C.good} />
           <Stat k={`Tightest · ${sum.worst.label}`} v={money(sum.worst.surplus)} tint={sum.worst.surplus < 0 ? C.bad : undefined} />
         </div>
       )}
@@ -220,9 +243,11 @@ export function ForecastTab({
       </div>
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: C.dim }}>
-        Surplus is income minus bills minus spending — what isn't already committed, after the card
-        payment. Both dials are what-ifs; nothing here is saved. Everything else comes from your
-        real bills, so anything that starts or ends on a date lands in the right month by itself.
+        The big number is the LOWEST your account gets that month, not the surplus. They are
+        different questions: a surplus is income minus outgoings inside one calendar month, but rent
+        lands on the 1st out of the paycheck from the 31st before — so a month can show money left
+        over that is already spoken for three days later. The running balance carries across that
+        boundary; the surplus cannot. Both dials are what-ifs and nothing here is saved.
       </p>
     </div>
   );
@@ -262,12 +287,18 @@ function MonthRow({
           {m.partial ? `rest of ${m.label.split(" ")[0]}` : m.label}
         </span>
         <span className="flex-1 text-[11px]" style={{ color: C.dim }}>
-          in {money(m.income)} · out {money(m.bills + m.spend)}
+          {m.low
+            ? <>surplus {money(m.surplus)} · dips {money(m.low.balance)} on the {m.low.day}</>
+            : <>in {money(m.income)} · out {money(m.bills + m.spend)}</>}
           {m.incomeEvents > 4 && <span style={{ color: C.good }}> · extra check</span>}
           {m.cardCleared && <span style={{ color: C.accent }}> · card cleared</span>}
         </span>
-        <span className="text-[15px] font-bold tabular-nums" style={{ color: bad ? C.bad : C.good }}>
-          {money(m.surplus)}
+        {/* The headline figure is the LOW POINT when we can compute it — what the
+            account actually bottoms out at — not the surplus, which counts a
+            paycheck without the rent it is already spoken for. */}
+        <span className="text-[15px] font-bold tabular-nums"
+              style={{ color: m.low ? (m.low.balance < 0 ? C.bad : m.low.balance < 300 ? C.warm : C.good) : (bad ? C.bad : C.good) }}>
+          {money(m.low ? m.low.balance : m.surplus)}
         </span>
         <ChevronDown
           size={15}

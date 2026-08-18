@@ -15,6 +15,7 @@ import { ForecastTab } from "./ForecastTab";
 import { ActivityTab } from "./ActivityTab";
 import { ProfileTab } from "./ProfileTab";
 import { buildFinanceVMs } from "./buildVMs";
+import { totalBalance } from "../../lib/recurring";
 import { selfAudit } from "../../lib/selfAudit";
 import { LedgerSheet } from "../../components/LedgerSheet";
 import { AddTransactionSheet } from "../../components/AddTransactionSheet";
@@ -250,6 +251,7 @@ export function FinanceTabs({
             recurring={data.recurring}
             transactions={data.transactions}
             debts={data.debts}
+            openingCash={totalBalance(data.accounts)}
           />
         ) : tab === "activity" ? (
           <ActivityTab

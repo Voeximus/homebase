@@ -30,6 +30,18 @@ export interface ForecastMonth {
    *  are "what's left", not a full month, so it must never be compared against a
    *  whole one — summarize() excludes it from steady/best/worst for that reason. */
   partial?: boolean;
+  /** Cash in the account at the END of this month, carried into the next. Present
+   *  only when an opening balance was supplied. */
+  close?: number;
+  /** The LOWEST the balance gets during this month, and the day it happens.
+   *
+   *  This is the number a monthly surplus cannot tell you. A surplus is income
+   *  minus outgoings inside one calendar month — but rent lands on the 1st, funded
+   *  by the paycheck from the 31st of the month BEFORE. So the month that earns
+   *  the money and the month that spends it are different months, and a healthy
+   *  surplus can sit on top of cash that is already promised to a bill three days
+   *  later. The running balance carries across that boundary; the surplus does not. */
+  low?: { day: number; balance: number };
 }
 
 export interface ForecastOpts {
@@ -39,6 +51,10 @@ export interface ForecastOpts {
   cycleSpend: number;
   /** The debt the card-payment row services, so payoff can be simulated. */
   cardDebtId?: string;
+  /** Cash on hand today. Supply it and every month reports a running balance and
+   *  its low point, instead of only a surplus that cannot see across a month
+   *  boundary. */
+  openingCash?: number;
 }
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -91,6 +107,7 @@ export function forecast(
   // balance clears is the month its payment line disappears — and the surplus
   // jumps by exactly that payment. A static bill list can't show that.
   let cardBal = card?.balance ?? 0;
+  let running = opts.openingCash ?? 0;
   const apr = card?.apr ?? 0;
 
   for (let i = 0; i < count; i++) {
@@ -100,6 +117,7 @@ export function forecast(
     const simDebts = card ? debts.map((d) => (d.id === card.id ? { ...d, balance: cardBal } : d)) : debts;
     const sched = monthlySchedule(recurring, monthKey, transactions, simDebts);
     const partial = monthKey === partialKey;
+    const cardBalAtStart = cardBal;
 
     let income = 0;
     let incomeEvents = 0;
@@ -147,6 +165,42 @@ export function forecast(
       }
     }
 
+    // ── Running balance ──────────────────────────────────────────────────────
+    // Walk the month day by day, carrying cash forward from the month before, so
+    // the low point is a real moment rather than an arithmetic leftover. This is
+    // what makes rent on the 1st behave honestly: it is paid out of the closing
+    // cash of the PREVIOUS month, which is the month whose surplus appeared to
+    // contain it.
+    let low: { day: number; balance: number } | undefined;
+    let close: number | undefined;
+    if (opts.openingCash != null) {
+      const [yy, mm] = monthKey.split("-").map(Number);
+      const dim = new Date(yy, mm, 0).getDate();
+      const from = partial ? todayDay : 1;
+      // Spending is spread evenly across the days this month still has. `spend` is
+      // already prorated for a partial month, so the divisor matches it.
+      const perDay = spend / Math.max(1, dim - from + 1);
+      const onDay = new Map<number, number>();
+      for (const e of sched.entries) {
+        if (e.direction === "transfer") continue;
+        if (partial && e.direction === "in" && e.day < todayDay) continue;
+        if (partial && e.direction !== "in" && e.recurringId && settled.has(`${e.recurringId}|${e.day}`)) continue;
+        let amt = e.direction === "in" ? e.amount : -e.amount;
+        if (e.direction !== "in" && card && opts.cardPay != null && e.recurringId && isCardRow(recurring, e.recurringId, card.id)) {
+          amt = -Math.min(opts.cardPay, cardBalAtStart + (cardBalAtStart * (apr / 100)) / 12);
+        }
+        onDay.set(Math.min(e.day, dim), (onDay.get(Math.min(e.day, dim)) ?? 0) + amt);
+      }
+      let bal = running;
+      for (let d = from; d <= dim; d++) {
+        bal -= perDay;
+        bal += onDay.get(d) ?? 0;
+        if (!low || bal < low.balance) low = { day: d, balance: bal };
+      }
+      close = bal;
+      running = bal;
+    }
+
     out.push({
       monthKey,
       label: monthLabel(monthKey),
@@ -158,6 +212,7 @@ export function forecast(
       lines: lines.sort((a, b) => b.amount - a.amount),
       cardCleared,
       ...(partial ? { partial: true } : {}),
+      ...(close != null ? { close, low } : {}),
     });
   }
   return out;
