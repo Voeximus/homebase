@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && node scripts/check-categorizer-sync.mjs && vite build",
     "check:categorizer": "node scripts/check-categorizer-sync.mjs",
+    "snapshot": "node scripts/snapshot.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

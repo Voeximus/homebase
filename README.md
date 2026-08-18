@@ -1,73 +1,91 @@
-# React + TypeScript + Vite
+# Homebase
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A private finance + health PWA for a two-person household. Installable, cloud-synced,
+live bank feed. Built by Gino Cirino for himself and Xinyan Li.
 
-Currently, two official plugins are available:
+Not a product. Two users. It runs a real household's money.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 👉 New here? Read [`docs/ACCOUNTANT_BRIEF.md`](docs/ACCOUNTANT_BRIEF.md) first.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+That is the handover document: how to get access, how to read the live data, the
+current financial picture, and — most importantly — **the accounting conventions
+that are not visible in the code.** Several of them look like bugs and are not.
+Changing one without reading the brief will silently corrupt what the household
+believes about its own money.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **Vite + React 19 + TypeScript + Tailwind v4**, `lucide-react` icons
+- **Supabase** — Postgres, auth, realtime sync, edge functions
+- **Plaid** — live Bank of America feed (⚠️ production only, no sandbox)
+- **PWA** — installable, web push, prompt-style updates
+- **GitHub Pages** — deploys on push to `main`
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Running it
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Needs a `.env.local` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+Vite reads env at startup — restart the dev server after editing it.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build      # tsc -b + categorizer sync check + vite build
+npm run lint
+npm run snapshot   # SUPABASE_PAT=<token> npm run snapshot — dump live finance state
 ```
+
+## Layout
+
+```
+src/
+  types.ts                 the domain model — best-commented file, start here
+  lib/
+    plan.ts                budget envelope, pay cycles, payoff schedule
+    schedule.ts            the calendar engine — cadence, anchors, bill windows
+    forecast.ts            12-month projection, built on monthlySchedule
+    changelog.ts           releases — the TOP entry defines APP_VERSION
+  store/FinanceStore.tsx   Supabase-backed, realtime, optimistic writes
+  views/redesign/          the five tabs: Home, Activity, Insights, Bills, Forecast
+supabase/
+  schema_v*.sql            migrations in order, v1 → v27
+  functions/               plaid, plaid-webhook, cron-notify, notify, announce-update
+docs/
+  ACCOUNTANT_BRIEF.md      ⭐ start here
+  HANDOFF.md               historical session log, reverse-chronological
+```
+
+## Shipping a release
+
+Add a new entry at the **top** of `src/lib/changelog.ts` with a fresh `version`.
+`APP_VERSION` derives from it, and the deploy workflow fires a push notification to
+both phones only when that version changes — so ordinary commits stay quiet.
+
+Write the notes in plain language about what the user experienced, not what the
+code does.
+
+**Edge functions deploy automatically** when anything under `supabase/functions/`
+or `supabase/config.toml` changes — see the `functions` job in the workflow. It
+requires the `SUPABASE_ACCESS_TOKEN` repo secret.
+
+⚠️ They still carry their **own copies** of the scheduling rules — they do not
+share `src/lib`. Automatic deployment ships whatever those copies say; it does not
+keep them in agreement. Port model changes by hand.
+
+⚠️ `supabase/config.toml` declares which functions are public (`verify_jwt =
+false`). Three must stay that way or release notifications and the Plaid webhook
+break. Read the comment in that file before touching it.
+
+## Docs
+
+| File | What it is |
+|---|---|
+| [`docs/ACCOUNTANT_BRIEF.md`](docs/ACCOUNTANT_BRIEF.md) | **The handover.** Access, data model, the rules, the trap catalog. |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Historical session log — what changed when, and why. |
+| [`docs/STATUS.md`](docs/STATUS.md) | Superseded. Kept for history only. |

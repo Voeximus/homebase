@@ -15,6 +15,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Edge functions ──────────────────────────────────────────────────────────
+  # These live in Supabase, not on Pages, so NOTHING in the jobs below deploys
+  # them. Before this job existed they had to be pushed by hand, and the one time
+  # that was forgotten `cron-notify` drifted two schema versions behind the app:
+  # it started pinging the semiannual car insurance every month and asking a
+  # paid-off card for its minimum, while every deploy still reported green.
+  #
+  # Deliberately NOT `needs: build` — edge functions are a separate system, and a
+  # broken Vite build should not block shipping a fix to one of them.
+  #
+  # Functions are named explicitly rather than using a bare `functions deploy`,
+  # which would also try to walk `_shared/` (a library, not a function). The
+  # verify_jwt settings come from supabase/config.toml — read the comment there
+  # before changing any of them.
+  functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Did anything under supabase/functions change?
+        id: changed
+        run: |
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD -- supabase/functions supabase/config.toml)
+          else
+            # No parent to compare against (first commit, or a force-push that
+            # rewrote history). Deploying is idempotent; skipping could ship an
+            # app that expects a function version Supabase doesn't have yet.
+            CHANGED="(no parent commit — deploying to be safe)"
+          fi
+          if [ -n "$CHANGED" ]; then
+            echo "any=true" >> $GITHUB_OUTPUT
+            echo "Changed:"; echo "$CHANGED"
+          else
+            echo "any=false" >> $GITHUB_OUTPUT
+            echo "No edge function changes — nothing to deploy."
+          fi
+
+      # A missing token must not fail the run — the Pages deploy above is
+      # independent and should still ship. But it must not pass silently either:
+      # believing functions auto-deploy when they don't is the exact trap this
+      # job exists to close, so it raises a warning annotation on the run.
+      - name: Check the access token is configured
+        id: token
+        if: steps.changed.outputs.any == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "have=false" >> $GITHUB_OUTPUT
+            echo "::warning title=Edge functions NOT deployed::supabase/functions changed, but the SUPABASE_ACCESS_TOKEN secret is not set. The functions running in Supabase are now BEHIND this commit. Add the secret, or deploy by hand with: supabase functions deploy --project-ref ganzefaciiyibselizqi"
+          else
+            echo "have=true" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.changed.outputs.any == 'true' && steps.token.outputs.have == 'true'
+        with:
+          version: latest
+
+      - name: Deploy edge functions
+        if: steps.changed.outputs.any == 'true' && steps.token.outputs.have == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ganzefaciiyibselizqi
+        run: |
+          set -e
+          for fn in notify plaid cron-notify plaid-webhook announce-update; do
+            echo "── deploying $fn"
+            supabase functions deploy "$fn" --project-ref "$REF"
+          done
+          echo "All five edge functions deployed."
+
   build:
     runs-on: ubuntu-latest
     steps:

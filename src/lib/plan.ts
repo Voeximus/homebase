@@ -63,16 +63,21 @@ export const LEAN_VARIABLE: BudgetLine[] = [
 /** Ungraded, but still real cash out the door — so it can't go at the debt either.
  *  Electronics is Gino's deliberate carve-out ("outside the budget, but it still
  *  takes from what can go at debt"), so it skips the envelope and cuts firepower
- *  directly. `interest` is deliberately NOT here: it never leaves checking — the
+ *  directly. `car` joins it for the same reason: the Civic's down payment, its
+ *  pre-purchase inspection and its registration are one-time capital costs of a
+ *  decision already made — grading them would blow a month's envelope to no
+ *  purpose, while ignoring them entirely would overstate what can go at the debt.
+ *  (Gas is NOT here — that's `transport`, ongoing consumption, graded every cycle.)
+ *  `interest` is deliberately NOT here either: it never leaves checking — the
  *  bank folds it into the card balance, which the debt total already reads, so
  *  charging it against firepower too would count it twice. */
-export const OUTSIDE_BUDGET_CASH_CATS = ["electronics"];
+export const OUTSIDE_BUDGET_CASH_CATS = ["electronics", "car"];
 
 /** Is this category graded against the lean budget? True iff some line claims it.
- *  `electronics` and `interest` deliberately belong to NO line: electronics is
- *  outside-the-budget by design (it's still cash out, so it cuts firepower — see
- *  buildVMs), and interest isn't spending you chose (it's already inside the card
- *  balance the debt total reads from). */
+ *  `electronics`, `car` and `interest` deliberately belong to NO line: electronics
+ *  and car are outside-the-budget by design (still cash out, so they cut firepower
+ *  — see buildVMs), and interest isn't spending you chose (it's already inside the
+ *  card balance the debt total reads from). */
 export function inAnyLine(catId: string): boolean {
   return LEAN_VARIABLE.some((l) => l.cats.includes(catId));
 }

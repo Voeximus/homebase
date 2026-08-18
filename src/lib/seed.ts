@@ -23,6 +23,17 @@ export const DEFAULT_CATEGORIES: Category[] = [
   // Electronics = tech purchases (monitors, gadgets). Often fronted for someone
   // and paid back, so kept as its own line rather than muddying groceries/dining.
   { id: "electronics", name: "Electronics", icon: "🖥️", color: "#818cf8", type: "expense" },
+  // Car = the cost of OWNING the vehicle, not of driving it. Down payment,
+  // pre-purchase inspection, registration/title, repairs. Deliberately OUTSIDE
+  // the budget envelope (it's on no line, so it's ungraded) but still real cash,
+  // so it cuts debt firepower — same carve-out shape as electronics.
+  //
+  // GAS STAYS IN `transport`. That's ongoing consumption and it should be graded
+  // every cycle; a $1,250 down payment is a one-time capital event and grading it
+  // would blow the envelope for a month over a decision already made. Assigned by
+  // hand on purpose — the categorizer does NOT auto-route here, or routine
+  // maintenance would quietly escape the budget.
+  { id: "car", name: "Car", icon: "🚗", color: "#ca8a04", type: "expense" },
   { id: "kids", name: "Kids", icon: "🧸", color: "#f472b6", type: "expense" },
   { id: "pets", name: "Pets", icon: "🐾", color: "#f472b6", type: "expense" },
   // What the debt COSTS: card interest + late fees. Deliberately NOT on a budget

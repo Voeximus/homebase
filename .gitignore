@@ -26,3 +26,6 @@ supabase/.temp/
 _homebase_backup_*.json
 _*.mjs
 _*.ts
+
+# Live data snapshots — real balances, never commit
+docs/snapshots/

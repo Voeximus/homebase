@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.17a",
+    date: "August 17, 2026",
+    notes: [
+      "New Car category, and it doesn't count against your budget. The down payment and the inspection landed in your spending lines when they synced, which made August look like a blown month over a decision you'd already made. Buying the car isn't the same kind of spending as buying groceries, so it now sits outside the envelope — still visible, still real money, still coming off what can go at the card.",
+      "Gas stays where it was. Filling the tank is ongoing spending and it should still count every cycle — the new category is for owning the car, not driving it: the down payment, the inspection, registration, repairs.",
+      "You assign it by hand on purpose. The app won't guess a charge is a car cost, because if it did, every oil change would quietly slip out of your budget.",
+    ],
+  },
+  {
     version: "2026.08.16b",
     date: "August 16, 2026",
     notes: [

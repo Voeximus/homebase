@@ -1,0 +1,31 @@
+# Supabase CLI config — the parts that MUST NOT live only in the dashboard.
+#
+# Three of the five edge functions are deliberately PUBLIC (verify_jwt = false).
+# They are not unguarded: each one checks its own shared secret from the query
+# string and fails CLOSED if that secret is missing or wrong. They have to be
+# public because their callers cannot present a Supabase JWT:
+#
+#   announce-update  called by the GitHub Pages deploy workflow with plain curl
+#   plaid-webhook    called by Plaid's servers
+#   cron-notify      called by pg_cron via net.http_post
+#
+# Before this file existed those settings lived ONLY in the Supabase dashboard,
+# which made them invisible to code review and — worse — resettable by any CLI
+# deploy. A deploy that quietly flipped announce-update back to verify_jwt would
+# break release notifications with a 401 that nothing in the app would surface.
+#
+# `notify` and `plaid` are intentionally absent: they are called from the app
+# with a real user session, so they keep the default verify_jwt = true.
+#
+# See supabase/schema_v22_notify_triggers.sql for the invocation details.
+
+project_id = "ganzefaciiyibselizqi"
+
+[functions.announce-update]
+verify_jwt = false
+
+[functions.plaid-webhook]
+verify_jwt = false
+
+[functions.cron-notify]
+verify_jwt = false
