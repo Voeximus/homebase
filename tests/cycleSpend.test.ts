@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { recentCycleSpend, typicalCycleSpend, payCycleFor } from "../src/lib/plan";
+import { recentCycleSpend, typicalCycleSpend, payCycleFor, actualMonthlyNet } from "../src/lib/plan";
 import type { Transaction } from "../src/types";
 
 const txn = (date: string, amount: number, categoryId = "groceries"): Transaction => ({
@@ -79,5 +79,50 @@ describe("typicalCycleSpend — median, not mean", () => {
     const mk = (spent: number) => ({ start: "s" + spent, end: "e", label: "x", spent });
     expect(typicalCycleSpend([mk(10), mk(30), mk(20)])).toBe(20);
     expect(typicalCycleSpend([])).toBe(0);
+  });
+});
+
+describe("actualMonthlyNet — the forecast's reality check", () => {
+  const t = (date: string, amount: number, type: "income" | "expense" = "expense"): Transaction => ({
+    id: `${date}-${amount}-${type}`,
+    date,
+    amount,
+    type,
+    categoryId: type === "income" ? "salary" : "groceries",
+    description: "x",
+    createdAt: `${date}T12:00:00Z`,
+  });
+
+  it("returns complete months only, oldest first, excluding the current one", () => {
+    const m = actualMonthlyNet([], NOW, 4); // NOW = Aug 18 2026
+    expect(m.map((x) => x.monthKey)).toEqual(["2026-04", "2026-05", "2026-06", "2026-07"]);
+  });
+
+  it("nets income against everything that left", () => {
+    const m = actualMonthlyNet(
+      [t("2026-07-01", 5000, "income"), t("2026-07-05", 1200), t("2026-07-20", 800)],
+      NOW,
+      4,
+    );
+    const jul = m.find((x) => x.monthKey === "2026-07")!;
+    expect(jul.in).toBe(5000);
+    expect(jul.out).toBe(2000);
+    expect(jul.net).toBe(3000);
+  });
+
+  it("a big one-off month reads NEGATIVE — the case the projection cannot see", () => {
+    // A car down payment is exactly what a recurring-bill model is blind to.
+    const m = actualMonthlyNet(
+      [t("2026-07-01", 2800, "income"), t("2026-07-16", 1250), t("2026-07-16", 175), t("2026-07-20", 1900)],
+      NOW,
+      4,
+    );
+    expect(m.find((x) => x.monthKey === "2026-07")!.net).toBe(-525);
+  });
+
+  it("ignores still-processing charges", () => {
+    const pending = { ...t("2026-07-10", 500), pending: true };
+    const m = actualMonthlyNet([t("2026-07-01", 1000, "income"), pending], NOW, 4);
+    expect(m.find((x) => x.monthKey === "2026-07")!.net).toBe(1000);
   });
 });

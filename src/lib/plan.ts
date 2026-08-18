@@ -576,6 +576,55 @@ export function spentByCategoryBetween(
   return out;
 }
 
+export interface MonthNet {
+  monthKey: string;
+  in: number;
+  out: number;
+  net: number;
+}
+
+/**
+ * What ACTUALLY happened to the money, month by month, straight from the ledger.
+ *
+ * This exists to keep the forecast honest about its own blind spot. A projection
+ * is built from recurring bills plus a spending dial, so it cannot see anything
+ * irregular — a car down payment, an inspection, a vet bill, a flight. Those are
+ * exactly the months that dominate a real year, and leaving them out makes the
+ * line climb smoothly through lumpy reality. Every projection therefore looks
+ * better than the past it came from, and nothing on screen says so.
+ *
+ * Measured on this household: the model projects about +$500/month while the last
+ * four real months ran +$689, +$126, +$1,074 and −$3,145 — an average of −$314.
+ * The model is not wrong about the bills; it is blind to the rest.
+ *
+ * Complete months only, most recent last.
+ */
+export function actualMonthlyNet(
+  transactions: Transaction[],
+  now: Date = new Date(),
+  count = 4,
+): MonthNet[] {
+  const out: MonthNet[] = [];
+  for (let i = count; i >= 1; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    let inc = 0;
+    let exp = 0;
+    for (const t of transactions) {
+      if (t.date.slice(0, 7) !== monthKey || t.pending) continue;
+      // Transfers move money between their own accounts and are not income or
+      // spending — but a transfer OUT to an untracked account genuinely leaves,
+      // so they are counted rather than skipped, exactly as the bank sees them.
+      if (t.type === "income") inc += t.amount;
+      else exp += t.amount;
+    }
+    out.push({ monthKey, in: inc, out: exp, net: inc - exp });
+  }
+  return out;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
 export interface CycleSpend {
   start: string;
   end: string;

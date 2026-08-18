@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Debt, Recurring, Transaction } from "../../types";
 import { forecast, summarize, type ForecastMonth } from "../../lib/forecast";
-import { recentCycleSpend, typicalCycleSpend } from "../../lib/plan";
+import { recentCycleSpend, typicalCycleSpend, actualMonthlyNet } from "../../lib/plan";
 import { monthKeyOf } from "../../lib/format";
 
 // ── Forecast ─────────────────────────────────────────────────────────────────
@@ -109,6 +109,11 @@ export function ForecastTab({
     if (!withLow.length) return null;
     return withLow.reduce((a, b) => (b.low!.balance < a.low!.balance ? b : a));
   }, [months]);
+
+  // What actually happened, to keep the projection honest about its blind spot.
+  const actual = useMemo(() => actualMonthlyNet(transactions), [transactions]);
+  const actualAvg = actual.length ? actual.reduce((s2, m) => s2 + m.net, 0) / actual.length : 0;
+  const projected = sum?.steady ?? 0;
 
   const minCard = Math.round(cardDebt?.minPayment ?? 25);
 
@@ -241,6 +246,49 @@ export function ForecastTab({
           />
         ))}
       </div>
+
+      {/* The projection against the past it came from. A forecast built from
+          recurring bills and a spending dial cannot see anything irregular — a car
+          down payment, a vet bill, a flight — so it draws a smooth line through a
+          lumpy year and always looks better than what actually happened. Saying
+          that out loud is the difference between a projection and a promise. */}
+      {actual.length > 0 && (
+        <div className="mt-4 rounded-2xl p-4" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+          <div className="text-[10px] uppercase tracking-[0.11em]" style={{ color: C.dim }}>
+            Reality check
+          </div>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-1">
+            <Term label="this projects" value={money(projected) + "/mo"} tint={projected < 0 ? C.bad : C.good} />
+            <Term
+              label={`you actually averaged (${actual.length} mo)`}
+              value={money(actualAvg) + "/mo"}
+              tint={actualAvg < 0 ? C.bad : C.good}
+            />
+          </div>
+          <div className="mt-2.5 flex flex-col gap-1">
+            {actual.map((m) => (
+              <div key={m.monthKey} className="flex items-center gap-2 text-[11px]">
+                <span className="w-[52px] shrink-0" style={{ color: C.dim }}>{m.monthKey.slice(5)}/{m.monthKey.slice(2, 4)}</span>
+                <span className="h-[3px] flex-1 rounded" style={{ background: C.line }}>
+                  <span
+                    className="block h-full rounded"
+                    style={{
+                      width: `${Math.min(100, (Math.abs(m.net) / Math.max(...actual.map((x) => Math.abs(x.net)), 1)) * 100)}%`,
+                      background: m.net < 0 ? C.bad : C.good,
+                    }}
+                  />
+                </span>
+                <span className="tabular-nums" style={{ color: m.net < 0 ? C.bad : C.dim }}>{money(m.net)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2.5 text-[10.5px] leading-relaxed" style={{ color: C.dim }}>
+            {actualAvg < projected
+              ? "The projection runs ahead of your real months because it only knows recurring bills and the spending dial. It cannot see a car down payment, a vet bill or a flight — and those are the months that decide a year."
+              : "Your real months are running at or above the projection."}
+          </p>
+        </div>
+      )}
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: C.dim }}>
         The big number is the LOWEST your account gets that month, not the surplus. They are
