@@ -50,6 +50,8 @@ function mapTxn(r: any): Transaction {
     splits: Array.isArray(r.splits) && r.splits.length ? r.splits : undefined,
     anomalyAck: !!r.anomaly_ack,
     pending: r.status === "pending",
+    provider: r.provider ?? undefined,
+    recordOnly: !!r.record_only,
     createdAt: r.created_at,
   };
 }
@@ -752,6 +754,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           // cash). Imported rows are records only; no balance moves.
           account_id: it.appliesTo?.settled ? null : accountId ?? null,
           applies_to: it.appliesTo ?? null,
+          // Say so IN THE ROW. Carrying account_id while moving no cash was only
+          // a comment before, and reverse_money_event could not read a comment —
+          // so deleting an imported charge CREDITED the balance for money that
+          // never left. A $63.41 duplicate deleted from a $1,240.00 account made
+          // it read $1,303.41. Not stamped via applies_to on purpose: the budget
+          // partition gates on `!appliesTo`, so that would drop every imported
+          // charge out of the variable budget.
+          record_only: true,
         }));
         const { data: inserted, error } = await supabase
           .from("transactions")
@@ -920,11 +930,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           invalidate(seq.current, "accounts", "debts", "savings_goals");
           setData((p) => ({
             ...p,
-            // A settled row moved no cash (reverse_money_event short-circuits on
-            // settled), so deleting it must NOT touch the balance — mirror that
-            // here exactly like the debt/goal branches below, or the in-app cash
-            // drifts from server truth until the next sync re-anchors it.
-            accounts: txn.accountId && !at?.settled
+            // Only a row that actually MOVED cash restores it. Three kinds carry
+            // an accountId without ever moving money, and all three must be
+            // mirrored exactly as reverse_money_event now treats them, or the
+            // in-app cash silently drifts from server truth until the next sync:
+            //   · settled markers  — the RPC short-circuits on them
+            //   · bank-feed rows   — the balance comes from the bank's own number
+            //   · imported records — history already inside the anchored balance
+            accounts:
+              txn.accountId && !at?.settled && !txn.provider && !txn.recordOnly
               ? p.accounts.map((a) =>
                   a.id === txn.accountId
                     ? {

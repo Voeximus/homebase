@@ -74,6 +74,16 @@ export interface Transaction {
   // with a "processing" badge; EXCLUDED from budget/firepower/anomaly math until
   // it posts (then the pending row is swapped for the posted one — no double-count).
   pending?: boolean;
+  // Which feed produced this row ("plaid"), absent on manual/imported rows. It is
+  // carried into the model because DELETING a row must know whether that row ever
+  // moved cash: a feed row never does (the balance comes from the bank's own
+  // number), so restoring cash for one credits money that never left.
+  provider?: string;
+  // This row RECORDS money that moved outside the app — a statement import, of
+  // history already inside the anchored balance. Its accountId is for display and
+  // per-person activity only. Same reason as `provider`: deleting it must not
+  // restore cash. See supabase/schema_v28_record_only.sql.
+  recordOnly?: boolean;
   createdAt: string; // ISO timestamp
 }
 
