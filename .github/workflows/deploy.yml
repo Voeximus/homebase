@@ -98,6 +98,14 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+
+      # Tests gate the deploy. They exist because this app shipped a date stamped
+      # in UTC while every budget window was read in local time, and a bill-window
+      # rule honoured on one code path and ignored on another — both silent, both
+      # wrong by four figures a month. The suite pins those and the deliberate
+      # conventions that look like bugs. A red test must not reach the phones.
+      - run: npm test
+
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}

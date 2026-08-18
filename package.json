@@ -8,6 +8,8 @@
     "build": "tsc -b && node scripts/check-categorizer-sync.mjs && vite build",
     "check:categorizer": "node scripts/check-categorizer-sync.mjs",
     "snapshot": "node scripts/snapshot.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -36,6 +38,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^3.2.7"
   }
 }

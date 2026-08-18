@@ -29,3 +29,6 @@ _*.ts
 
 # Live data snapshots — real balances, never commit
 docs/snapshots/
+
+# vitest
+.vitest/
