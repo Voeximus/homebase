@@ -89,11 +89,24 @@ describe("bills whose merchant key is too blunt to hold a learned rule", () => {
     expect(merchantKey("Mhe*aleks")).toBe("MHE");
   });
 
-  it("ALEKS settles its bill even against a learned rule on MHE", () => {
+  // The descriptor below is the one actually in the ledger. Plaid does not send
+  // "MHE*ALEKS" as the merchant name — it sends the bare publisher code "MHE",
+  // and only the raw line carries the product. A first version of this rule was
+  // written against "MHE*ALEKS", passed its test, and matched nothing at all in
+  // the live corpus. Which is why bill matching now reads the raw line too, and
+  // why tests/live-categorize.test.ts exists to run the whole real corpus.
+  it("ALEKS settles its bill from the descriptor the bank really sends", () => {
     const learned: LearnedRules = { MHE: { kind: "variable", categoryId: "subscriptions" } };
-    const c = spend("Mhe*aleks", 21.57, "CHECKCARD 0815 MHE*ALEKS ALEKS.COM NY XXXXX2962", learned);
+    const c = spend("MHE", 21.57, "CHECKCARD 0815 MHE*ALEKS ALEKS.COM NY XXXXX2962XXXXXXXXXX8", learned);
     expect(c.kind).toBe("bill");
     expect(c.billName).toBe("ALEKS calculus");
+  });
+
+  // Without the raw line there is nothing to go on, and it must NOT guess — "MHE"
+  // alone could be any McGraw-Hill product.
+  it("with no raw line, the bare publisher code stays what it was taught", () => {
+    const learned: LearnedRules = { MHE: { kind: "variable", categoryId: "subscriptions" } };
+    expect(spend("MHE", 21.57, undefined, learned).appCategory).toBe("subscriptions");
   });
 
   // Cherry is BOTH a tracked debt and a modeled monthly bill. Naming it here is

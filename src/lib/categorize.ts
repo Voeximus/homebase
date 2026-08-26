@@ -405,6 +405,21 @@ function classifyCore(
 
   const key = merchantKey(desc);
 
+  // Everything that decides WHICH BILL a charge pays reads the clean merchant
+  // name AND the raw bank line together, because Plaid's clean name is lossy in
+  // exactly the place that matters. It reports the whole of
+  // "CHECKCARD 0815 MHE*ALEKS ALEKS.COM NY" as the bare publisher code "MHE" —
+  // so matching on the clean name alone, the ALEKS bill could never be
+  // recognised, and the real charge was filed as ordinary subscription spend
+  // while a hand-typed placeholder settled the bill instead. Every month.
+  //
+  // Widening to the raw line is safe here precisely because a bill rule names a
+  // DISTINCTIVE biller token, and any rule whose token is shared with a
+  // neighbouring merchant carries an explicit `not` veto — tested against this
+  // same text. Vetoing does not return: it falls through to the ordinary
+  // merchant path, which is where the vetoed merchant belongs.
+  const billHay = raw ? `${desc} ${raw}` : desc;
+
   // A charge at a merchant that runs SEPARATE DEPARTMENTS under one brand — a
   // warehouse club with its own fuel station, a supermarket with pumps out front.
   // The clean merchant name is identical for both, so a merchant->category rule is
@@ -439,7 +454,7 @@ function classifyCore(
   // was filed as ordinary subscription spend and a hand-typed "already paid"
   // placeholder settled the bill instead. Two rows, one charge, every month.
   const amountGated =
-    /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b|MHE\*?ALEKS|\bALEKS\.COM\b/i.test(desc);
+    /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b|MHE\*?ALEKS|\bALEKS\.COM\b/i.test(billHay);
 
   // 1) A rule you taught the app wins over everything — and is always confident.
   //
@@ -515,20 +530,15 @@ function classifyCore(
     return { kind: "variable", appCategory: "interest", reason: "cost of debt (interest / fee)", confidence: "high" };
   }
 
-  // The veto is tested against the descriptor AND the raw bank line, because
-  // Plaid's clean name can drop the very token that distinguishes the two
-  // merchants. Vetoing does NOT return — it falls through to the ordinary
-  // merchant path, which is where the vetoed merchant actually belongs.
-  const billHay = raw ? `${desc} ${raw}` : desc;
   for (const r of BILL_RULES) {
-    if (r.re.test(desc) && !(r.not && r.not.test(billHay))) {
+    if (r.re.test(billHay) && !(r.not && r.not.test(billHay))) {
       return { kind: "bill", billName: r.bill, reason: `matched bill: ${r.bill}`, confidence: "high" };
     }
   }
 
   // drift-tolerant alias pass — normalize the descriptor and look for a bill's
   // distinctive alias, so a re-spaced/rebranded descriptor still resolves.
-  const normDesc = billKey(desc);
+  const normDesc = billKey(billHay);
   for (const b of BILL_ALIASES) {
     if (b.aliases.some((a) => normDesc.includes(a)) && !(b.not && b.not.test(billHay))) {
       return { kind: "bill", billName: b.bill, reason: `matched bill (alias): ${b.bill}`, confidence: "high" };
