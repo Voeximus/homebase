@@ -77,7 +77,7 @@ export function selfAudit(data: AppData, now: Date = new Date()): AuditResult {
   const checks: AuditCheck[] = [
     scheduleMatchesMonthlyAmount(data, now),
     budgetRowsSumToTheirBar(data, now),
-    everyCategoryIsAccountedFor(),
+    everyCategoryIsAccountedFor(data),
     linesSumToTheEnvelope(),
     splitsSumToTheirTransaction(data),
     aSettledBillIsActuallySettled(data, now),
@@ -202,16 +202,48 @@ function budgetRowsSumToTheirBar(data: AppData, now: Date): AuditCheck {
  * and appears on no screen: `utilities` was in exactly that state, so a $180
  * water bill counted against no budget and reduced no available cash.
  */
-function everyCategoryIsAccountedFor(): AuditCheck {
+function everyCategoryIsAccountedFor(data: AppData): AuditCheck {
+  // This used to take no arguments and audit DEFAULT_EXPENSE_IDS — a hardcoded
+  // list in this same file. So it compared one constant against another and
+  // passed forever, while the LEDGER was free to carry any category id at all:
+  // a learned merchant rule writes `merchant_rules.category_id` as unconstrained
+  // text, the importer writes ids of its own, and none of it was ever checked.
+  // A check that cannot see the data it is supposed to be guarding is decoration.
+  //
+  // `interest` is deliberately ungraded — it is not spending anyone chose, and it
+  // is already inside the card balance the debt total reads from, so grading it
+  // would count it twice. Income categories are not in scope.
   const ungraded = new Set([...OUTSIDE_BUDGET_CASH_CATS, "interest"]);
-  const orphans = DEFAULT_EXPENSE_IDS.filter((id) => !inAnyLine(id) && !ungraded.has(id));
+  const live = new Set<string>(DEFAULT_EXPENSE_IDS);
+  for (const t of data.transactions) {
+    if (t.type !== "expense") continue;
+    if (t.splits && t.splits.length) for (const sp of t.splits) live.add(sp.categoryId);
+    else if (t.categoryId) live.add(t.categoryId);
+  }
+  for (const r of data.recurring) if (r.direction === "out" && r.categoryId) live.add(r.categoryId);
+  for (const r of data.merchantRules ?? []) if (r.categoryId) live.add(r.categoryId);
+
+  const orphans = [...live].filter((id) => !inAnyLine(id) && !ungraded.has(id)).sort();
+  const amountIn = (id: string) =>
+    data.transactions
+      .filter((t) => t.type === "expense")
+      .reduce(
+        (sum, t) =>
+          sum +
+          (t.splits && t.splits.length
+            ? t.splits.filter((sp) => sp.categoryId === id).reduce((a, sp) => a + sp.amount, 0)
+            : t.categoryId === id
+              ? t.amount
+              : 0),
+        0,
+      );
   return {
     id: "no-orphan-categories",
     question: "Could money vanish into a category nothing watches?",
     status: orphans.length ? "fail" : "ok",
     detail: orphans.length
-      ? `${orphans.join(", ")} — spending here counts against no budget and reduces no available cash, so it disappears from every screen.`
-      : "Every spending category is either budgeted or deliberately set outside the budget.",
+      ? `${orphans.map((id) => `${id} ($${amountIn(id).toFixed(2)})`).join(", ")} — spending here counts against no budget and reduces no available cash, so it disappears from every screen.`
+      : `All ${live.size} spending categories in use are either budgeted or deliberately set outside the budget.`,
   };
 }
 

@@ -44,7 +44,10 @@ export function merchantKey(desc: string): string {
   s = s.replace(/\s+\d{2}\/\d{2}\b.*/, "");
   s = s.replace(/\s+#?\d{3,}.*/, "");
   s = s.replace(/\*.*/, "");
-  s = s.replace(/\s{2,}/g, " ").trim().toUpperCase();
+  s = s
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .toUpperCase();
   return s.slice(0, 28);
 }
 
@@ -99,7 +102,10 @@ export function matchRecurringName<T extends { name: string }>(
  *  so it can never change a line the normal path already classified. */
 export function stripStatementNoise(desc: string): string {
   let s = " " + desc.toUpperCase() + " ";
-  s = s.replace(/\b(MOBILE PURCHASE|CHECKCARD PURCHASE|CHECKCARD|POS PURCHASE|POS DEBIT|DEBIT CARD PURCHASE|RECURRING PAYMENT|MOBILE PAYMENT|PURCHASE)\b/g, " ");
+  s = s.replace(
+    /\b(MOBILE PURCHASE|CHECKCARD PURCHASE|CHECKCARD|POS PURCHASE|POS DEBIT|DEBIT CARD PURCHASE|RECURRING PAYMENT|MOBILE PAYMENT|PURCHASE)\b/g,
+    " ",
+  );
   s = s.replace(/\b\d{2}\/\d{2}\b/g, " "); // MM/DD
   s = s.replace(/\s\d{4}(?=\s)/g, " "); // MMDD date token(s) — keep the trailing space so adjacent tokens both clear
   s = s.replace(/\bX{3,}[0-9X.…]*/g, " "); // masked card number (incl. a dotted tail)
@@ -158,9 +164,15 @@ export function classifyCredit(desc: string): "income" | "transfer" {
   // outflow is already recorded — so they must NOT book as new income (that both
   // inflates gross income and double-counts the transfer). They carry no
   // "Internal:" history label, so detect them explicitly.
-  if (/\bPAYMENT FROM (CHK|SAV)\b|BKOFAMERICA ATM|\bATM (CASH )?DEPOSIT\b/i.test(desc)) return "transfer";
+  if (
+    /\bPAYMENT FROM (CHK|SAV)\b|BKOFAMERICA ATM|\bATM (CASH )?DEPOSIT\b/i.test(
+      desc,
+    )
+  )
+    return "transfer";
   const his = hisLookup(merchantKey(desc));
-  if (his && (his.startsWith("Internal:") || his === "Cash deposit")) return "transfer";
+  if (his && (his.startsWith("Internal:") || his === "Cash deposit"))
+    return "transfer";
   return "income";
 }
 
@@ -171,12 +183,36 @@ export function classifyCredit(desc: string): "income" | "transfer" {
 // Deliberately a closed list rather than "any descriptor containing GAS" — in
 // Arizona the gas UTILITY bill reads "SW GAS"/"SOUTHWEST GAS", and a blanket token
 // match would file the heating bill as vehicle fuel.
-const MULTI_DEPARTMENT = /SAM'?S ?CLUB|COSTCO|WAL-?MART|WM SUPERCENTER|SAFEWAY|FRYS|FRY'S|KROGER|ALBERTSONS|CIRCLE ?K|QUIKTRIP|\bQT\b/i;
+const MULTI_DEPARTMENT =
+  /SAM'?S ?CLUB|COSTCO|WAL-?MART|WM SUPERCENTER|SAFEWAY|FRYS|FRY'S|KROGER|ALBERTSONS|CIRCLE ?K|QUIKTRIP|\bQT\b/i;
 
 // The bank's own fuel markers, as they appear inside the raw descriptor:
 // "SAMSCLUB 4956 GAS 07/16", "COSTCO GAS #123", "FRYS FUEL". Word-anchored so
 // GASOLINE-adjacent noise (VEGAS, GASTON) can't trip it.
-const FUEL_TOKEN = /\bGAS\b|\bGASOLINE\b|\bFUEL\b|\bPUMP\b/i;
+const FUEL_TOKEN =
+  /\bGAS\b|\bGASOLINE\b|\bFUEL\b|\bPUMP\b|(?:\bQT\b|QUIKTRIP)[^]*\bOUTSIDE\b/i;
+
+// QuikTrip is the one multi-department merchant here that labels EVERY charge:
+// "QT 465 OUTSIDE" is the pump, "QT 465 INSIDE" is the shop. Across the whole
+// ledger that is 16 outside and 4 inside, 20 for 20 — the bank was saying which
+// all along and the categorizer was discarding it, so the same station's charges
+// sat split between dining and transport at random and every one of them was
+// flagged for a review nobody was ever shown. Scoped to QT so a stray "OUTSIDE"
+// in another merchant's descriptor cannot mean fuel.
+const STORE_TOKEN = /(?:\bQT\b|QUIKTRIP)[^]*\bINSIDE\b/i;
+
+// The only bank-CONFIRMED fuel charges in this household's entire history are
+// four Sam's Club pump sales between $32.83 and $45.28 — one tank for one car.
+// So a warehouse-club charge far outside that range is not a fill-up: above the
+// ceiling it is a grocery run, below the floor it is a snack. Deliberately an
+// OUTER gate with a wide dead zone, not a tightened band: the confirmed fuel
+// amounts and the hand-labelled store amounts genuinely OVERLAP in the middle
+// ($34.93 store sits between $32.83 and $45.28 fuel), so narrowing there would
+// be guessing with extra steps. This decides only the cases that cannot be fuel
+// — 8 rows, $921.42, including a $130.64 charge sitting on the gas line, which
+// is 39 gallons and about three tanks for a 2012 Civic.
+const FUEL_CEILING = 70;
+const FUEL_FLOOR = 8;
 
 export type Department = "fuel" | "ambiguous" | null;
 
@@ -191,10 +227,24 @@ export type Department = "fuel" | "ambiguous" | null;
  *
  *  Without a raw descriptor (manual entry, CSV import) nothing can be resolved,
  *  so it reports null and the normal path runs unchanged. */
-export function resolveDepartment(desc: string, raw?: string): Department {
-  if (!MULTI_DEPARTMENT.test(desc) && !(raw && MULTI_DEPARTMENT.test(raw))) return null;
+export function resolveDepartment(
+  desc: string,
+  raw?: string,
+  amount?: number,
+): Department {
+  if (!MULTI_DEPARTMENT.test(desc) && !(raw && MULTI_DEPARTMENT.test(raw)))
+    return null;
   if (!raw) return null;
   if (FUEL_TOKEN.test(raw)) return "fuel";
+  // The bank named the shop. Nothing to ask.
+  if (STORE_TOKEN.test(raw)) return null;
+  // Provably not one tank of fuel — see FUEL_CEILING. Falls through to the
+  // ordinary merchant path instead of being asked about forever.
+  if (
+    amount != null &&
+    (Math.abs(amount) > FUEL_CEILING || Math.abs(amount) < FUEL_FLOOR)
+  )
+    return null;
   // An ONLINE order at the same brand has no pump to be confused with, so it isn't
   // ambiguous at all — "SAMS CLUB.COM" is the membership or a shipped order.
   if (/\.COM|\bONLINE\b/i.test(raw)) return null;
@@ -302,7 +352,10 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   // Health/Personal (grooming, pharmacy, personal care) folds into the merged
   // Household + Hygiene category (`shopping`).
   "Health/Personal": { kind: "variable", appCategory: "shopping" },
-  Pets: { kind: "variable", appCategory: "other" },
+  // This said `other` — so his own "Pets" hand-label routed into the $125 Misc
+  // line, and the $75 Pets budget line could only ever be fed by a merchant rule
+  // he had typed himself. Nothing in the categorizer could put money there.
+  Pets: { kind: "variable", appCategory: "pets" },
   "Subscriptions/Digital": { kind: "variable", appCategory: "subscriptions" },
   "Travel/Other": { kind: "variable", appCategory: "other" },
   Other: { kind: "variable", appCategory: "other" },
@@ -331,19 +384,52 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
   // rule runs first — so "TARGET T-3176", "SPROUTS FARMERS MKT 176" and "PANERA
   // BREAD #3876" were all filed as gas, inflating the fuel line while the line they
   // belonged to read under. Phillips 66 is the same brand's parent name.
-  { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|PHILLIPS ?66|\b76\b/i, appCategory: "transport" },
+  {
+    re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|PHILLIPS ?66|\b76\b/i,
+    appCategory: "transport",
+  },
+  {
+    re: /PETSMART|PETCO|\bCHEWY\b|BANFIELD|VCA ANIMAL|VETERINAR|PET HOSPITAL|DOCUPET|PET SUPPL|\bPET STORE\b/i,
+    appCategory: "pets",
+  },
+  // Registration, title, emissions — the cost of keeping the car legal. These
+  // arrive as raw statement lines whose merchant key collapses to the literal
+  // word "CHECKCARD", so they landed in Misc, and no rule could be taught on
+  // them that would not then capture every other unrecognised charge.
+  {
+    re: /\bMVD\b|MOTOR VEHICLE DIV|\bDMV\b|VEHICLE EMISSIONS|EMISSIONS TEST|\bSMOG\b/i,
+    appCategory: "transport",
+  },
   // Parking is transport, not "other". PARKINSAFE is the garage at their own
   // building and recurs several times a month at $6 — it was landing in Misc,
   // and (before the Rent veto above) settling the rent cycle.
-  { re: /PARKIN\s?SAFE|\bPARKING\b|PARKMOBILE|SPOTHERO|PASSPORT ?PARKING|\bTOLL\b/i, appCategory: "transport" },
-  { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
-  { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
-  { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
+  {
+    re: /PARKIN\s?SAFE|\bPARKING\b|PARKMOBILE|SPOTHERO|PASSPORT ?PARKING|\bTOLL\b/i,
+    appCategory: "transport",
+  },
+  {
+    re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i,
+    appCategory: "groceries",
+  },
+  {
+    re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i,
+    appCategory: "dining",
+  },
+  {
+    re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i,
+    appCategory: "shopping",
+  },
   // Beauty/cosmetics sits with Health/Personal, which folds into `shopping`.
   // HOURGLAS (no trailing S) so the same rule catches Plaid's truncated clean
   // name "Hourglas" and the raw "SP HOURGLASSCOSME".
-  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER|HOURGLAS|SEPHORA|\bULTA\b|SALLY BEAUTY/i, appCategory: "shopping" },
-  { re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i, appCategory: "subscriptions" },
+  {
+    re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER|HOURGLAS|SEPHORA|\bULTA\b|SALLY BEAUTY/i,
+    appCategory: "shopping",
+  },
+  {
+    re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i,
+    appCategory: "subscriptions",
+  },
 ];
 
 /** Classify one statement line. Bills win first, then Gino's merchant labels,
@@ -382,7 +468,10 @@ export function classify(
   // ~28 chars, so "SAMS CLUB #495" may have lost it), and he confirmed four
   // token-less charges as fuel and three as store. Absence of the token carries no
   // information in either direction — which is exactly why this asks instead.
-  if (out.kind === "variable" && resolveDepartment(desc, raw) === "ambiguous") {
+  if (
+    out.kind === "variable" &&
+    resolveDepartment(desc, raw, amount) === "ambiguous"
+  ) {
     return {
       ...out,
       confidence: "low",
@@ -430,9 +519,14 @@ function classifyCore(
   // line for July, making fuel read $402 against a real ~$259 — and the wrong number
   // drove a budget re-cut. The fuel token was being thrown away in normalize()
   // before the categorizer ever ran.
-  const dept = resolveDepartment(desc, raw);
+  const dept = resolveDepartment(desc, raw, amount);
   if (dept === "fuel") {
-    return { kind: "variable", appCategory: "transport", reason: "bank tagged this pump, not the store", confidence: "high" };
+    return {
+      kind: "variable",
+      appCategory: "transport",
+      reason: "bank tagged this pump, not the store",
+      confidence: "high",
+    };
   }
 
   // Descriptors whose correct answer depends on the AMOUNT, not just the merchant:
@@ -454,7 +548,9 @@ function classifyCore(
   // was filed as ordinary subscription spend and a hand-typed "already paid"
   // placeholder settled the bill instead. Two rows, one charge, every month.
   const amountGated =
-    /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b|MHE\*?ALEKS|\bALEKS\.COM\b/i.test(billHay);
+    /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b|MHE\*?ALEKS|\bALEKS\.COM\b/i.test(
+      billHay,
+    );
 
   // 1) A rule you taught the app wins over everything — and is always confident.
   //
@@ -477,10 +573,20 @@ function classifyCore(
   const lr = amountGated ? undefined : learnedFor(key, learned, raw);
   if (lr) {
     if (lr.kind === "bill")
-      return { kind: "bill", billName: lr.billName, reason: "you taught it", confidence: "high" };
+      return {
+        kind: "bill",
+        billName: lr.billName,
+        reason: "you taught it",
+        confidence: "high",
+      };
     if (lr.kind === "skip")
       return { kind: "skip", reason: "you taught it", confidence: "high" };
-    return { kind: "variable", appCategory: lr.categoryId, reason: "you taught it", confidence: "high" };
+    return {
+      kind: "variable",
+      appCategory: lr.categoryId,
+      reason: "you taught it",
+      confidence: "high",
+    };
   }
 
   // Overseas remittances (Pandaremit, Remitly/RMTLY) are money sent abroad — not
@@ -500,8 +606,17 @@ function classifyCore(
   // out of the lean budget; mark it reimbursable if it's owed back.
   if (/ZELLE PAYMENT TO MON\b/i.test(desc)) {
     return Math.abs(amount) >= 250
-      ? { kind: "bill", billName: "Mom", reason: "matched bill: Mom (assistance)", confidence: "high" }
-      : { kind: "skip", reason: "Zelle to mom below assistance amount — personal transfer", confidence: "low" };
+      ? {
+          kind: "bill",
+          billName: "Mom",
+          reason: "matched bill: Mom (assistance)",
+          confidence: "high",
+        }
+      : {
+          kind: "skip",
+          reason: "Zelle to mom below assistance amount — personal transfer",
+          confidence: "low",
+        };
   }
 
   // Anthropic/Claude: the bank descriptor is identical ("Anthropic", "Claude.ai",
@@ -515,10 +630,27 @@ function classifyCore(
   if (/\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b/i.test(desc)) {
     const mag = Math.abs(amount);
     if (mag >= 15 && mag <= 35)
-      return { kind: "bill", billName: "Claude Pro", appCategory: "subscriptions", reason: "matched bill: Claude Pro", confidence: "high" };
+      return {
+        kind: "bill",
+        billName: "Claude Pro",
+        appCategory: "subscriptions",
+        reason: "matched bill: Claude Pro",
+        confidence: "high",
+      };
     if (mag >= 70 && mag <= 140)
-      return { kind: "bill", billName: "Claude Max", appCategory: "subscriptions", reason: "matched bill: Claude Max", confidence: "high" };
-    return { kind: "variable", appCategory: "subscriptions", reason: "Anthropic (non-seat amount) — confirm", confidence: "low" };
+      return {
+        kind: "bill",
+        billName: "Claude Max",
+        appCategory: "subscriptions",
+        reason: "matched bill: Claude Max",
+        confidence: "high",
+      };
+    return {
+      kind: "variable",
+      appCategory: "subscriptions",
+      reason: "Anthropic (non-seat amount) — confirm",
+      confidence: "low",
+    };
   }
 
   // The cost of carrying a balance — card interest and late/penalty fees. NOT a
@@ -527,12 +659,22 @@ function classifyCore(
   // land on a budget line, or it double-counts. Its own category so the price of
   // the debt is visible rather than buried in "other".
   if (/INTEREST CHARGED|FINANCE CHARGE|\bLATE FEE\b|PENALTY FEE/i.test(desc)) {
-    return { kind: "variable", appCategory: "interest", reason: "cost of debt (interest / fee)", confidence: "high" };
+    return {
+      kind: "variable",
+      appCategory: "interest",
+      reason: "cost of debt (interest / fee)",
+      confidence: "high",
+    };
   }
 
   for (const r of BILL_RULES) {
     if (r.re.test(billHay) && !(r.not && r.not.test(billHay))) {
-      return { kind: "bill", billName: r.bill, reason: `matched bill: ${r.bill}`, confidence: "high" };
+      return {
+        kind: "bill",
+        billName: r.bill,
+        reason: `matched bill: ${r.bill}`,
+        confidence: "high",
+      };
     }
   }
 
@@ -540,16 +682,39 @@ function classifyCore(
   // distinctive alias, so a re-spaced/rebranded descriptor still resolves.
   const normDesc = billKey(billHay);
   for (const b of BILL_ALIASES) {
-    if (b.aliases.some((a) => normDesc.includes(a)) && !(b.not && b.not.test(billHay))) {
-      return { kind: "bill", billName: b.bill, reason: `matched bill (alias): ${b.bill}`, confidence: "high" };
+    if (
+      b.aliases.some((a) => normDesc.includes(a)) &&
+      !(b.not && b.not.test(billHay))
+    ) {
+      return {
+        kind: "bill",
+        billName: b.bill,
+        reason: `matched bill (alias): ${b.bill}`,
+        confidence: "high",
+      };
     }
   }
 
   // Uber is split in the history: the membership is a sub, trips are rideshare.
+  // Plaid's clean name for the membership charge is just "Uber" — the words
+  // "ONE MEMBERSHIP" appear only in the raw line, so testing `desc` alone filed
+  // $9.99 a month as a rideshare trip against the gas budget.
   if (key === "UBER") {
-    return /ONE MEMBERSHIP/i.test(desc)
-      ? { kind: "variable", appCategory: "subscriptions", hisCategory: "Subscriptions/Digital", reason: "Uber One membership", confidence: "high" }
-      : { kind: "variable", appCategory: "transport", hisCategory: "Rideshare/Delivery", reason: "Uber trip", confidence: "high" };
+    return /ONE MEMBERSHIP/i.test(billHay)
+      ? {
+          kind: "variable",
+          appCategory: "subscriptions",
+          hisCategory: "Subscriptions/Digital",
+          reason: "Uber One membership",
+          confidence: "high",
+        }
+      : {
+          kind: "variable",
+          appCategory: "transport",
+          hisCategory: "Rideshare/Delivery",
+          reason: "Uber trip",
+          confidence: "high",
+        };
   }
 
   const his = MERCHANT_CATEGORY[key];
@@ -557,7 +722,12 @@ function classifyCore(
     const map = HISCAT_TO_APP[his];
     if (map) {
       if (map.kind !== "variable")
-        return { kind: "skip", hisCategory: his, reason: `your label: ${his}`, confidence: "high" };
+        return {
+          kind: "skip",
+          hisCategory: his,
+          reason: `your label: ${his}`,
+          confidence: "high",
+        };
       // Known merchant, but "Other" is vague — worth a one-tap confirm.
       return {
         kind: "variable",
@@ -571,7 +741,12 @@ function classifyCore(
 
   for (const f of KEYWORD_FALLBACK) {
     if (f.re.test(desc)) {
-      return { kind: "variable", appCategory: f.appCategory, reason: `guessed → ${f.appCategory}`, confidence: "low" };
+      return {
+        kind: "variable",
+        appCategory: f.appCategory,
+        reason: `guessed → ${f.appCategory}`,
+        confidence: "low",
+      };
     }
   }
 
@@ -579,30 +754,53 @@ function classifyCore(
   // that sends the full bank descriptor) can hide a known merchant behind a prefix
   // + date + card mask. Strip that noise and retry the history + keyword lookups.
   // Additive — only reached when nothing above matched, so it can't regress.
-  const cleaned = stripStatementNoise(desc);
-  if (cleaned && cleaned !== desc.toUpperCase().trim()) {
-    const his2 = hisLookup(merchantKey(cleaned));
-    if (his2) {
-      const map = HISCAT_TO_APP[his2];
-      if (map) {
-        if (map.kind !== "variable")
-          return { kind: "skip", hisCategory: his2, reason: `your label: ${his2}`, confidence: "high" };
-        return {
-          kind: "variable",
-          appCategory: map.appCategory,
-          hisCategory: his2,
-          reason: `your label: ${his2}`,
-          confidence: map.appCategory === "other" ? "low" : "high",
-        };
+  // Try the clean name stripped, then the RAW line stripped. The second one is
+  // what rescues a charge whose clean merchant name carries no information at
+  // all: Bank of America sends vehicle-registration fees as "CHECKCARD 0628
+  // AZ MVD FEE NOW PHOENIX AZ", whose merchant key is the literal word
+  // "CHECKCARD" — so it landed in Misc, and no rule could be taught on it that
+  // would not then capture every other unrecognised charge in the ledger.
+  for (const source of raw && raw !== desc ? [desc, raw] : [desc]) {
+    const cleaned = stripStatementNoise(source);
+    if (cleaned && cleaned !== source.toUpperCase().trim()) {
+      const his2 = hisLookup(merchantKey(cleaned));
+      if (his2) {
+        const map = HISCAT_TO_APP[his2];
+        if (map) {
+          if (map.kind !== "variable")
+            return {
+              kind: "skip",
+              hisCategory: his2,
+              reason: `your label: ${his2}`,
+              confidence: "high",
+            };
+          return {
+            kind: "variable",
+            appCategory: map.appCategory,
+            hisCategory: his2,
+            reason: `your label: ${his2}`,
+            confidence: map.appCategory === "other" ? "low" : "high",
+          };
+        }
       }
-    }
-    for (const f of KEYWORD_FALLBACK) {
-      if (f.re.test(cleaned)) {
-        return { kind: "variable", appCategory: f.appCategory, reason: `guessed → ${f.appCategory}`, confidence: "low" };
+      for (const f of KEYWORD_FALLBACK) {
+        if (f.re.test(cleaned)) {
+          return {
+            kind: "variable",
+            appCategory: f.appCategory,
+            reason: `guessed → ${f.appCategory}`,
+            confidence: "low",
+          };
+        }
       }
     }
   }
 
   // Unknown merchant, a real debit → variable "other", lowest confidence.
-  return { kind: "variable", appCategory: "other", reason: "new merchant", confidence: "low" };
+  return {
+    kind: "variable",
+    appCategory: "other",
+    reason: "new merchant",
+    confidence: "low",
+  };
 }

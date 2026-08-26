@@ -92,8 +92,12 @@ export const LEAN_VARIABLE: BudgetLine[] = [
  *  now also cut firepower here. That double-count is the deliberate choice over
  *  the alternative (grading a non-discretionary bill against a discretionary
  *  envelope). The real fix is to model SW Gas / city water as recurring rows so
- *  their payments get an appliesTo and land in `fixed` once. */
-export const OUTSIDE_BUDGET_CASH_CATS = ["electronics", "car", "utilities"];
+ *  their payments get an appliesTo and land in `fixed` once.
+ *
+ *   · `bills` — an extra or catch-up payment on a modeled bill. Real cash, and
+ *     not a choice anyone made this month, so it cuts firepower without being
+ *     graded against a discretionary envelope. See the note in seed.ts. */
+export const OUTSIDE_BUDGET_CASH_CATS = ["electronics", "car", "utilities", "bills"];
 
 /** Is this category graded against the lean budget? True iff some line claims it.
  *  `electronics`, `car` and `interest` deliberately belong to NO line: electronics

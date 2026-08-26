@@ -160,9 +160,65 @@ describe("regressions the existing rules already guard — pinned so a fix canno
     expect(c.appCategory).toBe("interest");
   });
 
-  it("a bank-tagged pump is fuel, an untagged warehouse run is a question", () => {
+  it("a bank-tagged pump is fuel; an untagged charge inside the fuel range is a question", () => {
     expect(spend("Sam's Club", 41, "SAMSCLUB 4956 GAS 07/16").appCategory).toBe("transport");
-    expect(spend("Sam's Club", 130.64, "CHECKCARD 0822 SAMS CLUB #495").ambiguous).toBe(true);
+    expect(spend("Sam's Club", 34.91, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ").ambiguous).toBe(true);
+  });
+});
+
+describe("the department question, asked only where it is genuinely a question", () => {
+  // Every bank-CONFIRMED fuel charge in this household's history is a Sam's Club
+  // pump sale between $32.83 and $45.28 — one tank for one car. The middle is
+  // genuinely undecidable (a $34.93 hand-labelled STORE run sits inside that
+  // range), so the band is not narrowed there. But a charge far outside it cannot
+  // be a fill-up, and asking about those forever taught nobody anything.
+  it("above the fuel ceiling it is a store run, not a question", () => {
+    // $130.64 is 39 gallons at $3.30 — about three tanks for a 2012 Civic. It was
+    // sitting on the gas line, 36% of August's whole transport total.
+    const c = spend("Sam's Club", 130.64, "CHECKCARD 0822 SAMS CLUB #495");
+    expect(c.ambiguous).toBeUndefined();
+    expect(c.appCategory).toBe("groceries");
+  });
+
+  it("below the floor it is a snack, not a question", () => {
+    expect(spend("Sam's Club", 4.05, "CHECKCARD 0822 SAMS CLUB #495").ambiguous).toBeUndefined();
+  });
+
+  // QuikTrip writes the department on every single line and the categorizer was
+  // throwing it away: 16 OUTSIDE and 4 INSIDE across the whole ledger, and the
+  // same station's charges sat split between dining and transport at random.
+  it("QuikTrip says which side of the building the charge came from", () => {
+    expect(spend("QT", 30.04, "QT 465 OUTSIDE 08/14 #XXXXX3833 PURCHASE QT 465 OUTSIDE").appCategory).toBe("transport");
+    expect(spend("QT", 7.38, "QT 465 INSIDE 04/17 #XXXXX1122 PURCHASE QT 465 INSIDE").ambiguous).toBeUndefined();
+  });
+
+  // Scoped to QuikTrip: a stray "OUTSIDE" in an unrelated descriptor must not
+  // mean fuel.
+  it("OUTSIDE only means the pump at QuikTrip", () => {
+    expect(spend("Trader Joe's", 29.41, "OUTSIDE PATIO CAFE TEMPE AZ").appCategory).not.toBe("transport");
+  });
+});
+
+describe("categories the app could never reach", () => {
+  // His own "Pets" hand-label routed to `other`, so the $75 Pets budget line
+  // could only ever be fed by a merchant rule he had typed himself.
+  it("pet merchants reach the Pets line", () => {
+    expect(spend("Petsmart", 42).appCategory).toBe("pets");
+    expect(spend("Docupet Pet Licensing", 24, "CHECKCARD 0801 DOCUPET PET LICENSING DOCUPET.COM NY").appCategory).toBe("pets");
+  });
+
+  // Vehicle registration arrives as a raw line whose merchant key collapses to
+  // the literal word "CHECKCARD" — so it sat in Misc and no rule could be taught
+  // on it that would not capture every other unrecognised charge too.
+  it("vehicle registration is a car cost, not Misc", () => {
+    expect(spend("CHECKCARD", 48.46, "CHECKCARD 0628 AZ MVD FEE NOW PHOENIX AZ").appCategory).toBe("transport");
+  });
+
+  // The membership token lives only in the raw line, so $9.99/mo was filed as a
+  // rideshare trip against the gas budget.
+  it("an Uber One membership is a subscription, an Uber trip is transport", () => {
+    expect(spend("Uber", 9.99, "UBER *ONE MEMBERSHIP help.uber.com").appCategory).toBe("subscriptions");
+    expect(spend("Uber", 18.4, "UBER *TRIP help.uber.com").appCategory).toBe("transport");
   });
 });
 

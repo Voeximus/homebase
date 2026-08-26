@@ -323,6 +323,12 @@ export function monthCalendar(
   for (const tx of transactions) {
     if (tx.type !== "expense" || tx.appliesTo?.kind !== "bill") continue;
     if (tx.appliesTo.monthKey !== monthKey) continue;
+    // `settled: false` means the link records WHICH bill the money went to
+    // without claiming the cycle is closed. It was being ignored, so a $639.42
+    // insurance payment flagged unsettled still rendered the bill as paid in
+    // full at its modeled $340.66. A flag that reads as a safety check and is
+    // never read is worse than no flag.
+    if (tx.appliesTo.settled === false) continue;
     const rid = tx.appliesTo.recurringId;
     if (rid) (paymentsByRec[rid] ??= []).push(tx);
   }

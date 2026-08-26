@@ -42,6 +42,14 @@ export const DEFAULT_CATEGORIES: Category[] = [
   // purely so the price of carrying a balance is visible instead of buried in
   // "other" next to a coffee.
   { id: "interest", name: "Interest + Fees", icon: "🩸", color: "#e11d48", type: "expense" },
+  // A payment on a modeled bill that lands OUTSIDE that bill's normal cycle — a
+  // catch-up, or a second payment in one month. It is real money and it reduces
+  // what can go at the debt, but it is not discretionary living spend, so it must
+  // not be graded against an envelope. On no budget line, and listed in
+  // OUTSIDE_BUDGET_CASH_CATS. Before it existed, such a payment inherited its
+  // bill's category — and 8 of the 16 active bills carry "other", which IS the
+  // $125/mo Misc line.
+  { id: "bills", name: "Bill payment", icon: "🧾", color: "#0ea5e9", type: "expense" },
   { id: "other", name: "Other", icon: "📦", color: "#64748b", type: "expense" },
 ];
 

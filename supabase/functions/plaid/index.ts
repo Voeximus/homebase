@@ -57,6 +57,15 @@ async function plaid(path: string, body: Record<string, unknown>) {
   return j;
 }
 
+// Categories a budget LINE claims — i.e. money that gets graded against an
+// envelope. Mirrors LEAN_VARIABLE in src/lib/plan.ts; a bill payment must never
+// land in one of these. Kept as a literal because edge functions do not share
+// src/lib (see ACCOUNTANT_BRIEF rule 11).
+const GRADED_CATS = new Set([
+  "groceries", "transport", "dining", "shopping", "health",
+  "subscriptions", "entertainment", "housing", "pets", "other", "kids",
+]);
+
 const contentKey = (r: NormalRow) =>
   `${r.date}|${r.amount.toFixed(2)}|${merchantKey(r.description)}`;
 
@@ -160,7 +169,12 @@ function matchBillByDayAmount(
     if (!days.length) continue; // need a scheduled day — never auto-settle on amount alone
     const nearest = days.reduce((b, d) => (Math.abs(d - postDay) < Math.abs(b - postDay) ? d : b), days[0]);
     if (Math.abs(nearest - postDay) > 3) continue;
-    if (paidBill.has(`${r.id}|${monthKey}|${nearest}`)) continue;
+    // paidBill is keyed on the installment ORDINAL, not the due day (see
+    // cycleKey). Probing with `nearest` — a day, 1–31 — meant this guard could
+    // only ever match a single-installment bill due on the 1st, by coincidence.
+    // Everywhere else it silently passed, and the heuristic was free to settle a
+    // cycle another payment had already claimed.
+    if (paidBill.has(`${r.id}|${monthKey}|${installmentIndexForDay(days, nearest)}`)) continue;
     // Coerce the DB numeric (arrives as a string) so the amount filter actually
     // runs. NEVER auto-settle on day proximity alone — a bill with no modeled
     // amount (0/null) is skipped. Fixed bills must match tightly — a $21.62 sub
@@ -437,7 +451,11 @@ async function syncConnection(connId: string, force = false) {
           date: row.date,
           amount: Math.abs(row.amount),
           type: "income",
-          category_id: isPaycheck(row.description) ? "paycheck" : "other-income",
+          // "salary", not "paycheck": salary is the id DEFAULT_CATEGORIES defines
+          // and the id both recurring income rows already use. "paycheck" existed
+          // in no catalog, so $33,033.19 of income was displayed under a fallback
+          // label with a fallback colour.
+          category_id: isPaycheck(row.description) ? "salary" : "other-income",
           description: row.description,
           raw_description: row.raw,
           needs_review: false,
@@ -484,7 +502,15 @@ async function syncConnection(connId: string, force = false) {
         // extra-payment path below, which carries no applies_to and is therefore
         // GRADED — an extra Verizon payment must land in `utilities` (outside the
         // discretionary envelope by design), not in the $125/mo Misc line.
-        const billCat = (matched?.category_id as string | undefined) ?? c.appCategory ?? "other";
+        // The category an EXTRA payment carries. It cannot simply inherit the
+        // bill's own category: 8 of the 16 active bills carry "other", and "other"
+        // IS the $125/mo Misc line — so inheriting it would grade a second rent or
+        // card payment as discretionary spending, which is the opposite of the
+        // intent. `bills` is on no budget line and is listed in
+        // OUTSIDE_BUDGET_CASH_CATS, so the money stays visible and still cuts what
+        // can go at the debt, without being graded against an envelope.
+        const inherited = (matched?.category_id as string | undefined) ?? c.appCategory;
+        const billCat = inherited && !GRADED_CATS.has(inherited) ? inherited : "bills";
         if (matched) {
           const rec = { id: matched.id as string, dueDays: (matched.due_days ?? undefined) as number[] | undefined };
           const at = billAppliesTo(rec, row.date);

@@ -34,18 +34,29 @@ describe.skipIf(!PAT)("self-audit against LIVE data", () => {
     // Deliberately mirrors the store's mappers rather than importing them —
     // FinanceStore.tsx is a React module and cannot be loaded headlessly. Keep
     // these field lists in step with mapTxn / mapRecurring.
-    const [rec, txs, debts, accts] = await Promise.all([
+    const [rec, txs, debts, accts, rules] = await Promise.all([
       q("select * from recurring"),
       q("select * from transactions order by date desc limit 2000"),
       q("select * from debts"),
       q("select * from accounts"),
+      q("select * from merchant_rules"),
     ]);
 
     const data: AppData = {
       categories: DEFAULT_CATEGORIES,
       goals: [],
       paidBills: [],
-      merchantRules: [],
+      // Real rules, not an empty list: merchant_rules.category_id is unconstrained
+      // text and a rule can write a category no budget line claims, which is
+      // exactly what the orphan-category check exists to catch.
+      merchantRules: rules.map((r) => ({
+        id: r.id as string,
+        pattern: r.pattern as string,
+        kind: r.kind as AppData["merchantRules"][number]["kind"],
+        categoryId: (r.category_id as string) ?? undefined,
+        billName: (r.bill_name as string) ?? undefined,
+        createdAt: r.created_at as string,
+      })),
       foods: [],
       accounts: accts.map((a) => ({
         id: a.id as string,
