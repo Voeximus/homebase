@@ -456,24 +456,22 @@ async function syncConnection(connId: string, force = false) {
         // key). If the categorizer NAMED a bill but it doesn't resolve to a row,
         // that's a modeling gap → fall through to needs_review (below) rather than
         // risk the blind day+amount heuristic auto-settling the WRONG bill. Reserve
-        // that heuristic for a payment the categorizer couldn't name at all.
+        // that heuristic for a payment the categorizer couldn't name at all — a
+        // tracked debt classified "skip" (Affirm, Remitly) must never reach it, or
+        // an unrelated bill of a similar size on a nearby day would absorb a debt
+        // payment.
         //
-        // A tracked debt used to `continue` here BEFORE this ran, so a charge that
-        // is BOTH a tracked debt and a modeled monthly bill only ever settled the
-        // debt. Cherry is exactly that (debts.track_pattern 'CHERRY' + a $151.72
-        // monthly recurring row): August's payment landed, the debt dropped, and
-        // the Bills tab still showed Cherry unpaid for the month. Now the two are
-        // merged into ONE applies_to that carries both links.
-        // The blind day+amount heuristic stays reserved for a payment the
-        // categorizer knows is a BILL but couldn't name. A tracked debt whose
-        // classification is "skip" (Affirm, Remitly) must never reach it — it
-        // would let an unrelated bill of a similar size on a nearby day absorb a
-        // debt payment.
-        // Narrow to bills whose window actually covers this payment before
-        // matching. Two car-insurance rows both answer to "Car insurance" — one
+        // A tracked debt used to `continue` BEFORE any of this ran, so a charge
+        // that is BOTH a tracked debt and a modeled monthly bill only ever settled
+        // the debt. Cherry is exactly that (debts.track_pattern 'CHERRY' plus a
+        // $151.72 monthly recurring row): August's payment landed, the debt
+        // dropped, and the Bills tab still showed Cherry unpaid for the month. The
+        // two links are merged into one applies_to now.
+        //
+        // Narrowing to bills whose window covers the payment date comes first,
+        // because two car-insurance rows both answer to "Car insurance" — one
         // running to 30 Nov 2026, its replacement starting 1 Feb 2027 — and only
-        // the window separates them. A week of slack on each edge so an early or
-        // slightly late payment still finds its bill.
+        // the window separates them.
         const liveRecs = outRecs.filter((r: any) => liveOnDate(r, row.date));
         const matched =
           matchRecurringName(c.billName, liveRecs) ??
@@ -511,6 +509,27 @@ async function syncConnection(connId: string, force = false) {
               `extra payment: ${row.date} ${Math.abs(row.amount).toFixed(2)} ${row.description} ` +
                 `— ${matched.name} ${at.monthKey} was already settled; recorded as spending, not as the bill`,
             );
+            // …unless it is also a payment on a tracked debt. The debt balance is
+            // recomputed as baseline − sum(payments carrying its debtId), so
+            // dropping that link would leave the second payment of a month
+            // uncredited and the debt reading high. It keeps the debt-only shape:
+            // credited, out of the budget, and not settling an already-settled
+            // bill cycle.
+            if (td) {
+              (billByAcct[row.accountId] ??= []).push({
+                provider_txn_id: row.providerTxnId,
+                provider_account_id: row.accountId,
+                date: row.date,
+                amount: Math.abs(row.amount),
+                type: "expense",
+                category_id: billCat,
+                description: row.description,
+                raw_description: row.raw,
+                applies_to: { kind: "debt", debtId: td.id, settled: true },
+                needs_review: false,
+              });
+              continue;
+            }
             (postedByAcct[row.accountId] ??= []).push({
               provider_txn_id: row.providerTxnId,
               provider_account_id: row.accountId,
