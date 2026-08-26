@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.08.25a",
+    date: "August 25, 2026",
+    notes: [
+      "September's rent was showing as PAID. A $6 charge at the parking garage matched the rent bill, because the garage and the landlord share a name — so September read $1,732 lighter than it is, going into the tightest month of the year. September now says what it costs: $2,979.70, low point $325 on the 3rd.",
+      "Then it hid the evidence. When a bill got paid twice in a month, the second payment was thrown away instead of recorded — $108.27 of real spending was missing from the ledger, including a $93.03 Verizon bill. Those charges are back and it can't happen again.",
+      "Seven merchant rules you'd taught the app could never fire — including the one for that parking garage, which would have stopped all of this. They work now.",
+      "Tap any charge that's marking a bill paid and you can see which bill, what it costs, and put it back if it's wrong.",
+    ],
+  },
+  {
     version: "2026.08.18a",
     date: "August 18, 2026",
     notes: [
