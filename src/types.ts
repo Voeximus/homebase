@@ -84,6 +84,11 @@ export interface Transaction {
   // per-person activity only. Same reason as `provider`: deleting it must not
   // restore cash. See supabase/schema_v28_record_only.sql.
   recordOnly?: boolean;
+  // The importer could not confidently label this charge and wants a one-tap
+  // answer. It was written on import from the start and read by nothing, so the
+  // question was asked into the void: 206 rows carried the flag and none of them
+  // ever reached a review list. The review filters read it now.
+  needsReview?: boolean;
   createdAt: string; // ISO timestamp
 }
 

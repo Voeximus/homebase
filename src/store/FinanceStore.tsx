@@ -52,6 +52,7 @@ function mapTxn(r: any): Transaction {
     pending: r.status === "pending",
     provider: r.provider ?? undefined,
     recordOnly: !!r.record_only,
+    needsReview: !!r.needs_review,
     createdAt: r.created_at,
   };
 }
@@ -221,6 +222,9 @@ export interface FinanceStore {
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
   // Split one transaction across categories (or pass null to clear the split).
   setTransactionSplits: (id: string, splits: TxnSplit[] | null) => Promise<void>;
+  // Release a charge that was wrongly matched to a bill, so the bill goes back to
+  // unpaid. Nothing else in the app can undo a bill link.
+  unlinkFromBill: (id: string) => Promise<void>;
   // Dismiss the "unusual purchase" flag for a transaction (it won't reappear).
   acknowledgeAnomaly: (id: string) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
@@ -973,9 +977,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         }));
         // user_categorized marks this as a HUMAN decision, so a later re-sync
         // refreshes auto-guesses around it but never overwrites this one.
+        //
+        // Clearing needs_review is the other half of that: the flag means "the app
+        // could not tell — answer this", and the answer has just been given. It was
+        // being left set, so 27 rows the user had already resolved stayed flagged
+        // forever, and the review list never emptied.
         const { error } = await supabase
           .from("transactions")
-          .update({ category_id: categoryId, user_categorized: true })
+          .update({ category_id: categoryId, user_categorized: true, needs_review: false })
           .eq("id", id);
         if (error) console.error(error);
       },
@@ -1002,10 +1011,41 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         }));
         // Splitting is a human call on where this money belongs — protect it from
         // being re-guessed on the next sync.
-        const update: Record<string, unknown> = { splits: useSplits, user_categorized: true };
+        const update: Record<string, unknown> = { splits: useSplits, user_categorized: true, needs_review: false };
         if (primary) update.category_id = primary;
         const { error } = await supabase.from("transactions").update(update).eq("id", id);
         if (error) console.error(error);
+      },
+      async unlinkFromBill(id) {
+        // Release a charge that was wrongly attributed to a bill.
+        //
+        // This existed nowhere. Once a bill link was written, NO path in the app
+        // could remove it: re-categorizing leaves it alone (deliberately — bill
+        // payments are ordinary-looking rows and auto-clearing on a recolor would
+        // unsettle real bills), and the importer's upsert does
+        // `applies_to = coalesce(existing, excluded)`, which by design never
+        // overwrites one.
+        //
+        // So a single bad match was permanent. A $6.00 parking charge at
+        // "Parkinsafe Nollie" matched the rent rule for "Nollie MA" and marked
+        // September's $1,732.16 rent PAID; fixing the rule stopped it happening
+        // again but could not undo the row already written. Someone has to be able
+        // to say "that was not the rent".
+        invalidate(seq.current, "transactions");
+        setData((p) => ({
+          ...p,
+          transactions: p.transactions.map((t) =>
+            t.id === id ? { ...t, appliesTo: undefined } : t,
+          ),
+        }));
+        const { data, error } = await supabase
+          .from("transactions")
+          .update({ applies_to: null })
+          .eq("id", id)
+          .select("id");
+        // An RLS-filtered UPDATE returns error:null with zero rows, so checking
+        // `error` alone would report success on a write that never happened.
+        if (error || !data?.length) console.error("unlinkFromBill failed", error);
       },
       async acknowledgeAnomaly(id) {
         // dismiss the unusual-purchase flag; optimistic + persisted so it never

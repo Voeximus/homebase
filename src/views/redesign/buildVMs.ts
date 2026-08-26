@@ -554,7 +554,11 @@ export function buildFinanceVMs(
     }
     if (tx.splits && tx.splits.length > 1)
       return { fate: "envelope", badge: t("Split · {n} ways", { n: tx.splits.length }) };
-    if (tx.categoryId === "other" || !hasRule(tx.description))
+    // needsReview is the importer's OWN verdict — "I could not tell, ask once".
+    // It is the only one of these three that knows about a multi-department
+    // merchant, where the category shown is a coin flip rather than a reading.
+    // Until it was read here, that question was never put to anyone.
+    if (tx.needsReview || tx.categoryId === "other" || !hasRule(tx.description))
       return { fate: "review", badge: t("Needs review") };
     return { fate: "envelope", badge: t("→ {label}", { label: envLabel(tx.categoryId) }) };
   };

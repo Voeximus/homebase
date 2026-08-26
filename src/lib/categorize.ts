@@ -79,6 +79,16 @@ export function matchRecurringName<T extends { name: string }>(
     const byMerchant = recurring.find((r) => merchantKey(r.name) === mk);
     if (byMerchant) return byMerchant;
   }
+  // Last resort: a rule names the biller ("Car insurance") while the modelled row
+  // qualifies it ("Car insurance — finishing this term"). Resolve a prefix ONLY
+  // when exactly one row matches — two candidates means the app cannot tell which
+  // bill the money paid, and guessing settles the wrong cycle. Callers narrow the
+  // list to rows live on the payment date before calling, which is what keeps this
+  // unambiguous across a term change.
+  if (bk.length >= 5) {
+    const byPrefix = recurring.filter((r) => billKey(r.name).startsWith(bk));
+    if (byPrefix.length === 1) return byPrefix[0];
+  }
   return null;
 }
 
@@ -113,6 +123,28 @@ function hisLookup(key: string): string | undefined {
     }
   }
   return best;
+}
+
+/** Resolve a learned rule across BOTH descriptor namespaces — see the long note
+ *  at the call site. Exact clean-name hit first (unchanged precedence), then the
+ *  raw bank line with its statement noise stripped. Never a bare merchantKey(raw):
+ *  that returns "CHECKCARD" for every Bank of America card line, so a single rule
+ *  would capture every card charge in the ledger. */
+export function learnedFor(
+  key: string,
+  learned: LearnedRules | undefined,
+  raw?: string,
+): LearnedRule | undefined {
+  if (!learned) return undefined;
+  const direct = learned[key];
+  if (direct) return direct;
+  if (!raw) return undefined;
+  const cleaned = stripStatementNoise(raw);
+  if (!cleaned) return undefined;
+  const rawKey = merchantKey(cleaned);
+  // A one- or two-character key is noise, not a merchant.
+  if (rawKey.length < 2 || rawKey === key) return undefined;
+  return learned[rawKey];
 }
 
 /** For an INCOMING credit (positive amount): is it real income — to surface and to
@@ -178,16 +210,59 @@ export function isPaycheck(desc: string): boolean {
 
 // A line that matches one of these IS a modeled recurring bill — mark it paid,
 // don't count it as variable spend. Names must match SEED_RECURRING exactly.
-const BILL_RULES: { re: RegExp; bill: string }[] = [
-  { re: /NOLLIE/i, bill: "Rent" },
+//
+// `not` is a VETO, checked before `re`. It exists because a bill rule that fires
+// on a merchant which merely SHARES A WORD with the biller does not just
+// mislabel one row — it settles a whole bill cycle, and the importer then
+// silently discards every later payment that lands in that same cycle. So a
+// one-word collision can hide a month of a real bill AND eat the charges that
+// collided with it. Match the BILLER, never a word it shares with a neighbour.
+const BILL_RULES: { re: RegExp; not?: RegExp; bill: string }[] = [
+  // The landlord is "Nollie MA" (raw: "Nollie MA DES:Rent"). The SAME landlord's
+  // parking garage bills as "Parkinsafe Nollie" for $6 a visit. With a bare
+  // /NOLLIE/i, a $6 parking charge on 2026-08-17 settled the SEPTEMBER rent
+  // cycle: the calendar showed "Sep 1 — Rent — PAID $6.00" and September read
+  // $1,732.16 lighter than it is, at the household's tightest moment of the
+  // year. The two later parking charges then vanished entirely, because the
+  // importer drops a second payment into an already-settled cycle.
+  { re: /\bNOLLIE\b/i, not: /PARKIN\s?SAFE|\bPARKING\b/i, bill: "Rent" },
   { re: /\bSRP\b|ECHXPWR/i, bill: "Electric (SRP)" },
   { re: /VZ WIRELESS|VERIZON/i, bill: "Verizon" },
   { re: /TMOBILE|T-MOBILE/i, bill: "T-Mobile" },
   { re: /SPOTIFY/i, bill: "Spotify" },
   { re: /SPOT ?PET/i, bill: "Spot Pet insurance" }, // "SPOT PET SPOTPET.COM" or Plaid's clean "Spotpet"
   { re: /LEMONADE/i, bill: "LEMONADE INSURANCE" },
-  { re: /CRD\s*4728/i, bill: "Card payment (…4728)" },
-  { re: /CRD\s*6813/i, bill: "Card payment (…6813)" },
+  // Car insurance had NO rule at all, so every GEICO instalment classified as a
+  // brand-new merchant and landed in `other` — the $125/mo Misc line — while the
+  // bill it paid stayed unpaid on the calendar. $1,021.98 of Sept-Nov instalments
+  // was on course to be graded as discretionary spending.
+  //
+  // "Car insurance" is a PREFIX of both modelled rows ("Car insurance — finishing
+  // this term" runs to 30 Nov 2026; "Car insurance (both cars)" starts 1 Feb 2027),
+  // and matchRecurringName resolves a prefix only when it is unambiguous. The
+  // importer narrows to rows live on the payment date first, so exactly one
+  // survives on any given date and the rule keeps working across the term change.
+  { re: /GEICO/i, bill: "Car insurance" },
+  // Cherry is BOTH a modeled monthly bill and a feed-tracked debt. Naming it
+  // here is what lets the importer link a payment to both at once — without a
+  // name the tracked-debt branch could only ever settle the debt.
+  { re: /CHERRY TECHNOL/i, bill: "Cherry (dental)" },
+  // McGraw-Hill bills ALEKS as "MHE*ALEKS ALEKS.COM" — and merchantKey() cuts at
+  // the "*", so the merchant key is the bare "MHE". A learned rule on a 3-letter
+  // key is too blunt to carry a bill link, so name the biller here instead: the
+  // real charge then settles the modeled ALEKS row and the hand-entered "already
+  // paid" placeholder stops being needed (it was double-counting $21.57/mo).
+  { re: /MHE\*?ALEKS|ALEKS\.COM/i, bill: "ALEKS calculus" },
+  // BoA writes a card payment differently depending on the channel it came
+  // through, and only one of the three said "CRD":
+  //   "Online Banking payment to CRD 4728 Confirmation# …"   (web)
+  //   "Mobile Banking payment to CRD 6813 Confirmation# …"   (app)
+  //   "PAYMENT TO ACCT #6813 ON 08/25 VIA WEB"               (also web, newer)
+  // The third form matched nothing, so a card payment was filed as a brand-new
+  // merchant in `other` — i.e. graded against the $125/mo Misc line as if
+  // paying down a credit card were discretionary spending.
+  { re: /(?:CRD|ACCT)\s*#?\s*4728\b/i, bill: "Card payment (…4728)" },
+  { re: /(?:CRD|ACCT)\s*#?\s*6813\b/i, bill: "Card payment (…6813)" },
   // Affirm is a feed-TRACKED debt now (debts.track_pattern "AFFIRM"), not a bill.
   // "Zelle payment to mom" is handled earlier (amount-gated) — not a blanket rule.
 ];
@@ -198,16 +273,23 @@ const BILL_RULES: { re: RegExp; bill: string }[] = [
 // catches spacing/punctuation/case drift (Plaid's clean "Spotpet" vs the raw
 // "SPOT PET SPOTPET.COM", "T Mobile" vs "T-Mobile", "Vz Wireless" vs "VZWIRELESS").
 // Every alias must be UNIQUE to that biller so it can't grab an unrelated merchant.
-const BILL_ALIASES: { bill: string; aliases: string[] }[] = [
-  { bill: "Rent", aliases: ["nollie"] },
+//
+// `not` here too: billKey() strips punctuation, so "PARKINSAFE NOLLIE" normalizes
+// to "parkinsafenollie" — which CONTAINS "nollie". The alias pass would re-open
+// the exact collision the BILL_RULES veto just closed.
+const BILL_ALIASES: { bill: string; not?: RegExp; aliases: string[] }[] = [
+  { bill: "Rent", not: /PARKIN\s?SAFE|\bPARKING\b/i, aliases: ["nollie"] },
   { bill: "Electric (SRP)", aliases: ["echxpwr"] },
   { bill: "Verizon", aliases: ["verizon", "vzwireless"] },
   { bill: "T-Mobile", aliases: ["tmobile"] },
   { bill: "Spotify", aliases: ["spotify"] },
   { bill: "Spot Pet insurance", aliases: ["spotpet"] },
   { bill: "LEMONADE INSURANCE", aliases: ["lemonade"] },
-  { bill: "Card payment (…4728)", aliases: ["crd4728"] },
-  { bill: "Card payment (…6813)", aliases: ["crd6813"] },
+  { bill: "Car insurance", aliases: ["geico"] },
+  { bill: "Cherry (dental)", aliases: ["cherrytechnol"] },
+  { bill: "ALEKS calculus", aliases: ["mhealeks", "alekscom"] },
+  { bill: "Card payment (…4728)", aliases: ["crd4728", "acct4728"] },
+  { bill: "Card payment (…6813)", aliases: ["crd6813", "acct6813"] },
 ];
 
 // Gino's own category labels → the app's category + whether it's living spend.
@@ -250,10 +332,17 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
   // BREAD #3876" were all filed as gas, inflating the fuel line while the line they
   // belonged to read under. Phillips 66 is the same brand's parent name.
   { re: /CHEVRON|SHELL|CIRCLE K|\bQT\b|QUIKTRIP|FRYS FUEL|ARCO|\bMOBIL\b|EXXON|SUNOCO|KWIK|CONOCO|PHILLIPS ?66|\b76\b/i, appCategory: "transport" },
+  // Parking is transport, not "other". PARKINSAFE is the garage at their own
+  // building and recurs several times a month at $6 — it was landing in Misc,
+  // and (before the Rent veto above) settling the rent cycle.
+  { re: /PARKIN\s?SAFE|\bPARKING\b|PARKMOBILE|SPOTHERO|PASSPORT ?PARKING|\bTOLL\b/i, appCategory: "transport" },
   { re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i, appCategory: "groceries" },
   { re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i, appCategory: "dining" },
   { re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i, appCategory: "shopping" },
-  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER/i, appCategory: "shopping" },
+  // Beauty/cosmetics sits with Health/Personal, which folds into `shopping`.
+  // HOURGLAS (no trailing S) so the same rule catches Plaid's truncated clean
+  // name "Hourglas" and the raw "SP HOURGLASSCOSME".
+  { re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER|HOURGLAS|SEPHORA|\bULTA\b|SALLY BEAUTY/i, appCategory: "shopping" },
   { re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i, appCategory: "subscriptions" },
 ];
 
@@ -342,10 +431,35 @@ function classifyCore(
   // shadowing the price band, so the $108.10 Max charge landed as variable spend every
   // month instead of settling the "Claude Max" bill — inflating the budget by $108 and
   // leaving the bill showing unpaid.
-  const amountGated = /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b/i.test(desc);
+  //
+  // ALEKS opts out for a different reason. McGraw-Hill bills it "MHE*ALEKS
+  // ALEKS.COM", and merchantKey() cuts at the "*" — so the learned key is the
+  // bare "MHE", three letters naming a PUBLISHER, not a product. A rule that
+  // blunt cannot carry a bill link, and while it stood the real $21.57 charge
+  // was filed as ordinary subscription spend and a hand-typed "already paid"
+  // placeholder settled the bill instead. Two rows, one charge, every month.
+  const amountGated =
+    /\bANTHROPIC\b|CLAUDE\.AI|\bCLAUDE (PRO|MAX|SUB)\b|ZELLE PAYMENT TO MON\b|MHE\*?ALEKS|\bALEKS\.COM\b/i.test(desc);
 
   // 1) A rule you taught the app wins over everything — and is always confident.
-  const lr = amountGated ? undefined : learned?.[key];
+  //
+  // A rule is stored under the merchant key of whatever descriptor was on screen
+  // when it was taught, and there are TWO descriptor namespaces: Plaid's clean
+  // merchant name ("Sam's Club", "Parkinsafe Nollie") and the bank's raw
+  // statement line ("CHECKCARD 0616 SAMS CLUB.COM"). A rule taught in one
+  // namespace was invisible in the other, because merchantKey() on a raw BoA card
+  // line stops at the transaction-type prefix and returns the useless
+  // "CHECKCARD". Seven live rules were unreachable that way — lessons already
+  // taught that the app could not apply. One of them was
+  // PARKINSAFE NOLLIE → transport, which, had it been reachable, would have
+  // out-ranked the rent rule and prevented a $6.00 parking charge from marking
+  // September's $1,732.16 rent paid.
+  //
+  // So look in both namespaces: the clean name first (unchanged, still wins
+  // outright), then the raw line with the statement noise stripped off. The
+  // stripping is not optional — a bare merchantKey(raw) collapses every card line
+  // to "CHECKCARD" and one rule would then swallow the entire ledger.
+  const lr = amountGated ? undefined : learnedFor(key, learned, raw);
   if (lr) {
     if (lr.kind === "bill")
       return { kind: "bill", billName: lr.billName, reason: "you taught it", confidence: "high" };
@@ -401,8 +515,13 @@ function classifyCore(
     return { kind: "variable", appCategory: "interest", reason: "cost of debt (interest / fee)", confidence: "high" };
   }
 
+  // The veto is tested against the descriptor AND the raw bank line, because
+  // Plaid's clean name can drop the very token that distinguishes the two
+  // merchants. Vetoing does NOT return — it falls through to the ordinary
+  // merchant path, which is where the vetoed merchant actually belongs.
+  const billHay = raw ? `${desc} ${raw}` : desc;
   for (const r of BILL_RULES) {
-    if (r.re.test(desc)) {
+    if (r.re.test(desc) && !(r.not && r.not.test(billHay))) {
       return { kind: "bill", billName: r.bill, reason: `matched bill: ${r.bill}`, confidence: "high" };
     }
   }
@@ -411,7 +530,7 @@ function classifyCore(
   // distinctive alias, so a re-spaced/rebranded descriptor still resolves.
   const normDesc = billKey(desc);
   for (const b of BILL_ALIASES) {
-    if (b.aliases.some((a) => normDesc.includes(a))) {
+    if (b.aliases.some((a) => normDesc.includes(a)) && !(b.not && b.not.test(billHay))) {
       return { kind: "bill", billName: b.bill, reason: `matched bill (alias): ${b.bill}`, confidence: "high" };
     }
   }

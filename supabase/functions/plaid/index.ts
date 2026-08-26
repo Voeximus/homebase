@@ -111,6 +111,19 @@ function billAppliesTo(rec: { id: string; dueDays?: number[] }, date: string) {
   return { kind: "bill", recurringId: rec.id, monthKey, day: c.day, installmentIndex: c.idx, settled: true } as const;
 }
 
+// Is a recurring row live on the date a payment posted? A week of slack on each
+// edge, matching the GRACE window billAppliesTo uses, so paying a few days either
+// side of a window boundary still resolves to the right bill.
+function liveOnDate(r: { starts_on?: string | null; ends_on?: string | null }, iso: string): boolean {
+  const shift = (d: string, days: number) => {
+    const t = Date.parse(d + "T00:00:00Z");
+    return new Date(t + days * 86400000).toISOString().slice(0, 10);
+  };
+  if (r.starts_on && iso < shift(r.starts_on, -7)) return false;
+  if (r.ends_on && iso > shift(r.ends_on, 7)) return false;
+  return true;
+}
+
 // Which installment slot (ordinal in the sorted due_days) a STORED applies_to.day
 // belongs to — so the paidBill seed keys old/manual rows the SAME way billAppliesTo
 // keys incoming feed rows. Single-due-day bills always → 0 (one settled per cycle);
@@ -262,7 +275,7 @@ async function syncConnection(connId: string, force = false) {
     // bill installments (so we never double-mark a manual / prior-import / re-sync one)
     const { data: recRows } = await admin
       .from("recurring")
-      .select("id, name, due_days, amount, direction, variable")
+      .select("id, name, due_days, amount, direction, variable, category_id, starts_on, ends_on")
       .eq("active", true);
     // Only out-direction bills are payment targets (never match a paycheck/transfer).
     const outRecs = (recRows ?? []).filter((r: any) => r.direction === "out");
@@ -431,57 +444,115 @@ async function syncConnection(connId: string, force = false) {
         });
         continue;
       }
-      // A payment on a feed-tracked debt (Affirm / Mom-China via Remitly) wins
-      // over bill/variable/skip. Only OUTFLOWS (− in our sign convention) count —
-      // a refund must never reduce the debt. Recorded settled (out of the budget);
-      // the debt balance is recomputed from the sum of these below.
+      // A payment on a feed-tracked debt (Affirm / Mom-China via Remitly). Only
+      // OUTFLOWS (− in our sign convention) count — a refund must never reduce
+      // the debt. Recorded settled (out of the budget); the debt balance is
+      // recomputed from the sum of these below.
       const td = row.amount < 0 ? matchTrackedDebt(row.description) : undefined;
-      if (td) {
-        (billByAcct[row.accountId] ??= []).push({
-          provider_txn_id: row.providerTxnId,
-          provider_account_id: row.accountId,
-          date: row.date,
-          amount: Math.abs(row.amount),
-          type: "expense",
-          category_id: "other",
-          description: row.description,
-          raw_description: row.raw,
-          applies_to: { kind: "debt", debtId: td.id, settled: true },
-          needs_review: false,
-        });
-        continue;
-      }
       const c = classify(row.description, row.amount, learned, row.raw);
-      if (c.kind === "skip") continue;
-      if (c.kind === "bill") {
+      if (!td && c.kind === "skip") continue;
+      if (td || c.kind === "bill") {
         // Resolve to a recurring row tolerant of name drift (normalized / merchant
         // key). If the categorizer NAMED a bill but it doesn't resolve to a row,
         // that's a modeling gap → fall through to needs_review (below) rather than
         // risk the blind day+amount heuristic auto-settling the WRONG bill. Reserve
         // that heuristic for a payment the categorizer couldn't name at all.
+        //
+        // A tracked debt used to `continue` here BEFORE this ran, so a charge that
+        // is BOTH a tracked debt and a modeled monthly bill only ever settled the
+        // debt. Cherry is exactly that (debts.track_pattern 'CHERRY' + a $151.72
+        // monthly recurring row): August's payment landed, the debt dropped, and
+        // the Bills tab still showed Cherry unpaid for the month. Now the two are
+        // merged into ONE applies_to that carries both links.
+        // The blind day+amount heuristic stays reserved for a payment the
+        // categorizer knows is a BILL but couldn't name. A tracked debt whose
+        // classification is "skip" (Affirm, Remitly) must never reach it — it
+        // would let an unrelated bill of a similar size on a nearby day absorb a
+        // debt payment.
+        // Narrow to bills whose window actually covers this payment before
+        // matching. Two car-insurance rows both answer to "Car insurance" — one
+        // running to 30 Nov 2026, its replacement starting 1 Feb 2027 — and only
+        // the window separates them. A week of slack on each edge so an early or
+        // slightly late payment still finds its bill.
+        const liveRecs = outRecs.filter((r: any) => liveOnDate(r, row.date));
         const matched =
+          matchRecurringName(c.billName, liveRecs) ??
           matchRecurringName(c.billName, outRecs) ??
-          (c.billName ? null : matchBillByDayAmount(outRecs, row.date, Math.abs(row.amount), paidBill));
+          (c.kind === "bill" && !c.billName
+            ? matchBillByDayAmount(outRecs, row.date, Math.abs(row.amount), paidBill)
+            : null);
+        // A bill payment inherits its bill's category (housing / utilities / …)
+        // rather than the flat "other" it used to get. That matters most for the
+        // extra-payment path below, which carries no applies_to and is therefore
+        // GRADED — an extra Verizon payment must land in `utilities` (outside the
+        // discretionary envelope by design), not in the $125/mo Misc line.
+        const billCat = (matched?.category_id as string | undefined) ?? c.appCategory ?? "other";
         if (matched) {
           const rec = { id: matched.id as string, dueDays: (matched.due_days ?? undefined) as number[] | undefined };
           const at = billAppliesTo(rec, row.date);
           const key = `${rec.id}|${at.monthKey}|${at.installmentIndex}`;
-          // skip if this installment is already recorded (manual / prior import) —
-          // unless it's THIS feed row re-syncing (the unique index will update it).
-          if (paidBill.has(key) && !seenProviderIds.has(row.providerTxnId)) continue;
+          // This installment is already recorded (manual entry, prior import, or
+          // an earlier catch-up payment in the same cycle) and this is NOT that
+          // same feed row re-syncing.
+          //
+          // This used to `continue` — the row was discarded outright, written
+          // nowhere, with no trace anywhere in the app. It cost real visibility:
+          // Verizon was paid twice in August ($209.45 on the 3rd catching up, then
+          // $93.03 on the 24th) and the second payment simply did not exist in the
+          // ledger. Same for two of the three $6 parking charges. Money that left
+          // the account must always be recorded. It just must not settle a cycle
+          // that is already settled — so it keeps the bill's category, carries no
+          // applies_to, and is flagged for a look.
+          if (paidBill.has(key) && !seenProviderIds.has(row.providerTxnId)) {
+            // Never silent. This row is being re-routed away from the bill it
+            // named, which is a reclassification, and every reclassification has
+            // to be readable in the logs — the same rule the dedup absorb follows.
+            console.log(
+              `extra payment: ${row.date} ${Math.abs(row.amount).toFixed(2)} ${row.description} ` +
+                `— ${matched.name} ${at.monthKey} was already settled; recorded as spending, not as the bill`,
+            );
+            (postedByAcct[row.accountId] ??= []).push({
+              provider_txn_id: row.providerTxnId,
+              provider_account_id: row.accountId,
+              date: row.date,
+              amount: Math.abs(row.amount),
+              type: "expense",
+              category_id: billCat,
+              description: row.description,
+              raw_description: row.raw,
+              needs_review: true,
+            });
+            continue;
+          }
           (billByAcct[row.accountId] ??= []).push({
             provider_txn_id: row.providerTxnId,
             provider_account_id: row.accountId,
             date: row.date,
             amount: Math.abs(row.amount),
             type: "expense",
-            category_id: c.appCategory ?? "other",
+            category_id: billCat,
             description: row.description,
-          raw_description: row.raw,
-            applies_to: at,
+            raw_description: row.raw,
+            applies_to: td ? { ...at, debtId: td.id } : at,
             needs_review: false,
           });
           paidBill.add(key);
+          continue;
+        }
+        // A tracked debt with no matching bill row keeps its debt-only shape.
+        if (td) {
+          (billByAcct[row.accountId] ??= []).push({
+            provider_txn_id: row.providerTxnId,
+            provider_account_id: row.accountId,
+            date: row.date,
+            amount: Math.abs(row.amount),
+            type: "expense",
+            category_id: "other",
+            description: row.description,
+            raw_description: row.raw,
+            applies_to: { kind: "debt", debtId: td.id, settled: true },
+            needs_review: false,
+          });
           continue;
         }
         // bill rule matched but no such recurring row → treat as variable "other"

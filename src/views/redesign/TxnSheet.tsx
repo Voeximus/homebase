@@ -31,6 +31,7 @@ export function TxnSheet({
     makeRecurringBill,
     setAsideTransaction,
     deleteTransaction,
+    unlinkFromBill,
   } = useStore();
   const [remember, setRemember] = useState(true);
   const [splitting, setSplitting] = useState(false);
@@ -58,6 +59,17 @@ export function TxnSheet({
   // Recategorizing THIS row stays allowed — only the permanent rule is withheld.
   const linked = !!txn.appliesTo;
   const catName = (id: string) => data.categories.find((c) => c.id === id)?.name ?? id;
+  // A row attached to a BILL is the one link that can be flatly wrong about
+  // money: it marks that bill's whole cycle settled, so the calendar, the
+  // forecast and "still due before payday" all stop counting it. A $6.00 parking
+  // charge at "Parkinsafe Nollie" once matched the rent rule for "Nollie MA" and
+  // marked September's $1,732.16 rent paid — and there was no way to say
+  // otherwise, because nothing in the app could remove a bill link once written.
+  // So name the bill here, and give the person looking at the row a way out.
+  const billLink = txn.appliesTo?.kind === "bill" ? txn.appliesTo : null;
+  const linkedBill = billLink?.recurringId
+    ? data.recurring.find((r) => r.id === billLink.recurringId)
+    : undefined;
 
   return (
     <div
@@ -221,6 +233,34 @@ export function TxnSheet({
                   </p>
                 )}
               </>
+            )}
+
+            {/* This charge is marking a bill paid. Say WHICH bill and for which
+                month, because that is the claim with real consequences — and let
+                it be taken back. Comparing the two amounts is the tell: a $6.00
+                charge settling a $1,732.16 bill is not a rent payment. */}
+            {linkedBill && (
+              <div
+                className="mt-2.5 rounded-xl p-2.5"
+                style={{ background: "#141a24", border: "1px solid #232d3a" }}
+              >
+                <p className="text-[12px]" style={{ color: "#8b97a6" }}>
+                  {t("Marking paid")}:{" "}
+                  <span style={{ color: "#e6ecf3", fontWeight: 600 }}>{linkedBill.name}</span>
+                  {billLink?.monthKey ? ` · ${billLink.monthKey}` : ""}
+                  {linkedBill.amount > 0 ? ` · ${t("bill is")} ${money2(linkedBill.amount)}` : ""}
+                </p>
+                <button
+                  onClick={async () => {
+                    await unlinkFromBill(txn.id);
+                    onClose();
+                  }}
+                  className="mt-2 w-full rounded-lg py-2 text-[12px] font-semibold"
+                  style={{ background: "#2a1518", color: "#f0556e" }}
+                >
+                  {t("Not this bill — put it back to unpaid")}
+                </button>
+              </div>
             )}
 
             {/* split entry point — a mixed purchase across categories */}

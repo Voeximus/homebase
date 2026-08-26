@@ -46,7 +46,7 @@ export function LedgerSheet({
 
   const counts = (tx: Transaction) => tx.type === "expense" && !tx.appliesTo;
   const needsReview = (tx: Transaction) =>
-    counts(tx) && (tx.categoryId === "other" || !hasRule(tx.description));
+    counts(tx) && (tx.needsReview || tx.categoryId === "other" || !hasRule(tx.description));
 
   const rows = useMemo(() => {
     const ql = q.trim().toLowerCase();
