@@ -19,8 +19,8 @@ import {
   Monitor,
   Car,
   HelpCircle,
-  type LucideIcon,,
   Receipt,
+  type LucideIcon,
 } from "lucide-react";
 
 export const CAT_COLOR: Record<string, string> = {
