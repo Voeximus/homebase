@@ -147,7 +147,15 @@ export interface PlanMath {
 
 // The recurring rows that are really debt payments — those dollars are firepower,
 // not living costs, so they're added back when computing what's aimed at the debt.
-const DEBT_PAYMENT_RX = /card payment|affirm/i;
+//
+// This used to be a regex on the row's NAME — /card payment|affirm/i — which is a
+// guess about what someone typed, not a fact about the row. "Cherry (dental)" is a
+// $151.72/mo bill with linked_debt_id set, and it matched neither alternative: the
+// payment was counted as a living cost AND attacked as debt principal, so
+// firepower read $151.72/mo low every month while the payoff schedule spent the
+// same dollars again. `linkedDebtId` is the actual fact, it is what schedule.ts
+// already keys the same class of decision on, and it cannot silently miss the next
+// debt-linked bill somebody adds.
 
 /**
  * What the PLAN prices one recurring row at, per month. The single source of that
@@ -215,11 +223,11 @@ export function planMath(
   // windowed-out card/Affirm row while this keeps subtracting it, fixedNonDebt
   // falls below reality and firepower reads TOO HIGH — overstating available cash,
   // which is the more damaging way to be wrong. Latent today (no row matching
-  // /card payment|affirm/i carries a window), live the moment a finite loan gets
+  // debt-linked row carries a window), live the moment a finite loan gets
   // its ends_on — exactly what schema_v27 was written for.
   const debtPaymentsInFixed = recurring
     .filter(
-      (r) => r.active && liveOn(r, isoDate) && r.direction === "out" && DEBT_PAYMENT_RX.test(r.name),
+      (r) => r.active && liveOn(r, isoDate) && r.direction === "out" && r.linkedDebtId != null,
     )
     .reduce((s, r) => s + monthlyAmount(r), 0);
   const fixedNonDebt = fixed - debtPaymentsInFixed;

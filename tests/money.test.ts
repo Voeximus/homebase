@@ -191,12 +191,35 @@ describe("planMath", () => {
   it("a live card payment IS added back as firepower, not counted as living cost", () => {
     const rows = [
       bill({ id: "r", name: "Rent", amount: 1000 }),
-      bill({ id: "c", name: "Card payment (…4728)", amount: 134 }),
+      bill({ id: "c", name: "Card payment (…4728)", amount: 134, linkedDebtId: "d1" }),
     ];
     const m = planMath(rows, debts, 0, "2026-08-18");
     expect(m.fixed).toBe(1134);
     expect(m.debtPaymentsInFixed).toBe(134);
     expect(m.fixedNonDebt).toBe(1000);
+  });
+
+  // The add-back used to key on a NAME regex, /card payment|affirm/i — a guess
+  // about what someone typed rather than a fact about the row. "Cherry (dental)"
+  // is a real $151.72/mo bill with linked_debt_id set and it matched neither
+  // alternative, so the payment was counted as a living cost AND attacked as debt
+  // principal: firepower read $151.72/mo low while the payoff schedule spent the
+  // same dollars a second time. The fixture above never set linkedDebtId either,
+  // so the old test passed on data the live table does not have.
+  it("a debt-linked bill is added back whatever it is called", () => {
+    const rows = [
+      bill({ id: "r", name: "Rent", amount: 1000 }),
+      bill({ id: "ch", name: "Cherry (dental)", amount: 151.72, linkedDebtId: "d2" }),
+    ];
+    const m = planMath(rows, debts, 0, "2026-08-18");
+    expect(m.debtPaymentsInFixed).toBeCloseTo(151.72, 2);
+    expect(m.fixedNonDebt).toBeCloseTo(1000, 2);
+  });
+
+  it("a bill that merely SOUNDS like a debt payment is not added back", () => {
+    const rows = [bill({ id: "x", name: "Affirmations app", amount: 9.99 })];
+    const m = planMath(rows, debts, 0, "2026-08-18");
+    expect(m.debtPaymentsInFixed).toBe(0);
   });
 });
 

@@ -36,6 +36,20 @@ jobs:
         with:
           fetch-depth: 2
 
+      # The categorizer exists in two copies and only the one under
+      # supabase/functions/_shared runs on the live bank feed. scripts/
+      # check-categorizer-sync.mjs byte-locks them, but it lived ONLY inside
+      # `npm run build` — which is the other job. This job has no `needs:` and
+      # ran no node step at all, so a commit touching only the _shared copy
+      # deployed a drifted categorizer straight onto real bank rows while the red
+      # build blocked nothing but the frontend. The guard was on the wrong side of
+      # the fence. It needs no npm install — it is two readFileSync calls.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Categorizer copies must be identical before anything deploys
+        run: node scripts/check-categorizer-sync.mjs
+
       - name: Did anything under supabase/functions change?
         id: changed
         run: |

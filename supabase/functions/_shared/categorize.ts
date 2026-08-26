@@ -292,7 +292,19 @@ const BILL_RULES: { re: RegExp; not?: RegExp; bill: string }[] = [
   // and matchRecurringName resolves a prefix only when it is unambiguous. The
   // importer narrows to rows live on the payment date first, so exactly one
   // survives on any given date and the rule keeps working across the term change.
-  { re: /GEICO/i, bill: "Car insurance" },
+  { re: /\bGEICO\b/i, bill: "Car insurance" },
+  // The Civic's first payment posts 30 Sep 2026 and nothing named a lender, so
+  // $232.67 was going to classify as a brand-new merchant, land in `other` — the
+  // $125/mo Misc line — and blow that line by 86% while the Bills tab showed the
+  // car payment unpaid. $2,792.04 in the first year, $11,168.16 over the term.
+  //
+  // ⚠️ The lender is a GUESS. The note was still held by Courtesy at purchase and
+  // had not been assigned, so these are the likely assignee names, not observed
+  // ones. Confirm against the real descriptor on 1 Oct and tighten. Deliberately
+  // NOT matching "COURTESY CDJR": that is the dealership, and a future service
+  // visit would then settle a car-payment cycle — the same shape as the parking
+  // garage settling the rent.
+  { re: /\bAHFC\b|AMERICAN HONDA|HONDA FINANCIAL/i, bill: "Car payment (Civic)" },
   // Cherry is BOTH a modeled monthly bill and a feed-tracked debt. Naming it
   // here is what lets the importer link a payment to both at once — without a
   // name the tracked-debt branch could only ever settle the debt.
@@ -302,7 +314,7 @@ const BILL_RULES: { re: RegExp; not?: RegExp; bill: string }[] = [
   // key is too blunt to carry a bill link, so name the biller here instead: the
   // real charge then settles the modeled ALEKS row and the hand-entered "already
   // paid" placeholder stops being needed (it was double-counting $21.57/mo).
-  { re: /MHE\*?ALEKS|ALEKS\.COM/i, bill: "ALEKS calculus" },
+  { re: /MHE\*?ALEKS|\bALEKS\.COM\b/i, bill: "ALEKS calculus" },
   // BoA writes a card payment differently depending on the channel it came
   // through, and only one of the three said "CRD":
   //   "Online Banking payment to CRD 4728 Confirmation# …"   (web)
@@ -331,7 +343,14 @@ const BILL_ALIASES: { bill: string; not?: RegExp; aliases: string[] }[] = [
   { bill: "Rent", not: /PARKIN\s?SAFE|\bPARKING\b/i, aliases: ["nollie"] },
   { bill: "Electric (SRP)", aliases: ["echxpwr"] },
   { bill: "Verizon", aliases: ["verizon", "vzwireless"] },
-  { bill: "T-Mobile", aliases: ["tmobile"] },
+  // "tmobile" is deliberately NOT an alias. Separating the two descriptor
+  // namespaces above closes the join splice, but "tmobile" is still only unique
+  // as a WORD, not as a substring of a space-stripped statement line — any raw
+  // line pairing a trailing "t" with "MOBILE" recreates it. The BILL_RULE
+  // /TMOBILE|T-MOBILE/i already matches all three real forms the bank sends
+  // ("T-Mobile", "T-MOBILE*PREPAID", "TMOBILE*PREPAID"), so the alias bought
+  // nothing and risked the phone bill being settled by a restaurant.
+  { bill: "T-Mobile", aliases: [] },
   { bill: "Spotify", aliases: ["spotify"] },
   { bill: "Spot Pet insurance", aliases: ["spotpet"] },
   { bill: "LEMONADE INSURANCE", aliases: ["lemonade"] },
@@ -598,14 +617,23 @@ function classifyCore(
     return { kind: "skip", reason: "overseas remittance", confidence: "high" };
   }
 
-  // Zelle to mom: the monthly assistance is a support-sized payment ($300 going
-  // forward, $400 before that). A SMALLER Zelle to mom is an ad-hoc transfer —
-  // e.g. a $200 you front and get back a few days later — NOT an assistance
-  // installment. Amount-gate it (like the Anthropic price-band below) so a repaid
-  // loan never lands on the Mom bill. Below the gate → a personal transfer, kept
-  // out of the lean budget; mark it reimbursable if it's owed back.
+  // Zelle to mom: the monthly assistance is a support-sized payment. A SMALLER
+  // Zelle to mom is an ad-hoc transfer — e.g. a $200 fronted and repaid a few days
+  // later — NOT an assistance installment. Amount-gate it (like the Anthropic
+  // price band below) so a repaid loan never lands on the Mom bill.
+  //
+  // The gate is 120, not 250. From 2026-11-01 the modelled Mom row resumes at
+  // $300/month paid as TWO $150 installments (due_days [15, 30]) — so a 250 gate
+  // would have rejected every real installment from the day it restarts. $3,600 a
+  // year classified as "not the Mom bill".
+  //
+  // And below the gate it returns `variable`, never `skip`. `skip` means the
+  // importer writes the row NOWHERE, and money that left the account must always
+  // be recorded: a $50 Zelle on 2026-08-19 and a $15 one on 08-17 are both absent
+  // from the ledger for exactly this reason. Being unsure what a charge was is not
+  // a reason to pretend it did not happen.
   if (/ZELLE PAYMENT TO MON\b/i.test(desc)) {
-    return Math.abs(amount) >= 250
+    return Math.abs(amount) >= 120
       ? {
           kind: "bill",
           billName: "Mom",
@@ -613,8 +641,9 @@ function classifyCore(
           confidence: "high",
         }
       : {
-          kind: "skip",
-          reason: "Zelle to mom below assistance amount — personal transfer",
+          kind: "variable",
+          appCategory: "other",
+          reason: "Zelle to mom below the assistance amount — confirm",
           confidence: "low",
         };
   }
@@ -658,7 +687,15 @@ function classifyCore(
   // balance that the linked debt reads from, so it must never route to a debt or
   // land on a budget line, or it double-counts. Its own category so the price of
   // the debt is visible rather than buried in "other".
-  if (/INTEREST CHARGED|FINANCE CHARGE|\bLATE FEE\b|PENALTY FEE/i.test(desc)) {
+  //
+  // Tested against billHay, like BILL_RULES below. It used to test `desc` alone
+  // while BILL_RULES read the raw line, and that ordering was a trap: a fee whose
+  // "LATE FEE" token lives only in the raw descriptor lost the race to the bill
+  // rule ten lines down, which applies NO amount tolerance. So an $86 late fee on
+  // a raw "GREYSTAR NOLLIE LATE FEE" settled a $1,732.16 rent cycle — the exact
+  // failure the parking-garage veto was just added to stop, re-entering by a
+  // different door. Reproduced before the fix; pinned in tests/categorize.test.ts.
+  if (/INTEREST CHARGED|FINANCE CHARGE|\bLATE FEE\b|PENALTY FEE/i.test(billHay)) {
     return {
       kind: "variable",
       appCategory: "interest",
@@ -680,10 +717,19 @@ function classifyCore(
 
   // drift-tolerant alias pass — normalize the descriptor and look for a bill's
   // distinctive alias, so a re-spaced/rebranded descriptor still resolves.
-  const normDesc = billKey(billHay);
+  //
+  // The clean name and the raw line are normalized SEPARATELY and searched
+  // separately. Searching billKey(desc + " " + raw) instead created aliases out of
+  // thin air at the join, because billKey strips the space that separated them:
+  // "Busan Mart" + "MOBILE PURCHASE 0326 …" collapses to
+  // "busanmar·tmobile·purchase0326…", and a $27.48 meal settled the $27.48 T-Mobile
+  // bill at high confidence. "MOBILE PURCHASE" is Bank of America's standard card
+  // prefix, so every restaurant whose name happens to end in "t" was one descriptor
+  // away from paying the phone bill. Reproduced on two live merchants.
+  const normParts = raw && raw !== desc ? [billKey(desc), billKey(raw)] : [billKey(desc)];
   for (const b of BILL_ALIASES) {
     if (
-      b.aliases.some((a) => normDesc.includes(a)) &&
+      b.aliases.some((a) => normParts.some((n) => n.includes(a))) &&
       !(b.not && b.not.test(billHay))
     ) {
       return {

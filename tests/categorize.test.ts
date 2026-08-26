@@ -149,9 +149,21 @@ describe("regressions the existing rules already guard — pinned so a fix canno
     expect(spend("Anthropic", 3.4).kind).toBe("variable"); // API spend, not a seat
   });
 
-  it("a Zelle to mom below the support amount is not the Mom bill", () => {
+  // The gate is 120, not 250: from 2026-11-01 the modelled Mom row resumes at
+  // $300/month paid as TWO $150 installments, so a 250 gate would have rejected
+  // every real installment from the day it restarts — $3,600 a year.
+  //
+  // And below the gate it is VARIABLE, never SKIP. "skip" means the importer
+  // writes the row nowhere at all, and money that left the account must always be
+  // recorded. A $50 Zelle on 2026-08-19 is missing from the ledger for exactly
+  // this reason. Being unsure what a charge was is not a reason to pretend it did
+  // not happen.
+  it("a Zelle to mom is gated at the installment amount, and below it is still recorded", () => {
     expect(spend("Zelle payment to mon", 300).billName).toBe("Mom");
-    expect(spend("Zelle payment to mon", 50).kind).toBe("skip");
+    expect(spend("Zelle payment to mon", 150).billName).toBe("Mom");
+    const small = spend("Zelle payment to mon", 50);
+    expect(small.kind).toBe("variable");
+    expect(small.confidence).toBe("low");
   });
 
   it("card interest is neither a bill nor budgeted spend", () => {
@@ -283,5 +295,66 @@ describe("car insurance survives its own term change", () => {
   it("an exact name still beats a prefix", () => {
     const exact = [...ROWS, { id: "exact", name: "Car insurance" }];
     expect(matchRecurringName("Car insurance", exact)?.id).toBe("exact");
+  });
+});
+
+describe("bill matching must not invent a match out of the descriptor it was given", () => {
+  // Both of these were introduced by the fix that made bill matching read the raw
+  // bank line, and both are the SAME shape as the parking charge that marked
+  // September's rent paid: a bill cycle settled by a charge that had nothing to do
+  // with the bill, at high confidence, with no amount tolerance anywhere in the
+  // path. That shape is the one to keep testing for.
+
+  // billKey() strips every non-alphanumeric, INCLUDING the space that separated
+  // the clean name from the raw line — so searching the concatenation invented
+  // aliases at the join: "Busan Mart" + "MOBILE PURCHASE …" collapsed to
+  // "busanmar|tmobile|purchase…". A $27.48 meal settled the $27.48 phone bill.
+  // "MOBILE PURCHASE" is Bank of America's standard card prefix, so every
+  // restaurant whose name ends in "t" was one descriptor away from paying it.
+  it("a restaurant cannot pay the phone bill", () => {
+    expect(spend("Busan Mart", 27.48, "MOBILE PURCHASE 0326 BUSAN MART MESA AZ XXXXX1662").kind).not.toBe("bill");
+    expect(spend("First And Last Rest", 27.12, "MOBILE PURCHASE 0412 FIRST AND LAST REST TEMPE AZ").kind).not.toBe("bill");
+  });
+
+  it("the real phone bill still settles, in all three forms the bank sends", () => {
+    for (const [d, raw] of [
+      ["T-Mobile", "T-Mobile"],
+      ["T-Mobile", "CHECKCARD 0814 T-MOBILE*PREPAID WEB WA"],
+      ["T Mobile", "CHECKCARD 0814 TMOBILE*PREPAID WEB WA"],
+    ] as [string, string][]) {
+      expect(spend(d, 27.48, raw).billName).toBe("T-Mobile");
+    }
+  });
+
+  // A late fee carries the biller's name, so the bill rule matches it — and the
+  // name-matched path applies no amount tolerance at all. The fee rule is written
+  // to win this race; it was reading only the clean name while the bill rule read
+  // the raw line, so it lost whenever the "LATE FEE" token lived in the raw.
+  it("a late fee does not settle the bill it is a fee on", () => {
+    expect(spend("Nollie Ma", 86.6, "GREYSTAR NOLLIE LATE FEE").kind).not.toBe("bill");
+    expect(spend("SRP", 25, "SRP LATE FEE").kind).not.toBe("bill");
+  });
+
+  it("the real rent and electric bills still settle", () => {
+    expect(spend("Nollie MA", 1732.16, "Nollie MA DES:Rent ID:XXXXX6948").billName).toBe("Rent");
+    expect(spend("SRP", 132.77, "SRP DES:ECHXPWR-S1 ID:XXXXX9008").billName).toBe("Electric (SRP)");
+  });
+
+  // A shell heredoc that is not quoted, or a Python string that is not raw, turns
+  // the two characters \b into a single 0x08 BACKSPACE. The regex still compiles,
+  // type-checks, lints and reviews clean — and matches only a descriptor
+  // containing a literal backspace, i.e. never. `od -c` even renders 0x08 back as
+  // "\b". Two bill rules shipped dead this way: /\bGEICO\b/i and /\bALEKS\.COM\b/i.
+  it("no source file carries a control byte where an escape was meant", async () => {
+    const fs = await import("node:fs");
+    for (const f of ["src/lib/categorize.ts", "supabase/functions/_shared/categorize.ts"]) {
+      const bad = fs.readFileSync(f, "utf8").match(/[ --]/g);
+      expect(bad, `${f} contains ${bad?.length} control byte(s)`).toBeNull();
+    }
+  });
+
+  it("the rules those bytes had killed actually fire", () => {
+    expect(spend("GEICO", 363.3, "GEICO *AUTO").billName).toBe("Car insurance");
+    expect(spend("MHE", 21.57, "CHECKCARD 0815 MHE*ALEKS ALEKS.COM NY").billName).toBe("ALEKS calculus");
   });
 });
