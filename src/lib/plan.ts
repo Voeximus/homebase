@@ -583,12 +583,23 @@ export function spentByCategoryBetween(
 ): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of transactions) {
+    // PENDING charges COUNT. They used to be excluded, and that made the budget
+    // incoherent with the cash it sits next to: account balances are the bank's
+    // AVAILABLE figure, which the bank has already reduced by every pending hold.
+    // So the money was subtracted from what you have and attributed to nothing you
+    // spent. Right after a heavy few days — exactly when the budget is the thing
+    // you want to look at — it read low by whatever had not cleared yet. On
+    // 2026-09-08 that was $1,005.19 in one cycle: Dining showed $110.98 of a $125
+    // target while the real figure was $432.17, nearly 3.5x the line.
+    //
+    // The earlier fix went the other way, hiding pending from the rows too so the
+    // rows and the bar at least agreed. They agreed on a number that was wrong.
+    // They agree on the right one now — buildVMs uses this same predicate.
     if (
       t.type === "expense" &&
       t.date >= startISO &&
       t.date <= endISO &&
-      !t.appliesTo &&
-      !t.pending
+      !t.appliesTo
     ) {
       if (t.splits && t.splits.length) {
         for (const s of t.splits) out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;

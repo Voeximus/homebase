@@ -162,16 +162,14 @@ export function buildFinanceVMs(
   const envelopes: EnvelopeVM[] = LEAN_VARIABLE.map((l) => {
     const inLine = (catId: string) => l.cats.includes(catId);
     const raw: { id: string; name: string; date: string; amount: number }[] = [];
+    let pendingAmt = 0;
     for (const t of data.transactions) {
-      // `!t.pending` is part of the partition, not an afterthought:
-      // spentByCategoryBetween — the source of the bar — excludes still-processing
-      // charges. This list used to keep them, so a $180 pending Costco charge put
-      // $300 of visible rows under a header that read $120, and the total jumped
-      // $180 with no new row appearing the day it posted. Same predicate, or the
-      // rows stop being an explanation of the bar.
+      // Pending charges are INCLUDED, and must be — spentByCategoryBetween, the
+      // source of the bar, includes them. The two have to share a predicate or the
+      // rows stop explaining the bar; they were once made to agree by hiding
+      // pending from both, which agreed on a number $1,005 short of the truth.
       if (
         t.type !== "expense" ||
-        t.pending ||
         t.date < cycle.start ||
         t.date > cycle.end ||
         t.appliesTo
@@ -187,6 +185,7 @@ export function buildFinanceVMs(
             ? t.amount
             : 0;
       if (amt <= 0) continue;
+      if (t.pending) pendingAmt += amt;
       raw.push({ id: t.id, name: t.description || t.categoryId, date: t.date, amount: amt });
     }
     raw.sort((a, b) => b.date.localeCompare(a.date));
@@ -195,6 +194,7 @@ export function buildFinanceVMs(
       label: l.label,
       catId: l.cats[0],
       spent: lineSpent(l, byCat),
+      pending: pendingAmt,
       target: perCycle(l.target),
       txns: raw.map((r) => ({
         id: r.id,

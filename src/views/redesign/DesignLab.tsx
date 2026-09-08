@@ -123,6 +123,7 @@ const ENV: EnvelopeVM = {
   label: "Groceries",
   catId: "groceries",
   spent: 492.02,
+  pending: 38.4,
   target: 500,
   txns: [
     { id: "a", name: "Sam's Club", dateLabel: "Wed, Jun 17", amount: 229.81 },

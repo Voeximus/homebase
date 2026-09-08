@@ -10,6 +10,10 @@ export interface EnvelopeVM {
   label: string;
   catId: string;
   spent: number;
+  /** How much of `spent` the bank is still holding rather than settled. Shown so
+   *  a bar driven by a big pending charge reads as provisional, not final — a
+   *  restaurant tip adjustment can still move it by a few dollars. */
+  pending: number;
   target: number;
   txns: { id: string; name: string; dateLabel: string; amount: number }[];
 }
@@ -85,6 +89,17 @@ export function CategorySheet({
           <div className="mt-1.5 text-[11.5px] font-medium" style={{ color: barColor }}>
             {t("{pct}% used", { pct: Math.round(pct) })} · {over ? t("{amount} over", { amount: money2(-left) }) : t("{amount} left", { amount: money2(left) })}
           </div>
+          {/* Pending charges COUNT toward the bar — the bank has already taken that
+              money out of the balance shown on the Home tab, so leaving them out
+              made the budget read low by exactly what had not cleared yet. But a
+              held amount can still move (a restaurant tip adjustment), so say how
+              much of this bar is still settling rather than presenting it as
+              final. Without this line a bar at 346% just looks broken. */}
+          {vm.pending > 0 && (
+            <div className="mt-1 text-[11px]" style={{ color: "#7e8a98" }}>
+              {t("{amount} of this is still processing at the bank", { amount: money2(vm.pending) })}
+            </div>
+          )}
         </div>
 
         {vm.txns.length === 0 ? (

@@ -170,7 +170,11 @@ function budgetRowsSumToTheirBar(data: AppData, now: Date): AuditCheck {
     // Rebuilt from the ledger with the SAME partition the drill-in applies.
     let rows = 0;
     for (const t of data.transactions) {
-      if (t.type !== "expense" || t.pending || t.appliesTo) continue;
+      // Pending is INCLUDED, matching spentByCategoryBetween and the envelope rows.
+      // All three have to share one predicate; this check exists precisely to catch
+      // the moment they stop. It caught this edit — the bar started counting
+      // pending and these rows had not yet followed.
+      if (t.type !== "expense" || t.appliesTo) continue;
       if (t.date < cycle.start || t.date > cycle.end) continue;
       if (t.splits && t.splits.length) {
         for (const s of t.splits) if (line.cats.includes(s.categoryId)) rows += s.amount;

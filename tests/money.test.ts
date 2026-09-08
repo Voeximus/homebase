@@ -305,9 +305,21 @@ describe("spentByCategoryBetween — the partition behind every budget bar", () 
     expect(spentByCategoryBetween(rows, "2026-08-01", "2026-08-31")).toEqual({ groceries: 10 });
   });
 
-  it("EXCLUDES still-processing charges", () => {
+  // This asserted the OPPOSITE until 2026-09-08, and the old behaviour made the
+  // budget incoherent with the cash beside it. Account balances are the bank's
+  // AVAILABLE figure, already reduced by every pending hold — so excluding pending
+  // here subtracted the money from what you have and attributed it to nothing you
+  // spent. Right after a heavy few days, which is exactly when the budget is worth
+  // looking at, it read low by whatever had not cleared. Live on 2026-09-08:
+  // $1,005.19 in one cycle, with Dining showing $110.98 against a $125 target when
+  // the real figure was $432.17.
+  //
+  // A pending amount can still move — a restaurant tip adjustment — so the
+  // envelope carries the pending sub-total separately and the UI says so. Being a
+  // few dollars provisional beats being $321 wrong.
+  it("INCLUDES still-processing charges — the bank has already taken that money", () => {
     const rows = [txn({ id: "a", amount: 10 }), txn({ id: "b", amount: 180, pending: true })];
-    expect(spentByCategoryBetween(rows, "2026-08-01", "2026-08-31")).toEqual({ groceries: 10 });
+    expect(spentByCategoryBetween(rows, "2026-08-01", "2026-08-31")).toEqual({ groceries: 190 });
   });
 
   it("a split fans across its slices and the total is unchanged", () => {
