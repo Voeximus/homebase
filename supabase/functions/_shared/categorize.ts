@@ -617,6 +617,36 @@ function classifyCore(
     return { kind: "skip", reason: "overseas remittance", confidence: "high" };
   }
 
+  // Moving money between the household's OWN accounts is not spending, and the
+  // bank writes it several ways. `classifyCredit` already knew the incoming
+  // shapes; the OUTGOING side only knew "Online Banking transfer to CHK nnnn".
+  // Bank of America has started writing "TRANSFER TO ACCT #0366 ON 09/06 VIA WEB"
+  // instead, which matched nothing — so $147.00 moving from the joint account to
+  // Xinyan's was recorded as $147.00 of Misc spending, against a $125/mo line.
+  // Both legs must drop together or the household appears to have spent money it
+  // still has.
+  if (
+    /\b(?:ONLINE|MOBILE) BANKING TRANSFER (?:TO|FROM) (?:CHK|SAV)\b/i.test(billHay) ||
+    /\bTRANSFER (?:TO|FROM) ACCT\s*#?\s*\d{4}\b/i.test(billHay)
+  ) {
+    return { kind: "skip", reason: "moving money between your own accounts", confidence: "high" };
+  }
+
+  // An ATM line is cash crossing the counter, and the direction is the whole
+  // meaning. The merchant key "BKOFAMERICA ATM" carries the history label
+  // "Cash deposit", which maps to skip — correct for a deposit, and silently
+  // wrong for a WITHDRAWAL, which is money leaving with no merchant attached.
+  // A $20.00 withdrawal on 2026-08-31 was dropped this way. Only reached on a
+  // debit; classifyCredit still handles the deposit side.
+  if (/\bWITHDRWL\b|\bWITHDRAWAL\b|\bATM\b.*\bCASH\b|\bCASH WITHDRAW/i.test(billHay)) {
+    return {
+      kind: "variable",
+      appCategory: "other",
+      reason: "cash withdrawal — say what it went on",
+      confidence: "low",
+    };
+  }
+
   // Zelle to mom: the monthly assistance is a support-sized payment. A SMALLER
   // Zelle to mom is an ad-hoc transfer — e.g. a $200 fronted and repaid a few days
   // later — NOT an assistance installment. Amount-gate it (like the Anthropic

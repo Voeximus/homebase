@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classify, matchRecurringName, merchantKey, type LearnedRules } from "../src/lib/categorize";
+import { classify, classifyCredit, matchRecurringName, merchantKey, type LearnedRules } from "../src/lib/categorize";
 
 // The categorizer decides, for every line the bank sends, whether money is a
 // modeled bill, living spend, or not spending at all. Until this file existed it
@@ -356,5 +356,43 @@ describe("bill matching must not invent a match out of the descriptor it was giv
   it("the rules those bytes had killed actually fire", () => {
     expect(spend("GEICO", 363.3, "GEICO *AUTO").billName).toBe("Car insurance");
     expect(spend("MHE", 21.57, "CHECKCARD 0815 MHE*ALEKS ALEKS.COM NY").billName).toBe("ALEKS calculus");
+  });
+});
+
+describe("September 2026 — what two more weeks of real bank data broke", () => {
+  // Bank of America changed how it writes an internal transfer. It used to send
+  // "Online Banking transfer to CHK 0366"; it now also sends
+  // "TRANSFER TO ACCT #0366 ON 09/06 VIA WEB". The new form matched nothing, so
+  // $147.00 moving from the joint account into Xinyan's was recorded as $147.00
+  // of Misc spending — money that never left the household, against a $125/mo
+  // line. Both legs have to drop, or the books invent a loss.
+  it("every form of an internal transfer is recognised", () => {
+    for (const raw of [
+      "TRANSFER TO ACCT #0366 ON 09/06 VIA WEB",
+      "Online Banking transfer to CHK 1211 Confirmation# 7213045421",
+      "Online Banking transfer from CHK 4662 Confirmation# 7513687386",
+      "Mobile Banking transfer to CHK 0366 Confirmation# abc123",
+    ]) {
+      expect(spend("Transfer", 147, raw).kind, raw).toBe("skip");
+    }
+  });
+
+  // An ATM line is cash crossing the counter and the DIRECTION is the whole
+  // meaning. The merchant key "BKOFAMERICA ATM" carries the history label
+  // "Cash deposit", which maps to skip — right for a deposit, silently wrong for
+  // a withdrawal, which is money leaving with no merchant attached. A $20
+  // withdrawal on 2026-08-31 was dropped this way.
+  it("a cash withdrawal is recorded; a cash deposit is still not spending", () => {
+    const w = spend("Bkofamerica Atm", 20, "BKOFAMERICA ATM 08/31 #000001616 WITHDRWL BROADWAY & MCCLINT TEMPE AZ");
+    expect(w.kind).toBe("variable");
+    expect(w.confidence).toBe("low"); // it must ask what the cash went on
+    expect(classifyCredit("BKOFAMERICA ATM 08/31 DEPOSIT")).toBe("transfer");
+  });
+
+  // Rent drifts by a few dollars month to month ($1,731.98 → $1,732.16 →
+  // $1,726.88) and the modelled figure has to follow it, but the descriptor is
+  // the thing that must never drift into something else.
+  it("the rent still settles at its new amount", () => {
+    expect(spend("Nollie MA", 1726.88, "Nollie MA DES:Rent ID:271784202").billName).toBe("Rent");
   });
 });

@@ -490,12 +490,24 @@ async function syncConnection(connId: string, force = false) {
         // because two car-insurance rows both answer to "Car insurance" — one
         // running to 30 Nov 2026, its replacement starting 1 Feb 2027 — and only
         // the window separates them.
+        // Only bills whose window covers this payment can be settled by it. The
+        // window filter used to be followed by `?? matchRecurringName(c.billName,
+        // outRecs)` — a fallback across EVERY row, which simply undid the filter
+        // it had just been handed. A $120 payment to Gino's mother on 2026-09-02
+        // therefore settled the "Mom" bill for September, a bill whose starts_on
+        // is 2026-11-01: no September installment can render, so the claim
+        // attaches to nothing, and the $120 also drops out of the budget (rows
+        // with an applies_to are never graded).
+        //
+        // A payment toward a bill that has not started is not a settlement — it
+        // is either real spending or a sign the MODEL is wrong about when the
+        // bill begins. Both of those want a human, so it falls through to the
+        // needs-review path instead of quietly claiming a cycle.
         const liveRecs = outRecs.filter((r: any) => liveOnDate(r, row.date));
         const matched =
           matchRecurringName(c.billName, liveRecs) ??
-          matchRecurringName(c.billName, outRecs) ??
           (c.kind === "bill" && !c.billName
-            ? matchBillByDayAmount(outRecs, row.date, Math.abs(row.amount), paidBill)
+            ? matchBillByDayAmount(liveRecs, row.date, Math.abs(row.amount), paidBill)
             : null);
         // A bill payment inherits its bill's category (housing / utilities / …)
         // rather than the flat "other" it used to get. That matters most for the
