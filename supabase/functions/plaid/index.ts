@@ -728,7 +728,36 @@ async function syncConnection(connId: string, force = false) {
     for (const row of ops.pendingUpsert) {
       const acctId = acctIdByProv[row.accountId];
       if (!acctId) continue;
-      if (row.amount >= 0) continue; // outflows (spend) only — skip pending credits
+      // Money coming IN while still pending. This used to `continue` — "outflows
+      // only" — which made the ledger structurally incapable of showing a deposit
+      // before it settled: zero pending income rows existed in the whole database.
+      //
+      // That is not a display nicety. A reimbursement is the case that needs it
+      // most: Xinyan covered a group meal and was Zelled $92.08 and $21.65 back,
+      // and searching the ledger for that money found nothing, because nothing
+      // could have been there. The app said she was still owed it.
+      //
+      // Internal transfers between the household's own accounts are still dropped
+      // (classifyCredit), same as on the posted path — those are the same dollars
+      // moving, not new money.
+      if (row.amount > 0) {
+        if (classifyCredit(row.description) === "transfer") continue;
+        pendingRows.push({
+          date: row.date,
+          amount: row.amount,
+          type: "income",
+          category_id: isPaycheck(row.description) ? "salary" : "other-income",
+          description: row.description,
+          raw_description: row.raw,
+          account_id: acctId,
+          provider: "plaid",
+          provider_txn_id: row.providerTxnId,
+          provider_account_id: row.accountId,
+          status: "pending",
+          needs_review: false,
+        });
+        continue;
+      }
       const c = classify(row.description, row.amount, learned, row.raw);
       if (c.kind === "skip") continue;
       // A pending BILL payment is not discretionary spending and must not be

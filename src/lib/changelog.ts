@@ -16,6 +16,7 @@ export const CHANGELOG: Release[] = [
     date: "September 8, 2026",
     notes: [
       "Your budget was ignoring anything the bank hadn't finished processing — $1,005 of it this cycle. Dining showed $111 of $125 when it was really $432. Pending charges count now, and each bar says how much of it is still settling.",
+      "Money coming IN never showed up until the bank finished settling it — so a Zelle someone sends you back is invisible for a day or two, and the app tells you you're still owed it. Pending deposits show now.",
       "The money you sent your mom and got back the same day was counted as spending AND as income. It's a round trip now — both sides cancel.",
       "Vegas and the ASU fee were blowing your Misc line to 255%. A booked trip isn't week-to-week spending, so they sit outside the budget like the car does — still real money, still off what can go at the card.",
       "The app stops asking to remember Sam's Club. One rule can't be right for a shop with a pump and an aisle, and a $130 grocery run was being filed as gas.",
