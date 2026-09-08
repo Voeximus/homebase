@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.08a",
+    date: "September 8, 2026",
+    notes: [
+      "The money you sent your mom and got back the same day was counted as spending AND as income. It's a round trip now — both sides cancel.",
+      "Vegas and the ASU fee were blowing your Misc line to 255%. A booked trip isn't week-to-week spending, so they sit outside the budget like the car does — still real money, still off what can go at the card.",
+      "The app stops asking to remember Sam's Club. One rule can't be right for a shop with a pump and an aisle, and a $130 grocery run was being filed as gas.",
+      "The $1,100 insurance check is in the forecast, dated the 30th — if it lands sooner that's upside.",
+    ],
+  },
+  {
     version: "2026.08.25a",
     date: "August 25, 2026",
     notes: [

@@ -392,3 +392,42 @@ describe("monthlySchedule — Rule 5: divide by the FULL day count, THEN filter"
     expect(oct.every((e) => Math.abs(e.amount - 1187.42) < 0.005)).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("what the budget is allowed to grade", () => {
+  // The lean envelope is a steering instrument for week-to-week living spend. Put
+  // a decision already made on it and the instrument stops working: a $134 hotel
+  // and a $25 university fee drove "Misc / uncategorized" to 255% of its
+  // half-cycle target, so the one bar that means "something here needs a real
+  // category" instead read as a blown month over a trip already taken.
+  //
+  // This is the same call Gino made for the car — the down payment landed in his
+  // spending lines and "made August look like a blown month over a decision you'd
+  // already made". Ungraded, still visible, still off the debt firepower.
+  const OUTSIDE = ["electronics", "car", "utilities", "bills", "travel", "education"];
+
+  for (const cat of OUTSIDE) {
+    it(`${cat} is real cash but no budget line grades it`, () => {
+      expect(inAnyLine(cat)).toBe(false);
+      expect(OUTSIDE_BUDGET_CASH_CATS).toContain(cat);
+    });
+  }
+
+  // The counterpart: it must not simply vanish. Anything ungraded has to be in
+  // the outside-cash set, or it disappears from the bars AND from firepower —
+  // which is exactly how a $180 water bill once went missing from every screen.
+  it("nothing is ungraded AND unwatched", () => {
+    const produced = ["groceries", "dining", "transport", "shopping", "subscriptions",
+      "entertainment", "housing", "pets", "kids", "other", "travel", "education",
+      "electronics", "car", "utilities", "bills"];
+    const lost = produced.filter((c) => !inAnyLine(c) && !OUTSIDE_BUDGET_CASH_CATS.includes(c));
+    expect(lost).toEqual([]);
+  });
+
+  // Gas is ongoing consumption and stays graded every cycle — the carve-out is
+  // for owning the car, not for driving it.
+  it("gas is still graded", () => {
+    expect(inAnyLine("transport")).toBe(true);
+    expect(OUTSIDE_BUDGET_CASH_CATS).not.toContain("transport");
+  });
+});

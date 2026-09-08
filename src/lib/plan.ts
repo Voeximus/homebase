@@ -61,7 +61,7 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   // generating real costs (AZ e-corp filing, GoDaddy, CCA fees = $100 in July) that
   // land here. Still worth watching: if Misc runs high on UNKNOWN merchants rather
   // than company costs, those need real categories, not a bigger envelope.
-  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 125, cats: ["other", "kids", "travel", "education"], note: "business costs · trips · unknown merchants" },
+  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 125, cats: ["other", "kids"], note: "business costs · unknown merchants" },
 ];
 
 /** Ungraded, but still real cash out the door — so it can't go at the debt either.
@@ -96,8 +96,20 @@ export const LEAN_VARIABLE: BudgetLine[] = [
  *
  *   · `bills` — an extra or catch-up payment on a modeled bill. Real cash, and
  *     not a choice anyone made this month, so it cuts firepower without being
- *     graded against a discretionary envelope. See the note in seed.ts. */
-export const OUTSIDE_BUDGET_CASH_CATS = ["electronics", "car", "utilities", "bills"];
+ *     graded against a discretionary envelope. See the note in seed.ts.
+ *   · `travel` and `education` — a booked trip, a tuition fee. Same shape as
+ *     `car`: a decision already made, not week-to-week living spend. They were
+ *     briefly put ON the Misc line, on the reasoning that leaving them there moved
+ *     no money between lines. That was wrong in the way that matters — a $134
+ *     hotel and a $25 university fee drove "Misc / uncategorized" to 255% of its
+ *     half-cycle target, so the one bar that is supposed to mean "something here
+ *     needs a real category" read as a blown month over a trip already taken. The
+ *     label got better and the instrument got worse. Ungraded, still visible,
+ *     still cutting firepower.
+ */
+export const OUTSIDE_BUDGET_CASH_CATS = [
+  "electronics", "car", "utilities", "bills", "travel", "education",
+];
 
 /** Is this category graded against the lean budget? True iff some line claims it.
  *  `electronics`, `car` and `interest` deliberately belong to NO line: electronics
