@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { X, Trash2, Check, SplitSquareHorizontal, Plus, ChevronLeft } from "lucide-react";
 import { useStore } from "../../store/FinanceStore";
 import { catColor, catIcon } from "../../lib/catColor";
-import { merchantKey } from "../../lib/categorize";
+import { isMultiDepartment, merchantKey } from "../../lib/categorize";
 import { t } from "../../lib/i18n";
 import type { Transaction, TxnSplit } from "../../types";
 
@@ -57,6 +57,14 @@ export function TxnSheet({
   // on the calendar, and billExpected stops seeing actuals. Same failure the
   // `amountGated` carve-out exists to stop, reached through the UI instead.
   // Recategorizing THIS row stays allowed — only the permanent rule is withheld.
+  // A merchant that runs a fuel station AND a store under one brand cannot be
+  // answered by a merchant-keyed rule: "Sam's Club → transport" is right at the
+  // pump and wrong in the aisles, and it fires identically for both. classify()
+  // already refuses to honour such a rule where the amount rules fuel out — but
+  // the honest fix is not to ASK for it. The app offered, Gino tapped Remember on
+  // a fill-up on 2026-09-04, and every grocery run after that was filed as fuel.
+  // Recategorizing THIS row stays allowed; only the permanent rule is withheld.
+  const twoDepartments = isMultiDepartment(txn.description, txn.rawDescription);
   const linked = !!txn.appliesTo;
   const catName = (id: string) => data.categories.find((c) => c.id === id)?.name ?? id;
   // A row attached to a BILL is the one link that can be flatly wrong about
@@ -175,7 +183,7 @@ export function TxnSheet({
                   {/* No "Remember" offer on a linked row — a toggle that reads
                       "✓ Remember merchant" while the rule is refused would be
                       worse than no toggle at all. */}
-                  {!linked && (
+                  {!linked && !twoDepartments && (
                     <button
                       onClick={() => setRemember((r) => !r)}
                       className="rounded-full px-2.5 py-1 text-[11px] font-medium transition"
@@ -203,7 +211,7 @@ export function TxnSheet({
                           // toggle: `remember` survives across opens (it's only
                           // reset on mount), so a sheet reopened on a bill row
                           // can still be carrying remember=true from a normal one.
-                          if (remember && !linked)
+                          if (remember && !linked && !twoDepartments)
                             await saveMerchantRule({
                               pattern: merchantKey(txn.description),
                               kind: "variable",
@@ -225,11 +233,13 @@ export function TxnSheet({
                     );
                   })}
                 </div>
-                {(linked || !remember) && (
+                {(linked || twoDepartments || !remember) && (
                   <p className="mt-1.5 text-[11px]" style={{ color: "#6b7686" }}>
                     {linked
                       ? t("Sets only this charge — a bill or transfer payment doesn't teach the merchant.")
-                      : t("Sets only this charge — other charges from this merchant stay as they are.")}
+                      : twoDepartments
+                        ? t("Sets only this charge. This shop sells fuel AND groceries, so one rule for the merchant would be wrong half the time — the app asks each time instead.")
+                        : t("Sets only this charge — other charges from this merchant stay as they are.")}
                   </p>
                 )}
               </>

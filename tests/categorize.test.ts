@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classify, classifyCredit, matchRecurringName, merchantKey, type LearnedRules } from "../src/lib/categorize";
+import { classify, classifyCredit, isMultiDepartment, matchRecurringName, merchantKey, type LearnedRules } from "../src/lib/categorize";
 
 // The categorizer decides, for every line the bank sends, whether money is a
 // modeled bill, living spend, or not spending at all. Until this file existed it
@@ -394,5 +394,39 @@ describe("September 2026 — what two more weeks of real bank data broke", () =>
   // the thing that must never drift into something else.
   it("the rent still settles at its new amount", () => {
     expect(spend("Nollie MA", 1726.88, "Nollie MA DES:Rent ID:271784202").billName).toBe("Rent");
+  });
+});
+
+describe("a rule the app should never have offered to save", () => {
+  // Gino taught SAM'S CLUB → transport on 2026-09-04, because the sheet offered
+  // "Remember this merchant" on a fill-up. The app had deleted that exact rule ten
+  // days earlier for being structurally unanswerable — a merchant that runs a fuel
+  // station AND a store cannot be settled by one merchant-keyed rule. Blaming the
+  // person for re-teaching it misses the point: the app asked.
+  //
+  // Two halves. The sheet no longer offers to save such a rule (isMultiDepartment
+  // gates it), and classify() ignores a `transport` rule on a charge the amount
+  // already rules out as fuel — a $130.64 warehouse run is 39 gallons.
+  const taught: LearnedRules = { "SAM'S CLUB": { kind: "variable", categoryId: "transport" } };
+
+  it("a taught fuel rule cannot claim a charge that cannot be fuel", () => {
+    expect(spend("Sam's Club", 130.64, "CHECKCARD 0822 SAMS CLUB #495", taught).appCategory).toBe("groceries");
+    expect(spend("Sam's Club", 4.05, "CHECKCARD 0822 SAMS CLUB #495", taught).appCategory).toBe("groceries");
+  });
+
+  it("inside the fuel range the taught answer still stands, and still asks", () => {
+    const c = spend("Sam's Club", 34.91, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ", taught);
+    expect(c.appCategory).toBe("transport");
+    expect(c.ambiguous).toBe(true);
+  });
+
+  it("a bank-tagged pump is fuel at any amount", () => {
+    expect(spend("Sam's Club", 41, "SAMSCLUB 4956 GAS 07/16", taught).appCategory).toBe("transport");
+  });
+
+  it("the sheet can tell which merchants it must not offer a rule for", () => {
+    expect(isMultiDepartment("Sam's Club", "CHECKCARD 0822 SAMS CLUB #495")).toBe(true);
+    expect(isMultiDepartment("Safeway", "Safeway")).toBe(true);
+    expect(isMultiDepartment("Trader Joe's", "TRADER JOE S # 09/02")).toBe(false);
   });
 });

@@ -20,6 +20,8 @@ import {
   Car,
   HelpCircle,
   Receipt,
+  Plane,
+  GraduationCap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,6 +40,8 @@ export const CAT_COLOR: Record<string, string> = {
   pets: "#f472b6", // pink — dog / pets
   electronics: "#818cf8", // indigo — tech / gadgets
   car: "#ca8a04", // dark mustard — vehicle ownership costs (no other cat is near this hue)
+  travel: "#38bdf8", // light sky — trips, hotels, travel plazas
+  education: "#a3e635", // lime — tuition and course fees
   bills: "#0ea5e9", // sky — an extra / catch-up payment on a modeled bill
   salary: "#46d18a", // mint (income)
 };
@@ -60,6 +64,8 @@ const CAT_ICON: Record<string, LucideIcon> = {
   pets: PawPrint,
   electronics: Monitor,
   car: Car,
+  travel: Plane,
+  education: GraduationCap,
   bills: Receipt,
   salary: Banknote,
 };

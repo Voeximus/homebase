@@ -61,7 +61,7 @@ export const LEAN_VARIABLE: BudgetLine[] = [
   // generating real costs (AZ e-corp filing, GoDaddy, CCA fees = $100 in July) that
   // land here. Still worth watching: if Misc runs high on UNKNOWN merchants rather
   // than company costs, those need real categories, not a bigger envelope.
-  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 125, cats: ["other", "kids"], note: "business costs · unknown merchants" },
+  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 125, cats: ["other", "kids", "travel", "education"], note: "business costs · trips · unknown merchants" },
 ];
 
 /** Ungraded, but still real cash out the door — so it can't go at the debt either.

@@ -50,6 +50,13 @@ export const DEFAULT_CATEGORIES: Category[] = [
   // bill's category — and 8 of the 16 active bills carry "other", which IS the
   // $125/mo Misc line.
   { id: "bills", name: "Bill payment", icon: "🧾", color: "#0ea5e9", type: "expense" },
+  // Travel and tuition are NOT new budget money — both sit on the same Misc line
+  // as `other` (see LEAN_VARIABLE), so nothing about what is graded or how much
+  // changes. They exist so a hotel reads as "Travel" and a university fee reads as
+  // "Education" instead of both showing up as "Misc / uncategorized", which is
+  // what a person reading their own ledger cannot make sense of.
+  { id: "travel", name: "Travel", icon: "✈️", color: "#38bdf8", type: "expense" },
+  { id: "education", name: "Education", icon: "🎓", color: "#a3e635", type: "expense" },
   { id: "other", name: "Other", icon: "📦", color: "#64748b", type: "expense" },
 ];
 

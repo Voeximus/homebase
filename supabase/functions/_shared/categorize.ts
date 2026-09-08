@@ -227,6 +227,15 @@ export type Department = "fuel" | "ambiguous" | null;
  *
  *  Without a raw descriptor (manual entry, CSV import) nothing can be resolved,
  *  so it reports null and the normal path runs unchanged. */
+/** Does this charge sit at a merchant that runs a fuel station AND a store under
+ *  one brand? Exported so the UI can withhold the "Remember this merchant" offer:
+ *  a merchant-keyed rule is structurally incapable of answering for two
+ *  departments, so offering to save one invites an answer the app cannot honour.
+ *  Gino taught SAM'S CLUB -> transport on 2026-09-04 because the app asked. */
+export function isMultiDepartment(desc: string, raw?: string): boolean {
+  return MULTI_DEPARTMENT.test(desc) || (!!raw && MULTI_DEPARTMENT.test(raw));
+}
+
 export function resolveDepartment(
   desc: string,
   raw?: string,
@@ -589,7 +598,19 @@ function classifyCore(
   // outright), then the raw line with the statement noise stripped off. The
   // stripping is not optional — a bare merchantKey(raw) collapses every card line
   // to "CHECKCARD" and one rule would then swallow the entire ledger.
-  const lr = amountGated ? undefined : learnedFor(key, learned, raw);
+  //
+  // One more thing can disqualify a learned rule: it can be provably wrong about
+  // THIS charge. At a merchant that sells fuel AND groceries, a rule saying
+  // "transport" can only have been taught on a fill-up — so it cannot apply to a
+  // charge the amount already rules out as fuel. A $130.64 Sam's Club run is 39
+  // gallons, three tanks for a 2012 Civic; a $4.05 one is a snack. Neither is a
+  // fill-up, and both were being filed as fuel at HIGH confidence, which also
+  // means a re-sync would overwrite the right answer with the wrong one.
+  const fuelRuledOut = isMultiDepartment(desc, raw) && !FUEL_TOKEN.test(raw ?? "") &&
+    Number.isFinite(amount) &&
+    (Math.abs(amount) > FUEL_CEILING || Math.abs(amount) < FUEL_FLOOR);
+  const rawLr = amountGated ? undefined : learnedFor(key, learned, raw);
+  const lr = fuelRuledOut && rawLr?.categoryId === "transport" ? undefined : rawLr;
   if (lr) {
     if (lr.kind === "bill")
       return {
