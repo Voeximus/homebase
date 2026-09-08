@@ -731,11 +731,28 @@ async function syncConnection(connId: string, force = false) {
       if (row.amount >= 0) continue; // outflows (spend) only — skip pending credits
       const c = classify(row.description, row.amount, learned, row.raw);
       if (c.kind === "skip") continue;
+      // A pending BILL payment is not discretionary spending and must not be
+      // graded as any. This wrote c.appCategory ?? "other", and classify() returns
+      // no appCategory for a bill — so every pending bill landed in "other", which
+      // IS the $125/mo Misc line. That stayed invisible while pending charges were
+      // excluded from the budget; the moment they started counting, a $99.93
+      // pet-insurance bill turned up under "Misc / uncategorized".
+      //
+      // It cannot carry an applies_to yet: the bill link belongs to the settled
+      // charge, and writing one here would mark the cycle paid off a hold the bank
+      // can still reverse. So it takes the "bills" category — real cash, visible,
+      // outside the envelope — and the posted twin gets the proper link a day or
+      // two later.
+      //
+      // This ignores appCategory even where there is one: the Anthropic price band
+      // sets "subscriptions", which IS graded, so a pending Claude Pro bill was
+      // being charged against Household + Hygiene.
+      const pendingCat = c.kind === "bill" ? "bills" : (c.appCategory ?? "other");
       pendingRows.push({
         date: row.date,
         amount: Math.abs(row.amount),
         type: "expense",
-        category_id: c.appCategory ?? "other",
+        category_id: pendingCat,
         description: row.description,
           raw_description: row.raw,
         account_id: acctId,
