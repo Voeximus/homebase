@@ -123,7 +123,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
         </button>
       </div>
       {todayEntry && (
-        <p className="mt-2 flex items-center gap-1.5 text-[11.5px]" style={{ color: "#46d18a" }}>
+        <p className="mt-2 flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--h-good)" }}>
           <Check size={13} /> {t("Logged today: {w} lb", { w: todayEntry.weight })}
         </p>
       )}
@@ -143,7 +143,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
         <div className="flex-1">
           <div className="stat-key" style={{ color: "var(--color-taupe)" }}>{t("Trend")}</div>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="stat text-[26px]" style={{ color: verdictOn ? "#46d18a" : valid ? acc : "var(--color-taupe)" }}>{shown}</span>
+            <span className="stat text-[26px]" style={{ color: verdictOn ? "var(--h-good)" : valid ? acc : "var(--color-taupe)" }}>{shown}</span>
             <span className="text-[11px]" style={{ color: "var(--color-taupe)" }}>{t(cfg.unit)}</span>
           </div>
         </div>
@@ -212,7 +212,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
                           setConfirmDel(null);
                         }}
                         className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                        style={{ background: "#2a1518", color: "#f0556e" }}
+                        style={{ background: "color-mix(in srgb, var(--h-over) 14%, transparent)", color: "var(--h-over)" }}
                       >
                         {t("Delete")}
                       </button>
@@ -252,7 +252,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-2.5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: "#2a1518", color: "#f0556e" }}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--h-over) 14%, transparent)", color: "var(--h-over)" }}>
                 <Trash2 size={17} />
               </span>
               <div className="min-w-0 flex-1">
@@ -280,7 +280,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
                   setShowHist(false);
                 }}
                 className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
-                style={{ background: "#f0556e", color: "var(--color-bg)" }}
+                style={{ background: "var(--h-over)", color: "var(--color-bg)" }}
               >
                 {t("Delete all")}
               </button>

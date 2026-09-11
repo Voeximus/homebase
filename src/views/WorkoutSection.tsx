@@ -320,7 +320,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                       <button
                         onClick={() => { deleteWorkout(w.id); setConfirmDelId(null); }}
                         className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                        style={{ background: "#2a1518", color: "#f0556e" }}
+                        style={{ background: "color-mix(in srgb, var(--h-over) 14%, transparent)", color: "var(--h-over)" }}
                       >
                         {t("Delete")}
                       </button>
@@ -382,12 +382,16 @@ function ActiveWorkout({
   onDiscard: () => void;
   onSaveRoutine: () => void;
 }) {
+  const empty = w.exercises.length === 0;
   return (
     <section className="h-panel">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Dumbbell size={15} style={{ color: "var(--color-accent)" }} />
-          <p className="text-[13.5px] font-semibold text-bone">{t("Today's workout")}</p>
+      <div className="h-cardhead">
+        <span className="ic"><Dumbbell size={14} /></span>
+        <div style={{ flex: 1 }}>
+          <div className="t">{t("Today's workout")}</div>
+          {!empty && (
+            <div className="s">{t("{n} exercises · {s} sets", { n: w.exercises.length, s: totalSets(w) })}</div>
+          )}
         </div>
         <button onClick={onDiscard} className="text-[11px]" style={{ color: "var(--color-faint)" }}>
           {t("Discard")}
@@ -411,30 +415,34 @@ function ActiveWorkout({
         ))
       )}
 
+      {/* WHICH button is the primary depends on where you are in the session.
+          An empty workout had "Finish workout" filled in the accent and "Add
+          exercise" as the quiet one — offering to end a session before anything
+          had been logged in it, and styling that as the recommended move. The
+          emphasis follows the state now: add first, finish once there is
+          something to finish. */}
       <button
         onClick={onAddExercise}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-        style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
+        className={empty ? "h-btn" : "h-btn ghost"}
+        style={{ marginTop: "var(--h-2)" }}
       >
         <Plus size={15} /> {t("Add exercise")}
       </button>
 
-      <div className="mt-3 flex gap-2">
-        <button
-          onClick={onSaveRoutine}
-          className="rounded-[12px] px-3 py-2.5 text-[12.5px] font-semibold"
-          style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}
-        >
-          {t("Save as routine")}
-        </button>
-        <button
-          onClick={onFinish}
-          className="flex flex-1 items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-          style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
-        >
-          <Check size={16} /> {t("Finish workout")}
-        </button>
-      </div>
+      {/* No Finish button at all while the session is empty. There is nothing to
+          finish, "Discard" in the header already covers backing out, and a
+          second way to abandon — wearing a checkmark, which means the opposite —
+          is worse than none. */}
+      {!empty && (
+        <div className="flex gap-2" style={{ marginTop: "var(--h-3)" }}>
+          <button onClick={onSaveRoutine} className="h-btn quiet" style={{ width: "auto", padding: "0 14px", fontSize: 12.5 }}>
+            {t("Save as routine")}
+          </button>
+          <button onClick={onFinish} className="h-btn" style={{ flex: 1 }}>
+            <Check size={16} /> {t("Finish workout")}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -597,13 +605,13 @@ function EditWorkoutSheet({
                 <button onClick={() => setConfirmDel(false)} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "var(--color-raised)", color: "var(--color-bone)" }}>
                   {t("Cancel")}
                 </button>
-                <button onClick={onDelete} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "#f0556e", color: "var(--color-bg)" }}>
+                <button onClick={onDelete} className="flex-1 rounded-[12px] py-2.5 text-[13px] font-semibold" style={{ background: "var(--h-over)", color: "var(--color-bg)" }}>
                   {t("Delete workout")}
                 </button>
               </>
             ) : (
               <>
-                <button onClick={() => setConfirmDel(true)} className="flex items-center justify-center rounded-[12px] px-4 py-2.5" style={{ background: "rgba(240,85,110,0.13)", color: "#f0556e" }} aria-label="Delete workout">
+                <button onClick={() => setConfirmDel(true)} className="flex items-center justify-center rounded-[12px] px-4 py-2.5" style={{ background: "color-mix(in srgb, var(--h-over) 14%, transparent)", color: "var(--h-over)" }} aria-label="Delete workout">
                   <Trash2 size={16} />
                 </button>
                 <button
@@ -786,11 +794,23 @@ function NumIn({ value, onChange, max, suffix }: { value: number; onChange: (n: 
 }
 
 // ── exercise search sheet (search the library or add a custom exercise) ─────────
-const MUSCLE_TINT: Record<string, string> = {
-  chest: "#fb7185", back: "#38bdf8", legs: "#f6c453", shoulders: "#a78bfa",
-  arms: "#34c5e8", core: "#22c55e", fullbody: "#fb923c", cardio: "#f0556e",
-};
-const muscleColor = (m: string) => MUSCLE_TINT[m] ?? "#8b97a6";
+// Muscle groups no longer carry a hue, and this is the one place in the rebuild
+// where a palette was DELETED rather than corrected.
+//
+// It was eight colors — and its first three were literally the old macro legend,
+// so "chest" was the same color as "protein", "back" the same as "carbs" and
+// "legs" the same as "fat", on screens one tap apart inside the same mode.
+//
+// It could not be fixed by re-stepping either. A list is an all-pairs form: any
+// two rows can sit side by side, and no eight-hue set clears the separation
+// floors under all 28 pairs. More than three series in a form like that means
+// fewer series or facets, not a better palette.
+//
+// And it was never carrying information. Every row already SAYS "Chest · Barbell"
+// underneath the name — the bar was a second, worse copy of a label that was
+// right there. So the bar is a neutral rule now, doing the one job it was
+// actually good at, which is giving the row a left edge to align on.
+const muscleColor = (_m: string) => "var(--color-edge)";
 const MUSCLES = ["chest", "back", "legs", "shoulders", "arms", "core", "fullbody", "cardio"];
 
 function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean; onClose: () => void; library: Exercise[]; onPick: (ex: { name: string; muscle: string; exerciseId: string }) => void }) {
@@ -854,7 +874,7 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
                   <div className="truncate text-[13.5px] text-bone">{e.name}</div>
                   <div className="text-[10.5px] capitalize" style={{ color: "var(--color-taupe)" }}>{t(e.muscle)} · {t(e.equipment)}</div>
                 </div>
-                <Plus size={16} style={{ color: "#46d18a" }} />
+                <Plus size={16} style={{ color: "var(--color-accent)" }} />
               </button>
             ))
           ) : (
@@ -876,7 +896,7 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
                   key={m}
                   onClick={() => setCustomMuscle(m)}
                   className="rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize transition"
-                  style={customMuscle === m ? { background: muscleColor(m), color: "var(--color-bg)" } : { background: "var(--color-tile)", color: "var(--color-taupe)", border: "1px solid var(--color-edge)" }}
+                  style={customMuscle === m ? { background: "var(--color-accent)", color: "var(--h-on-accent)" } : { background: "var(--color-tile)", color: "var(--color-taupe)", border: "1px solid var(--color-edge)" }}
                 >
                   {t(m)}
                 </button>
@@ -977,7 +997,7 @@ function QuickLogSheet({
                   key={p.name}
                   onClick={() => pick({ name: p.name, muscle: p.muscle, exerciseId: "" })}
                   className="rounded-full px-3 py-1.5 text-[12.5px] font-semibold"
-                  style={{ background: muscleColor(p.muscle) + "1f", color: muscleColor(p.muscle) }}
+                  style={{ background: "var(--color-raised)", color: "var(--color-taupe)", boxShadow: "inset 0 0 0 1px var(--color-edge)" }}
                 >
                   {t(p.name)}
                 </button>
@@ -1001,7 +1021,7 @@ function QuickLogSheet({
                 >
                   <span className="h-6 w-1.5 shrink-0 rounded-full" style={{ background: muscleColor(e.muscle) }} />
                   <span className="flex-1 truncate text-[13.5px] text-bone">{e.name}</span>
-                  <Plus size={15} style={{ color: "#46d18a" }} />
+                  <Plus size={15} style={{ color: "var(--color-accent)" }} />
                 </button>
               ))}
             </div>

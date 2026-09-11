@@ -66,7 +66,7 @@ export function Button({
 
 export function ProgressBar({
   value,
-  color = "#34c5e8",
+  color = "var(--color-accent)",
   track = "rgba(255,255,255,0.07)",
 }: {
   value: number;
@@ -144,7 +144,14 @@ export function Sheet({
       />
       <div
         className="scroll-soft relative z-10 max-h-[86vh] w-full max-w-[420px] overflow-y-auto rounded-[22px] p-5 shadow-2xl"
-        style={{ background: "#0f141c", border: "1px solid #232d3a", borderTop: "2px solid #34c5e8" }}
+        // Tokens, not hexes: this Sheet is shared with Health mode, where the
+        // whole surface is re-themed. Hardcoded here, a barcode scanner opened
+        // from the lime "Bold" theme arrived in the old cyan.
+        style={{
+          background: "var(--color-tile)",
+          border: "1px solid var(--color-edge)",
+          borderTop: "2px solid var(--color-accent)",
+        }}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-bone">{title}</h2>

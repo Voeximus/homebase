@@ -410,7 +410,7 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
         <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style={{ background: "rgba(0,0,0,.55)" }} onClick={() => setDetailOpen(null)}>
           <div className="max-h-[88vh] w-full max-w-[440px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {detailOpen === "week" ? (
-              <AdherenceCard stats={stats} weeks={weeks} today={today} acc={PERSON_ACC(true)} activeDate={viewDate} />
+              <AdherenceCard stats={stats} weeks={weeks} today={today} activeDate={viewDate} />
             ) : (
               <CalibrationGauge person={person} acc={PERSON_ACC(true)} />
             )}
@@ -1097,13 +1097,10 @@ const DAY_STATUS_LABEL: Record<DayStatus, string> = {
   skipped: "Off plan",
   none: "Nothing logged",
 };
-const STATUS_COLOR: Record<DayStatus, string> = {
-  logged: "var(--h-good)",
-  partial: "color-mix(in srgb, var(--h-good) 42%, var(--color-well))",
-  estimated: "#c98500",
-  skipped: "var(--h-over)",
-  none: "var(--color-well)",
-};
+// (There is no STATUS_COLOR map any more. Every day square is a CLASS — see
+// .h-week .d in index.css — so its fill shape and its colour are defined in one
+// place and the legend can render the real mark instead of a coloured dot
+// standing in for it.)
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const weekPctColor = (pct: number | null): string =>
   pct == null ? "var(--color-edge)" : pct >= 80 ? "var(--h-good)" : pct >= 50 ? "#c98500" : "var(--h-over)";
@@ -1190,13 +1187,11 @@ function AdherenceCard({
   stats,
   weeks,
   today,
-  acc,
   activeDate,
 }: {
   stats: ReturnType<typeof adherenceStats>;
   weeks: WeekBucket[];
   today: string;
-  acc: string;
   activeDate?: string;
 }) {
   const cur = weeks[weeks.length - 1];
@@ -1204,12 +1199,12 @@ function AdherenceCard({
   const headlineColor = cur.followed === 0 ? "var(--color-bone)" : weekPctColor(cur.pct);
   const barH = (pct: number | null) => (pct == null ? 5 : Math.max(5, Math.round((pct / 100) * BAR_H)));
   return (
-    <section className="rounded-[18px] border p-4" style={TILE}>
+    <section className="h-panel">
       {/* this week — the part that resets every Monday */}
       <div className="flex items-center justify-between">
-        <p className="stat-key" style={{ color: acc }}>{t("This week")}</p>
+        <p className="h-eyebrow">{t("This week")}</p>
         <div className="flex items-center gap-1.5">
-          <Flame size={14} style={{ color: stats.streak > 0 ? "#fb923c" : "var(--color-faint)" }} />
+          <Flame size={14} style={{ color: stats.streak > 0 ? "var(--color-accent)" : "var(--color-faint)" }} />
           <span className="text-[12px] font-semibold" style={{ color: stats.streak > 0 ? "var(--color-bone)" : "var(--color-taupe)" }}>
             {stats.streak > 0 ? t("{n}-day streak", { n: stats.streak }) : t("no streak yet")}
           </span>
@@ -1220,29 +1215,31 @@ function AdherenceCard({
         <span className="text-[13px]" style={{ color: "var(--color-taupe)" }}>{t("of {n} days on plan", { n: cur.elapsed })}</span>
       </div>
 
-      {/* the 7 days of this week, Mon→Sun */}
-      <div className="mt-3 grid grid-cols-7 gap-1.5">
+      {/* The 7 days of this week, Mon→Sun — the SAME squares as the home tile.
+          They used to be a second implementation with its own sizes and its own
+          flat status fills, so the same week looked like two different weeks
+          depending on whether you had tapped into it. */}
+      <div className="h-week" style={{ marginTop: "var(--h-3)" }}>
         {cur.days.map((d) => (
           <span
             key={d.date}
-            className="h-6 w-full rounded-[5px]"
-            style={{
-              background: d.future ? "var(--color-raised)" : STATUS_COLOR[d.status],
-              border: d.future ? "1px dashed var(--color-edge)" : "none",
-              boxShadow: d.date === highlight && !d.future ? `0 0 0 1.5px ${acc}` : "none",
-            }}
+            className={`d ${d.future ? "" : DOT_CLASS[d.status]}${d.date === highlight && !d.future ? " today" : ""}`}
+            style={{ height: 26 }}
+            title={`${d.date} · ${t(DAY_STATUS_LABEL[d.status])}`}
           />
         ))}
-        {WEEKDAY_LETTERS.map((l, i) => (
-          <span key={i} className="text-center text-[9.5px]" style={{ color: "var(--color-faint)" }}>{l}</span>
-        ))}
+        <div className="lbls" style={{ gridColumn: "1 / -1" }}>
+          {WEEKDAY_LETTERS.map((l, i) => <span key={i}>{l}</span>)}
+        </div>
       </div>
 
-      {/* compact legend so the day colors decode */}
-      <div className="mt-2.5 flex flex-wrap gap-x-2.5 gap-y-1 text-[9.5px]" style={{ color: "var(--color-taupe)" }}>
-        {([["logged", t("on plan")], ["partial", t("partial")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
-          <span key={k} className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-[2px]" style={{ background: STATUS_COLOR[k] }} /> {label}
+      {/* The legend uses the real marks, not coloured dots standing in for them.
+          A key whose swatches don't look like the thing they explain is a second
+          thing to decode rather than the decoder. */}
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-[9.5px]" style={{ color: "var(--color-taupe)" }}>
+        {([["logged", t("on plan")], ["partial", t("under target")], ["estimated", t("estimated")], ["skipped", t("off plan")]] as [DayStatus, string][]).map(([k, label]) => (
+          <span key={k} className="h-week flex items-center gap-1.5" style={{ display: "inline-flex", margin: 0 }}>
+            <span className={`d ${DOT_CLASS[k]}`} style={{ width: 14, height: 14, borderRadius: 4 }} /> {label}
           </span>
         ))}
       </div>
@@ -1250,17 +1247,22 @@ function AdherenceCard({
       {/* the trend over time — one bar per week, this week ringed */}
       {weeks.length > 1 && (
         <>
-          <p className="mt-3.5 text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--color-faint)" }}>{t("Recent weeks")}</p>
+          <p className="h-eyebrow" style={{ marginTop: "var(--h-3)" }}>{t("Recent weeks")}</p>
+          {/* One series, so no hue: bar HEIGHT already carries the whole message.
+              These were painted green / amber / red by score, which turned a
+              normal run of ordinary weeks into a wall of red — six bars all
+              shouting at a household that had simply been eating under target.
+              The status colours stay where a status is genuinely being reported;
+              a trend is not one. */}
           <div className="mt-1.5 flex items-end gap-1.5" style={{ height: BAR_H }}>
             {weeks.map((wk) => (
-              <div key={wk.startDate} className="flex flex-1 items-end" style={{ height: BAR_H }}>
+              <div key={wk.startDate} className="flex flex-1 items-end" style={{ height: BAR_H }} title={`${wk.startDate} · ${wk.pct ?? 0}%`}>
                 <div
                   className="w-full rounded-[3px]"
                   style={{
                     height: barH(wk.pct),
-                    background: weekPctColor(wk.pct),
-                    opacity: wk.pct == null ? 0.4 : 1,
-                    boxShadow: wk.isCurrent ? `0 0 0 1.5px ${acc}` : "none",
+                    background: wk.isCurrent ? "var(--color-accent)" : "var(--color-taupe)",
+                    opacity: wk.pct == null ? 0.35 : wk.isCurrent ? 1 : 0.6,
                   }}
                 />
               </div>
