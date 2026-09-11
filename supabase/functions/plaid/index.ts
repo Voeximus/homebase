@@ -813,6 +813,75 @@ async function syncConnection(connId: string, force = false) {
       }
     }
 
+    // --- re-label rows already in the ledger -----------------------------------
+    // Every rule in the categorizer only ever reached charges that had not been
+    // imported yet. A rule written today fixed tomorrow's Geico charge and left
+    // yesterday's sitting in Misc forever — which is exactly what happened: the
+    // Car insurance rule shipped hours after the $295.29 payment landed, so the
+    // ledger filed it as "Other / needs review" AND the Car insurance bill went on
+    // reading unpaid, at the same time, from the same charge.
+    //
+    // Plaid's delta feed cannot fix this on its own: it only re-sends rows that
+    // changed at the bank, and a row from three weeks ago never comes back. So ask
+    // the question directly — run today's categorizer over the recent ledger and
+    // correct whatever it now answers differently.
+    //
+    // Scope is deliberately narrow, because a sweep that can do more can also
+    // break more:
+    //   · CATEGORY ONLY. It never writes, clears or edits applies_to. A bill link
+    //     settles a cycle, and settling one from a bulk pass — off a rule I changed
+    //     rather than a payment he made — is the one mistake here that would cost
+    //     real money. A row that now reads as a BILL is flagged for review with the
+    //     bill named in the log, and he confirms it by hand.
+    //   · Rows he has answered himself are untouchable (user_categorized).
+    //   · Rows already carrying an applies_to are skipped entirely — they are
+    //     settled bills, debts and set-asides, and their category rides with them.
+    //   · Ambiguous merchants are skipped: at a multi-department merchant the new
+    //     answer is a coin flip, and re-deciding months of history on a coin flip
+    //     is the failure this guard already exists to prevent elsewhere.
+    //   · 120 days back, which covers the whole live ledger without scanning it all.
+    try {
+      const since = new Date(Date.now() - 120 * 86400_000).toISOString().slice(0, 10);
+      const { data: old } = await admin
+        .from("transactions")
+        .select("id, description, raw_description, amount, category_id, needs_review")
+        .eq("type", "expense")
+        .gte("date", since)
+        .is("applies_to", null)
+        .or("user_categorized.is.null,user_categorized.eq.false");
+      let relabelled = 0;
+      for (const r of old ?? []) {
+        const c = classify(r.description ?? "", -Math.abs(Number(r.amount)), learned, r.raw_description ?? undefined);
+        if (c.ambiguous) continue;
+        if (c.kind === "bill") {
+          // Do not touch the category — just make sure it is asking. The name goes
+          // in the log so there is a record of which bill it thinks it is.
+          if (!r.needs_review) {
+            console.log(`relabel: ${r.description} now reads as the bill "${c.billName}" — flagged for review`);
+            await admin.from("transactions").update({ needs_review: true }).eq("id", r.id);
+            relabelled++;
+          }
+          continue;
+        }
+        if (c.kind !== "variable" || !c.appCategory) continue;
+        if (c.appCategory === r.category_id) continue;
+        // Only ever move a row that is UNFILED or was auto-filed at low
+        // confidence. A high-confidence auto answer already on the row is not
+        // improved by another high-confidence auto answer.
+        if (r.category_id !== "other" && !r.needs_review) continue;
+        console.log(`relabel: ${r.description} ${r.category_id} → ${c.appCategory} (${c.reason})`);
+        await admin
+          .from("transactions")
+          .update({ category_id: c.appCategory, needs_review: c.confidence === "low" && c.appCategory === "other" })
+          .eq("id", r.id);
+        relabelled++;
+      }
+      if (relabelled) console.log(`relabelled ${relabelled} existing rows with today's rules`);
+    } catch (e) {
+      // Never fail a sync over a cosmetic pass — the money is already written.
+      console.warn("relabel sweep:", String((e as Error)?.message ?? e));
+    }
+
     await admin
       .from("bank_connections")
       .update({

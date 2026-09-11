@@ -89,6 +89,10 @@ export interface Transaction {
   // question was asked into the void: 206 rows carried the flag and none of them
   // ever reached a review list. The review filters read it now.
   needsReview?: boolean;
+  // He picked this category himself. Sacred: a re-sync never overwrites it, and
+  // the review queue never re-asks about it — including when the answer he chose
+  // was "Misc", which is a decision like any other.
+  userCategorized?: boolean;
   createdAt: string; // ISO timestamp
 }
 

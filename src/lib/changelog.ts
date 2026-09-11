@@ -12,6 +12,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.10a",
+    date: "September 10, 2026",
+    notes: [
+      "The review list was mostly rows that already had the right category. It only asked because you'd never tapped \"remember this merchant\" on that name — which isn't a question about anything. 98 rows down to 41, and the 41 left are real: almost all of them are \"Sam's Club — pump or aisle?\"",
+      "Charges still processing no longer land in the review list. The bank can still reverse them and they'll ask again when they settle, so asking now is asking twice.",
+      "Travel and Education existed as categories but nothing could ever put money in them — so the whole Vegas trip and the ASU fee read as \"Misc\". Hotels, airlines, travel plazas and tuition now land where they belong.",
+      "\"Remember this merchant\" could learn Misc as the answer — which quietly told the app to stop trying on that merchant forever. Google One, Grok and Southwest each had one. It can't learn Misc any more.",
+      "Circle K and QuikTrip had been taught \"dining\", so every fill-up was filed as a meal. Both taught rules are gone; those charges ask once instead of guessing.",
+      "A $39 transfer between your own two accounts was counted as income while it was processing — the same dollars twice for a day.",
+      "When a labelling rule improves, it now goes back and fixes charges already in your ledger instead of only helping future ones.",
+    ],
+  },
+  {
     version: "2026.09.08a",
     date: "September 8, 2026",
     notes: [

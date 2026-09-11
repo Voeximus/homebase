@@ -430,3 +430,96 @@ describe("a rule the app should never have offered to save", () => {
     expect(isMultiDepartment("Trader Joe's", "TRADER JOE S # 09/02")).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A category the app DISPLAYS that the labeller cannot REACH is money that can
+// only ever land in Misc. The `Pets` line had this defect and it was fixed by
+// hand; `travel` and `education` had it too, and nobody looked. Gino, reading a
+// month of his own ledger: "many transactions are being routed to other instead
+// of a proper category." A Las Vegas trip and an ASU enrollment fee, in Misc.
+//
+// Every descriptor below is a real line from his 08/03–09/10 statements.
+describe("every category the app shows can be reached from a bank line", () => {
+  it("a hotel is travel", () => {
+    expect(
+      spend("Booking.com", 134.18, "CHECKCARD 0902 BKG*BOOKING.COM HOTEL NY XXXXX2962XXXXXXXXXX8311").appCategory,
+    ).toBe("travel");
+    expect(
+      spend("Sunrise Inn", 25, "CHECKCARD 0905 SUNRISE INN NORTH LAS VEGNV XXXXX9762XXXXXXXXXX").appCategory,
+    ).toBe("travel");
+  });
+
+  it("an airline is travel — his own hand-label said so and the map dropped it", () => {
+    // "AMERICAN AIR00123359588" is labelled "Travel/Other" in his own dictionary.
+    // That label mapped to `other`, so his answer was recorded and then discarded.
+    expect(spend("American Airlines", 189.4).appCategory).toBe("travel");
+  });
+
+  it("an interstate travel plaza is travel, not a graded gas fill-up", () => {
+    // $22.73 in Kingman and $5.88 in North Las Vegas, on the drive out. Filing
+    // road snacks as `transport` inflates the $100 fuel envelope with trip money.
+    expect(
+      spend("Usa Travel Center", 22.73, "MOBILE PURCHASE 0905 USA TRAVEL CENTER KINGMAN AZ XXXXX9762X").appCategory,
+    ).toBe("travel");
+    expect(
+      spend("Morton's Travel", 5.88, "MORTON'S TRAVE 09/05 #XXXXX9925 PURCHASE MORTON'S TRAVEL P NORTH LAS VEG").appCategory,
+    ).toBe("travel");
+  });
+
+  it("his own credit card is not a holiday", () => {
+    // The card is literally named "Travel Rewards". A bare /TRAVEL/ keyword would
+    // file card activity as a trip — which is why the rule names hotels and
+    // airlines instead of the word.
+    const c = spend("Bank of America Travel Rewards", 40);
+    expect(c.appCategory).not.toBe("travel");
+  });
+
+  it("tuition is education", () => {
+    expect(
+      spend("Asu Universal Pathways Asu.edu", 25, "CHECKCARD 0903 ASU UNIVERSAL PATHWAYS ASU.EDU AZ XXXXX7762XXXX").appCategory,
+    ).toBe("education");
+  });
+
+  it("but the ASU parking garage is still transport", () => {
+    // Parking runs before education on purpose: "ASU AMP PARK aimsparking.cAZ"
+    // contains ASU and is a $3.25 parking meter, not a course.
+    expect(spend("Asu Amp Park Aimsparking.caz", 3.25).appCategory).toBe("transport");
+  });
+
+  it("the merchants that were sitting in Misc now have a line", () => {
+    expect(spend("H&M", 58.3, "PURCHASE 0908 HM.COM XXX-XX67467 NY XXXXX2962XXXXXXXXXX5060").appCategory).toBe("shopping");
+    expect(spend("Nana's Sandwich Sho", 14.92, "MOBILE PURCHASE 0905 NANA'S SANDWICH SHO WICKENBURG AZ").appCategory).toBe("dining");
+    expect(spend("Smith's", 5.79, "SMITHS #4304 4 09/06 #XXXXX7565 MOBILE PURCHASE SMITHS #4304 4001").appCategory).toBe("groceries");
+    expect(spend("GoDaddy", 13.19, "CHECKCARD 0721 GODADDY*#XXXXX40297 GODADDY.COM AZ").appCategory).toBe("subscriptions");
+    expect(spend("Yslbeauty", 126.8, "YSLBEAUTY").appCategory).toBe("shopping");
+  });
+});
+
+describe("the keyword pass reads the raw bank line, not just Plaid's clean name", () => {
+  // Plaid's `description` is lossy by design. This is the same failure that made
+  // the ALEKS bill rule match nothing live: the rule was right, the namespace was
+  // wrong. Here the clean name carries no usable token at all.
+  it("finds a merchant that only appears in the raw descriptor", () => {
+    const c = spend("Checkcard 0906", 33.32, "MOBILE PURCHASE 0907 TST* SUZUYA PATISSERIE LAS VEGAS NV");
+    expect(c.appCategory).toBe("dining");
+  });
+});
+
+describe("an internal transfer is not income, pending or posted", () => {
+  // A $39 shuffle between his own two checking accounts booked as other-income
+  // while it was still processing, because only the SETTLED wording was known.
+  // The same dollars were then counted again when they landed.
+  it("the pending wording is recognised too", () => {
+    expect(classifyCredit("TRANSFER FROM ACCT #1211 ON 09/10 VIA WEB")).toBe("transfer");
+    expect(classifyCredit("TRANSFER TO ACCT #4662 ON 09/10 VIA WEB")).toBe("transfer");
+  });
+
+  it("the posted wording still is", () => {
+    expect(classifyCredit("Online Banking transfer from CHK 1211 Confirmation# 7815500990")).toBe("transfer");
+  });
+
+  it("but money from another person is still income", () => {
+    expect(classifyCredit("Zelle payment from KATHERINE CIRINO for \"THANK YOU\"; Conf# T22K84CCN")).toBe("income");
+    expect(classifyCredit("TREASURE OF TECH DES:PAYROLL ID:18301400006591X INDN:CIRINO, GIOVANNI A")).toBe("income");
+  });
+});

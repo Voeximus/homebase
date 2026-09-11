@@ -165,9 +165,13 @@ export function classifyCredit(desc: string): "income" | "transfer" {
   // inflates gross income and double-counts the transfer). They carry no
   // "Internal:" history label, so detect them explicitly.
   if (
-    /\bPAYMENT FROM (CHK|SAV)\b|BKOFAMERICA ATM|\bATM (CASH )?DEPOSIT\b/i.test(
-      desc,
-    )
+    // "TRANSFER FROM ACCT #1211 ON 09/10 VIA WEB" is how Bank of America words a
+    // PENDING internal transfer. The POSTED twin reads "Online Banking transfer
+    // from CHK 1211", which the "Internal:" history label below already catches —
+    // so only the settled form was known, and a $39 shuffle between his own two
+    // checking accounts booked as other-income for as long as it was processing.
+    /\bPAYMENT FROM (CHK|SAV)\b|BKOFAMERICA ATM|\bATM (CASH )?DEPOSIT\b/i.test(desc) ||
+    /\bTRANSFER (FROM|TO) (ACCT|ACCOUNT|CHK|SAV)\b/i.test(desc)
   )
     return "transfer";
   const his = hisLookup(merchantKey(desc));
@@ -385,7 +389,14 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   // he had typed himself. Nothing in the categorizer could put money there.
   Pets: { kind: "variable", appCategory: "pets" },
   "Subscriptions/Digital": { kind: "variable", appCategory: "subscriptions" },
-  "Travel/Other": { kind: "variable", appCategory: "other" },
+  // This said `other`, which made the app's `travel` category UNREACHABLE from
+  // the categorizer: every merchant he had hand-labelled "Travel/Other" — both
+  // American Airlines lines, Southwest, the passport office, PassportVisaExpress
+  // — routed into the $125 Misc line instead. Same shape as the `Pets` bug above:
+  // a category exists on screen that nothing in the labeller can put money into.
+  // (FedEx Office carries this label too and is really shipping, not travel — the
+  // one miscall this remap creates, and it is worth it.)
+  "Travel/Other": { kind: "variable", appCategory: "travel" },
   Other: { kind: "variable", appCategory: "other" },
   // Everything below is real, but not lean-variable living spend → skip on import.
   "Income: Paycheck": { kind: "skip" },
@@ -432,30 +443,52 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
   // building and recurs several times a month at $6 — it was landing in Misc,
   // and (before the Rent veto above) settling the rent cycle.
   {
-    re: /PARKIN\s?SAFE|\bPARKING\b|PARKMOBILE|SPOTHERO|PASSPORT ?PARKING|\bTOLL\b/i,
+    re: /PARKIN\s?SAFE|\bPARKING\b|PARKMOBILE|SPOTHERO|PASSPORT ?PARKING|\bTOLL\b|AIMSPARKING|\bAMP PARK\b/i,
     appCategory: "transport",
   },
+  // Tuition, fees and course materials. `education` is one of two categories the
+  // app displays but the labeller could never reach (see "Travel/Other" above),
+  // so every ASU charge landed in Misc — including the $25 Universal Pathways
+  // enrollment fee, which is the start of a bill that will recur all year.
+  // Runs AFTER parking so "ASU AMP PARK" stays transport, and matches the .edu
+  // domain rather than the bare word "ASU", which appears inside descriptors that
+  // have nothing to do with tuition.
   {
-    re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET/i,
+    re: /ASU\.EDU|UNIVERSAL PATHWAYS|ARIZONA STATE UNIV|\bTUITION\b|CAMPUS BOOKSTOR|\bREGISTRAR\b|EARNED ADMISSION/i,
+    appCategory: "education",
+  },
+  // Hotels, airlines and interstate travel plazas. The other unreachable
+  // category. A road trip currently reads as a pile of Misc: the Las Vegas hotel,
+  // the refund against it, Morton's Travel Plaza and USA Travel Center were five
+  // separate charges no line of the budget could explain.
+  //
+  // Deliberately NOT a bare /TRAVEL/ — his own credit card is named "Travel
+  // Rewards", and matching that would file card activity as a holiday.
+  {
+    re: /BOOKING\.COM|\bEXPEDIA\b|HOTELS?\.COM|AIRBNB|\bVRBO\b|MARRIOTT|HILTON|\bHYATT\b|BEST WESTERN|\bMOTEL\b|\bHOTEL\b|\bINN\b|TRAVEL CENTER|TRAVEL PLAZA|TRAVEL STOP|TRAVEL P\b|AMERICAN AIR|SOUTHWEST AIR|DELTA AIR|UNITED AIR|SPIRIT AIR|FRONTIER AIR|ALLEGIANT|\bAMTRAK\b/i,
+    appCategory: "travel",
+  },
+  {
+    re: /SAFEWAY|WAL-?MART|WM SUPERCENTER|TRADER JOE|WHOLE ?FDS|WHOLE FOODS|FRYS FOOD|KROGER|COSTCO|SAM'?S? CLUB|99 RANCH|H MART|MEKONG|ALDI|SPROUTS|GROCER|MARKET|SUPERMARKET|SMITH'?S? ?#|\bSMITHS\b|ALBERTSONS|\bWINCO\b|FOOD CITY|BASHAS/i,
     appCategory: "groceries",
   },
   {
-    re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER/i,
+    re: /CHIPOTLE|STARBUCKS|DUTCH BROS|\bPANDA\b|MCDONALD|TACO|PIZZA|\bCAFE\b|COFFEE|\bTEA\b|RESTAURANT|GRILL|SUSHI|RAMEN|\bBBQ\b|CANES|JACK IN THE BOX|HOT ?POT|DOORDASH|UBER EATS|GRUBHUB|DINER|KITCHEN|NOODLE|BURGER|SANDWICH|\bDELI\b|BAKERY|PATISSERIE|\bCREPE\b|DONUT|DOUGHNUT|YOGURT|\bBOBA\b|DUMPLING|CHICKEN|\bWINGS\b|SMOOTHIE|CREAMERY|GELATO|\bSUBWAY\b/i,
     appCategory: "dining",
   },
   {
-    re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL/i,
+    re: /AMAZON|TARGET|IKEA|\bROSS\b|NORDSTROM|ULTA|NIKE|VANS|BEST BUY|HOME DEPOT|BASS PRO|MACY|KOHL|\bHM\.COM\b|\bH&M\b|UNIQLO|\bZARA\b|OLD NAVY|TJ ?MAXX|MARSHALLS|\bSHEIN\b|\bTEMU\b|CSC SERVICEWORKS|\bLAUNDR/i,
     appCategory: "shopping",
   },
   // Beauty/cosmetics sits with Health/Personal, which folds into `shopping`.
   // HOURGLAS (no trailing S) so the same rule catches Plaid's truncated clean
   // name "Hourglas" and the raw "SP HOURGLASSCOSME".
   {
-    re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER|HOURGLAS|SEPHORA|\bULTA\b|SALLY BEAUTY/i,
+    re: /CVS|WALGREENS|PHARMACY|CLINIC|DENTAL|MEDICAL|HAIR|SALON|BARBER|HOURGLAS|SEPHORA|\bULTA\b|SALLY BEAUTY|YSLBEAUTY|\bYSL\b|CLINIQUE|LANCOME|ESTEE ?LAUDER|\bBEAUTY\b|COSMETIC/i,
     appCategory: "shopping",
   },
   {
-    re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON/i,
+    re: /SUBSCRIPTION|\.COM\/BILL|GOOGLE|NETFLIX|HULU|AUDIBLE|KINDLE|OPENAI|\bXAI\b|REPLIT|DISNEY|YOUTUBE|PATREON|GODADDY|NAMECHEAP|\bCOLAB\b|\bADOBE\b|MICROSOFT|DROPBOX|\bNOTION\b|GITHUB|\bVERCEL\b/i,
     appCategory: "subscriptions",
   },
 ];
@@ -836,8 +869,14 @@ function classifyCore(
     }
   }
 
+  // Keyword pass reads BOTH namespaces. Plaid's clean name is lossy by design —
+  // it reported "MOBILE PURCHASE 0905 USA TRAVEL CENTER KINGMAN AZ" as the bare
+  // "Usa Travel Center" and "SQ *NANA'S SANDWICH SHO" as "Nana's Sandwich Sho",
+  // and a keyword written against the full bank line matched neither. Same fix as
+  // billHay above: test the pair, not whichever one happened to be passed first.
+  const kwHay = raw && raw !== desc ? `${desc} ${raw}` : desc;
   for (const f of KEYWORD_FALLBACK) {
-    if (f.re.test(desc)) {
+    if (f.re.test(kwHay)) {
       return {
         kind: "variable",
         appCategory: f.appCategory,

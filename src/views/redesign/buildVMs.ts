@@ -29,7 +29,6 @@ import {
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
-import { merchantKey } from "../../lib/categorize";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
 import { t } from "../../lib/i18n";
 import type { HomeVM, BillsVM } from "./vm";
@@ -230,8 +229,6 @@ export function buildFinanceVMs(
     );
 
   const catName = (id: string) => data.categories.find((c) => c.id === id)?.name ?? id;
-  const ruleSet = new Set(data.merchantRules.map((r) => r.pattern));
-  const hasRule = (desc: string) => ruleSet.has(merchantKey(desc));
   const envLabel = (catId: string) =>
     LEAN_VARIABLE.find((l) => l.cats.includes(catId))?.label ?? catName(catId);
 
@@ -554,11 +551,28 @@ export function buildFinanceVMs(
     }
     if (tx.splits && tx.splits.length > 1)
       return { fate: "envelope", badge: t("Split · {n} ways", { n: tx.splits.length }) };
-    // needsReview is the importer's OWN verdict — "I could not tell, ask once".
-    // It is the only one of these three that knows about a multi-department
-    // merchant, where the category shown is a coin flip rather than a reading.
-    // Until it was read here, that question was never put to anyone.
-    if (tx.needsReview || tx.categoryId === "other" || !hasRule(tx.description))
+    // A charge that is still PROCESSING is not a question yet. Its category is
+    // provisional on purpose (a pending bill takes "bills" and gets its real link
+    // when it settles), the bank can still reverse it, and the posted twin will
+    // ask again a day later. Asking now is asking twice about money that may not
+    // even be spent — so a hold never enters the queue.
+    if (tx.pending) return { fate: "envelope", badge: t("Processing") };
+    // needsReview is the importer's OWN verdict: "I could not tell, ask once". It
+    // is the only honest signal here — it knows about a multi-department merchant,
+    // where the category shown is a coin flip rather than a reading.
+    //
+    // This used to also flag `!hasRule(description)`, which is not a signal of
+    // anything: it means only that he has never tapped "Remember this merchant"
+    // on that name. 43 of the 98 rows in the queue were sitting there for that
+    // reason alone — T-Mobile, Spotify, Booking.com, Amazon Prime — every one of
+    // them already filed correctly. Opening a "review" and finding the answer
+    // already filled in is what made the queue not worth reading, and a queue not
+    // worth reading hides the handful of rows that are genuinely undecided.
+    //
+    // `other` stays, but only when he has not answered it himself: Misc is the
+    // absence of a category, so an unfiled row IS an open question — while one he
+    // deliberately put in Misc is a closed one.
+    if (tx.needsReview || (tx.categoryId === "other" && !tx.userCategorized))
       return { fate: "review", badge: t("Needs review") };
     return { fate: "envelope", badge: t("→ {label}", { label: envLabel(tx.categoryId) }) };
   };

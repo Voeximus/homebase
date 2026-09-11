@@ -53,6 +53,7 @@ function mapTxn(r: any): Transaction {
     provider: r.provider ?? undefined,
     recordOnly: !!r.record_only,
     needsReview: !!r.needs_review,
+    userCategorized: !!r.user_categorized,
     createdAt: r.created_at,
   };
 }
@@ -805,6 +806,20 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             );
             return;
           }
+        }
+        // Never learn "Misc" as an answer. `other` is the ABSENCE of a category,
+        // not a category — so a rule teaching it tells the labeller to stop trying
+        // on that merchant forever, and no later rule, however good, can override
+        // it (a learned rule beats everything). Three had accumulated this way:
+        // GOOGLE ONE, GROK XAI and SWA (Southwest) each had a permanent standing
+        // instruction to file in Misc, which is exactly the complaint — "many
+        // transactions are being routed to other instead of a proper category."
+        // Filing ONE charge in Misc is fine and stays; teaching it is not.
+        if (rule.kind === "variable" && (rule.categoryId ?? "other") === "other") {
+          console.warn(
+            `saveMerchantRule: refusing to learn "Misc" for "${rule.pattern}" — that would stop the labeller trying on this merchant.`,
+          );
+          return;
         }
         const row = {
           pattern: rule.pattern,
