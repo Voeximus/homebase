@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Activity, Wallet } from "lucide-react";
+import { Logo } from "./Logo";
 import { t } from "../lib/i18n";
 import { LangToggle } from "./LanguageProvider";
 import type { AppMode } from "./ModeToggle";
@@ -45,7 +46,13 @@ export function WelcomeScreen({
           <LangToggle />
         </div>
         <div className="mx-auto flex min-h-screen max-w-[420px] flex-col items-center justify-center px-8 text-center">
-          <p className="eyebrow text-faint">▣ HOMEBASE</p>
+          {/* Was the literal character "▣" standing in for a logo. There is a
+              real mark now, and this is the first screen of a cold launch — the
+              one place it most needs to be. */}
+          <p className="eyebrow flex items-center gap-2 text-faint">
+            <Logo size={17} />
+            HOMEBASE
+          </p>
 
           {!pending ? (
             <>
@@ -137,7 +144,13 @@ export function WelcomeScreen({
             transform: entering ? "translateX(-12px)" : "none",
           }}
         >
-          <p className="eyebrow text-faint">▣ HOMEBASE</p>
+          {/* Was the literal character "▣" standing in for a logo. There is a
+              real mark now, and this is the first screen of a cold launch — the
+              one place it most needs to be. */}
+          <p className="eyebrow flex items-center gap-2 text-faint">
+            <Logo size={17} />
+            HOMEBASE
+          </p>
           <h1 className="mt-3 text-[27px] font-semibold leading-tight text-bone">
             {t("Welcome back,")}
             <br />

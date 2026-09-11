@@ -1,22 +1,20 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="hb" x1="150" y1="150" x2="360" y2="380" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3fd0ec"/>
-      <stop offset="1" stop-color="#46d18a"/>
+    <linearGradient id="L" x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#06b6d4"/>
     </linearGradient>
-    <radialGradient id="glow" cx="256" cy="250" r="175" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#34c5e8" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#34c5e8" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="R" x1="48" y1="18" x2="86" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <mask id="M">
+      <path d="M22 28 H78 V54 L50 80 L22 54 Z" fill="#fff" stroke="#fff" stroke-width="13" stroke-linejoin="round" paint-order="stroke"/>
+      <rect x="48.8" y="0" width="2.4" height="62" fill="#000"/>
+    </mask>
   </defs>
-  <!-- full-bleed graphite: any OS mask shows no white edge -->
-  <rect width="512" height="512" fill="#0a0d12"/>
-  <rect width="512" height="512" fill="url(#glow)"/>
-  <!-- bold house, kept inside the maskable safe zone -->
-  <g fill="url(#hb)">
-    <path d="M256 140 384 262 128 262 Z"/>
-    <rect x="160" y="252" width="192" height="132" rx="22"/>
+  <g transform="translate(-3 -5.240000000000002) scale(1.06)">
+    <g mask="url(#M)">
+      <rect x="0" y="0" width="50" height="100" fill="url(#L)"/>
+      <rect x="50" y="0" width="50" height="100" fill="url(#R)"/>
+    </g>
   </g>
-  <!-- door cutout -->
-  <rect x="236" y="324" width="40" height="60" rx="9" fill="#0a0d12"/>
 </svg>

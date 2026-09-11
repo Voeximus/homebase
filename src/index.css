@@ -1079,3 +1079,290 @@ input[type="number"] {
     }
   }
 }
+
+/* ══ THE FRONT DOOR ══════════════════════════════════════════════════════════
+   The intro screen. Everything that moves here is CSS, every piece of it is
+   gated behind prefers-reduced-motion, and none of it blocks the form — a
+   person who opens this app wants to be inside it, not watching it. */
+
+.hb-login {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Two slow colour fields behind everything. At this blur they read as light,
+   not as shapes — the difference between atmosphere and two visible blobs. */
+.hb-aurora {
+  position: absolute;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  /* Heavier blur, and the chroma comes from the stops' own alpha.
+     `mix-blend-mode: screen` was the obvious way to keep these bright over a
+     near-black ground — and on a z-index:-1 layer inside an `isolation: isolate`
+     parent it made every SIBLING vanish: the mark, the word and the whole form
+     painted to nothing while the aurora rendered fine. Alpha gets the same
+     colour with none of that. */
+  filter: blur(96px);
+  opacity: 0.9;
+}
+.hb-aurora span {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+}
+/* Placed to frame the mark — upper-left and lower-right of the composition —
+   rather than parked in the screen's corners where they read as vignetting. */
+.hb-aurora .a1 {
+  width: 62vmax;
+  height: 62vmax;
+  left: -18%;
+  top: -14%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.85) 0%, rgba(6, 182, 212, 0.34) 44%, transparent 70%);
+}
+.hb-aurora .a2 {
+  width: 58vmax;
+  height: 58vmax;
+  right: -20%;
+  bottom: -16%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.8) 0%, rgba(99, 102, 241, 0.3) 46%, transparent 70%);
+}
+
+.hb-login-inner {
+  width: 100%;
+  max-width: 380px;
+  position: relative;
+}
+.hb-login-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 26px;
+}
+.hb-mark {
+  /* Larger than the word beside it: the mark is the identity, the word is the
+     caption. At 76 against a 34px title the type was leading. */
+  /* The mark's own cast light, so it sits ON the canvas rather than in front
+     of it. Sized off the mark, not a fixed blur, so it scales with it. */
+  filter: drop-shadow(0 10px 30px rgba(6, 182, 212, 0.34));
+  margin-bottom: 16px;
+}
+.hb-title {
+  font-size: 32px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--color-bone);
+  margin: 0;
+}
+.hb-sub {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-taupe);
+  /* Balanced, not ragged: at 30ch this line broke after "in one", leaving
+     "place." alone on the second row under a centred headline. */
+  max-width: 34ch;
+  text-wrap: balance;
+}
+
+/* The card reads as glass over the aurora rather than as a flat tile: a
+   translucent fill, a blur behind it, and a 1px top highlight where the light
+   would actually catch. */
+.hb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--color-tile) 78%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid var(--color-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 60px -28px rgba(0, 0, 0, 0.9);
+}
+
+.hb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.hb-field > span {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--color-taupe);
+}
+.hb-field input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-edge);
+  background: var(--color-bg);
+  color: var(--color-bone);
+  font-size: 15px; /* 16px-ish: anything smaller makes iOS zoom the page on focus */
+  outline: none;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.hb-field input::placeholder {
+  color: var(--color-faint);
+}
+.hb-field input:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
+}
+.hb-pw {
+  position: relative;
+}
+.hb-pw input {
+  padding-right: 46px;
+}
+.hb-pw button {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 44px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-taupe);
+  cursor: pointer;
+}
+.hb-pw button:hover {
+  color: var(--color-bone);
+}
+
+.hb-msg {
+  margin: 0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.hb-msg.bad {
+  background: rgba(232, 116, 106, 0.12);
+  color: #f0a79f;
+}
+.hb-msg.good {
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+
+/* The one primary action on the screen, carrying the brand across it. */
+.hb-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 13px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #04231f;
+  cursor: pointer;
+  background: linear-gradient(120deg, #34d399 0%, #06b6d4 52%, #3b82f6 100%);
+  box-shadow: 0 12px 28px -14px rgba(6, 182, 212, 0.9);
+  transition: transform 0.12s, filter 0.16s;
+}
+.hb-go:hover {
+  filter: brightness(1.06);
+}
+.hb-go:active {
+  transform: scale(0.985);
+}
+.hb-go:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.hb-swap {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  min-height: 44px;
+  padding: 12px;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  color: var(--color-taupe);
+  cursor: pointer;
+}
+.hb-swap span {
+  font-weight: 700;
+  color: #22d3ee;
+}
+.hb-swap:hover span {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The arrival: mark, word, line, card, in that order. Short, and it never
+     gates input — the form is present and focusable the whole time. */
+  .hb-mark,
+  .hb-title,
+  .hb-sub,
+  .hb-card,
+  .hb-swap {
+    animation: hbRise 0.6s cubic-bezier(0.2, 0.7, 0.25, 1) both;
+  }
+  @keyframes hbRise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* The aurora drifts. 26 and 34 seconds, deliberately not multiples of each
+     other, so the pair never visibly repeats. */
+  .hb-aurora .a1 {
+    animation: hbDrift1 26s ease-in-out infinite alternate;
+  }
+  .hb-aurora .a2 {
+    animation: hbDrift2 34s ease-in-out infinite alternate;
+  }
+  @keyframes hbDrift1 {
+    to {
+      transform: translate3d(12%, 9%, 0) scale(1.14);
+    }
+  }
+  @keyframes hbDrift2 {
+    to {
+      transform: translate3d(-11%, -8%, 0) scale(1.1);
+    }
+  }
+
+  /* A sheen crossing the mark. Long pause between passes — a highlight that
+     comes round every few seconds is a nervous tic, not a shine. */
+  .hb-sheen {
+    animation: hbSheen 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  @keyframes hbSheen {
+    0%, 62% { transform: translateX(0); }
+    88%, 100% { transform: translateX(215px); }
+  }
+
+  .hb-spin {
+    animation: hbSpin 0.9s linear infinite;
+  }
+  @keyframes hbSpin {
+    to { transform: rotate(360deg); }
+  }
+}

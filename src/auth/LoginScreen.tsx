@@ -1,9 +1,21 @@
 import { useState, type FormEvent } from "react";
-import { Eye, EyeOff, Wallet } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "./AuthProvider";
-import { Button, inputClass, labelClass } from "../components/ui";
+import { Logo } from "../components/Logo";
 import { t } from "../lib/i18n";
 
+/**
+ * The front door.
+ *
+ * The old one showed a lucide Wallet in a cyan rounded square — a different mark
+ * from the app's own favicon — over a flat card, and told you it was for "your
+ * shared finances", which stopped being true when Health shipped.
+ *
+ * What it is now: the real mark, at size, over a slow aurora; the two things the
+ * app actually holds named underneath it; and a form that arrives after the
+ * identity rather than beside it. Everything that moves is CSS and every bit of
+ * it is off under prefers-reduced-motion.
+ */
 export function LoginScreen() {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<"in" | "up">("in");
@@ -21,9 +33,8 @@ export function LoginScreen() {
     setNotice(null);
     const run = mode === "in" ? signIn : signUp;
     const { error } = await run(email.trim(), password);
-    if (error) {
-      setError(error);
-    } else if (mode === "up") {
+    if (error) setError(error);
+    else if (mode === "up") {
       setNotice(t("Account created — you can sign in now."));
       setMode("in");
     }
@@ -31,39 +42,45 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-5">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-accent text-bg shadow-lg shadow-accent/30">
-            <Wallet size={28} />
-          </div>
-          <h1 className="text-2xl font-bold text-bone">Homebase</h1>
-          <p className="mt-1 text-sm text-taupe">
-            {mode === "in"
-              ? t("Sign in to your shared finances")
-              : t("Create your account")}
-          </p>
-        </div>
+    <div className="hb-login">
+      {/* Two slow, offset colour fields. They are the only thing on the screen
+          that moves on its own, they sit behind everything, and at this blur
+          radius they read as light rather than as shapes. */}
+      <div className="hb-aurora" aria-hidden>
+        <span className="a1" />
+        <span className="a2" />
+      </div>
 
-        <form
-          onSubmit={submit}
-          className="space-y-4 rounded-xl border border-edge bg-tile p-5 shadow-sm"
-        >
-          <div>
-            <label className={labelClass}>{t("Email")}</label>
+      <main className="hb-login-inner">
+        <header className="hb-login-head">
+          <div className="hb-mark" style={{ animationDelay: "60ms" }}>
+            <Logo size={96} animated title="Homebase" />
+          </div>
+          <h1 className="hb-title" style={{ animationDelay: "160ms" }}>
+            Homebase
+          </h1>
+          {/* The app is money AND body. The old line said "shared finances". */}
+          <p className="hb-sub" style={{ animationDelay: "240ms" }}>
+            {t("Money and health, calibrated in one place.")}
+          </p>
+        </header>
+
+        <form onSubmit={submit} className="hb-card" style={{ animationDelay: "320ms" }}>
+          <label className="hb-field">
+            <span>{t("Email")}</span>
             <input
               type="email"
               autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className={inputClass}
               placeholder="you@example.com"
             />
-          </div>
-          <div>
-            <label className={labelClass}>{t("Password")}</label>
-            <div className="relative">
+          </label>
+
+          <label className="hb-field">
+            <span>{t("Password")}</span>
+            <div className="hb-pw">
               <input
                 type={showPw ? "text" : "password"}
                 autoComplete={mode === "in" ? "current-password" : "new-password"}
@@ -71,61 +88,47 @@ export function LoginScreen() {
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`${inputClass} pr-11`}
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-                className="absolute inset-y-0 right-0 flex items-center px-3 text-taupe transition hover:text-bone"
+                aria-label={showPw ? t("Hide password") : t("Show password")}
               >
-                {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
-          </div>
+          </label>
 
-          {error && (
-            <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-              {error}
-            </p>
-          )}
-          {notice && (
-            <p className="rounded-lg bg-mint/10 px-3 py-2 text-sm text-mint">
-              {notice}
-            </p>
-          )}
+          {error && <p className="hb-msg bad">{error}</p>}
+          {notice && <p className="hb-msg good">{notice}</p>}
 
-          <Button type="submit" disabled={busy} className="w-full">
-            {busy
-              ? t("Working…")
-              : mode === "in"
-                ? t("Sign in")
-                : t("Create account")}
-          </Button>
+          <button type="submit" className="hb-go" disabled={busy}>
+            {busy ? (
+              <>
+                <Loader2 size={17} className="hb-spin" /> {t("Working…")}
+              </>
+            ) : (
+              <>
+                {mode === "in" ? t("Sign in") : t("Create account")} <ArrowRight size={17} />
+              </>
+            )}
+          </button>
         </form>
 
         <button
+          className="hb-swap"
+          style={{ animationDelay: "400ms" }}
           onClick={() => {
             setMode((m) => (m === "in" ? "up" : "in"));
             setError(null);
             setNotice(null);
           }}
-          className="mt-4 w-full text-center text-sm text-taupe transition hover:text-bone"
         >
-          {mode === "in" ? (
-            <>
-              {t("Need an account?")}{" "}
-              <span className="font-semibold text-accent">{t("Sign up")}</span>
-            </>
-          ) : (
-            <>
-              {t("Already have one?")}{" "}
-              <span className="font-semibold text-accent">{t("Sign in")}</span>
-            </>
-          )}
+          {mode === "in" ? t("Need an account?") : t("Already have one?")}{" "}
+          <span>{mode === "in" ? t("Sign up") : t("Sign in")}</span>
         </button>
-      </div>
+      </main>
     </div>
   );
 }

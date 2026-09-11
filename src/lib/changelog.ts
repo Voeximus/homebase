@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.11c",
+    date: "September 11, 2026",
+    notes: [
+      "New logo. It's a home plate — literally \"home base\" — split into two halves that join before the point: two people, two instruments, one place. It's the first mark the app has had that isn't a stock icon, and it still reads at 16 pixels.",
+      "The app had TWO logos and neither of us noticed: a house in the browser tab and a wallet on the sign-in screen. Now there's one, everywhere — tab, home screen, app icon, and the cold-launch screen, which had been using the character \"▣\" as a stand-in.",
+      "The sign-in screen is rebuilt around it — the mark at size over a slow drifting aurora, glass over the light instead of a flat card, and the whole thing arriving in sequence. All of it turns off if your phone is set to reduce motion.",
+      "It also used to say it was for \"your shared finances\", which stopped being true the day Health shipped.",
+    ],
+  },
+  {
     version: "2026.09.11b",
     date: "September 11, 2026",
     notes: [
