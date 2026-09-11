@@ -98,11 +98,11 @@ jobs:
           REF: ganzefaciiyibselizqi
         run: |
           set -e
-          for fn in notify plaid cron-notify plaid-webhook announce-update; do
+          for fn in notify plaid cron-notify plaid-webhook announce-update food-lookup; do
             echo "── deploying $fn"
             supabase functions deploy "$fn" --project-ref "$REF"
           done
-          echo "All five edge functions deployed."
+          echo "All six edge functions deployed."
 
   build:
     runs-on: ubuntu-latest

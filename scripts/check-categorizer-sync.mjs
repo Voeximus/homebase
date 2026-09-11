@@ -11,6 +11,11 @@ import { readFileSync } from "node:fs";
 const PAIRS = [
   ["src/lib/categorize.ts", "supabase/functions/_shared/categorize.ts"],
   ["src/lib/categorizeData.ts", "supabase/functions/_shared/categorizeData.ts"],
+  // The GTIN maths decides WHICH numbers a scanned barcode is looked up under.
+  // The client validates the check digit before it accepts a read; the edge
+  // function walks the same variant list across every food source. A drift here
+  // means the app accepts a code the server will not find.
+  ["src/lib/gtin.ts", "supabase/functions/_shared/gtin.ts"],
 ];
 
 // Normalize away the legitimate, runtime-only differences before comparing.

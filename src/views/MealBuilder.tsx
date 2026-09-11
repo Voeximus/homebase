@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { lookupBarcode } from "../lib/barcode";
+import { gtinVariants } from "../lib/gtin";
 import { DAILY, unitFor, type Food, type FoodRole, type FoodUnit, type MacroTarget } from "../lib/nutrition";
 import {
   amountLabel,
@@ -1581,13 +1582,19 @@ function FoodSearchSheet(props: SearchSheetProps) {
   async function lookup(code: string) {
     const clean = digits(code);
     if (clean.length < 6) return;
-    const inLib = library.find((x) => x.barcode && digits(x.barcode) === clean);
+    // Match a saved food on ANY printed form of the number. The same product
+    // carries UPC-A on one package and EAN-13 on the next, so comparing the
+    // scanned string to the stored string missed foods already in the library —
+    // and then looked them up over the network as if they were new.
+    const forms = new Set(gtinVariants(clean));
+    const matches = (x: { barcode?: string }) => !!x.barcode && forms.has(digits(x.barcode));
+    const inLib = library.find(matches);
     if (inLib) {
       setPicked(inLib);
       setTransient(false);
       return;
     }
-    const known = data.foods.find((x) => x.barcode && digits(x.barcode) === clean);
+    const known = data.foods.find(matches);
     if (known) {
       setPicked(known);
       setTransient(false);
@@ -1598,11 +1605,25 @@ function FoodSearchSheet(props: SearchSheetProps) {
     const r = await lookupBarcode(clean);
     setBusy(false);
     if (!r) {
-      setStatus(t("Not in the food database — try a name search."));
+      setStatus(t("Not in any food database yet — try a name search, or add it by hand."));
       return;
     }
     setStatus(null);
-    setPicked({ id: `scan-${clean}`, name: r.name, role: r.role, kcal: r.kcal, p: r.p, c: r.c, f: r.f, barcode: clean });
+    setPicked({
+      id: `scan-${r.barcode}`,
+      name: r.name,
+      role: r.role,
+      kcal: r.kcal,
+      p: r.p,
+      c: r.c,
+      f: r.f,
+      // The label's own serving weight, when the source states one — so the
+      // portion view opens on "1 serving" instead of a bare 100 g guess.
+      serving: r.serving,
+      // Store the canonical form, so the next scan of this product off a
+      // differently-printed label lands on this same row.
+      barcode: r.barcode,
+    });
     setTransient(true);
   }
 
