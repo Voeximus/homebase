@@ -12,6 +12,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.11b",
+    date: "September 11, 2026",
+    notes: [
+      "Finance got the same treatment as Health, but a much lighter touch — Home passed every check it was put through, so it wasn't touched. The changes are in the places that actually failed.",
+      "The \"where every dollar goes\" bar wasn't reading your numbers. Its three widths were fixed values that happened to match the demo data, so the picture and the four figures printed under it disagreed for every real month. It's computed now.",
+      "Misc and Gas were nearly the same colour — close enough that colour-blind readers can't separate them at all, and hard even with full colour vision. They're the 3rd and 4th biggest categories and they sit one row apart on the budget chart. Misc moved.",
+      "The Forecast equation had invisible operators. The minus and equals signs were painted in the hairline-border colour, so \"income − bills − spending = surplus\" showed up as four unexplained numbers.",
+      "The Home screen said your debt twice — the big number at the top and the tile right below it were the same two facts. That tile now shows when the debt is gone and what leaves on payday, which weren't anywhere.",
+      "The bottom tabs were only as wide as their own words, with dead space between them. Each one now owns a fifth of the bar.",
+      "A pass for readability and thumb-size across every tab: 8 pieces of text that were too faint to meet the standard, and 17 buttons that were too small to hit reliably — including your account initial, which was the least readable thing on the Profile screen.",
+    ],
+  },
+  {
     version: "2026.09.11a",
     date: "September 11, 2026",
     notes: [

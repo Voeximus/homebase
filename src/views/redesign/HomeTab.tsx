@@ -96,10 +96,24 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           className="rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
           style={{ background: "#15172b", borderColor: "#282a4a" }}
         >
+          {/* This tile used to print money(vm.debtLeft) and vm.debtProgressPct —
+              the SAME two facts the gradient hero states 150px above it, in the
+              same units. Two of the four slots on the home screen were spent
+              saying one thing twice.
+
+              The hero keeps the headline. The tile keeps the bar (a % you can
+              see beats a % you have to read) and now carries the two debt facts
+              that were on no screen at all: when it is gone, and what leaves on
+              payday. Both were already on the view-model, unused. */}
           <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#818cf8" }}>
-            <Flame size={14} /> {t("Debt left")}
+            <Flame size={14} /> {t("Payoff")}
           </div>
-          <div className="mt-1.5 text-[22px] font-bold text-bone">{money(vm.debtLeft)}</div>
+          <div className="mt-1.5 text-[22px] font-bold text-bone">{vm.debtFreeBy}</div>
+          <div className="mt-0.5 text-[11px]" style={{ color: "#7a8595" }}>
+            {vm.nextAmount > 0
+              ? t("{amount} on {date}", { amount: money(vm.nextAmount), date: vm.nextDate })
+              : t("{pct}% cleared", { pct: Math.round(vm.debtProgressPct) })}
+          </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
             <div
               className="h-full"
@@ -165,7 +179,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
               </span>
             </div>
           </div>
-          <ChevronRight size={18} style={{ color: "#6b7686" }} />
+          <ChevronRight size={18} style={{ color: "#7a8595" }} />
         </button>
 
         {/* Bills — critical daily glance */}
@@ -191,7 +205,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
               {t("next: {name} · {date}", { name: vm.bills.nextName, date: vm.bills.nextDate })}
             </div>
           </div>
-          <ChevronRight size={18} style={{ color: "#6b7686" }} />
+          <ChevronRight size={18} style={{ color: "#7a8595" }} />
         </button>
 
         {/* Anomaly alert */}
@@ -213,7 +227,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
                 {t("{n} buys ran higher than usual", { n: vm.anomalyCount })}
               </div>
             </div>
-            <ChevronRight size={18} style={{ color: "#6b7686" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
         )}
 

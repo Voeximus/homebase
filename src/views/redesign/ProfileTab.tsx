@@ -16,7 +16,7 @@ import {
   LogOut,
   AlertTriangle,
 } from "lucide-react";
-import { BRAND_GRADIENT } from "../../lib/catColor";
+import { BRAND_GRADIENT, inkOn } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 import {
   disablePush,
@@ -160,7 +160,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
       type="button"
       onClick={onToggle}
       disabled={!onToggle}
-      className="relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
+      className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
       style={{ background: on ? "#34c5e8" : "#2a3441" }}
       aria-pressed={on}
     >
@@ -259,7 +259,7 @@ function PushRow() {
         type="button"
         onClick={toggle}
         disabled={busy || locked}
-        className="relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
+        className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
         style={{ background: registered ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
         aria-pressed={registered}
       >
@@ -286,9 +286,19 @@ export function ProfileTab({
         style={{ background: BRAND_GRADIENT }}
         className="flex items-center gap-3.5 rounded-b-[24px] px-5 py-5 text-white"
       >
+        {/* The initial inherited `text-white` from the hero, but it sits on the
+            OWNER colour, not on the hero gradient — and both owner colours are
+            light: white measured 2.67:1 on Gino's orange and 1.91:1 on Xinyan's
+            teal, against the 3:1 that 22px bold needs. The ink is chosen from
+            the swatch's own luminance so it stays right if either colour ever
+            changes. */}
         <div
           className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-full text-[22px] font-bold"
-          style={{ background: vm.ownerColor, border: "2px solid rgba(255,255,255,0.5)" }}
+          style={{
+            background: vm.ownerColor,
+            color: inkOn(vm.ownerColor),
+            border: "2px solid rgba(255,255,255,0.5)",
+          }}
         >
           {vm.ownerName.slice(0, 1)}
         </div>
@@ -302,7 +312,7 @@ export function ProfileTab({
         </div>
         <button
           onClick={taps.onEdit}
-          className="shrink-0 rounded-full p-1.5 transition active:scale-90"
+          className="h-hit shrink-0 rounded-full p-1.5 transition active:scale-90"
           aria-label="Edit profile"
         >
           <Pencil size={18} />
@@ -353,7 +363,7 @@ export function ProfileTab({
                 {vm.cardsSub}
               </div>
             </div>
-            <ChevronRight size={18} style={{ color: "#6b7686" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
 
           <button
@@ -369,7 +379,7 @@ export function ProfileTab({
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Import a statement")}</div>
             </div>
-            <ChevronRight size={18} style={{ color: "#6b7686" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
         </Group>
 
@@ -454,7 +464,7 @@ export function ProfileTab({
               <HeartPulse size={17} />
             </span>
             <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Health mode")}</div>
-            <ChevronRight size={18} style={{ color: "#6b7686" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
         </Group>
 
@@ -509,8 +519,8 @@ export function ProfileTab({
         {/* ── Advanced ── */}
         <button
           onClick={taps.onAdvanced}
-          className="flex items-center gap-2.5 px-1 text-[12px] transition active:scale-[0.99]"
-          style={{ color: "#6b7686" }}
+          className="h-hit flex items-center gap-2.5 px-1 text-[12px] transition active:scale-[0.99]"
+          style={{ color: "#7a8595" }}
         >
           <AlertTriangle size={15} />
           <span className="flex-1 text-left">{t("Advanced · re-seed, clear all data")}</span>
@@ -546,7 +556,7 @@ function Segmented<T extends string>({
             type="button"
             onClick={() => onSelect?.(o.key)}
             disabled={!onSelect}
-            className="rounded-full px-2.5 py-1 text-[12px] font-medium transition"
+            className="h-hit rounded-full px-2.5 py-1 text-[12px] font-medium transition"
             style={
               isOn
                 ? { background: "#34c5e8", color: "#0b0f17" }

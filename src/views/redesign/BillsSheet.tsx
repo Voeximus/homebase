@@ -175,7 +175,7 @@ export function BillsSheet({
               {mc.monthLabel}
             </span>
           )}
-          <button onClick={onClose} style={{ color: "#6b7686" }}>
+          <button onClick={onClose} style={{ color: "#7a8595" }}>
             <X size={20} />
           </button>
         </div>

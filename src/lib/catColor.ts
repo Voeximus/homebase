@@ -31,7 +31,16 @@ export const CAT_COLOR: Record<string, string> = {
   dining: "#06b6d4", // cyan
   shopping: "#f97316", // orange (household + hygiene)
   health: "#fb7185", // rose
-  other: "#d946ef", // fuchsia
+  // Was #d946ef fuchsia, which sat ΔE 1.3 from `transport` violet under
+  // protanopia and 14.1 under NORMAL vision — below the 15 floor, so even
+  // full-colour readers struggled. Those two are the 3rd and 4th most-used
+  // categories in the ledger and they share the Insights budget chart, one row
+  // apart, as adjacent donut slices. Stepped away from violet while staying in
+  // the same family, so Misc still reads the way he is used to.
+  //   plum vs violet: ΔE 15.4 normal · the five-slice donut now clears every
+  //   hard gate (the remaining green↔orange WARN is legal — each row carries an
+  //   icon and its written name).
+  other: "#b0559b", // plum
   subscriptions: "#2dd4bf", // teal
   entertainment: "#a78bfa", // light violet
   housing: "#60a5fa", // blue
@@ -103,4 +112,38 @@ export function conicFromSegments(
     return `${s.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
   });
   return `conic-gradient(from -90deg, ${stops.join(", ")})`;
+}
+
+/**
+ * Readable ink for text sitting ON one of these swatches.
+ *
+ * Every colour in this file is a MARK colour — picked to read against the dark
+ * canvas — which makes them mid-toned, and white text on a mid-toned swatch is
+ * the contrast failure that keeps recurring: an audit of the rendered Profile
+ * hero measured the owner initial at 2.67:1 on Gino's orange and 1.91:1 on
+ * Xinyan's teal, where 22px bold needs 3:1.
+ *
+ * It COMPARES the two candidates rather than testing luminance against a
+ * threshold. The first version of this used `L > 0.45`, which is the kind of
+ * magic number that looks principled and isn't: Gino's orange sits at L 0.34,
+ * so it picked white — and white was the losing option by 2.6×. Computing both
+ * ratios needs no constant and cannot be wrong.
+ */
+const DARK_INK = "#0d1218";
+const LIGHT_INK = "#ffffff";
+
+function relLuminance(hex: string): number {
+  const h = hex.replace("#", "");
+  const lin = [0, 2, 4].map((i) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+export function inkOn(bg: string): string {
+  if (!/^#?[0-9a-f]{6}$/i.test(bg.replace("#", "").length === 6 ? bg : "")) return DARK_INK;
+  const b = relLuminance(bg);
+  const ratio = (a: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  return ratio(relLuminance(DARK_INK)) >= ratio(relLuminance(LIGHT_INK)) ? DARK_INK : LIGHT_INK;
 }

@@ -126,7 +126,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                 <button
                   key={c.catId}
                   onClick={() => taps.onCategory?.(c.catId)}
-                  className="w-full text-left transition active:scale-[0.99]"
+                  className="flex min-h-[44px] w-full flex-col justify-center text-left transition active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-2.5">
                     <Icon size={16} style={{ color }} className="shrink-0" />
@@ -162,26 +162,44 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
           >
             {t("Where every dollar goes")}
           </div>
-          <div className="flex h-[30px] overflow-hidden rounded-[8px]">
-            <div
-              className="flex items-center justify-center text-[10px] font-medium text-white"
-              style={{ width: "45.9%", background: "#5b82b3" }}
-            >
-              {t("Living")}
-            </div>
-            <div
-              className="flex items-center justify-center text-[10px] font-medium"
-              style={{ width: "20.9%", background: "#e3b341", color: "#1a1407" }}
-            >
-              {t("Variable")}
-            </div>
-            <div
-              className="flex items-center justify-center text-[10px] font-medium"
-              style={{ width: "33.2%", background: "#34c5e8", color: "#06222b" }}
-            >
-              {t("Debt")}
-            </div>
-          </div>
+          {/* This bar's three widths were the LITERALS 45.9% / 20.9% / 33.2%.
+              They match the design-lab's mock numbers exactly, which is why it
+              looked right in the harness and in the screenshots — but it never
+              read vm.living / vm.variable / vm.atDebt at all. With any other
+              month's numbers the picture and the four figures printed directly
+              underneath it disagreed, and the picture was the one people trust.
+
+              It is computed now. Segments under ~12% drop their label rather
+              than squeeze it, and every slice keeps dark ink: white on the
+              steel-blue measured 3.97:1, under what 10px text needs, while its
+              two neighbours already used dark ink — so one bar had two
+              different text treatments and the odd one out was the failing one. */}
+          {(() => {
+            const parts = [
+              { key: "living", label: t("Living"), value: vm.living, bg: "#5b82b3" },
+              { key: "variable", label: t("Variable"), value: vm.variable, bg: "#e3b341" },
+              { key: "debt", label: t("Debt"), value: vm.atDebt, bg: "#34c5e8" },
+            ].filter((seg) => seg.value > 0);
+            const total = parts.reduce((a, seg) => a + seg.value, 0);
+            if (total <= 0) return null;
+            return (
+              <div className="flex h-[30px] overflow-hidden rounded-[8px]">
+                {parts.map((seg) => {
+                  const pct = (seg.value / total) * 100;
+                  return (
+                    <div
+                      key={seg.key}
+                      className="flex items-center justify-center overflow-hidden text-[10px] font-semibold"
+                      style={{ width: `${pct}%`, background: seg.bg, color: "#0d1218" }}
+                      title={`${seg.label} · ${money(seg.value)} · ${Math.round(pct)}%`}
+                    >
+                      {pct >= 12 ? seg.label : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
           <div className="mt-4 grid grid-cols-4 gap-2 text-center">
             <Stat label={t("Income")} value={money(vm.income)} color="#46d18a" />
             <Stat label={t("Living")} value={money(vm.living)} color="#e6edf3" />
@@ -234,7 +252,11 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
                     style={{
                       background: hi ? "#34c5e826" : "#1a212c",
-                      color: hi ? "#34c5e8" : "#6b7686",
+                      // The rank sat at 4.33:1 on its own chip — dimmer than the
+                      // dim ink elsewhere, because the chip is LIGHTER than the
+                      // card it sits on. It is a number the ladder exists to be
+                      // read in order, so it takes the secondary ink.
+                      color: hi ? "#34c5e8" : "#8b97a6",
                     }}
                   >
                     {d.rank}

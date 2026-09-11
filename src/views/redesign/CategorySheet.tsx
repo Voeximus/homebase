@@ -66,7 +66,7 @@ export function CategorySheet({
             <Icon size={19} />
           </span>
           <div className="flex-1 text-[18px] font-bold text-bone">{vm.label}</div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}>
+          <button onClick={onClose} style={{ color: "#7a8595" }}>
             <X size={20} />
           </button>
         </div>
@@ -80,7 +80,7 @@ export function CategorySheet({
               {t("Spent this month")}
             </span>
             <span className="text-[15px] font-bold text-bone">
-              {money2(vm.spent)} <span style={{ color: "#6b7686", fontWeight: 400 }}>/ {money2(vm.target)}</span>
+              {money2(vm.spent)} <span style={{ color: "#7a8595", fontWeight: 400 }}>/ {money2(vm.target)}</span>
             </span>
           </div>
           <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#222b38" }}>

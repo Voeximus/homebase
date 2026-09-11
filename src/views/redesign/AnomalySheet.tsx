@@ -52,7 +52,7 @@ export function AnomalySheet({
               {t("Bigger than your usual for the category. Review, then dismiss.")}
             </div>
           </div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}>
+          <button onClick={onClose} style={{ color: "#7a8595" }}>
             <X size={20} />
           </button>
         </div>

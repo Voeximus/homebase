@@ -148,7 +148,7 @@ export function ForecastTab({
               </span>
               <button
                 onClick={() => setCycleSpend(Math.round(typical))}
-                className="text-[11px] font-semibold active:opacity-60"
+                className="h-hit text-[11px] font-semibold active:opacity-60"
                 style={{ color: C.accent }}
               >
                 use {money(typical)}
@@ -184,12 +184,17 @@ export function ForecastTab({
             className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl px-3 py-2.5 text-[11px]"
             style={{ background: C.bg, color: C.dim }}
           >
+            {/* The operators were painted in C.line — the 1px HAIRLINE BORDER
+                colour — which measures 1.38:1 against this card. They were
+                invisible, so the "equation, spelled out" that the comment above
+                promises rendered as four unexplained numbers in a row. C.dim is
+                the same ink the term labels already use. */}
             <Term label="income · measured" value={money(next.income)} />
-            <span style={{ color: C.line }}>−</span>
+            <span aria-hidden style={{ color: C.dim }}>−</span>
             <Term label="bills · measured" value={money(next.bills)} />
-            <span style={{ color: C.line }}>−</span>
+            <span aria-hidden style={{ color: C.dim }}>−</span>
             <Term label="spending · your setting" value={money(next.spend)} tint={C.warm} />
-            <span style={{ color: C.line }}>=</span>
+            <span aria-hidden style={{ color: C.dim }}>=</span>
             <Term
               label={next.surplus < 0 ? "short" : "surplus"}
               value={money(next.surplus)}

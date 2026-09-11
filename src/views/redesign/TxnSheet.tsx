@@ -98,7 +98,7 @@ export function TxnSheet({
       >
         <div className="mb-3 flex items-start gap-2.5">
           {splitting && (
-            <button onClick={() => setSplitting(false)} style={{ color: "#6b7686" }} aria-label="Back">
+            <button onClick={() => setSplitting(false)} style={{ color: "#7a8595" }} aria-label="Back">
               <ChevronLeft size={20} />
             </button>
           )}
@@ -116,13 +116,13 @@ export function TxnSheet({
             {!splitting && txn.rawDescription && txn.rawDescription !== txn.description && (
               <div
                 className="mt-1 break-words font-mono text-[10.5px] leading-snug"
-                style={{ color: "#6b7686" }}
+                style={{ color: "#7a8595" }}
               >
                 {txn.rawDescription}
               </div>
             )}
           </div>
-          <button onClick={onClose} style={{ color: "#6b7686" }}>
+          <button onClick={onClose} style={{ color: "#7a8595" }}>
             <X size={20} />
           </button>
         </div>
@@ -234,7 +234,7 @@ export function TxnSheet({
                   })}
                 </div>
                 {(linked || twoDepartments || !remember) && (
-                  <p className="mt-1.5 text-[11px]" style={{ color: "#6b7686" }}>
+                  <p className="mt-1.5 text-[11px]" style={{ color: "#7a8595" }}>
                     {linked
                       ? t("Sets only this charge — a bill or transfer payment doesn't teach the merchant.")
                       : twoDepartments
@@ -468,7 +468,7 @@ function SplitEditor({
           </div>
           <div className="text-right">
             <div className="num text-[13px] font-semibold text-bone">
-              {money2(sum)} <span style={{ color: "#6b7686", fontWeight: 400 }}>/ {money2(total)}</span>
+              {money2(sum)} <span style={{ color: "#7a8595", fontWeight: 400 }}>/ {money2(total)}</span>
             </div>
             {!balanced && remaining > 0 && (
               <div className="mt-0.5 text-[10.5px] font-medium" style={{ color: "#34c5e8" }}>{t("tap to fill the rest")}</div>
@@ -525,7 +525,7 @@ function SplitEditor({
                 />
               </div>
               {rows.length > 2 && (
-                <button onClick={() => removeRow(i)} style={{ color: "#6b7686" }} aria-label="Remove split row">
+                <button onClick={() => removeRow(i)} style={{ color: "#7a8595" }} aria-label="Remove split row">
                   <X size={16} />
                 </button>
               )}

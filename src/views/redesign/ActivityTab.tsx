@@ -58,11 +58,19 @@ function FateBadge({ row }: { row: ActivityRow }) {
     );
   }
   if (row.fate === "envelope") {
+    // The label used to BE the category colour. Those hexes are mark colours —
+    // chosen to read as a donut slice or a bar against the dark canvas — and
+    // three of the seventeen fall under 4.5:1 as 10.5px text: transport 4.12,
+    // interest 3.72, other 3.84. Lightening them for text would break the chart
+    // contrast they were picked for, so the label takes ink and a dot carries
+    // the colour. That fixes every category at once, including any added later,
+    // and the pill keeps the tint it always had.
     return (
       <span
-        className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: c + "26", color: c }}
+        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium"
+        style={{ background: c + "26", color: "#dbe4ec" }}
       >
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c }} />
         {row.badgeLabel}
       </span>
     );
@@ -139,7 +147,7 @@ export function ActivityTab({
       <button
         key={key}
         onClick={() => setFilter(key)}
-        className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]"
+        className="flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]"
         style={{
           background: active ? "#0b0f17" : "transparent",
           color: active ? "#e6edf3" : "#8b97a6",
@@ -174,7 +182,7 @@ export function ActivityTab({
         <button
           onClick={doRefresh}
           disabled={refreshing}
-          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-[0.97]"
+          className="flex min-h-[40px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-[0.97]"
           style={{
             background: justRefreshed ? "rgba(70,209,138,.25)" : "rgba(255,255,255,.2)",
             border: justRefreshed ? "1px solid rgba(70,209,138,.5)" : "1px solid rgba(255,255,255,.3)",
@@ -228,7 +236,7 @@ export function ActivityTab({
                 onClick={() => setMIdx((i) => Math.min(i + 1, months.length - 1))}
                 disabled={idx >= months.length - 1}
                 aria-label={t("Previous month")}
-                className="rounded-md p-1 disabled:opacity-30"
+                className="h-hit rounded-md p-1 disabled:opacity-30"
                 style={{ color: "#9aa6b2" }}
               >
                 <ChevronLeft size={16} />
@@ -238,7 +246,7 @@ export function ActivityTab({
                 onClick={() => setMIdx((i) => Math.max(i - 1, 0))}
                 disabled={idx <= 0}
                 aria-label={t("Next month")}
-                className="rounded-md p-1 disabled:opacity-30"
+                className="h-hit rounded-md p-1 disabled:opacity-30"
                 style={{ color: "#9aa6b2" }}
               >
                 <ChevronRight size={16} />
