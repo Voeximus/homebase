@@ -71,10 +71,9 @@ const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
 // index.css for how the trio was derived: it is computed against this app's own
 // dark surfaces (all-pairs, Machado 2009 CVD simulation), not picked by eye.
 const MACRO = { p: "var(--mc-p)", c: "var(--mc-c)", f: "var(--mc-f)" };
-// Kept as an alias: the old "bright" variants existed because the numbers sat on
-// a saturated gradient hero and needed lifting off it. The hero is flat now, so
-// values wear the normal text token and the legend color rides on the mark.
-const MACRO_BRIGHT = MACRO;
+// (There used to be a MACRO_BRIGHT set here — lifted variants for numbers sitting
+// on the saturated gradient hero. The hero is flat now and no number wears a
+// legend color anywhere in the mode, so nothing needed them.)
 // Card surface — reads the themed tokens so every `style={TILE}` card reskins
 // with the Appearance chooser. (Was a hardcoded slate.)
 const TILE = { background: "var(--color-tile)", borderColor: "var(--color-edge)" } as const;
@@ -1883,9 +1882,24 @@ function FoodSearchSheet(props: SearchSheetProps) {
                     <button
                       key={f.id}
                       onClick={() => { setPicked(f); setTransient(false); }}
-                      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-[var(--color-tile)]"
+                      className="flex w-full items-center gap-3 rounded-xl px-2.5 text-left transition active:bg-[var(--color-tile)]"
+                      style={{ minHeight: 56 }}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[11px] font-bold" style={{ background: ROLE_TINT[f.role] + "22", color: ROLE_TINT[f.role] }}>
+                      {/* The calorie count in INK, with the role carried by the
+                          tile's edge. It used to be the role color itself — a
+                          3-digit number at 11px in magenta measures ~4.4:1,
+                          under what small text needs, and it made the one figure
+                          you scan the list by the hardest thing in the row to
+                          read. The color still says "this is a protein food";
+                          the number is now legible while it says it. */}
+                      <span
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[11.5px] font-bold"
+                        style={{
+                          background: "var(--color-raised)",
+                          color: "var(--color-bone)",
+                          boxShadow: `inset 0 0 0 1px var(--color-edge), inset 2px 0 0 0 ${ROLE_TINT[f.role]}`,
+                        }}
+                      >
                         {f.kcal}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -1998,9 +2012,13 @@ function PortionView({
               {food.kcal}
               <span className="ml-0.5 text-[10px] font-semibold" style={{ color: "var(--color-taupe)" }}>{t("kcal")}</span>
             </span>
-            <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.p }}>{food.p}P</span>
-            <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.c }}>{food.c}C</span>
-            <span className="num text-[12px] font-bold" style={{ color: MACRO_BRIGHT.f }}>{food.f}F</span>
+            {/* Dots + ink, the same grammar as every other macro readout in the
+                mode. These were three bold 12px numerals in the legend colors,
+                which is small colored text at ~4.4:1 — under what AA asks of it,
+                and three different colors on one line for one fact. */}
+            <span className="h-dot" style={{ "--mc": MACRO.p } as CSSProperties}>{food.p}P</span>
+            <span className="h-dot" style={{ "--mc": MACRO.c } as CSSProperties}>{food.c}C</span>
+            <span className="h-dot" style={{ "--mc": MACRO.f } as CSSProperties}>{food.f}F</span>
             <span className="text-[10px]" style={{ color: "var(--color-taupe)" }}>{t("per 100g")}</span>
           </div>
           {hasUnit && (
@@ -2057,15 +2075,24 @@ function PortionView({
             </span>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
+            {/* The big number stays in INK and the legend color moves to a rule
+                along the card's top edge. At 19px bold a colored numeral would
+                actually clear contrast — but then the three cards are three
+                different-colored numbers, which reads as three unrelated things
+                rather than one row of the same measurement. */}
             {[
-              { k: t("Protein"), v: c.p, color: MACRO_BRIGHT.p },
-              { k: t("Carbs"), v: c.c, color: MACRO_BRIGHT.c },
-              { k: t("Fat"), v: c.f, color: MACRO_BRIGHT.f },
+              { k: t("Protein"), v: c.p, color: MACRO.p },
+              { k: t("Carbs"), v: c.c, color: MACRO.c },
+              { k: t("Fat"), v: c.f, color: MACRO.f },
             ].map((m) => (
-              <div key={m.k} className="rounded-lg px-2 py-2 text-center" style={{ background: "var(--color-bg)", border: "1px solid var(--color-edge)" }}>
+              <div
+                key={m.k}
+                className="overflow-hidden rounded-lg px-2 py-2 text-center"
+                style={{ background: "var(--color-well)", boxShadow: `inset 0 0 0 1px var(--color-edge), inset 0 2px 0 0 ${m.color}` }}
+              >
                 <div className="flex items-baseline justify-center gap-0.5">
-                  <span className="stat text-[19px]" style={{ color: m.color }}>{r0(m.v)}</span>
-                  <span className="text-[10px] font-bold" style={{ color: m.color, opacity: 0.65 }}>g</span>
+                  <span className="stat text-[19px]" style={{ color: "var(--color-bone)" }}>{r0(m.v)}</span>
+                  <span className="text-[10px] font-bold" style={{ color: "var(--color-taupe)" }}>g</span>
                 </div>
                 <div className="stat-key mt-0.5" style={{ color: "var(--color-taupe)" }}>{m.k}</div>
               </div>

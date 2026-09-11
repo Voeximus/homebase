@@ -12,6 +12,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.11a",
+    date: "September 11, 2026",
+    notes: [
+      "Health mode has been rebuilt. The short version: one colour used to do every job — it was the hero background, the labels, the buttons, the weight line AND the protein colour, so nothing stood out because everything did.",
+      "Now there's one accent, and it only ever means \"you can tap this\". Protein, carbs and fat have their own three colours that never change between themes, and those three were checked with a colour-blindness simulator against the actual screen rather than picked by eye.",
+      "Meals and Workouts are a labelled bar at the bottom of the screen instead of two tiny unlabelled icons at the top next to the log-out button. Language, appearance and sign-out moved into one Settings button.",
+      "\"Just me\" and \"Together\" say so in words now, instead of being a person icon and a two-person icon.",
+      "Fixed: on a phone, \"PROTEIN 111 /130\" was wrapping onto two lines while carbs and fat stayed on one.",
+      "Fixed: the week tile said \"0 of 4 on plan\" directly above four squares that looked filled in. A day you logged but came in under target is now a half-filled square, so the picture and the number agree.",
+      "The workouts screen had two big buttons of the same width doing different things. There's one now, and tapping a routine anywhere starts it.",
+    ],
+  },
+  {
     version: "2026.09.10d",
     date: "September 10, 2026",
     notes: [
