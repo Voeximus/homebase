@@ -43,9 +43,11 @@ const sessionStat = (w: Workout) =>
     ? t("{n} min", { n: workoutDuration(w) })
     : t("{n} sets", { n: totalSets(w) });
 
-const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
+// See the note on PERSON_ACC in MealBuilder: person identity is carried by the
+// NAME, not by a brand hue. The orange and teal that used to live here sat on
+// top of the fat legend and the accent respectively.
+const PERSON_ACC = (you: boolean) => (you ? "var(--color-accent)" : "var(--color-taupe)");
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
-const TILE = { background: "var(--color-tile)", borderColor: "var(--color-edge)" } as const;
 const STICKY_TOP = "calc(env(safe-area-inset-top, 0px) + 6px)";
 const r0 = (n: number) => Math.round(n);
 const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
@@ -70,9 +72,13 @@ export function WorkoutSection({ owner, person }: { owner: Person; person: Perso
   return (
     <div className="flex flex-col gap-3 pb-8">
       <div className="hb-ctl">
-        <div className="hb-itog">
-          <button className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")} aria-label={t("Just me")}><User size={16} /></button>
-          <button className={mode === "together" ? "on" : ""} onClick={() => setMode("together")} aria-label={t("Together")}><Users size={16} /></button>
+        <div className="h-seg" role="tablist" aria-label={t("Who this is for")}>
+          <button role="tab" aria-selected={mode === "solo"} className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")}>
+            <User size={14} /> {t("Just me")}
+          </button>
+          <button role="tab" aria-selected={mode === "together"} className={mode === "together" ? "on" : ""} onClick={() => setMode("together")}>
+            <Users size={14} /> {t("Together")}
+          </button>
         </div>
       </div>
 
@@ -208,51 +214,53 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
         />
       ) : (
         <>
-          <button
-            onClick={startBlank}
-            className="flex items-center justify-center gap-2 rounded-[18px] py-4 text-[15px] font-semibold text-white transition active:scale-[0.98]"
-            style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
-          >
-            <Play size={17} /> {t("Add a workout")}
+          {/* ONE primary. The second button was a tinted-accent slab of the same
+              width directly under the first, which makes two primaries and no
+              answer to "what do I press?". Starting a session is the main act;
+              logging a walk afterwards is the aside, so it now reads as one. */}
+          <button onClick={startBlank} className="h-btn" style={{ minHeight: 52, fontSize: 15 }}>
+            <Play size={17} /> {t("Start a workout")}
           </button>
-          <button
-            onClick={() => setQuickOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-[16px] py-3 text-[13.5px] font-semibold transition active:scale-[0.98]"
-            style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
-          >
-            <Zap size={16} /> {t("Quick log — just an activity")}
+          <button onClick={() => setQuickOpen(true)} className="h-link" style={{ justifyContent: "center", width: "100%" }}>
+            <Zap size={14} /> {t("Or just log an activity")}
           </button>
         </>
       )}
 
       {/* routines */}
       {!active && (
-        <section className="rounded-[18px] border p-4" style={TILE}>
-          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
-            {t("Routines")}
-          </p>
+        <section className="h-panel">
+          <p className="h-eyebrow" style={{ marginBottom: "var(--h-2)" }}>{t("Routines")}</p>
           <div className="flex flex-col gap-2">
+            {/* The whole row starts the routine, so the accent is spent once on
+                the real primary above instead of four times on identical Start
+                pills that out-shouted the names you are actually reading. */}
             {routines.map((r) => (
-              <div key={r.id} className="flex items-center gap-2 rounded-[12px] px-3 py-2.5" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13.5px] font-medium text-bone">{t(r.name)}</div>
-                  <div className="truncate text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
-                    {r.meta ? t(r.meta) + " · " : ""}
-                    {t("{n} exercises", { n: r.exercises.length })}
-                  </div>
-                </div>
-                {!r.seed && (
-                  <button onClick={() => deleteRoutine(r.id)} style={{ color: "var(--color-faint)" }} aria-label="Delete routine">
-                    <Trash2 size={14} />
-                  </button>
-                )}
+              <div key={r.id} className="flex items-center gap-1">
                 <button
                   onClick={() => startFromRoutine(r)}
-                  className="flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold"
-                  style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-[12px] px-3 text-left"
+                  style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", minHeight: 52 }}
                 >
-                  <Play size={12} /> {t("Start")}
+                  <Play size={14} style={{ color: "var(--color-accent)", flex: "none" }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13.5px] font-semibold" style={{ color: "var(--color-bone)" }}>{t(r.name)}</span>
+                    <span className="block truncate text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
+                      {r.meta ? t(r.meta) + " · " : ""}
+                      {t("{n} exercises", { n: r.exercises.length })}
+                    </span>
+                  </span>
                 </button>
+                {!r.seed && (
+                  <button
+                    onClick={() => deleteRoutine(r.id)}
+                    className="grid h-11 w-10 place-items-center rounded-[10px]"
+                    style={{ color: "var(--color-faint)" }}
+                    aria-label={t("Delete routine")}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -261,12 +269,10 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
 
       {/* PRs */}
       {prs.length > 0 && (
-        <section className="rounded-[18px] border p-4" style={TILE}>
+        <section className="h-panel">
           <div className="mb-2.5 flex items-center gap-1.5">
-            <Trophy size={14} style={{ color: "#f6c453" }} />
-            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
-              {t("Personal records")}
-            </p>
+            <Trophy size={14} style={{ color: "var(--color-faint)" }} />
+            <p className="h-eyebrow">{t("Personal records")}</p>
           </div>
           <div className="flex flex-col">
             {prs.slice(0, 6).map((pr) => (
@@ -276,7 +282,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                   {pr.weight > 0 ? t("{w} lb × {r}", { w: r0(pr.weight), r: pr.reps }) : t("{r} reps", { r: pr.reps })}
                 </div>
                 {pr.e1rm > 0 && (
-                  <div className="num w-[58px] shrink-0 text-right text-[11px]" style={{ color: "#f6c453" }}>
+                  <div className="num w-[58px] shrink-0 text-right text-[11px]" style={{ color: "var(--color-taupe)" }}>
                     {t("~{n} 1RM", { n: r0(pr.e1rm) })}
                   </div>
                 )}
@@ -288,7 +294,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
 
       {/* history */}
       {done.length > 0 && (
-        <section className="rounded-[18px] border p-4" style={TILE}>
+        <section className="h-panel">
           <button onClick={() => setShowHistory((s) => !s)} className="flex w-full items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
               {t("History · {n}", { n: done.length })}
@@ -377,7 +383,7 @@ function ActiveWorkout({
   onSaveRoutine: () => void;
 }) {
   return (
-    <section className="rounded-[18px] border p-4" style={TILE}>
+    <section className="h-panel">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Dumbbell size={15} style={{ color: "var(--color-accent)" }} />
@@ -635,32 +641,38 @@ function DurationBlock({ ex, onChange, onRemove }: { ex: ExerciseEntry; onChange
 function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: number; active: Workout | null }) {
   const vol = active ? workoutVolume(active) : 0;
   const sets = active ? totalSets(active) : 0;
+  // Same grammar as the meal day's hero, so the two halves of Health read as one
+  // app: eyebrow, one big number, one supporting line, progress underneath.
+  //
+  // The old card stacked a 30px "0" over a 9px "DAYS" and put the week bars to
+  // its RIGHT on the same baseline as a sentence — three unrelated things in one
+  // row, with the bars running off the edge at 375px.
+  const left = Math.max(0, WEEK_GOAL - weekCount);
   return (
-    <div className="rounded-[22px] px-5 py-4 text-white shadow-lg" style={{ background: "var(--color-hero)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)" }}>
-      <div className="flex items-center justify-between text-[11.5px] opacity-90">
-        <span>{t("{name}'s training", { name })}</span>
-        <span>{t("this week")}</span>
+    <div className="h-hero">
+      <div className="h-herorow">
+        <div className="min-w-0">
+          <div className="h-eyebrow">{t("{name}'s training", { name })}</div>
+          <div key={weekCount} className="h-display pop" style={{ marginTop: 4 }}>
+            {weekCount}
+          </div>
+          <div className="h-sub" style={{ marginTop: 6 }}>
+            {t("of {n} days this week", { n: WEEK_GOAL })}
+          </div>
+        </div>
       </div>
-      <div className="mt-2 flex items-center gap-4">
-        <div className="flex flex-col items-center">
-          <span key={weekCount} className="pop num text-[30px] font-bold leading-none">{weekCount}</span>
-          <span className="text-[9px] font-semibold uppercase tracking-wide opacity-90">{t("days")}</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          {/* week dots */}
-          <div className="flex gap-1.5">
-            {Array.from({ length: WEEK_GOAL }, (_, i) => (
-              <span key={i} className="h-2 flex-1 rounded-full" style={{ background: i < weekCount ? "var(--color-accent)" : "rgba(255,255,255,0.16)", transition: "background .3s" }} />
-            ))}
-          </div>
-          <div className="mt-2 text-[11.5px] opacity-90">
-            {active
-              ? t("In progress · {sets} sets{vol}", { sets, vol: vol > 0 ? ` · ${r0(vol).toLocaleString()} ${t("vol")}` : "" })
-              : weekCount >= WEEK_GOAL
-                ? t("Goal hit 🎯 — nice work")
-                : t("{n} to hit your weekly goal", { n: WEEK_GOAL - weekCount })}
-          </div>
-        </div>
+      {/* The week as a row of equal slots — a progress meter, not a sentence. */}
+      <div className="h-week" style={{ gridTemplateColumns: `repeat(${WEEK_GOAL}, 1fr)` }}>
+        {Array.from({ length: WEEK_GOAL }, (_, i) => (
+          <span key={i} className={`d${i < weekCount ? " on" : ""}`} style={{ height: 8 }} />
+        ))}
+      </div>
+      <div className="h-sub" style={{ marginTop: "var(--h-2)" }}>
+        {active
+          ? t("In progress · {sets} sets{vol}", { sets, vol: vol > 0 ? ` · ${r0(vol).toLocaleString()} ${t("vol")}` : "" })
+          : weekCount >= WEEK_GOAL
+            ? t("Goal hit — nice work")
+            : t("{n} more to hit your goal", { n: left })}
       </div>
     </div>
   );
@@ -711,7 +723,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
       </div>
 
       {/* shared activity feed */}
-      <section className="rounded-[18px] border p-4" style={TILE}>
+      <section className="h-panel">
         <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-taupe)" }}>
           {t("Recent activity")}
         </p>
@@ -723,11 +735,11 @@ function TogetherWorkout({ owner }: { owner: Person }) {
           <div className="flex flex-col">
             {feed.map((w) => {
               const who = w.person;
-              const acc = PERSON_ACC[who];
+              const acc = PERSON_ACC(who === you);
               return (
                 <div key={w.id} className="flex items-center gap-2.5 border-b py-2 last:border-0" style={{ borderColor: "var(--color-edge)" }}>
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: acc + "22", color: acc }}>
-                    {who === you ? "▲" : PERSON_NAME[who][0]}
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: "var(--color-raised)", color: acc, boxShadow: "inset 0 0 0 1px var(--color-edge)" }}>
+                    {PERSON_NAME[who][0]}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] text-bone">

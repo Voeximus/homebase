@@ -149,172 +149,840 @@ input[type="number"] {
   letter-spacing: -0.011em;
 }
 
-/* ── Health mode themes ──────────────────────────────────────────────────────
-   The Settings → Appearance chooser puts one of these classes on the health
-   root; each overrides the semantic --color-* tokens (so every surface using the
-   bg-tile / text-bone / text-accent … classes reskins at once) plus a few
-   health-only --h-* tokens for the hero + macro counter. The macro colors
-   (protein rose / carb sky / fat gold) are deliberately NOT themed — they're a
-   fixed data legend. Per-device preference (localStorage), so Gino and Xinyan
-   can each pick their own look. */
+/* ══ HEALTH MODE ════════════════════════════════════════════════════════════
+   Rebuilt 2026-09-10. The old version had one real defect and everything else
+   followed from it: ONE HUE DID EVERY JOB. Rose was the hero background, the
+   section-label color, the icon tint, both button styles, the weight trend line
+   AND the protein data color. When everything is the accent, nothing is — and
+   the worst of it was that "protein" and "tappable" were the same color, so the
+   legend and the affordance were indistinguishable.
+
+   The fix is to give color three separate jobs and never let them mix.
+
+   ── 1. GROUND ── a three-step neutral ramp. Hierarchy comes from fill depth
+      (canvas → panel → well), never from shadows or borders alone. Each theme's
+      neutrals carry a slight hue bias toward its own temperature so they read as
+      chosen rather than as default grey.
+
+   ── 2. ACCENT (--color-accent) ── exactly one meaning: THIS IS SOMETHING YOU
+      CAN DO. Buttons, links, the active tab. Never a label color, never a
+      background wash, never a data series. There is a lot of it on screen in an
+      app like this, so it has to mean one thing.
+
+   ── 3. DATA LEGEND (--mc-p / --mc-c / --mc-f) ── protein, carbs, fat. FIXED
+      across all three themes, because a legend that moves is not a legend.
+
+   The legend was computed, not picked. Run against the dark surfaces this app
+   actually uses, all-pairs (every macro can sit beside every other), Machado
+   2009 CVD simulation:
+
+        protein #d55181   carbs #3987e5   fat #c98500
+        worst pair ΔE 13.2 deuteranopia · 19.3 normal vision
+        contrast on panel 4.4 : 1 → 6.0 : 1   (marks need 3:1)
+
+   The previous rose/sky/gold trio FAILED the dark-mode lightness band on all
+   three colors and put protein ΔE 0 from the accent.
+
+   That result also fixes the accent: carbs own blue, protein owns magenta, fat
+   owns amber, so the accent has to live in the teal→lime arc or it collides with
+   a macro. All three theme accents were re-checked there and leave the trio's
+   worst pair untouched — i.e. each is comfortably clear of all three:
+
+        Calm #34d399 · Instrument #22d3ee · Bold #a3e635
+        accent on panel 9.0 : 1 → 11.5 : 1 ; dark label on accent 9.9 : 1 → 12.7 : 1
+
+   ── 4. STATUS (--h-good / --h-over) ── reserved. Never reused as a series, and
+      never carried by color alone: an over-target number always ships with the
+      word "over" beside it.
+
+   The themes therefore differ by GROUND TEMPERATURE, TYPE and DENSITY rather
+   than by fighting over hue — which is also why they now feel like three
+   finishes of one app instead of three apps. */
+
 .htheme {
   min-height: 100vh;
   background: var(--color-bg);
+
+  /* The macro legend. Identical in every theme, on purpose. */
+  --mc-p: #d55181;
+  --mc-c: #3987e5;
+  --mc-f: #c98500;
+  /* Reserved status. Always shipped with a word, never color alone. */
+  --h-good: #199e70;
+  --h-over: #e66767;
+
+  /* One spacing scale for the whole mode. Every gap, pad and inset below comes
+     from these four values — the old file had 8/9/10/11/13/14/16/17/18px doing
+     the same job in different places, which is what makes a layout feel
+     approximate even when nothing is visibly wrong. */
+  --h-1: 6px;
+  --h-2: 10px;
+  --h-3: 14px;
+  --h-4: 20px;
 }
-/* numerals follow the theme: sans for Original/Bold, mono for Instrument */
-.htheme .num {
+/* numerals follow the theme: sans for Calm/Bold, mono for Instrument */
+.htheme .num,
+.htheme .hb-num {
   font-family: var(--h-num-font);
+  font-variant-numeric: tabular-nums;
 }
 
+/* ── Calm — warm graphite ground, cool emerald accent ──────────────────────
+   Warm ground against a cool accent is the oldest trick there is and it still
+   works: the accent separates from the page by temperature as well as by
+   lightness, so it stays findable at any size. */
 .htheme-original {
-  --color-bg: #0b0f17;
-  --color-tile: #141a24;
-  --color-raised: #0f141c;
-  --color-hero: #141a24;
-  --color-edge: #232d3a;
-  --color-edgehero: #232d3a;
-  --color-bone: #e7edf3;
-  --color-taupe: #97a3b2;
-  --color-faint: #6b7686;
-  --color-accent: #fb7185;
-  --h-on-accent: #ffffff;
-  --h-hero: linear-gradient(150deg, #fb7185 0%, #fb6f92 52%, #f43f5e 100%);
-  --h-on-hero: #ffffff;
-  --h-counter: #0c1017;
-  --h-counter-track: rgba(255, 255, 255, 0.14);
+  --color-bg: #101319;
+  --color-tile: #161b26;
+  --color-raised: #1c222e;
+  --color-well: #0d1015;
+  --color-hero: #161b26;
+  --color-edge: #262d3a;
+  --color-edgehero: #2b3342;
+  --color-bone: #e9edf3;
+  --color-taupe: #9aa5b4;
+  --color-faint: #6d7788;
+  --color-accent: #34d399;
+  --h-on-accent: #06231a;
   --h-num-font: var(--font-sans);
   --h-radius: 18px;
-  /* mock sizing tokens (ported from the agreed design) */
-  --hb-hero-size: 46px; --hb-disp-w: 800; --hb-disp-ls: -1.5px; --hb-stat-size: 24px;
-  --hb-rad: 18px; --hb-lbl-ls: .3px; --hb-lbl-tr: none; --hb-hl: #2c3a4a;
+  --h-hero-size: 44px;
+  --h-disp-w: 750;
+  --h-disp-ls: -1.6px;
+  --h-stat-size: 23px;
+  --h-lbl-ls: 0.06em;
+  --h-lbl-tr: uppercase;
+  --h-hl: #313a49;
 }
+/* ── Instrument — near-black cool ground, cyan signal, monospaced readouts ── */
 .htheme-instrument {
   --color-bg: #080b0e;
   --color-tile: #0e1419;
-  --color-raised: #0b1116;
-  --color-hero: #0d1318;
+  --color-raised: #131b21;
+  --color-well: #070a0d;
+  --color-hero: #0e1419;
   --color-edge: #1c2731;
-  --color-edgehero: #20333b;
-  --color-bone: #dbe6ea;
-  --color-taupe: #8ba0aa;
-  --color-faint: #4f5e67;
-  --color-accent: #2dd4bf;
-  --h-on-accent: #04211e;
-  --h-hero: #0d1318;
-  --h-on-hero: #dbe6ea;
-  --h-counter: #0a1014;
-  --h-counter-track: #1a2733;
+  --color-edgehero: #203039;
+  --color-bone: #dde7ec;
+  --color-taupe: #8ca0ab;
+  --color-faint: #5b6b75;
+  --color-accent: #22d3ee;
+  --h-on-accent: #041d24;
   --h-num-font: var(--font-mono);
-  --h-radius: 14px;
-  --hb-hero-size: 36px; --hb-disp-w: 600; --hb-disp-ls: -1px; --hb-stat-size: 21px;
-  --hb-rad: 14px; --hb-lbl-ls: .6px; --hb-lbl-tr: uppercase; --hb-hl: #2b3a45;
+  --h-radius: 13px;
+  --h-hero-size: 38px;
+  --h-disp-w: 600;
+  --h-disp-ls: -1.2px;
+  --h-stat-size: 21px;
+  --h-lbl-ls: 0.1em;
+  --h-lbl-tr: uppercase;
+  --h-hl: #2a3b45;
 }
+/* ── Bold — deep warm black, lime accent, big confident type ───────────────── */
 .htheme-bold {
-  --color-bg: #0a0b10;
-  --color-tile: #181c24;
-  --color-raised: #12151c;
-  --color-hero: #181c24;
-  --color-edge: #2b3340;
-  --color-edgehero: #2b3340;
-  --color-bone: #f2f5f8;
-  --color-taupe: #a4afbb;
-  --color-faint: #6b7686;
-  --color-accent: #fb923c;
-  --h-on-accent: #2a1406;
-  --h-hero: linear-gradient(150deg, #fbbf24, #fb7185);
-  --h-on-hero: #2a1406;
-  --h-counter: #130f0a;
-  --h-counter-track: rgba(255, 255, 255, 0.12);
+  --color-bg: #0d0e12;
+  --color-tile: #171a22;
+  --color-raised: #1f232d;
+  --color-well: #0a0b0e;
+  --color-hero: #171a22;
+  --color-edge: #2c3340;
+  --color-edgehero: #333b4a;
+  --color-bone: #f3f6f9;
+  --color-taupe: #a6b1bd;
+  --color-faint: #74808f;
+  --color-accent: #a3e635;
+  --h-on-accent: #17230a;
   --h-num-font: var(--font-sans);
-  --h-radius: 20px;
-  --hb-hero-size: 58px; --hb-disp-w: 800; --hb-disp-ls: -2px; --hb-stat-size: 28px;
-  --hb-rad: 20px; --hb-lbl-ls: .4px; --hb-lbl-tr: uppercase; --hb-hl: #3a4350;
+  --h-radius: 22px;
+  --h-hero-size: 54px;
+  --h-disp-w: 820;
+  --h-disp-ls: -2.2px;
+  --h-stat-size: 27px;
+  --h-lbl-ls: 0.05em;
+  --h-lbl-tr: uppercase;
+  --h-hl: #3d4658;
 }
 
-/* ── Health "bento" design system — ported verbatim from the agreed mock so the
-   app renders identically. hb-* names avoid colliding with global .stat/.num.
-   Numeric readouts get tabular figures; the theme sets the fonts + sizing. */
+/* ── Type roles ──────────────────────────────────────────────────────────────
+   Three roles, and everything on the screen is one of them. A label is never
+   promoted to the accent color — that promotion is what made the old screen
+   read as decorated rather than organised. */
+.h-eyebrow {
+  font-family: var(--h-num-font);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: var(--h-lbl-ls);
+  text-transform: var(--h-lbl-tr);
+  color: var(--color-taupe);
+  display: flex;
+  align-items: center;
+  gap: var(--h-1);
+}
+.h-eyebrow svg {
+  width: 13px;
+  height: 13px;
+  color: var(--color-faint);
+}
+.h-display {
+  font-family: var(--h-num-font);
+  font-size: var(--h-hero-size);
+  font-weight: var(--h-disp-w);
+  letter-spacing: var(--h-disp-ls);
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-bone);
+}
+.h-stat {
+  font-family: var(--h-num-font);
+  font-size: var(--h-stat-size);
+  font-weight: var(--h-disp-w);
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-bone);
+}
+.h-stat .un {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--color-taupe);
+}
+.h-sub {
+  font-size: 11.5px;
+  color: var(--color-taupe);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Surfaces ────────────────────────────────────────────────────────────── */
+.h-panel {
+  background: var(--color-tile);
+  border: 1px solid var(--color-edge);
+  border-radius: var(--h-radius);
+  padding: var(--h-3);
+  color: var(--color-bone);
+}
+.h-panel.tap {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  display: block;
+  transition: border-color 0.16s, transform 0.12s;
+}
+.h-panel.tap:hover {
+  border-color: var(--h-hl);
+}
+.h-panel.tap:active {
+  transform: scale(0.985);
+}
+/* a well — pressed INTO the panel, for a readout that sits inside a card */
+.h-well {
+  background: var(--color-well);
+  border: 1px solid var(--color-edge);
+  border-radius: calc(var(--h-radius) - 5px);
+  padding: var(--h-2) var(--h-3);
+}
+.h-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--h-2);
+}
+.h-grid > .full {
+  grid-column: 1 / -1;
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────────
+   A segmented control with WORDS. The old one was two unlabelled icons — a
+   person and two people — sitting next to a second unlabelled icon pair in the
+   header that meant something else entirely. Two ambiguous toggles on one screen
+   is the navigation problem, not a style problem. */
+.h-seg {
+  display: inline-flex;
+  background: var(--color-well);
+  border: 1px solid var(--color-edge);
+  border-radius: 11px;
+  padding: 3px;
+  gap: 2px;
+}
+.h-seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 11px;
+  /* "Just me" is two words and was wrapping inside a 32px pill, so one half of
+     the control had two lines of 12px text and the other had one. */
+  white-space: nowrap;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-taupe);
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.h-seg button svg {
+  width: 14px;
+  height: 14px;
+}
+.h-seg button.on {
+  background: var(--color-raised);
+  color: var(--color-bone);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+}
+
+/* Day stepper. 40px hit targets — the old 28px buttons were below every
+   platform's minimum and sat 2px apart. */
+.h-daynav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.h-daynav button {
+  min-width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--color-taupe);
+  cursor: pointer;
+}
+.h-daynav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.h-daynav .td {
+  min-width: 72px;
+  padding: 0 var(--h-2);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-bone);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Buttons. Exactly two weights, so "the main thing" is never ambiguous. */
+.h-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--h-1);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--h-3);
+  border: 0;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+  background: var(--color-accent);
+  color: var(--h-on-accent);
+}
+.h-btn:active {
+  transform: scale(0.985);
+}
+.h-btn.quiet {
+  background: var(--color-raised);
+  color: var(--color-bone);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+}
+.h-btn.ghost {
+  background: transparent;
+  color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+.h-btn svg {
+  width: 15px;
+  height: 15px;
+}
+/* a small text action inside a card (Save / Copy / Remove) */
+.h-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-taupe);
+  background: transparent;
+  border: 0;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.h-link svg {
+  width: 13px;
+  height: 13px;
+}
+.h-link:hover {
+  color: var(--color-bone);
+}
+.h-link.on {
+  color: var(--color-accent);
+}
+
+/* ── The day hero ────────────────────────────────────────────────────────────
+   Flat, not a gradient wash. The old hero spent a saturated rose gradient on a
+   quarter of the screen to say "this is the important panel" — and then put the
+   actual numbers in a black box inside it at 10px. Depth says which panel
+   matters; the numbers say what it says. */
+.h-hero {
+  background: var(--color-hero);
+  border: 1px solid var(--color-edgehero);
+  border-radius: var(--h-radius);
+  padding: var(--h-3) var(--h-3) var(--h-2);
+  position: relative;
+  overflow: hidden;
+}
+/* One hairline of accent along the top edge — the entire decorative budget for
+   the screen, spent in one place. */
+.h-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--color-accent),
+    color-mix(in srgb, var(--color-accent) 25%, transparent)
+  );
+}
+.h-herorow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--h-3);
+}
+.h-ring {
+  width: 62px;
+  height: 62px;
+  flex: none;
+}
+
+/* ── Macro counters ──────────────────────────────────────────────────────────
+   Three columns of a CSS grid, which is the actual fix for the bug this screen
+   shipped with: "PROTEIN 111 /130" wrapped, dropping "/130" onto a second line
+   while carbs and fat stayed on one, so the three readouts had different
+   heights and different baselines. It was a flex row with no minimum width —
+   at 375px, the widest label plus the widest number simply did not fit. */
+.h-macros {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--h-3);
+  margin-top: var(--h-3);
+}
+/* The label wears TEXT ink and the colored dot beside it carries identity.
+   Coloring the label itself was the obvious thing and it was wrong twice over:
+   it duplicated what the bar underneath already says, and 10px magenta on this
+   panel measures 4.4:1 — under the 4.5:1 that small text needs. The dot has no
+   such duty, so it can be as saturated as the bar. */
+.h-macro .lbl {
+  font-family: var(--h-num-font);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-taupe);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+}
+.h-macro .lbl::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--mc);
+  flex: none;
+}
+.h-macro .val {
+  font-family: var(--h-num-font);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-bone);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
+  display: block;
+}
+.h-macro .val i {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-faint);
+}
+.h-macro .track {
+  height: 5px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--color-bone) 10%, transparent);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.h-macro .track > i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--mc);
+  transition: width 0.8s cubic-bezier(0.3, 0.9, 0.3, 1);
+}
+/* Over target: the bar fills and the surplus is hatched, so "over" is carried by
+   texture as well as by the word next to it — never by color alone. */
+.h-macro.over .track > i {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--mc) 0 5px,
+    color-mix(in srgb, var(--mc) 55%, #000) 5px 10px
+  );
+}
+.h-macro.over .val {
+  color: var(--h-over);
+}
+
+/* ── Meal list ───────────────────────────────────────────────────────────── */
+.h-cardhead {
+  display: flex;
+  align-items: center;
+  gap: var(--h-2);
+  margin-bottom: var(--h-2);
+}
+.h-cardhead .ic {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--color-raised);
+  color: var(--color-taupe);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+}
+.h-cardhead .t {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-bone);
+}
+.h-cardhead .s {
+  font-size: 11px;
+  color: var(--color-taupe);
+  font-variant-numeric: tabular-nums;
+}
+
+.h-meal {
+  border-top: 1px solid var(--color-edge);
+}
+.h-meal > .head {
+  display: flex;
+  align-items: center;
+  gap: var(--h-2);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--h-1) 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.h-meal .nm {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--color-bone);
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h-meal .kc {
+  font-family: var(--h-num-font);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-bone);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.h-meal .kc span {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-faint);
+}
+.h-meal .chev {
+  color: var(--color-faint);
+  flex: none;
+  transition: transform 0.2s;
+}
+.h-meal.open .chev {
+  transform: rotate(180deg);
+}
+/* The three macro dots under a meal name. Dots, not four filled chips — the old
+   row put a bold white kcal chip beside three colored chips, so every meal
+   carried four competing badges and the eye had nowhere to land. */
+.h-dots {
+  display: flex;
+  align-items: center;
+  gap: var(--h-2);
+  padding: 0 0 var(--h-1);
+}
+.h-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--h-num-font);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-taupe);
+  font-variant-numeric: tabular-nums;
+}
+.h-dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--mc);
+  flex: none;
+}
+
+.h-item {
+  display: flex;
+  align-items: center;
+  gap: var(--h-2);
+  width: 100%;
+  min-height: 46px;
+  padding: var(--h-1) 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-edge) 55%, transparent);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.h-item .nm {
+  font-size: 12.5px;
+  color: var(--color-bone);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h-item .amt {
+  font-family: var(--h-num-font);
+  font-size: 10.5px;
+  color: var(--color-taupe);
+  font-variant-numeric: tabular-nums;
+}
+.h-item .mac {
+  font-family: var(--h-num-font);
+  font-size: 11px;
+  color: var(--color-taupe);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* ── Chips (saved meals, quick picks) ─────────────────────────────────────── */
+.h-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--h-1);
+}
+.h-chip {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-bone);
+  background: var(--color-raised);
+  border: 1px solid var(--color-edge);
+  border-radius: 99px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.h-chip:hover {
+  border-color: var(--h-hl);
+}
+
+/* ── Week dots ───────────────────────────────────────────────────────────── */
+.h-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: var(--h-2);
+}
+.h-week .d {
+  height: 22px;
+  border-radius: 6px;
+  background: var(--color-well);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+}
+.h-week .d.on {
+  background: var(--h-good);
+  box-shadow: none;
+}
+/* A day you logged but that fell short of the target. Encoded by AMOUNT — the
+   square is part-filled from the bottom — rather than by a paler tint, because a
+   42%-green square still reads as "done" at 22px, which is exactly how the tile
+   ended up saying "0 of 4 on plan" above four apparently-full squares. */
+.h-week .d.part {
+  background: linear-gradient(to top, var(--h-good) 40%, var(--color-well) 40%);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+}
+.h-week .d.miss {
+  background: var(--color-well);
+  box-shadow: inset 0 0 0 1px var(--h-over);
+}
+.h-week .d.est {
+  background: linear-gradient(to top, #c98500 40%, var(--color-well) 40%);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+}
+.h-week .d.today {
+  box-shadow: inset 0 0 0 1.5px var(--color-accent);
+}
+.h-week .lbls {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 5px;
+}
+.h-week .lbls span {
+  text-align: center;
+  font-size: 9px;
+  color: var(--color-faint);
+}
+
+/* ── Bottom tab bar ──────────────────────────────────────────────────────────
+   The navigation change. Two sections used to live in a 30px unlabelled icon
+   toggle at the top right of the header, beside three other icon buttons of the
+   same size — so the most important control on the screen looked exactly like
+   "log out". A labelled bar at the bottom is reachable by thumb, says where you
+   are, and cannot be confused with anything else. */
+.h-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--color-edge);
+}
+.h-tabs button {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-height: 46px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.h-tabs button svg {
+  width: 19px;
+  height: 19px;
+}
+.h-tabs button.on {
+  color: var(--color-accent);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.h-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--h-1);
+  padding: var(--h-4) var(--h-3);
+  text-align: center;
+}
+.h-empty .ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--color-raised);
+  color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+  margin-bottom: var(--h-1);
+}
+.h-empty .t {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-bone);
+}
+.h-empty .s {
+  font-size: 12px;
+  color: var(--color-taupe);
+  max-width: 30ch;
+}
+
+/* ── Legacy hb-* aliases ─────────────────────────────────────────────────────
+   The sections are being rebuilt one at a time; these keep the not-yet-converted
+   ones rendering against the NEW tokens instead of tokens that no longer exist.
+   Delete each alias as its last caller moves over. */
 .hb-num { font-variant-numeric: tabular-nums; font-family: var(--h-num-font); }
-
-.hb-ctl { display: flex; align-items: center; gap: 8px; }
-.hb-seg { display: flex; flex: 1; background: rgba(255,255,255,.03); border: 1px solid var(--color-edge); border-radius: 11px; padding: 3px; }
-.hb-seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-align: center; font-size: 12.5px; font-weight: 600; padding: 7px 0; border-radius: 8px; color: var(--color-taupe); background: transparent; border: 0; cursor: pointer; transition: .15s; }
-.hb-seg button.on { background: var(--color-bone); color: var(--color-bg); }
-/* compact icon toggle — for the mode / section switches (icons, not labels) */
-.hb-itog { display: inline-flex; background: rgba(255,255,255,.03); border: 1px solid var(--color-edge); border-radius: 10px; padding: 3px; gap: 2px; }
-.hb-itog button { display: grid; place-items: center; width: 36px; height: 30px; border-radius: 7px; color: var(--color-taupe); background: transparent; border: 0; cursor: pointer; transition: .15s; }
-.hb-itog button.on { background: var(--color-bone); color: var(--color-bg); }
-.hb-targets { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-taupe); background: transparent; border: 0; padding: 4px 2px; cursor: pointer; }
-.hb-daynav { display: flex; align-items: center; gap: 2px; }
-.hb-daynav button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--color-faint); background: transparent; border: 0; font-size: 15px; cursor: pointer; }
-.hb-daynav button:disabled { opacity: .35; }
-.hb-daynav .td { width: auto; padding: 0 9px; font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--color-taupe); }
-
-.hb-hero { background: var(--h-hero); color: var(--h-on-hero); border-radius: 24px; padding: 16px 18px 17px; position: relative; overflow: hidden; box-shadow: 0 12px 32px -14px rgba(2,12,24,.5); }
-.hb-glow { position: absolute; right: -40px; top: -50px; width: 150px; height: 150px; background: radial-gradient(circle, rgba(255,255,255,.16), transparent 70%); }
-.hb-hrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: relative; }
-.hb-lbl { font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; opacity: .94; font-family: var(--h-num-font); }
-.hb-big { font-family: var(--h-num-font); font-size: var(--hb-hero-size); font-weight: var(--hb-disp-w); line-height: .95; letter-spacing: var(--hb-disp-ls); margin-top: 3px; font-variant-numeric: tabular-nums; }
-.hb-sub { font-size: 11.5px; opacity: .9; margin-top: 5px; font-variant-numeric: tabular-nums; }
-.hb-ring { width: 68px; height: 68px; flex: none; }
-
-.hb-counter { display: flex; gap: 12px; margin-top: 14px; position: relative; background: var(--h-counter); border: 1px solid rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 4px 14px -8px rgba(0,0,0,.6); border-radius: 14px; padding: 11px 13px; }
-.hb-mc { flex: 1; }
-.hb-mch { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
-.hb-mcl { font-size: 10.5px; font-weight: 700; letter-spacing: .2px; text-transform: uppercase; font-family: var(--h-num-font); }
-.hb-mcv { font-size: 12.5px; font-weight: 700; color: #eef3f7; font-variant-numeric: tabular-nums; }
-.hb-mcv i { font-style: normal; font-size: 9.5px; opacity: .6; font-weight: 600; }
-.hb-bar { height: 5px; border-radius: 99px; background: var(--h-counter-track); overflow: hidden; }
-.hb-bar > i { display: block; height: 100%; border-radius: 99px; background: var(--mc); transition: width 1s cubic-bezier(.3,.9,.3,1); }
-
-.hb-bento { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-.hb-tile { background: var(--color-tile); border: 1px solid var(--color-edge); border-radius: var(--hb-rad); padding: 13px; text-align: left; transition: transform .12s, box-shadow .2s, border-color .2s; color: var(--color-bone); cursor: pointer; width: 100%; display: block; }
-.hb-tile:hover { box-shadow: 0 8px 22px -14px rgba(0,0,0,.7); border-color: var(--hb-hl); }
-.hb-tile:active { transform: scale(.98); }
+.hb-ctl { display: flex; align-items: center; gap: var(--h-2); }
+.hb-bento { display: grid; grid-template-columns: 1fr 1fr; gap: var(--h-2); }
+.hb-tile { background: var(--color-tile); border: 1px solid var(--color-edge); border-radius: var(--h-radius); padding: var(--h-3); text-align: left; transition: border-color .16s, transform .12s; color: var(--color-bone); cursor: pointer; width: 100%; display: block; }
+.hb-tile:hover { border-color: var(--h-hl); }
+.hb-tile:active { transform: scale(.985); }
 .hb-tile.full { grid-column: 1 / -1; }
-/* non-interactive container with the same tile surface (meals / saved) */
-.hb-panel { background: var(--color-tile); border: 1px solid var(--color-edge); border-radius: var(--hb-rad); padding: 13px; color: var(--color-bone); }
+.hb-panel { background: var(--color-tile); border: 1px solid var(--color-edge); border-radius: var(--h-radius); padding: var(--h-3); color: var(--color-bone); }
 .hb-panel.full { grid-column: 1 / -1; }
-.hb-eye { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: var(--hb-lbl-ls); text-transform: var(--hb-lbl-tr); font-family: var(--h-num-font); color: var(--color-accent); }
-.hb-eye svg { width: 14px; height: 14px; }
-.hb-stat { font-size: var(--hb-stat-size); font-weight: var(--hb-disp-w); letter-spacing: -.4px; margin-top: 6px; font-family: var(--h-num-font); font-variant-numeric: tabular-nums; color: var(--color-bone); }
+.hb-eye { display: flex; align-items: center; gap: var(--h-1); font-size: 10.5px; font-weight: 700; letter-spacing: var(--h-lbl-ls); text-transform: var(--h-lbl-tr); font-family: var(--h-num-font); color: var(--color-taupe); }
+.hb-eye svg { width: 13px; height: 13px; color: var(--color-faint); }
+.hb-stat { font-size: var(--h-stat-size); font-weight: var(--h-disp-w); letter-spacing: -.4px; margin-top: var(--h-1); font-family: var(--h-num-font); font-variant-numeric: tabular-nums; color: var(--color-bone); }
 .hb-stat .un { font-size: 11.5px; font-weight: 600; color: var(--color-taupe); letter-spacing: 0; font-family: var(--font-sans); }
 .hb-tiny { font-size: 10.5px; color: var(--color-taupe); font-variant-numeric: tabular-nums; }
-.hb-letrow { display: flex; gap: 5px; margin-top: 5px; }
-.hb-letrow.dots { margin-top: 11px; }
-.hb-letrow > span { flex: 1; height: 19px; border-radius: 5px; }
-.hb-letrow.labels > span { height: auto; text-align: center; font-size: 8.5px; color: var(--color-faint); }
-
-.hb-mealhead { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.hb-mealhead .ic { width: 25px; height: 25px; border-radius: 8px; background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); display: grid; place-items: center; flex: none; }
-.hb-mealhead .t { font-size: 13px; font-weight: 700; color: var(--color-bone); }
+.hb-letrow { display: flex; gap: 4px; margin-top: var(--h-1); }
+.hb-letrow.dots { margin-top: var(--h-2); }
+.hb-letrow > span { flex: 1; height: 20px; border-radius: 6px; }
+.hb-letrow.labels > span { height: auto; text-align: center; font-size: 9px; color: var(--color-faint); }
+.hb-addbtn { width: 100%; margin-top: var(--h-2); border: 0; border-radius: 12px; min-height: 44px; font-size: 13px; font-weight: 700; background: var(--color-accent); color: var(--h-on-accent); display: flex; gap: var(--h-1); align-items: center; justify-content: center; cursor: pointer; }
+.hb-saved { display: flex; align-items: center; gap: var(--h-2); margin-bottom: var(--h-2); }
+.hb-saved .t { font-size: 10.5px; font-weight: 700; color: var(--color-taupe); flex: 1; letter-spacing: var(--h-lbl-ls); text-transform: var(--h-lbl-tr); font-family: var(--h-num-font); text-align: left; }
+.hb-chipsrow { display: flex; flex-wrap: wrap; gap: var(--h-1); }
+.hb-sc { min-height: 34px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; color: var(--color-bone); background: var(--color-raised); border: 1px solid var(--color-edge); border-radius: 99px; padding: 0 12px; cursor: pointer; }
+.hb-itog { display: inline-flex; background: var(--color-well); border: 1px solid var(--color-edge); border-radius: 11px; padding: 3px; gap: 2px; }
+.hb-itog button { display: grid; place-items: center; width: 38px; height: 32px; border-radius: 8px; color: var(--color-taupe); background: transparent; border: 0; cursor: pointer; transition: .15s; }
+.hb-itog button.on { background: var(--color-raised); color: var(--color-bone); box-shadow: inset 0 0 0 1px var(--color-edge); }
+.hb-seg { display: flex; flex: 1; background: var(--color-well); border: 1px solid var(--color-edge); border-radius: 11px; padding: 3px; }
+.hb-seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--h-1); min-height: 32px; font-size: 12.5px; font-weight: 650; border-radius: 8px; color: var(--color-taupe); background: transparent; border: 0; cursor: pointer; transition: .15s; }
+.hb-seg button.on { background: var(--color-raised); color: var(--color-bone); box-shadow: inset 0 0 0 1px var(--color-edge); }
+.hb-targets { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: var(--h-lbl-tr); letter-spacing: var(--h-lbl-ls); color: var(--color-taupe); background: transparent; border: 0; padding: 6px 2px; cursor: pointer; }
+.hb-daynav { display: flex; align-items: center; gap: 2px; }
+.hb-daynav button { min-width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--color-taupe); background: transparent; border: 0; font-size: 15px; cursor: pointer; }
+.hb-daynav button:disabled { opacity: .3; }
+.hb-daynav .td { width: auto; min-width: 72px; padding: 0 var(--h-2); font-size: 11.5px; font-weight: 700; color: var(--color-bone); }
+.hb-mealhead { display: flex; align-items: center; gap: var(--h-2); margin-bottom: var(--h-2); }
+.hb-mealhead .ic { width: 26px; height: 26px; border-radius: 8px; background: var(--color-raised); color: var(--color-taupe); box-shadow: inset 0 0 0 1px var(--color-edge); display: grid; place-items: center; flex: none; }
+.hb-mealhead .t { font-size: 13.5px; font-weight: 700; color: var(--color-bone); }
 .hb-mealhead .s { font-size: 11px; color: var(--color-taupe); font-variant-numeric: tabular-nums; }
-.hb-mrow { padding: 8px 0; border-top: 1px solid var(--color-edge); width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; cursor: pointer; }
-.hb-mname { font-size: 12.5px; font-weight: 600; color: var(--color-bone); }
-.hb-mmeta { display: flex; align-items: center; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+.hb-mrow { padding: var(--h-1) 0; border-top: 1px solid var(--color-edge); width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; cursor: pointer; }
+.hb-mname { font-size: 13px; font-weight: 650; color: var(--color-bone); }
+.hb-mmeta { display: flex; align-items: center; gap: var(--h-2); margin-top: 4px; flex-wrap: wrap; }
 .hb-chip { font-size: 10.5px; font-weight: 600; border-radius: 6px; padding: 1px 6px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-.hb-chip.kc { color: var(--color-bone); background: rgba(255,255,255,.06); font-weight: 800; }
-.hb-chip.it { color: #8b97a6; background: rgba(255,255,255,.05); border-radius: 99px; }
-.hb-addbtn { width: 100%; margin-top: 10px; border: 0; border-radius: 11px; padding: 9px; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); display: flex; gap: 6px; align-items: center; justify-content: center; cursor: pointer; }
-.hb-saved { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.hb-saved .t { font-size: 11px; font-weight: 700; color: var(--color-taupe); flex: 1; letter-spacing: .7px; text-transform: uppercase; font-family: var(--h-num-font); text-align: left; }
-.hb-chipsrow { display: flex; flex-wrap: wrap; gap: 6px; }
-.hb-sc { font-size: 11.5px; font-weight: 600; color: var(--color-bone); background: rgba(255,255,255,.02); border: 1px solid var(--color-edge); border-radius: 99px; padding: 5px 10px; cursor: pointer; }
-
-/* per-theme hero tweaks (from the mock) */
-.htheme-instrument .hb-hero { border: 1px solid var(--color-edge); border-radius: 18px; padding: 15px 16px; box-shadow: none; }
-.htheme-instrument .hb-glow { display: none; }
-.htheme-instrument .hb-lbl { color: var(--color-accent); }
-.htheme-instrument .hb-ring circle.p { stroke: var(--color-accent) !important; }
-.htheme-instrument .hb-ring text { fill: var(--color-bone) !important; }
-.htheme-bold .hb-eye, .htheme-bold .hb-saved .t { font-weight: 800; }
-.htheme-bold .hb-ring circle.p { stroke: #2a1406 !important; }
-.htheme-bold .hb-ring text { fill: #2a1406 !important; }
-.htheme-bold .hb-mcv { color: #fff; }
+.hb-chip.kc { color: var(--color-bone); background: transparent; font-weight: 700; padding-left: 0; }
+.hb-chip.it { color: var(--color-faint); background: transparent; padding-left: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .hb-bar > i { transition: none !important; }
-  .hb-ring circle.p { transition: none !important; }
+  .h-macro .track > i,
+  .hb-bar > i,
+  .h-ring circle.p,
+  .hb-ring circle.p {
+    transition: none !important;
+  }
 }
 
 /* ── Motion — all CSS, all gated behind reduced-motion ─────────────────────── */

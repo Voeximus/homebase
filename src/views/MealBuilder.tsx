@@ -52,10 +52,29 @@ import { t } from "../lib/i18n";
 import { isoDate } from "../lib/format";
 
 // ── palette ───────────────────────────────────────────────────────────────────
-const PERSON_ACC: Record<Person, string> = { gino: "#ef8136", xinyan: "#2dd1c0" };
+// Who a card belongs to is carried by the NAME on it, not by a brand color.
+//
+// These were a hardcoded orange and teal: the orange sat on top of the fat
+// legend and the teal on top of the Instrument accent, so in Together mode
+// "Gino" and "fat grams" were the same color and "Xinyan" and "tap this" were
+// the same color. With protein, carbs, fat and the accent already spoken for,
+// there is no room left on the wheel for two more identities — and there does
+// not need to be, because each card is already labelled "You" or "Xinyan".
+//
+// What remains is the one distinction that earns a color: YOUR card is the one
+// you act on, so it takes the accent, and your partner's is neutral.
+const PERSON_ACC = (you: boolean) => (you ? "var(--color-accent)" : "var(--color-taupe)");
 const PERSON_NAME: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
-const MACRO = { p: "#fb7185", c: "#38bdf8", f: "#f6c453" }; // protein / carb / fat (dots + bars)
-const MACRO_BRIGHT = { p: "#ff90a4", c: "#69c6ff", f: "#ffd66b" }; // higher-contrast for numbers on dark
+// The macro legend. Read from CSS so there is exactly ONE definition of what
+// protein looks like — these used to be hardcoded here AND in index.css, and the
+// two had already drifted. See the long note at the top of the health block in
+// index.css for how the trio was derived: it is computed against this app's own
+// dark surfaces (all-pairs, Machado 2009 CVD simulation), not picked by eye.
+const MACRO = { p: "var(--mc-p)", c: "var(--mc-c)", f: "var(--mc-f)" };
+// Kept as an alias: the old "bright" variants existed because the numbers sat on
+// a saturated gradient hero and needed lifting off it. The hero is flat now, so
+// values wear the normal text token and the legend color rides on the mark.
+const MACRO_BRIGHT = MACRO;
 // Card surface — reads the themed tokens so every `style={TILE}` card reskins
 // with the Appearance chooser. (Was a hardcoded slate.)
 const TILE = { background: "var(--color-tile)", borderColor: "var(--color-edge)" } as const;
@@ -124,9 +143,13 @@ export function MealBuilder({ owner, person }: { owner: Person; person: Person }
     <div className="flex flex-col gap-3 pb-8">
       {/* control row (mock .ctl): Just me / Together segment + day nav */}
       <div className="hb-ctl">
-        <div className="hb-itog">
-          <button className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")} aria-label={t("Just me")}><User size={16} /></button>
-          <button className={mode === "together" ? "on" : ""} onClick={() => setMode("together")} aria-label={t("Together")}><Users size={16} /></button>
+        <div className="h-seg" role="tablist" aria-label={t("Who this is for")}>
+          <button role="tab" aria-selected={mode === "solo"} className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")}>
+            <User size={14} /> {t("Just me")}
+          </button>
+          <button role="tab" aria-selected={mode === "together"} className={mode === "together" ? "on" : ""} onClick={() => setMode("together")}>
+            <Users size={14} /> {t("Together")}
+          </button>
         </div>
         <div className="min-w-0 flex-1" />
         {mode === "solo" && (
@@ -388,9 +411,9 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
         <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style={{ background: "rgba(0,0,0,.55)" }} onClick={() => setDetailOpen(null)}>
           <div className="max-h-[88vh] w-full max-w-[440px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {detailOpen === "week" ? (
-              <AdherenceCard stats={stats} weeks={weeks} today={today} acc={PERSON_ACC[person]} activeDate={viewDate} />
+              <AdherenceCard stats={stats} weeks={weeks} today={today} acc={PERSON_ACC(true)} activeDate={viewDate} />
             ) : (
-              <CalibrationGauge person={person} acc={PERSON_ACC[person]} />
+              <CalibrationGauge person={person} acc={PERSON_ACC(true)} />
             )}
           </div>
         </div>
@@ -572,7 +595,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
                   </div>
                   {/* per-ingredient split: drag to set how much is yours vs the partner's */}
                   <div className="mt-1.5 flex items-center gap-2">
-                    <span className="w-[54px] shrink-0 text-[10px] font-semibold" style={{ color: PERSON_ACC[you] }}>{t("You")} {pct}%</span>
+                    <span className="w-[54px] shrink-0 text-[10px] font-semibold" style={{ color: PERSON_ACC(true) }}>{t("You")} {pct}%</span>
                     <input
                       type="range"
                       min={0}
@@ -581,10 +604,10 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
                       value={pct}
                       onChange={(e) => setShare(d.rid, Number(e.target.value) / 100)}
                       className="h-1.5 flex-1 cursor-pointer"
-                      style={{ accentColor: PERSON_ACC[you] }}
+                      style={{ accentColor: "var(--color-accent)" }}
                       aria-label={`Your share of ${d.food.name}`}
                     />
-                    <span className="w-[64px] shrink-0 text-right text-[10px] font-semibold" style={{ color: PERSON_ACC[partner] }}>{PERSON_NAME[partner]} {100 - pct}%</span>
+                    <span className="w-[64px] shrink-0 text-right text-[10px] font-semibold" style={{ color: PERSON_ACC(false) }}>{PERSON_NAME[partner]} {100 - pct}%</span>
                   </div>
                 </div>
               );
@@ -618,7 +641,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
               <button
                 onClick={() => setDish([])}
                 className="flex items-center justify-center rounded-[14px] px-3.5 py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-                style={{ background: "rgba(240,85,110,0.10)", color: "#f0556e" }}
+                style={{ background: "color-mix(in srgb, var(--h-over) 12%, transparent)", color: "var(--h-over)" }}
                 aria-label="Clear dish"
               >
                 <Trash2 size={15} />
@@ -634,15 +657,15 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
           <p className="mb-2.5 text-[13.5px] font-semibold text-bone">{t("Each of you gets")}</p>
           <div className="grid grid-cols-2 gap-3">
             {order.map((p) => {
-              const acc = PERSON_ACC[p];
+              const acc = PERSON_ACC(p === you);
               const bm = personMacros(p);
               const afterRem = targets[p].kcal - dayTotals(logs[p]).kcal - bm.kcal;
               return (
-                <div key={p} className="rounded-[14px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
+                <div key={p} className="h-panel" style={{ padding: "var(--h-2)" }}>
                   <p className="text-[12px] font-semibold" style={{ color: acc }}>{p === you ? t("You") : PERSON_NAME[p]}</p>
                   <div className="num mt-2 text-[16px] font-bold text-bone">{r0(bm.kcal)} <span className="text-[10px] font-normal" style={{ color: "var(--color-taupe)" }}>{t("kcal")}</span></div>
                   <div className="num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{r0(bm.p)}P · {r0(bm.c)}C · {r0(bm.f)}F</div>
-                  <div className="mt-1.5 border-t pt-1.5 stat-key" style={{ borderColor: acc + "33", color: afterRem < 0 ? "#f0556e" : "var(--color-taupe)" }}>
+                  <div className="mt-1.5 border-t pt-1.5 stat-key" style={{ borderColor: "var(--color-edge)", color: afterRem < 0 ? "var(--h-over)" : "var(--color-taupe)" }}>
                     {afterRem < 0 ? t("{n} over after", { n: r0(-afterRem) }) : t("{n} kcal left after", { n: r0(afterRem) })}
                   </div>
                 </div>
@@ -757,70 +780,94 @@ function Ring({
   );
 }
 
-// The hero — calories-left headline + a consume ring + the colored P/C/F counter,
-// on the themed gradient (Appearance chooser). The big number and each macro pop
-// on change (delta feedback). The counter is a SOLID dark module so the macro
-// colors read on any theme's hero. Reads --h-* + --color-* tokens throughout.
-// The hero — ported from the agreed mock (hb-hero): CALORIES LEFT headline + a
-// consume ring + the solid-dark P/C/F counter. Day nav / Targets live in the
-// control row above it (SoloMode), keeping the hero clean like the mock.
+/**
+ * The day hero — how much is left, how far through you are, and the three macros.
+ *
+ * Rebuilt 2026-09-10. The old one put a saturated rose gradient across a quarter
+ * of the screen to signal "this panel matters", then set the numbers it actually
+ * exists to show inside a black box at 10px. It also said the same thing three
+ * times — a percentage in the ring, "1,530 of 2,800" underneath, and the bar
+ * fills — and carried a live layout bug: the macro row was a flex with no
+ * minimum width, so at 375px "PROTEIN 111 /130" wrapped and dropped "/130" to a
+ * second line while carbs and fat stayed on one.
+ *
+ * Now: depth says which panel matters, the number says what it says, the ring is
+ * the ONLY percentage, and the macros are a three-column grid that cannot wrap.
+ */
 function DaySummary({ target, eaten, meals, onEditTargets }: { target: Macros; eaten: Macros; meals: number; onEditTargets: () => void }) {
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? Math.min(1, eaten.kcal / target.kcal) : 0;
   const remStr = r0(Math.abs(remK)).toLocaleString("en-US");
-  const C = 182.2; // ring circumference (r = 29)
+  const C = 169.6; // ring circumference (r = 27)
   const macros = [
     { k: t("Protein"), e: eaten.p, tg: target.p, color: MACRO.p },
     { k: t("Carbs"), e: eaten.c, tg: target.c, color: MACRO.c },
     { k: t("Fat"), e: eaten.f, tg: target.f, color: MACRO.f },
   ];
   return (
-    <div className="hb-hero">
-      <div className="hb-glow" />
-      <div className="hb-hrow">
-        <div>
-          <div className="hb-lbl" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div className="h-hero">
+      <div className="h-herorow">
+        <div className="min-w-0">
+          <button onClick={onEditTargets} className="h-eyebrow" style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer" }}>
             {over ? t("Calories over") : t("Calories left")}
-            <button onClick={onEditTargets} aria-label="Edit targets" style={{ opacity: 0.7, color: "inherit", background: "transparent", border: 0, display: "inline-flex", cursor: "pointer" }}>
-              <SlidersHorizontal size={12} />
-            </button>
+            <SlidersHorizontal size={12} />
+          </button>
+          <div
+            key={remStr}
+            className="h-display bump"
+            style={{ marginTop: 4, color: over ? "var(--h-over)" : undefined }}
+          >
+            {remStr}
           </div>
-          <div key={remStr} className="hb-big bump">{remStr}</div>
-          <div className="hb-sub">
-            {t("{eaten} of {target} eaten", { eaten: r0(eaten.kcal).toLocaleString("en-US"), target: r0(target.kcal).toLocaleString("en-US") })}
+          {/* The target and the meal count. NOT the percentage — the ring is the
+              only place that lives, so the two can never disagree. */}
+          <div className="h-sub" style={{ marginTop: 6 }}>
+            {t("of {target}", { target: r0(target.kcal).toLocaleString("en-US") })}
             {meals > 0 ? ` · ${t(meals === 1 ? "{n} meal" : "{n} meals", { n: meals })}` : ""}
           </div>
         </div>
-        <svg className="hb-ring" viewBox="0 0 68 68" aria-hidden="true">
-          <circle cx="34" cy="34" r="29" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="7" />
+        <svg className="h-ring" viewBox="0 0 62 62" role="img" aria-label={t("{pct}% of today's calories", { pct: r0(pct * 100) })}>
+          <circle cx="31" cy="31" r="27" fill="none" stroke="var(--color-well)" strokeWidth="6" />
           <circle
             className="p"
-            cx="34"
-            cy="34"
-            r="29"
+            cx="31"
+            cy="31"
+            r="27"
             fill="none"
-            stroke="#fff"
-            strokeWidth="7"
+            stroke={over ? "var(--h-over)" : "var(--color-accent)"}
+            strokeWidth="6"
             strokeLinecap="round"
-            transform="rotate(-90 34 34)"
+            transform="rotate(-90 31 31)"
             strokeDasharray={C}
             strokeDashoffset={(C * (1 - pct)).toFixed(1)}
             style={{ transition: "stroke-dashoffset .6s cubic-bezier(.3,.9,.3,1)" }}
           />
-          <text x="34" y="38" textAnchor="middle" fontSize="14" fontWeight="800" fill="currentColor">{r0(pct * 100)}%</text>
+          <text x="31" y="35" textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--color-bone)" fontFamily="var(--h-num-font)">
+            {r0(pct * 100)}%
+          </text>
         </svg>
       </div>
-      <div className="hb-counter">
+      <div className="h-macros">
         {macros.map((m) => {
-          const mp = m.tg > 0 ? Math.min(100, (m.e / m.tg) * 100) : 0;
+          const ratio = m.tg > 0 ? m.e / m.tg : 0;
+          const isOver = ratio > 1;
           return (
-            <div key={m.k} className="hb-mc">
-              <div className="hb-mch">
-                <span className="hb-mcl" style={{ color: m.color }}>{m.k}</span>
-                <span key={r0(m.e)} className="hb-mcv bump">{r0(m.e)}<i> /{r0(m.tg)}</i></span>
+            <div
+              key={m.k}
+              className={`h-macro${isOver ? " over" : ""}`}
+              style={{ "--mc": m.color } as CSSProperties}
+            >
+              <span className="lbl">{m.k}</span>
+              {/* One line, never two: the value and its target share a nowrap
+                  span inside a grid column that cannot squeeze below its share. */}
+              <span key={r0(m.e)} className="val bump">
+                {r0(m.e)}
+                <i> / {r0(m.tg)}</i>
+              </span>
+              <div className="track">
+                <i style={{ width: `${Math.min(100, ratio * 100)}%` }} />
               </div>
-              <div className="hb-bar"><i style={{ width: `${mp}%`, "--mc": m.color } as CSSProperties} /></div>
             </div>
           );
         })}
@@ -832,32 +879,38 @@ function DaySummary({ target, eaten, meals, onEditTargets }: { target: Macros; e
 // Compact per-person summary for Together mode — a small accent ring + macros,
 // previewing the shared meal on top of that person's day. Updates live.
 function PersonSummary({ person, you, target, eaten }: { person: Person; you: boolean; target: Macros; eaten: Macros }) {
-  const acc = PERSON_ACC[person];
+  const acc = PERSON_ACC(you);
   const remK = target.kcal - eaten.kcal;
   const over = remK < 0;
   const pct = target.kcal > 0 ? eaten.kcal / target.kcal : 0;
   const remStr = String(r0(Math.abs(remK)));
   const ringFont = remStr.length >= 4 ? 14 : remStr.length === 3 ? 16 : 18;
+  // The two remaining macro numbers stay as DOTS + ink, the same grammar as the
+  // meal rows, instead of three small colored numerals crammed onto one line.
+  const rem = [
+    { v: r0(target.p - eaten.p), s: "P", c: MACRO.p },
+    { v: r0(target.c - eaten.c), s: "C", c: MACRO.c },
+    { v: r0(target.f - eaten.f), s: "F", c: MACRO.f },
+  ];
   return (
-    <div className="rounded-[18px] border p-3" style={{ background: acc + "12", borderColor: acc + "55" }}>
-      <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: acc }}>
-        <span>{person === "gino" ? "▲" : "▼"}</span>
+    <div className="h-panel" style={{ padding: "var(--h-2)" }}>
+      <div className="h-eyebrow" style={{ color: you ? "var(--color-bone)" : "var(--color-taupe)" }}>
         {you ? t("You") : PERSON_NAME[person]}
       </div>
       <div className="mt-2 flex items-center gap-2.5">
-        <Ring pct={pct} over={over} size={60} stroke={7} color={acc} track="#222b38" overColor="#f0556e">
-          <span key={r0(remK)} className="bump stat text-bone" style={{ fontSize: ringFont, lineHeight: 1 }}>{remStr}</span>
+        <Ring pct={pct} over={over} size={56} stroke={6} color={acc} track="var(--color-well)" overColor="var(--h-over)">
+          <span key={r0(remK)} className="bump stat" style={{ fontSize: ringFont, lineHeight: 1, color: "var(--color-bone)" }}>{remStr}</span>
         </Ring>
         <div className="min-w-0 flex-1">
-          <div className="stat-key" style={{ color: over ? "#f0556e" : "var(--color-taupe)" }}>
+          <div className="h-eyebrow" style={{ color: over ? "var(--h-over)" : "var(--color-taupe)" }}>
             {over ? t("kcal over") : t("kcal left")}
           </div>
-          <div className="num mt-1 text-[11px] font-semibold leading-tight">
-            <span style={{ color: MACRO_BRIGHT.p }}>{r0(target.p - eaten.p)}P</span>
-            <span style={{ color: "var(--color-faint)" }}> · </span>
-            <span style={{ color: MACRO_BRIGHT.c }}>{r0(target.c - eaten.c)}C</span>
-            <span style={{ color: "var(--color-faint)" }}> · </span>
-            <span style={{ color: MACRO_BRIGHT.f }}>{r0(target.f - eaten.f)}F</span>
+          <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
+            {rem.map((m) => (
+              <span key={m.s} className="h-dot" style={{ "--mc": m.c } as CSSProperties}>
+                {m.v}{m.s}
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -904,7 +957,7 @@ function EatenTogether({
           {order.map((p) => {
             const meals = logs[p].meals;
             const tot = dayTotals(logs[p]);
-            const acc = PERSON_ACC[p];
+            const acc = p === you ? "var(--color-bone)" : "var(--color-taupe)";
             return (
               <div key={p}>
                 <div className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -969,27 +1022,26 @@ function EatenTogether({
 
 // ── adherence: the gentle 8 PM nudge, the estimate sheet, the history card ──────
 function NudgeCard({ onYes, onNo, onLater }: { onYes: () => void; onNo: () => void; onLater: () => void }) {
+  // "No, off-plan" used to be red on red. Red means destructive or wrong, and
+  // answering a question honestly is neither — it made the safe answer look like
+  // the dangerous one. It is now simply the second of two equal answers: one
+  // filled because it is the common case, one quiet, neither scolding. The card
+  // also had a hardcoded indigo background and border that belonged to no theme.
   return (
-    <div className="rounded-[18px] border p-4" style={{ background: "#161a2e", borderColor: "#2a2f55" }}>
+    <div className="h-panel">
       <div className="flex items-start gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: "#2a2416", color: "#f6c453" }}>
-          <Flame size={17} />
+        <span className="h-cardhead-ic flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: "var(--color-raised)", color: "var(--color-taupe)", boxShadow: "inset 0 0 0 1px var(--color-edge)" }}>
+          <Flame size={16} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-bone">{t("Did you follow the meal plan today?")}</p>
+          <p className="text-[14px] font-semibold" style={{ color: "var(--color-bone)" }}>{t("Did you follow the meal plan today?")}</p>
           <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-taupe)" }}>{t("Nothing's logged yet — a quick check-in keeps your history honest.")}</p>
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-2">
-        <button onClick={onYes} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold text-white transition active:scale-[0.98]" style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}>
-          {t("Yes, I did")}
-        </button>
-        <button onClick={onNo} className="flex-1 rounded-[12px] py-2.5 text-[13.5px] font-semibold transition active:scale-[0.98]" style={{ background: "rgba(240,85,110,0.12)", color: "#f0556e" }}>
-          {t("No, off-plan")}
-        </button>
-        <button onClick={onLater} className="px-2 text-[12px] font-medium" style={{ color: "var(--color-faint)" }}>
-          {t("Later")}
-        </button>
+      <div className="flex items-center gap-2" style={{ marginTop: "var(--h-3)" }}>
+        <button onClick={onYes} className="h-btn" style={{ flex: 1 }}>{t("Yes, I did")}</button>
+        <button onClick={onNo} className="h-btn quiet" style={{ flex: 1 }}>{t("No, off-plan")}</button>
+        <button onClick={onLater} className="h-link" style={{ padding: "0 6px" }}>{t("Later")}</button>
       </div>
     </div>
   );
@@ -1001,7 +1053,7 @@ function EstimateSheet({ open, onClose, onLog }: { open: boolean; onClose: () =>
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} onClick={onClose}>
-      <div className="w-full max-w-[420px] overflow-hidden" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid #46d18a", borderRadius: "22px", padding: "16px" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-[420px] overflow-hidden" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--h-good)", borderRadius: "22px", padding: "16px" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <div className="flex-1 text-[16px] font-bold text-bone">{t("Nice — roughly what did you eat?")}</div>
           <button onClick={onClose} style={{ color: "var(--color-faint)" }}><X size={20} /></button>
@@ -1028,38 +1080,64 @@ function EstimateSheet({ open, onClose, onLog }: { open: boolean; onClose: () =>
   );
 }
 
+// Day status. STATUS colors, not series colors — reserved, never reused for a
+// macro, and never carried by hue alone: each one has its own fill SHAPE (see
+// .h-week .d in index.css) and a word in its tooltip. A seven-square strip read
+// at a glance is precisely where color-alone fails.
+const DOT_CLASS: Record<DayStatus, string> = {
+  logged: "on",
+  partial: "part",
+  estimated: "est",
+  skipped: "miss",
+  none: "",
+};
+const DAY_STATUS_LABEL: Record<DayStatus, string> = {
+  logged: "On plan",
+  partial: "Logged, under target",
+  estimated: "Estimated",
+  skipped: "Off plan",
+  none: "Nothing logged",
+};
 const STATUS_COLOR: Record<DayStatus, string> = {
-  logged: "#46d18a",
-  partial: "#4f7ab0", // logged some, but not yet a meaningful day toward target
-  estimated: "#e3b341",
-  skipped: "#f0556e",
-  none: "#222b38",
+  logged: "var(--h-good)",
+  partial: "color-mix(in srgb, var(--h-good) 42%, var(--color-well))",
+  estimated: "#c98500",
+  skipped: "var(--h-over)",
+  none: "var(--color-well)",
 };
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const weekPctColor = (pct: number | null): string =>
-  pct == null ? "#39424f" : pct >= 80 ? "#46d18a" : pct >= 50 ? "#e3b341" : "#f0556e";
+  pct == null ? "var(--color-edge)" : pct >= 80 ? "var(--h-good)" : pct >= 50 ? "#c98500" : "var(--h-over)";
 const BAR_H = 32; // px — the recent-weeks trend bar height
 
 // ── the home 2-up: mock hb-tiles; tap opens the full card ─────────────────────
 function WeekTile({ weeks, today, onOpen }: { weeks: WeekBucket[]; today: string; onOpen: () => void }) {
   const cur = weeks[weeks.length - 1];
+  // The old tile read "0 / 4 on plan" directly above four FILLED squares, which
+  // looks like the tile contradicting itself. It wasn't wrong — `followed` counts
+  // days that actually hit the target and the squares were the paler "logged
+  // something" shade — but nothing on screen said those were two different
+  // things. Now the count says what it counts, and a day that fell short is a
+  // visibly weaker square rather than a differently-tinted full one.
   return (
     <button onClick={onOpen} className="hb-tile">
-      <div className="hb-eye"><Flame size={13} /> {t("This week")}</div>
-      <div className="hb-stat">{cur.followed}<span className="un"> / {t("{n} on plan", { n: cur.elapsed })}</span></div>
-      <div className="hb-letrow dots">
+      <div className="h-eyebrow"><Flame size={13} /> {t("This week")}</div>
+      <div className="h-stat" style={{ marginTop: 6 }}>
+        {cur.followed}
+        <span className="un"> / {cur.elapsed} {t("on plan")}</span>
+      </div>
+      <div className="h-week">
         {cur.days.map((d) => (
           <span
             key={d.date}
-            style={{
-              background: d.future ? "var(--color-raised)" : STATUS_COLOR[d.status],
-              border: d.future ? "1px dashed var(--color-edge)" : "none",
-              boxShadow: d.date === today && !d.future ? "0 0 0 1.5px var(--color-accent)" : "none",
-            }}
+            className={`d ${d.future ? "" : DOT_CLASS[d.status]}${d.date === today && !d.future ? " today" : ""}`}
+            title={`${d.date} · ${t(DAY_STATUS_LABEL[d.status])}`}
           />
         ))}
+        <div className="lbls" style={{ gridColumn: "1 / -1" }}>
+          {WEEKDAY_LETTERS.map((l, i) => <span key={i}>{l}</span>)}
+        </div>
       </div>
-      <div className="hb-letrow labels">{WEEKDAY_LETTERS.map((l, i) => <span key={i}>{l}</span>)}</div>
     </button>
   );
 }
@@ -1085,17 +1163,24 @@ function WeightTile({ person, onOpen }: { person: Person; onOpen: () => void }) 
       : null;
   return (
     <button onClick={onOpen} className="hb-tile">
-      <div className="hb-eye"><Scale size={13} /> {t("Weight")}</div>
-      <div className="hb-stat">{cur != null ? cur.toFixed(1) : "—"}<span className="un"> {t("lb")}</span></div>
+      <div className="h-eyebrow"><Scale size={13} /> {t("Weight")}</div>
+      <div className="h-stat" style={{ marginTop: 6 }}>{cur != null ? cur.toFixed(1) : "—"}<span className="un"> {t("lb")}</span></div>
       {geo ? (
+        // The line wore the ACCENT, which meant "tappable" and "your weight" were
+        // the same color — and the rate underneath was green while the line was
+        // not, so one number had two colors. A single series needs no hue at all:
+        // the title names it. Body ink, with the endpoint emphasised.
         <svg width="100%" height="28" viewBox="0 0 130 28" preserveAspectRatio="none" style={{ marginTop: 8 }} aria-hidden="true">
-          <polyline fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={geo.points} />
-          <circle cx={geo.last[0].toFixed(1)} cy={geo.last[1].toFixed(1)} r="2.6" fill="var(--color-accent)" />
+          <polyline fill="none" stroke="var(--color-taupe)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={geo.points} />
+          <circle cx={geo.last[0].toFixed(1)} cy={geo.last[1].toFixed(1)} r="2.6" fill="var(--color-bone)" />
         </svg>
       ) : (
         <div style={{ height: 28, marginTop: 8 }} />
       )}
-      <div className="hb-tiny" style={{ color: valid ? "#46d18a" : "var(--color-faint)" }}>
+      {/* Neutral on purpose. The old tile painted every trend green — but whether
+          gaining is good depends on the goal, and the app does not model one, so
+          green here was decoration wearing the costume of a judgement. */}
+      <div className="hb-tiny" style={{ color: valid ? "var(--color-taupe)" : "var(--color-faint)" }}>
         {valid ? `${rStr} ${t("lb / wk")}` : t("Log to see trend")}
       </div>
     </button>
@@ -1354,9 +1439,9 @@ function SavedMealEditor({
           </div>
           <div className="num mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="text-[13px] font-bold text-bone">{r0(tot.kcal)}<span className="ml-0.5 text-[10px] font-medium" style={{ color: "var(--color-taupe)" }}> {t("kcal")}</span></span>
-            <MacroChip label="P" value={r0(tot.p)} color="#fb7185" />
-            <MacroChip label="C" value={r0(tot.c)} color="#38bdf8" />
-            <MacroChip label="F" value={r0(tot.f)} color="#f6c453" />
+            <MacroChip label="P" value={r0(tot.p)} color={MACRO.p} />
+            <MacroChip label="C" value={r0(tot.c)} color={MACRO.c} />
+            <MacroChip label="F" value={r0(tot.f)} color={MACRO.f} />
           </div>
 
           <div className="mt-3 flex flex-col">
@@ -1400,7 +1485,7 @@ function SavedMealEditor({
               onClick={() => { onUpdate(meal.id, name, items); setDirty(false); onClose(); }}
               disabled={!dirty}
               className="flex flex-1 items-center justify-center gap-2 rounded-[14px] py-2.5 text-[14px] font-semibold transition active:scale-[0.98]"
-              style={{ background: dirty ? "rgba(70,209,138,0.14)" : "rgba(255,255,255,0.04)", color: dirty ? "#46d18a" : "var(--color-faint)" }}
+              style={{ background: dirty ? "color-mix(in srgb, var(--color-accent) 16%, transparent)" : "var(--color-raised)", color: dirty ? "var(--color-accent)" : "var(--color-faint)" }}
             >
               <Check size={16} /> {t("Save changes")}
             </button>
@@ -1536,8 +1621,8 @@ function CopyButton({
         e.stopPropagation();
         setState((await copyText(text())) ? "ok" : "fail");
       }}
-      className="flex items-center gap-1"
-      style={{ color: state === "ok" ? "var(--color-accent)" : "var(--color-taupe)", ...style }}
+      className={`h-link${state === "ok" ? " on" : ""}`}
+      style={style}
     >
       {state === "ok" ? <ClipboardCheck size={13} /> : <Copy size={13} />}
       {state === "ok" ? t("Copied") : state === "fail" ? t("Couldn't copy") : label}
@@ -1549,46 +1634,56 @@ function MealCard({ index, meal, person, date, onAddFood, onEditItem, onRemoveMe
   const tot = mealTotals(meal);
   const [open, setOpen] = useState(false);
   const hasItems = meal.items.length > 0;
+  // The collapsed row used to carry FOUR filled badges — a bold white kcal chip
+  // beside three tinted macro chips — so every meal shouted four numbers at
+  // once and the eye had nowhere to land. Calories are the headline here (they
+  // are what the day is budgeted in), so they get the one strong number, and the
+  // macros drop to dotted values: identity from a 6px dot, magnitude from plain
+  // tabular text.
+  const dots = [
+    { v: tot.p, s: "P", c: MACRO.p },
+    { v: tot.c, s: "C", c: MACRO.c },
+    { v: tot.f, s: "F", c: MACRO.f },
+  ];
   return (
-    <div className="hb-mrow">
-      <button onClick={() => setOpen((o) => !o)} className="w-full text-left">
-        <div className="flex items-center gap-1.5">
-          <span className="hb-mname flex-1 truncate">{meal.name || t("Meal {n}", { n: index + 1 })}</span>
-          <ChevronDown size={14} style={{ color: "var(--color-faint)", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-        </div>
-        <div className="hb-mmeta">
-          {hasItems && <span className="hb-chip it">{t(meal.items.length === 1 ? "{n} item" : "{n} items", { n: meal.items.length })}</span>}
-          <span className="hb-chip kc">{r0(tot.kcal)} {t("kcal")}</span>
-          <span className="hb-chip" style={{ color: MACRO.p, background: "rgba(251,113,133,.14)" }}>{r0(tot.p)}P</span>
-          <span className="hb-chip" style={{ color: MACRO.c, background: "rgba(56,189,248,.14)" }}>{r0(tot.c)}C</span>
-          <span className="hb-chip" style={{ color: MACRO.f, background: "rgba(246,196,83,.14)" }}>{r0(tot.f)}F</span>
-        </div>
+    <div className={`h-meal${open ? " open" : ""}`}>
+      <button onClick={() => setOpen((o) => !o)} className="head" aria-expanded={open}>
+        <span className="nm">{meal.name || t("Meal {n}", { n: index + 1 })}</span>
+        <span className="kc">{r0(tot.kcal)} <span>{t("kcal")}</span></span>
+        <ChevronDown size={15} className="chev" />
       </button>
+      <div className="h-dots">
+        {hasItems && (
+          <span className="h-dot" style={{ "--mc": "transparent" } as CSSProperties}>
+            {t(meal.items.length === 1 ? "{n} item" : "{n} items", { n: meal.items.length })}
+          </span>
+        )}
+        {dots.map((d) => (
+          <span key={d.s} className="h-dot" style={{ "--mc": d.c } as CSSProperties}>
+            {r0(d.v)}{d.s}
+          </span>
+        ))}
+      </div>
       {open && (
-        <div className="mt-1.5">
+        <div>
           {meal.items.map((it) => {
             const c = contribution(it);
             return (
-              <button
-                key={it.id}
-                onClick={() => onEditItem(it)}
-                className="flex w-full items-center gap-2 border-t py-2 text-left"
-                style={{ borderColor: "var(--color-edge)" }}
-              >
+              <button key={it.id} onClick={() => onEditItem(it)} className="h-item">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12.5px]" style={{ color: "var(--color-bone)" }}>{it.name}</div>
-                  <div className="hb-num text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
+                  <div className="nm">{it.name}</div>
+                  <div className="amt">{amountLabel(it)} · {r0(c.kcal)} {t("kcal")}</div>
                 </div>
-                <span className="hb-num text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
+                <span className="mac">{r0(c.p)}P {r0(c.c)}C {r0(c.f)}F</span>
               </button>
             );
           })}
-          <button onClick={onAddFood} className="hb-addbtn" style={{ marginTop: 8 }}>
-            <Plus size={14} /> {t("Add food")}
+          <button onClick={onAddFood} className="h-btn ghost" style={{ marginTop: "var(--h-2)" }}>
+            <Plus size={15} /> {t("Add food")}
           </button>
-          <div className="mt-2 flex items-center gap-4 text-[11px]">
+          <div className="flex items-center gap-4" style={{ marginTop: "var(--h-1)" }}>
             {onSave && hasItems && (
-              <button onClick={onSave} className="flex items-center gap-1" style={{ color: "var(--color-taupe)" }}><Bookmark size={13} /> {t("Save")}</button>
+              <button onClick={onSave} className="h-link"><Bookmark size={13} /> {t("Save")}</button>
             )}
             {hasItems && (
               <CopyButton
@@ -1597,7 +1692,7 @@ function MealCard({ index, meal, person, date, onAddFood, onEditItem, onRemoveMe
                 text={() => mealToText(meal, index, person, date)}
               />
             )}
-            <button onClick={onRemoveMeal} className="flex items-center gap-1" style={{ color: "var(--color-faint)" }}><Trash2 size={13} /> {t("Remove")}</button>
+            <button onClick={onRemoveMeal} className="h-link" style={{ marginLeft: "auto" }}><Trash2 size={13} /> {t("Remove")}</button>
           </div>
         </div>
       )}
@@ -1619,12 +1714,16 @@ interface SearchSheetProps {
 }
 
 const digits = (s: string) => s.replace(/\D/g, "");
+// Search-result role tints. Protein / carb / fat reuse the macro legend, so a
+// food's color in the search list means the same thing it means in the day's
+// bars — these were three near-miss hexes of the legend colors, close enough to
+// look like a rendering bug and far enough to be one.
 const ROLE_TINT: Record<FoodRole, string> = {
-  protein: "#fb7185",
-  carb: "#38bdf8",
-  veg: "#22c55e",
-  fat: "#f6c453",
-  other: "#a78bfa",
+  protein: "var(--mc-p)",
+  carb: "var(--mc-c)",
+  fat: "var(--mc-f)",
+  veg: "var(--h-good)",
+  other: "var(--color-faint)",
 };
 
 function FoodSearchSheet(props: SearchSheetProps) {
@@ -1796,7 +1895,7 @@ function FoodSearchSheet(props: SearchSheetProps) {
                           {f.note ? ` · ${f.note}` : ""}
                         </div>
                       </div>
-                      <Plus size={16} style={{ color: "#46d18a" }} />
+                      <Plus size={16} style={{ color: "var(--color-accent)" }} />
                     </button>
                   ))
                 ) : qd.length >= 6 ? (
@@ -1986,7 +2085,7 @@ function PortionView({
 
       <div className="flex gap-2 p-4 pt-2">
         {editing && onRemove && (
-          <button onClick={onRemove} className="flex items-center justify-center rounded-[14px] px-4 py-3 text-[14px] font-semibold" style={{ background: "rgba(240,85,110,0.13)", color: "#f0556e" }}>
+          <button onClick={onRemove} className="flex items-center justify-center rounded-[14px] px-4 py-3 text-[14px] font-semibold" style={{ background: "color-mix(in srgb, var(--h-over) 14%, transparent)", color: "var(--h-over)" }}>
             <Trash2 size={16} />
           </button>
         )}
