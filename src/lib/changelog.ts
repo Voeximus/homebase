@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.10d",
+    date: "September 10, 2026",
+    notes: [
+      "The scanner was firing on things that aren't barcodes. It was set to also read ITF, a shipping-carton format with no real start or end pattern — so any set of roughly parallel lines could satisfy it: printed text, a shelf edge, the stripes on the packaging. It now reads only the four codes that are actually product identity on a grocery shelf.",
+      "It also now needs three frames IN A ROW to agree, not just three sightings. A run that resets the moment a different number appears is a much stronger claim that the camera is looking at one steady thing.",
+      "New: a Copy button on every meal, and Copy day on the whole day. It puts the day on your clipboard as plain text — target, totals, what's left, and every food with its weight and its own macros — so you can paste it straight into a chat and ask about it.",
+    ],
+  },
+  {
     version: "2026.09.10c",
     date: "September 10, 2026",
     notes: [

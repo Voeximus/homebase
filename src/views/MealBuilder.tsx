@@ -4,6 +4,8 @@ import {
   Bookmark,
   Check,
   ChevronDown,
+  ClipboardCheck,
+  Copy,
   Flame,
   Minus,
   Pencil,
@@ -21,6 +23,7 @@ import {
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { lookupBarcode } from "../lib/barcode";
 import { gtinVariants } from "../lib/gtin";
+import { copyText, dayToText, mealToText } from "../lib/mealText";
 import { DAILY, unitFor, type Food, type FoodRole, type FoodUnit, type MacroTarget } from "../lib/nutrition";
 import {
   amountLabel,
@@ -259,12 +262,23 @@ function SoloMode({ person, library, viewDate }: { person: Person; library: Food
                 <div className="t">{isToday ? t("Today's meals") : dateLabel}</div>
                 <div className="s">{t(log.meals.length === 1 ? "{n} meal · {kcal} kcal" : "{n} meals · {kcal} kcal", { n: log.meals.length, kcal: r0(eaten.kcal) })}</div>
               </div>
+              {/* The whole day, as text. Sits in the header rather than at the
+                  bottom because this is the one you reach for once the day is
+                  built — the per-meal Copy is for asking about one meal. */}
+              <CopyButton
+                label={t("Copy day")}
+                title={t("Copy the whole day as text — target, totals and every food — to paste into a chat")}
+                text={() => dayToText(log, target)}
+                style={{ fontSize: 11 }}
+              />
             </div>
             {log.meals.map((meal, i) => (
               <MealCard
                 key={meal.id}
                 index={i}
                 meal={meal}
+                person={person}
+                date={log.date}
                 onAddFood={() => setAddTo(meal.id)}
                 onEditItem={(item) => setEditing({ mealId: meal.id, item })}
                 onRemoveMeal={() => removeMeal(meal.id)}
@@ -516,6 +530,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
         logs={logs}
         order={order}
         you={you}
+        targets={targets}
         onEditItem={(person, mealId, item) => setEditLogged({ person, mealId, item })}
         onRemoveMeal={removeLoggedMeal}
       />
@@ -857,12 +872,14 @@ function EatenTogether({
   logs,
   order,
   you,
+  targets,
   onEditItem,
   onRemoveMeal,
 }: {
   logs: Record<Person, DayLog>;
   order: Person[];
   you: Person;
+  targets: Record<Person, MacroTarget>;
   onEditItem: (person: Person, mealId: string, item: LoggedItem) => void;
   onRemoveMeal: (person: Person, mealId: string) => void;
 }) {
@@ -890,9 +907,17 @@ function EatenTogether({
             const acc = PERSON_ACC[p];
             return (
               <div key={p}>
-                <div className="mb-1.5 flex items-baseline justify-between">
+                <div className="mb-1.5 flex items-baseline justify-between gap-2">
                   <span className="text-[12.5px] font-semibold" style={{ color: acc }}>{p === you ? t("You") : PERSON_NAME[p]}</span>
-                  <span className="num text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F</span>
+                  <span className="num flex-1 truncate text-right text-[11px]" style={{ color: "var(--color-taupe)" }}>{r0(tot.kcal)} {t("kcal")} · {r0(tot.p)}P {r0(tot.c)}C {r0(tot.f)}F</span>
+                  {meals.length > 0 && (
+                    <CopyButton
+                      label={t("Copy")}
+                      title={t("Copy this whole day as text, to paste into a chat")}
+                      text={() => dayToText(logs[p], targets[p])}
+                      style={{ fontSize: 11 }}
+                    />
+                  )}
                 </div>
                 {meals.length === 0 ? (
                   <p className="text-[11.5px]" style={{ color: "var(--color-taupe)" }}>{t("Nothing logged yet.")}</p>
@@ -1479,7 +1504,48 @@ function MacroChip({ label, value, color }: { label: string; value: number; colo
   );
 }
 
-function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: { index: number; meal: Meal; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void; onSave?: () => void }) {
+/**
+ * Copy-to-clipboard button.
+ *
+ * Shows "Copied" only when the write actually resolved — a button that claims
+ * success and leaves an empty clipboard is worse than one that admits it failed,
+ * because the failure is discovered at the paste, somewhere else, later.
+ */
+function CopyButton({
+  text,
+  label,
+  title,
+  style,
+}: {
+  text: () => string;
+  label: string;
+  title?: string;
+  style?: CSSProperties;
+}) {
+  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const id = setTimeout(() => setState("idle"), 1800);
+    return () => clearTimeout(id);
+  }, [state]);
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={async (e) => {
+        e.stopPropagation();
+        setState((await copyText(text())) ? "ok" : "fail");
+      }}
+      className="flex items-center gap-1"
+      style={{ color: state === "ok" ? "var(--color-accent)" : "var(--color-taupe)", ...style }}
+    >
+      {state === "ok" ? <ClipboardCheck size={13} /> : <Copy size={13} />}
+      {state === "ok" ? t("Copied") : state === "fail" ? t("Couldn't copy") : label}
+    </button>
+  );
+}
+
+function MealCard({ index, meal, person, date, onAddFood, onEditItem, onRemoveMeal, onSave }: { index: number; meal: Meal; person: Person; date: string; onAddFood: () => void; onEditItem: (it: LoggedItem) => void; onRemoveMeal: () => void; onSave?: () => void }) {
   const tot = mealTotals(meal);
   const [open, setOpen] = useState(false);
   const hasItems = meal.items.length > 0;
@@ -1523,6 +1589,13 @@ function MealCard({ index, meal, onAddFood, onEditItem, onRemoveMeal, onSave }: 
           <div className="mt-2 flex items-center gap-4 text-[11px]">
             {onSave && hasItems && (
               <button onClick={onSave} className="flex items-center gap-1" style={{ color: "var(--color-taupe)" }}><Bookmark size={13} /> {t("Save")}</button>
+            )}
+            {hasItems && (
+              <CopyButton
+                label={t("Copy")}
+                title={t("Copy this meal as text — every food, weight and macro — to paste into a chat")}
+                text={() => mealToText(meal, index, person, date)}
+              />
             )}
             <button onClick={onRemoveMeal} className="flex items-center gap-1" style={{ color: "var(--color-faint)" }}><Trash2 size={13} /> {t("Remove")}</button>
           </div>
