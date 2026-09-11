@@ -1554,7 +1554,9 @@ function EditTargetsSheet({ open, name, target, onClose, onSave }: { open: boole
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.6)" }} onClick={onClose}>
       <div className="w-full max-w-[360px] rounded-[20px] p-5" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
-          <Flame size={16} style={{ color: "var(--color-accent)" }} />
+          {/* Neutral. The accent means one thing in this mode — "you can tap
+              this" — and a decorative title icon is not that. */}
+          <Flame size={16} style={{ color: "var(--color-taupe)" }} />
           <div className="flex-1 text-[15px] font-bold text-bone">{t("{name}'s daily targets", { name })}</div>
           <button onClick={onClose} style={{ color: "var(--color-faint)" }}><X size={18} /></button>
         </div>

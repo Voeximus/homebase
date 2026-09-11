@@ -191,11 +191,16 @@ function SettingsSheet({
                 <span className="mt-0.5 block text-[10px]" style={{ color: "var(--color-taupe)" }}>
                   {t(th.blurb)}
                 </span>
-                {on && (
-                  <span className="mt-1 inline-flex items-center gap-1 text-[10px]" style={{ color: "var(--color-accent)" }}>
-                    <Check size={11} /> {t("On")}
-                  </span>
-                )}
+                {/* Always rendered, hidden when off — otherwise the selected card
+                    is one line taller than its neighbours and the row of three
+                    goes uneven every time you pick a different theme. */}
+                <span
+                  className="mt-1 inline-flex items-center gap-1 text-[10px]"
+                  style={{ color: "var(--color-accent)", visibility: on ? "visible" : "hidden" }}
+                  aria-hidden={!on}
+                >
+                  <Check size={11} /> {t("On")}
+                </span>
               </button>
             );
           })}
