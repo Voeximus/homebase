@@ -808,7 +808,7 @@ function DaySummary({ target, eaten, meals, onEditTargets }: { target: Macros; e
     <div className="h-hero">
       <div className="h-herorow">
         <div className="min-w-0">
-          <button onClick={onEditTargets} className="h-eyebrow" style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer" }}>
+          <button onClick={onEditTargets} className="h-eyebrow h-hit" style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer" }}>
             {over ? t("Calories over") : t("Calories left")}
             <SlidersHorizontal size={12} />
           </button>

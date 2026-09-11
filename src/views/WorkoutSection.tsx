@@ -247,7 +247,7 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                     <span className="block truncate text-[13.5px] font-semibold" style={{ color: "var(--color-bone)" }}>{t(r.name)}</span>
                     <span className="block truncate text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
                       {r.meta ? t(r.meta) + " · " : ""}
-                      {t("{n} exercises", { n: r.exercises.length })}
+                      {t(r.exercises.length === 1 ? "{n} exercise" : "{n} exercises", { n: r.exercises.length })}
                     </span>
                   </span>
                 </button>
@@ -390,10 +390,14 @@ function ActiveWorkout({
         <div style={{ flex: 1 }}>
           <div className="t">{t("Today's workout")}</div>
           {!empty && (
-            <div className="s">{t("{n} exercises · {s} sets", { n: w.exercises.length, s: totalSets(w) })}</div>
+            <div className="s">
+              {t(w.exercises.length === 1 ? "{n} exercise" : "{n} exercises", { n: w.exercises.length })}
+              {" · "}
+              {t(totalSets(w) === 1 ? "{n} set" : "{n} sets", { n: totalSets(w) })}
+            </div>
           )}
         </div>
-        <button onClick={onDiscard} className="text-[11px]" style={{ color: "var(--color-faint)" }}>
+        <button onClick={onDiscard} className="h-hit text-[11px]" style={{ color: "var(--color-faint)" }}>
           {t("Discard")}
         </button>
       </div>
@@ -472,7 +476,7 @@ function ExerciseBlock({
             </div>
           )}
         </div>
-        <button onClick={onRemove} style={{ color: "var(--color-faint)" }} aria-label="Remove exercise">
+        <button onClick={onRemove} className="h-hit" style={{ color: "var(--color-faint)" }} aria-label="Remove exercise">
           <X size={15} />
         </button>
       </div>
@@ -488,12 +492,12 @@ function ExerciseBlock({
           <span className="num w-6 text-center text-[12px] font-semibold" style={{ color: "var(--color-faint)" }}>{i + 1}</span>
           <NumIn value={s.weight} onChange={(v) => onSetChange(i, { weight: v })} max={2000} suffix="lb" />
           <NumIn value={s.reps} onChange={(v) => onSetChange(i, { reps: v })} max={100} />
-          <button onClick={() => onRemoveSet(i)} className="w-5 shrink-0" style={{ color: "var(--color-faint)" }} aria-label="Remove set">
+          <button onClick={() => onRemoveSet(i)} className="h-hit w-5 shrink-0" style={{ color: "var(--color-faint)" }} aria-label="Remove set">
             <Minus size={14} />
           </button>
         </div>
       ))}
-      <button onClick={onAddSet} className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
+      <button onClick={onAddSet} className="h-hit mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "var(--color-accent)" }}>
         <Plus size={12} /> {t("Add set")}
       </button>
     </div>
@@ -636,7 +640,7 @@ function DurationBlock({ ex, onChange, onRemove }: { ex: ExerciseEntry; onChange
     <div className="mb-2.5 rounded-[12px] p-3" style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)" }}>
       <div className="mb-1.5 flex items-center justify-between">
         <div className="min-w-0 truncate text-[13.5px] font-medium text-bone">{ex.name}</div>
-        <button onClick={onRemove} style={{ color: "var(--color-faint)" }} aria-label="Remove exercise">
+        <button onClick={onRemove} className="h-hit" style={{ color: "var(--color-faint)" }} aria-label="Remove exercise">
           <X size={15} />
         </button>
       </div>
@@ -677,7 +681,10 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
       </div>
       <div className="h-sub" style={{ marginTop: "var(--h-2)" }}>
         {active
-          ? t("In progress · {sets} sets{vol}", { sets, vol: vol > 0 ? ` · ${r0(vol).toLocaleString()} ${t("vol")}` : "" })
+          ? t(sets === 1 ? "In progress · {sets} set{vol}" : "In progress · {sets} sets{vol}", {
+              sets,
+              vol: vol > 0 ? ` · ${r0(vol).toLocaleString()} ${t("vol")}` : "",
+            })
           : weekCount >= WEEK_GOAL
             ? t("Goal hit — nice work")
             : t("{n} more to hit your goal", { n: left })}

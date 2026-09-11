@@ -241,7 +241,12 @@ input[type="number"] {
   --color-edgehero: #2b3342;
   --color-bone: #e9edf3;
   --color-taupe: #9aa5b4;
-  --color-faint: #6d7788;
+  /* --color-faint is the DIMMEST ink in the theme and it still has to be read:
+     it carries the "/ 130" beside each macro, the weekday letters and the "kcal"
+     unit. A contrast audit of the rendered page put it at 4.33:1 — fourteen
+     elements, all of them this one token, all just under the 4.5:1 small text
+     needs. Lifted until the worst of the three panels clears it. */
+  --color-faint: #8a95a6;
   --color-accent: #34d399;
   --h-on-accent: #06231a;
   --h-num-font: var(--font-sans);
@@ -265,7 +270,7 @@ input[type="number"] {
   --color-edgehero: #203039;
   --color-bone: #dde7ec;
   --color-taupe: #8ca0ab;
-  --color-faint: #5b6b75;
+  --color-faint: #7e929d;
   --color-accent: #22d3ee;
   --h-on-accent: #041d24;
   --h-num-font: var(--font-mono);
@@ -289,7 +294,7 @@ input[type="number"] {
   --color-edgehero: #333b4a;
   --color-bone: #f3f6f9;
   --color-taupe: #a6b1bd;
-  --color-faint: #74808f;
+  --color-faint: #939eab;
   --color-accent: #a3e635;
   --h-on-accent: #17230a;
   --h-num-font: var(--font-sans);
@@ -408,7 +413,7 @@ input[type="number"] {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 32px;
+  min-height: 36px;
   padding: 0 11px;
   /* "Just me" is two words and was wrapping inside a 32px pill, so one half of
      the control had two lines of 12px text and the other had one. */
@@ -440,8 +445,8 @@ input[type="number"] {
   gap: 2px;
 }
 .h-daynav button {
-  min-width: 34px;
-  height: 34px;
+  min-width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -896,6 +901,32 @@ input[type="number"] {
   color: var(--color-accent);
 }
 
+/* ── Tap targets ──────────────────────────────────────────────
+   A scripted audit of the rendered page found controls down to 15x15px: the
+   remove-exercise cross, the remove-set minus, "Add set", "Discard", and — worst,
+   because it is the only route to your macro targets — the "Calories left"
+   eyebrow at 101x16.
+
+   Every platform asks for about 44px. The fix is NOT to draw them bigger: a 44px
+   cross beside a set row would dominate a screen it is meant to sit quietly in.
+   It is to grow the HIT AREA and leave the ink alone — the element keeps its
+   visual size and gains an invisible pad around it.
+
+   `isolation` keeps the grown box from stacking over a neighbour's text. */
+.h-hit {
+  position: relative;
+  isolation: isolate;
+}
+.h-hit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 .h-empty {
   display: flex;
@@ -962,7 +993,7 @@ input[type="number"] {
 .hb-seg button.on { background: var(--color-raised); color: var(--color-bone); box-shadow: inset 0 0 0 1px var(--color-edge); }
 .hb-targets { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: var(--h-lbl-tr); letter-spacing: var(--h-lbl-ls); color: var(--color-taupe); background: transparent; border: 0; padding: 6px 2px; cursor: pointer; }
 .hb-daynav { display: flex; align-items: center; gap: 2px; }
-.hb-daynav button { min-width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--color-taupe); background: transparent; border: 0; font-size: 15px; cursor: pointer; }
+.hb-daynav button { min-width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; color: var(--color-taupe); background: transparent; border: 0; font-size: 15px; cursor: pointer; }
 .hb-daynav button:disabled { opacity: .3; }
 .hb-daynav .td { width: auto; min-width: 72px; padding: 0 var(--h-2); font-size: 11.5px; font-weight: 700; color: var(--color-bone); }
 .hb-mealhead { display: flex; align-items: center; gap: var(--h-2); margin-bottom: var(--h-2); }
