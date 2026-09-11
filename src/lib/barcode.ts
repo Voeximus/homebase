@@ -31,16 +31,19 @@ function guessRole(name: string): FoodRole {
 }
 
 /**
- * The macro reading a source hands back, before it becomes a Food.
+ * Did the source actually STATE this nutrition, or is the record empty?
  *
- * A product record with empty nutrition fields is NOT a hit. The old code
- * defaulted every missing macro to 0 and returned the row anyway, so a product
- * whose name Open Food Facts knows but whose nutrition nobody has entered came
- * back as a real food with 0 calories and went straight into a day's totals. A
- * miss he can see beats a zero he cannot.
+ * A product with empty nutrition fields is not a hit: the old code defaulted
+ * every missing macro to 0 and returned the row anyway, so a product whose name
+ * Open Food Facts knows but whose nutrition nobody has entered came back as a
+ * real food with 0 calories and went into a day's totals.
+ *
+ * But the test is PRESENCE, not magnitude. Writing it as "are the numbers above
+ * zero" — which is what the first version said — makes Diet Coke, black coffee
+ * and sparkling water indistinguishable from missing data. Their zeros are the
+ * correct answer.
  */
-const usable = (h: { kcal: number; p: number; c: number; f: number }) =>
-  h.kcal > 0 || h.p > 0 || h.c > 0 || h.f > 0;
+const usable = (h: { present: boolean }) => h.present;
 
 // ── the wide path: every source, through the server ──────────────────────────
 
@@ -54,8 +57,10 @@ async function viaService(code: string): Promise<BarcodeResult | null> {
     const { data, error } = await supabase.functions.invoke("food-lookup", { body: { code } });
     if (error || !data?.hit) return null;
     const h = data.hit;
+    // No second-guessing the server's verdict here: it already applied the
+    // presence test, and re-testing for non-zero would throw away exactly the
+    // zero-calorie products that test exists to keep.
     const macros = { kcal: r1(h.kcal ?? 0), p: r1(h.p ?? 0), c: r1(h.c ?? 0), f: r1(h.f ?? 0) };
-    if (!usable(macros)) return null;
     const name =
       h.brand && h.name && !h.name.toLowerCase().includes(String(h.brand).toLowerCase())
         ? `${h.brand} ${h.name}`
@@ -83,16 +88,21 @@ function offMacros(n: Record<string, number>, servingG?: number) {
     if (Number.isFinite(serv) && servingG && servingG > 0) return (serv / servingG) * 100;
     return undefined;
   };
-  const p = per100("proteins") ?? 0;
-  const c = per100("carbohydrates") ?? 0;
-  const f = per100("fat") ?? 0;
+  const rawP = per100("proteins");
+  const rawC = per100("carbohydrates");
+  const rawF = per100("fat");
+  const p = rawP ?? 0;
+  const c = rawC ?? 0;
+  const f = rawF ?? 0;
   let kcal = per100("energy-kcal");
+  const hadEnergy = kcal != null;
   if (kcal == null) {
     const kj = per100("energy"); // OFF stores `energy_100g` in kilojoules
     if (kj != null) kcal = kj / 4.184;
   }
-  if (kcal == null && (p > 0 || c > 0 || f > 0)) kcal = 4 * p + 4 * c + 9 * f;
-  return { kcal: r1(kcal ?? 0), p: r1(p), c: r1(c), f: r1(f) };
+  if (kcal == null && (rawP != null || rawC != null || rawF != null)) kcal = 4 * p + 4 * c + 9 * f;
+  const present = hadEnergy || kcal != null || rawP != null || rawC != null || rawF != null;
+  return { kcal: r1(kcal ?? 0), p: r1(p), c: r1(c), f: r1(f), present };
 }
 
 async function directOff(code: string): Promise<BarcodeResult | null> {
@@ -121,8 +131,11 @@ async function directOff(code: string): Promise<BarcodeResult | null> {
   if (!prod || data.status === 0) return null;
 
   const servingG = Number(prod.serving_quantity);
-  const macros = offMacros(prod.nutriments ?? {}, Number.isFinite(servingG) ? servingG : undefined);
-  if (!usable(macros)) return null;
+  const { present, ...macros } = offMacros(
+    prod.nutriments ?? {},
+    Number.isFinite(servingG) ? servingG : undefined,
+  );
+  if (!usable({ present })) return null;
 
   const brand = prod.brands?.split(",")[0]?.trim();
   const pname = (prod.product_name_en || prod.product_name || prod.generic_name)?.trim();

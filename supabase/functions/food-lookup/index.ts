@@ -75,14 +75,20 @@ const num = (v: unknown): number | undefined => {
  * Is this a usable nutrition reading, or a product record with the nutrition
  * fields empty?
  *
- * This check is the difference between "we don't have it" and a LIE. The old
- * code defaulted every missing macro to 0 and returned the row, so a product
- * that OFF knows the name of but not the nutrition of came back as a real food
- * with 0 calories — and went straight into a day's totals. A miss he can see is
- * strictly better than a zero he cannot.
+ * This is the difference between "we don't have it" and a LIE. The old code
+ * defaulted every missing macro to 0 and returned the row, so a product that OFF
+ * knows the name of but not the nutrition of came back as a real food with 0
+ * calories and went straight into a day's totals.
+ *
+ * But the test cannot be "are the numbers above zero", which is what the first
+ * version of this said. A live probe caught it immediately: Diet Coke is 0 kcal,
+ * 0 protein, 0 carbs, 0 fat — a true and complete reading — and the function
+ * reported "not in any source" for it. Same for black coffee, sparkling water,
+ * zero-calorie sweetener. The question is whether the fields were THERE, not
+ * whether they were non-zero.
  */
-function usable(h: { kcal: number; p: number; c: number; f: number }): boolean {
-  return h.kcal > 0 || h.p > 0 || h.c > 0 || h.f > 0;
+function usable(h: { present: boolean }): boolean {
+  return h.present;
 }
 
 // ── Open Food Facts ──────────────────────────────────────────────────────────
@@ -106,11 +112,15 @@ function offMacros(n: Record<string, unknown>, servingG?: number) {
     return undefined;
   };
 
-  const p = per100("proteins") ?? 0;
-  const c = per100("carbohydrates") ?? 0;
-  const f = per100("fat") ?? 0;
+  const rawP = per100("proteins");
+  const rawC = per100("carbohydrates");
+  const rawF = per100("fat");
+  const p = rawP ?? 0;
+  const c = rawC ?? 0;
+  const f = rawF ?? 0;
 
   let kcal = per100("energy-kcal");
+  const hadEnergy = kcal != null;
   if (kcal == null) {
     // `energy_100g` is kilojoules by OFF convention.
     const kj = per100("energy");
@@ -119,9 +129,12 @@ function offMacros(n: Record<string, unknown>, servingG?: number) {
   // Last resort: Atwater factors. A label that lists macros but no calorie count
   // is common on imported products, and 4/4/9 is what the calorie count on the
   // panel was computed from anyway.
-  if (kcal == null && (p > 0 || c > 0 || f > 0)) kcal = 4 * p + 4 * c + 9 * f;
+  if (kcal == null && (rawP != null || rawC != null || rawF != null)) kcal = 4 * p + 4 * c + 9 * f;
 
-  return { kcal: r1(kcal ?? 0), p: r1(p), c: r1(c), f: r1(f) };
+  // `present` records whether the source actually STATED any of this, which is
+  // not the same question as whether the numbers are non-zero. See usable().
+  const present = hadEnergy || kcal != null || rawP != null || rawC != null || rawF != null;
+  return { kcal: r1(kcal ?? 0), p: r1(p), c: r1(c), f: r1(f), present };
 }
 
 async function fromOpenFoodFacts(code: string): Promise<FoodHit | null> {
@@ -140,8 +153,8 @@ async function fromOpenFoodFacts(code: string): Promise<FoodHit | null> {
   if (!prod || data.status === 0) return null;
 
   const servingG = num(prod.serving_quantity);
-  const macros = offMacros(prod.nutriments ?? {}, servingG);
-  if (!usable(macros)) return null;
+  const { present, ...macros } = offMacros(prod.nutriments ?? {}, servingG);
+  if (!usable({ present })) return null;
 
   const brand = String(prod.brands ?? "").split(",")[0]?.trim() || undefined;
   const pname = String(prod.product_name_en || prod.product_name || prod.generic_name || "").trim();
@@ -207,9 +220,12 @@ async function fromUsda(code: string, accept: Set<string>): Promise<FoodHit | nu
     const p = by[FDC_PROTEIN] ?? 0;
     const c = by[FDC_CARB] ?? 0;
     const f = by[FDC_FAT] ?? 0;
-    const kcal = by[FDC_ENERGY] ?? (p || c || f ? 4 * p + 4 * c + 9 * f : 0);
+    const kcal = by[FDC_ENERGY] ?? 4 * p + 4 * c + 9 * f;
+    // Presence, not magnitude — a zero-calorie product states zeros. See usable().
+    const present =
+      by[FDC_ENERGY] != null || by[FDC_PROTEIN] != null || by[FDC_CARB] != null || by[FDC_FAT] != null;
     const macros = { kcal: r1(kcal), p: r1(p), c: r1(c), f: r1(f) };
-    if (!usable(macros)) continue;
+    if (!usable({ present })) continue;
 
     const brand = String(food.brandOwner ?? food.brandName ?? "").trim() || undefined;
     const name = String(food.description ?? "").trim();
@@ -309,13 +325,22 @@ Deno.serve(async (req) => {
     // shape of product a volunteer catalog is thinnest on.
     //
     // FDC is searched by number rather than fetched by id (it has no by-GTIN
-    // endpoint), so one query is enough — and the result is then verified
-    // against the full variant set, because a full-text search for a number WILL
-    // return near-misses and a near-miss here is the wrong food logged.
-    const usdaHit = await fromUsda(canonicalGtin(raw), accept);
-    if (usdaHit) {
-      await writeCache(raw, usdaHit);
-      return json({ hit: usdaHit });
+    // endpoint), and the result is then verified against the full variant set,
+    // because a full-text search for a number WILL return near-misses and a
+    // near-miss here is the wrong food logged as the right one.
+    //
+    // Searched AS PRINTED, not canonicalized. A live probe caught this: the four
+    // products USDA was added to rescue all came back "not in any source",
+    // because the query was the 13-digit canonical form while FDC indexes the
+    // 12-digit number off the label. Unlike Open Food Facts, FDC does not
+    // normalize — it is a text search, and "0819733000276" is a different string
+    // from "819733000276". So ask for each distinct form until one answers.
+    for (const code of variants) {
+      const usdaHit = await fromUsda(code, accept);
+      if (usdaHit) {
+        await writeCache(raw, usdaHit);
+        return json({ hit: usdaHit });
+      }
     }
 
     await writeCache(raw, null);

@@ -12,7 +12,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "2026.09.10b",
+    version: "2026.09.10c",
     date: "September 10, 2026",
     notes: [
       "The barcode scanner now uses your phone's own barcode hardware where it has it, instead of decoding in software. On Android that's the difference between a scan that works and one you have to fight.",
@@ -20,7 +20,7 @@ export const CHANGELOG: Release[] = [
       "There's a flashlight button. Shelves are dark and your phone shades the package it's pointed at.",
       "The camera used to restart itself mid-scan, over and over. That's the real reason a scan sometimes took several tries.",
       "Scans now check USDA's branded-food database too, not just Open Food Facts. On a test of 61 real US grocery products, Open Food Facts had 57 and USDA covered the other 4.",
-      "A product with a name but no nutrition data used to come back as a real food with 0 calories and go straight into your day. It now says it doesn't have it.",
+      "A product with a name but no nutrition data used to come back as a real food with 0 calories and go straight into your day. It now says it doesn't have it — while still handling the things that genuinely ARE zero, like Diet Coke and black coffee.",
       "Every product either of you scans gets remembered, so the second time is instant and neither phone has to ask the internet again.",
       "Typing a barcode by hand tells you if you've fat-fingered a digit, instead of searching for a number that can't exist.",
     ],
