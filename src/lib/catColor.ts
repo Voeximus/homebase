@@ -91,7 +91,7 @@ export const BRAND_GRADIENT =
 // Reserved for PRIMARY actions + key highlights (sparingly), NOT for filling
 // large hero cards — those use the neutral HEALTH_HERO surface below.
 export const HEALTH = "#fb7185";
-export const HEALTH_GRADIENT =
+
   "linear-gradient(150deg,#fb7185 0%,#fb6f92 52%,#f43f5e 100%)";
 // Neutral, professional hero surface for the big summary cards — a deep slate
 // wash that lets the colored content (rings, macro counters) stand out instead

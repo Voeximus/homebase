@@ -25,26 +25,6 @@ export function weekStartOf(date: string): string {
   return ymd(d);
 }
 
-export interface WeekAvg {
-  week: string; // Monday YYYY-MM-DD
-  avg: number;
-  count: number;
-}
-
-/** Average weight per Monday-start week, oldest → newest. */
-export function weeklyAverages(entries: BodyWeight[]): WeekAvg[] {
-  const by = new Map<string, number[]>();
-  for (const e of entries) {
-    const w = weekStartOf(e.date);
-    const arr = by.get(w);
-    if (arr) arr.push(e.weight);
-    else by.set(w, [e.weight]);
-  }
-  return [...by.entries()]
-    .map(([week, ws]) => ({ week, avg: ws.reduce((a, b) => a + b, 0) / ws.length, count: ws.length }))
-    .sort((a, b) => a.week.localeCompare(b.week));
-}
-
 /** The running average for the week that contains `today` (the "end-of-week average"). */
 export function currentWeekAvg(entries: BodyWeight[], today: string): { avg: number; count: number } | null {
   const wk = weekStartOf(today);
@@ -68,11 +48,6 @@ export function ratePerWeek(entries: BodyWeight[]): number | null {
   const denom = n * sxx - sx * sx;
   if (denom === 0) return null; // all on one day → no slope
   return ((n * sxy - sx * sy) / denom) * 7;
-}
-
-/** Number of distinct calendar weeks with at least one entry. */
-export function weeksTracked(entries: BodyWeight[]): number {
-  return new Set(entries.map((e) => weekStartOf(e.date))).size;
 }
 
 export function latestWeight(entries: BodyWeight[]): number | null {

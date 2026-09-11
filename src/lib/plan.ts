@@ -460,6 +460,12 @@ export function payoffSchedule(
   let date = nextPayday(from, payDays);
   let guard = 0;
 
+  // 240 paydays = 10 years. Hitting it means the plan does NOT clear the debt —
+  // the balance is flat or growing. The caller must tell that apart from a
+  // finished schedule, and the only honest signal is the last event's
+  // `remaining`: > 0 means the loop gave up, not that the debt was paid. See
+  // the payoffClears() helper below, which every caller should use before
+  // printing a date.
   while (bal.some((b) => b.balance > 0.005) && guard++ < 240) {
     // The split only starts once the card is the ONLY debt left (everything
     // smaller is snowballed away first). Then skim the savings slice off the top.
@@ -467,7 +473,25 @@ export function payoffSchedule(
     let toSavings = 0;
     let savingsKind: "emergency" | "investing" | null = null;
     if (split && cardOnly) {
-      toSavings = Math.min(split.perCheck, perPay);
+      // The skim can never take the whole payday.
+      //
+      // This was `Math.min(split.perCheck, perPay)`, which means: once one debt
+      // is left, if half the monthly firepower is at or under $500, savings takes
+      // ALL of it and the debt receives nothing — not less, nothing — on every
+      // payday from then on. The balance freezes, the loop below runs out its
+      // 240-payday guard, and the caller reads the last event's date as the
+      // debt-free date. Traced on the real debts: at $800/mo firepower the
+      // schedule "finishes" in Aug '36 with $739.51 still owed, and 240 of its
+      // 240 paydays sent $0.00 at the debt. It was even non-monotonic — more
+      // firepower could leave MORE debt, because a bigger perPay just meant a
+      // bigger skim.
+      //
+      // Halving is the smallest rule that cannot starve the debt, and it is a
+      // no-op at the firepower this plan actually runs at: perPay is $1,132
+      // today, so min(500, 566) is still the full $500. It only binds below
+      // $1,000/mo — exactly the tight months where a frozen payoff would have
+      // been most misleading.
+      toSavings = Math.min(split.perCheck, perPay / 2);
       const emShare = Math.min(toSavings, Math.max(0, split.emergencyTarget - emergency));
       emergency += emShare;
       savingsKind = emShare > 0.005 ? "emergency" : "investing";
@@ -511,6 +535,20 @@ export function payoffSchedule(
     date = nextPayday(date, payDays);
   }
   return events;
+}
+
+/**
+ * Does this schedule actually reach zero, or did the projection give up?
+ *
+ * `payoffSchedule` stops after 240 paydays whether or not the debt cleared, so a
+ * stalled plan and a finished one are the same shape: a non-empty array of
+ * events. Reading the last event's date without asking this question prints a
+ * debt-free date for a debt that never gets paid — a decade out, stated with the
+ * same confidence as a real one.
+ */
+export function payoffClears(schedule: PayoffEvent[]): boolean {
+  if (!schedule.length) return false;
+  return schedule[schedule.length - 1].remaining <= 0.005;
 }
 
 /**

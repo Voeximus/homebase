@@ -8,6 +8,7 @@ import {
   planMath,
   orderedDebts,
   payoffSchedule,
+  payoffClears,
   PAY_DAYS,
   SAVINGS_SPLIT,
   sumTargets,
@@ -392,8 +393,13 @@ export function buildFinanceVMs(
   const monthDent = Math.max(0, spentMonth - projVariable);
   const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
   const next = schedule[0] ?? null;
-  const debtFreeBy = schedule.length ? fmtMY(schedule[schedule.length - 1].date) : "—";
-  const monthsToGo = schedule.length
+  // A schedule that ran out its 240-payday guard without clearing the debt is
+  // the same SHAPE as one that finished — a non-empty array — so `schedule.length`
+  // was reading "it gave up in Aug '36" as "you are debt-free in Aug '36".
+  // payoffClears() asks the only question that separates them.
+  const clears = payoffClears(schedule);
+  const debtFreeBy = clears ? fmtMY(schedule[schedule.length - 1].date) : "—";
+  const monthsToGo = clears
     ? Math.max(1, Math.round((schedule[schedule.length - 1].date.getTime() - now.getTime()) / 2.592e9))
     : 0;
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);

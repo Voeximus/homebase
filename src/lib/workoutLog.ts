@@ -119,48 +119,6 @@ export function thisWeekCount(workouts: Workout[], today: string): number {
 }
 
 // ── persistence (local-first) ──────────────────────────────────────────────────
-const wKey = (p: Person) => `hb-workouts-${p}`;
-const rKey = (p: Person) => `hb-routines-${p}`;
-
-export function loadWorkouts(person: Person): Workout[] {
-  try {
-    const raw = localStorage.getItem(wKey(person));
-    if (raw) {
-      const arr = JSON.parse(raw) as Workout[];
-      if (Array.isArray(arr)) return arr;
-    }
-  } catch {
-    /* ignore */
-  }
-  return [];
-}
-export function saveWorkouts(person: Person, list: Workout[]): void {
-  try {
-    localStorage.setItem(wKey(person), JSON.stringify(list));
-  } catch {
-    /* ignore */
-  }
-}
-export function loadRoutines(person: Person): Routine[] {
-  try {
-    const raw = localStorage.getItem(rKey(person));
-    if (raw) {
-      const arr = JSON.parse(raw) as Routine[];
-      if (Array.isArray(arr)) return [...SEED_ROUTINES[person], ...arr];
-    }
-  } catch {
-    /* ignore */
-  }
-  return [...SEED_ROUTINES[person]];
-}
-export function saveRoutines(person: Person, custom: Routine[]): void {
-  // only persist the user's own routines; seeds are code-defined
-  try {
-    localStorage.setItem(rKey(person), JSON.stringify(custom.filter((r) => !r.seed)));
-  } catch {
-    /* ignore */
-  }
-}
 
 // ── exercise search ─────────────────────────────────────────────────────────────
 export function searchExercises(query: string, library: Exercise[], limit = 40): Exercise[] {

@@ -42,9 +42,6 @@ export const DAILY: Record<"gino" | "xinyan", MacroTarget> = {
   xinyan: { kcal: 1550, p: 140, c: 145, f: 45 },
 };
 
-export function scaleTarget(t: MacroTarget, share: number): MacroTarget {
-  return { kcal: t.kcal * share, p: t.p * share, c: t.c * share, f: t.f * share };
-}
 
 // ── seed library (per 100 g, as eaten; standard reference values, editable) ──
 export const SEED_FOODS: Food[] = [
@@ -80,14 +77,7 @@ export const SEED_FOODS: Food[] = [
   { id: "whole-milk", name: "Whole milk", role: "other", kcal: 61, p: 3.2, c: 4.8, f: 3.3, serving: 240, note: "1 cup ≈ 240g" },
 ];
 
-export const ROLE_LABEL: Record<FoodRole, string> = {
-  protein: "Protein",
-  carb: "Carbs",
-  veg: "Vegetables",
-  fat: "Fats",
-  other: "Other",
-};
-export const ROLE_ORDER: FoodRole[] = ["protein", "carb", "veg", "fat", "other"];
+
 
 export interface SolvedItem {
   food: Food;
@@ -186,9 +176,6 @@ export function saveCustomFoods(foods: Food[]): void {
 }
 export function clearCustomFoods(): void {
   localStorage.removeItem(LS_KEY);
-}
-export function loadLibrary(): Food[] {
-  return [...SEED_FOODS, ...loadCustomFoods()];
 }
 
 // ── natural-unit inference ────────────────────────────────────────────────────

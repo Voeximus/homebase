@@ -77,11 +77,6 @@ export interface DayLog {
   note?: string; // the rough "what did you eat" description for an estimated day
 }
 
-// ── macro math ───────────────────────────────────────────────────────────────
-export function macrosOf(food: Pick<Food, "kcal" | "p" | "c" | "f">): Macros {
-  return { kcal: food.kcal, p: food.p, c: food.c, f: food.f };
-}
-
 /** What this portion actually contributes (per-100g snapshot scaled by grams). */
 export function contribution(item: LoggedItem): Macros {
   const k = item.grams / 100;
@@ -120,7 +115,6 @@ export function remaining(target: Macros, eaten: Macros): Macros {
 }
 
 // ── persistence (local-first; Supabase sync is a later upgrade like foods) ─────
-const dayKey = (person: Person, date: string) => `hb-meallog-${person}-${date}`;
 
 /** Local calendar date (not UTC) so "today" rolls at the user's midnight.
  *  Delegates to the one shared spelling — this used to be a separate
@@ -128,30 +122,6 @@ const dayKey = (person: Person, date: string) => `hb-meallog-${person}-${date}`;
  *  conversion could drift. */
 export function todayStr(): string {
   return todayISO();
-}
-
-export function loadDay(person: Person, date: string): DayLog {
-  try {
-    const raw = localStorage.getItem(dayKey(person, date));
-    if (raw) {
-      const parsed = JSON.parse(raw) as DayLog;
-      // Defend against an older/partial shape.
-      if (Array.isArray(parsed.meals)) {
-        return { date, person, meals: parsed.meals };
-      }
-    }
-  } catch {
-    /* fall through to a fresh day */
-  }
-  return { date, person, meals: [] };
-}
-
-export function saveDay(log: DayLog): void {
-  try {
-    localStorage.setItem(dayKey(log.person, log.date), JSON.stringify(log));
-  } catch {
-    /* storage full / unavailable — non-fatal */
-  }
 }
 
 // A simple, collision-resistant id without pulling in a uuid dep.
