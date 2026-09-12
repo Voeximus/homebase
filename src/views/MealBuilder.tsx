@@ -12,6 +12,7 @@ import {
   Plus,
   Scale,
   ScanLine,
+  ScanText,
   SlidersHorizontal,
   Search,
   Trash2,
@@ -21,8 +22,9 @@ import {
   X,
 } from "lucide-react";
 import { BarcodeScanner } from "../components/BarcodeScanner";
+import { LabelScanFlow } from "../components/LabelScanFlow";
 import { lookupBarcode } from "../lib/barcode";
-import { gtinVariants } from "../lib/gtin";
+import { canonicalGtin, gtinVariants } from "../lib/gtin";
 import { copyText, dayToText, mealToText } from "../lib/mealText";
 import { DAILY, unitFor, type Food, type FoodRole, type FoodUnit, type MacroTarget } from "../lib/nutrition";
 import {
@@ -1739,6 +1741,10 @@ function FoodSearchSheet(props: SearchSheetProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  // The barcode no catalog knew — offered to the label scanner so the photo's
+  // result is saved against it. `labelScan` is open when non-null.
+  const [missedCode, setMissedCode] = useState<string | null>(null);
+  const [labelScan, setLabelScan] = useState<{ barcode?: string } | null>(null);
 
   // edit mode jumps straight to the portion view
   useEffect(() => {
@@ -1748,6 +1754,8 @@ function FoodSearchSheet(props: SearchSheetProps) {
       setCustomOpen(false);
       setQ("");
       setStatus(null);
+      setMissedCode(null);
+      setLabelScan(null);
     }
   }, [open, initialFood]);
 
@@ -1757,6 +1765,7 @@ function FoodSearchSheet(props: SearchSheetProps) {
   async function lookup(code: string) {
     const clean = digits(code);
     if (clean.length < 6) return;
+    setMissedCode(null);
     // Match a saved food on ANY printed form of the number. The same product
     // carries UPC-A on one package and EAN-13 on the next, so comparing the
     // scanned string to the stored string missed foods already in the library —
@@ -1781,6 +1790,7 @@ function FoodSearchSheet(props: SearchSheetProps) {
     setBusy(false);
     if (!r) {
       setStatus(t("Not in any food database yet — try a name search, or add it by hand."));
+      setMissedCode(clean);
       return;
     }
     setStatus(null);
@@ -1824,7 +1834,7 @@ function FoodSearchSheet(props: SearchSheetProps) {
                 if (save && transient) addFood({ name: picked.name, role: picked.role, kcal: picked.kcal, p: picked.p, c: picked.c, f: picked.f, barcode: picked.barcode, unit: picked.unit });
                 props.onAdd?.(picked, amount);
                 if (initialFood) onClose();
-                else { setPicked(null); setStatus(t("Added {name}", { name: picked.name })); }
+                else { setPicked(null); setMissedCode(null); setStatus(t("Added {name}", { name: picked.name })); }
               }}
             />
           ) : customOpen ? (
@@ -1879,6 +1889,15 @@ function FoodSearchSheet(props: SearchSheetProps) {
                   {status}
                 </p>
               )}
+              {missedCode && !busy && (
+                <button
+                  onClick={() => setLabelScan({ barcode: missedCode })}
+                  className="mx-4 mt-2 flex items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold"
+                  style={{ background: "var(--color-accent)", color: "var(--h-on-accent)", minHeight: 44 }}
+                >
+                  <ScanText size={16} /> {t("Scan the nutrition label")}
+                </button>
+              )}
 
               <div className="mt-2 flex-1 overflow-y-auto px-2 pb-3">
                 {results.length > 0 ? (
@@ -1927,19 +1946,48 @@ function FoodSearchSheet(props: SearchSheetProps) {
                 )}
               </div>
 
-              <button
-                onClick={() => setCustomOpen(true)}
-                className="flex items-center justify-center gap-1.5 border-t py-3 text-[12.5px] font-semibold"
-                style={{ borderColor: "var(--color-edge)", color: "var(--color-taupe)" }}
-              >
-                <Plus size={14} /> {t("Add a custom food")}
-              </button>
+              <div className="flex border-t" style={{ borderColor: "var(--color-edge)" }}>
+                <button
+                  onClick={() => setLabelScan({})}
+                  className="flex flex-1 items-center justify-center gap-1.5 py-3 text-[12.5px] font-semibold"
+                  style={{ color: "var(--color-taupe)", minHeight: 44 }}
+                >
+                  <ScanText size={14} /> {t("Scan a nutrition label")}
+                </button>
+                <button
+                  onClick={() => setCustomOpen(true)}
+                  className="flex flex-1 items-center justify-center gap-1.5 border-l py-3 text-[12.5px] font-semibold"
+                  style={{ borderColor: "var(--color-edge)", color: "var(--color-taupe)", minHeight: 44 }}
+                >
+                  <Plus size={14} /> {t("Add a custom food")}
+                </button>
+              </div>
             </>
           )}
         </div>
       </div>
 
       <BarcodeScanner open={scanOpen} onClose={() => setScanOpen(false)} onResult={(code) => { setScanOpen(false); lookup(code); }} />
+      <LabelScanFlow
+        open={!!labelScan}
+        barcode={labelScan?.barcode}
+        initialName={labelScan?.barcode || /^\d*$/.test(q.trim()) ? undefined : q.trim()}
+        onClose={() => setLabelScan(null)}
+        onAddByHand={() => { setLabelScan(null); setCustomOpen(true); }}
+        onFood={(food) => {
+          // Persisted like a custom food — plus the label's serving and the
+          // barcode in its canonical form, so the next scan of this product
+          // (off either printed form) finds it in the library.
+          const barcode = food.barcode ? canonicalGtin(food.barcode) : undefined;
+          addFood({ name: food.name, role: food.role, kcal: food.kcal, p: food.p, c: food.c, f: food.f, serving: food.serving, barcode });
+          setLabelScan(null);
+          setMissedCode(null);
+          setStatus(null);
+          // Opens on "1 serving", exactly like a barcode hit.
+          setPicked({ ...food, barcode });
+          setTransient(false);
+        }}
+      />
     </>
   );
 }
