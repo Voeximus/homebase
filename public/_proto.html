@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0e13">
+<title>Homebase — display, navigation, motion</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   A WORKING prototype, not a picture of one — because two of the three things
+   being judged here cannot be judged from a still.
+
+   NAVIGATION  tap the bar, or swipe the screen sideways. Count the taps to the
+               thing you actually do most.
+   MOTION      every transition below is a real one you can slow down. The rule
+               being tested: motion should describe the SPATIAL RELATIONSHIP
+               between two screens and nothing else.
+   DISPLAY     the budget block renders three ways from one set of numbers, so
+               the question "which of these actually helps" has an answer you
+               can see instead of argue about.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+:root{
+  --bg:#0b0e13; --card:#141a23; --raised:#1c2430; --well:#080a0e;
+  --line:#222b38; --line2:#2e3947;
+  --ink:#f0f4f8; --ink2:#a8b4c2; --ink3:#8b96a5;
+  --acc:#38c6e8; --on-acc:#04212b;
+  --good:#3fd08a; --warn:#e9b23c; --bad:#f0645c;
+  --c-groc:#369e4e; --c-gas:#987de4; --c-dine:#a3468c; --c-house:#8f6700; --c-misc:#0871c1;
+  --mp:#e8608f; --mc:#4d93f0; --mf:#dfa32e;
+  --r:14px;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  /* every duration in the app derives from these two, so "slow it down" is one
+     multiplier rather than forty edits */
+  --t:1;               /* speed multiplier */
+  --t-lat:calc(240ms * var(--t));   /* sibling ↔ sibling */
+  --t-push:calc(280ms * var(--t));  /* parent → child */
+  --t-sheet:calc(320ms * var(--t)); /* transient on top */
+  --ease-in:cubic-bezier(.3,0,.8,.15);
+  --ease-out:cubic-bezier(.05,.7,.1,1);
+  --ease-both:cubic-bezier(.3,0,0,1);
+}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;padding-bottom:260px}
+
+/* ── lab chrome ─────────────────────────────────────────────────────────── */
+.lab-top{padding:12px 16px 10px;border-bottom:1px solid var(--line)}
+.lab-top h1{margin:0 0 3px;font-size:15px;font-weight:750;letter-spacing:-.015em}
+.lab-top p{margin:0;font-size:12px;color:var(--ink3);line-height:1.5}
+.lab-phone{margin:16px auto 0;width:100%;max-width:392px;padding:0 8px}
+.lab-frame{border:1px solid var(--line);border-radius:26px;overflow:hidden;background:var(--bg);
+  box-shadow:0 24px 60px -40px #000;height:712px;position:relative}
+
+/* the control panel — pinned, because you change a setting and immediately
+   want to drive the thing again */
+.lab-ctl{position:fixed;left:0;right:0;bottom:0;z-index:90;background:rgba(11,14,19,.96);
+  backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:12px 16px calc(14px + env(safe-area-inset-bottom))}
+.lab-ctl .grp{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.lab-ctl .grp:last-child{margin-bottom:0}
+.lab-ctl .lbl{font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink3);width:74px;flex:none}
+.lab-ctl .opts{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;flex:1}
+.lab-ctl .opts::-webkit-scrollbar{display:none}
+.lab-ctl button{flex:none;min-height:34px;padding:0 11px;border-radius:9px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink2);font:650 12px/1 var(--sans)}
+.lab-ctl button.on{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.lab-hint{font-size:11px;color:var(--ink3);margin-top:10px;line-height:1.5}
+.lab-hint b{color:var(--ink2)}
+
+/* ═══ APP ════════════════════════════════════════════════════════════════ */
+.app{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+.viewport{position:relative;flex:1;overflow:hidden}
+.screen{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  background:var(--bg);padding-bottom:14px}
+.screen::-webkit-scrollbar{display:none}
+
+/* ── TRANSITIONS ────────────────────────────────────────────────────────────
+   Four options, selectable. The default is SHARED AXIS: both screens move
+   together along the axis you are travelling, which is the only one that
+   says "these two are siblings, side by side" — a cross-fade says nothing
+   about where you went, and a full slide says one screen contains the other. */
+.screen{will-change:transform,opacity}
+
+/* none */
+.tx-none .screen.enter,.tx-none .screen.exit{transition:none}
+.tx-none .screen.exit{display:none}
+
+/* fade */
+.tx-fade .screen.enter{animation:fadeIn var(--t-lat) var(--ease-out) both}
+.tx-fade .screen.exit{animation:fadeOut var(--t-lat) var(--ease-in) both}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+
+/* slide — the whole screen travels the full width */
+.tx-slide .screen.enter.fwd{animation:slideInR var(--t-lat) var(--ease-out) both}
+.tx-slide .screen.exit.fwd{animation:slideOutL var(--t-lat) var(--ease-in) both}
+.tx-slide .screen.enter.back{animation:slideInL var(--t-lat) var(--ease-out) both}
+.tx-slide .screen.exit.back{animation:slideOutR var(--t-lat) var(--ease-in) both}
+@keyframes slideInR{from{transform:translateX(100%)}to{transform:none}}
+@keyframes slideOutL{from{transform:none}to{transform:translateX(-100%)}}
+@keyframes slideInL{from{transform:translateX(-100%)}to{transform:none}}
+@keyframes slideOutR{from{transform:none}to{transform:translateX(100%)}}
+
+/* shared axis — a short travel plus a fade, so the movement reads as a shift
+   of attention rather than a page turn. 30% of the width, not 100%. */
+.tx-axis .screen.enter.fwd{animation:axInR var(--t-lat) var(--ease-out) both}
+.tx-axis .screen.exit.fwd{animation:axOutL var(--t-lat) var(--ease-in) both}
+.tx-axis .screen.enter.back{animation:axInL var(--t-lat) var(--ease-out) both}
+.tx-axis .screen.exit.back{animation:axOutR var(--t-lat) var(--ease-in) both}
+@keyframes axInR{from{transform:translateX(30%);opacity:0}to{transform:none;opacity:1}}
+@keyframes axOutL{from{transform:none;opacity:1}to{transform:translateX(-30%);opacity:0}}
+@keyframes axInL{from{transform:translateX(-30%);opacity:0}to{transform:none;opacity:1}}
+@keyframes axOutR{from{transform:none;opacity:1}to{transform:translateX(30%);opacity:0}}
+
+/* PUSH — parent → child. This one is NOT optional and never changes: the child
+   comes from the right and the parent slides a little left and dims, which is
+   the only thing that tells you a Back exists. */
+.stack{position:absolute;inset:0;z-index:20;background:var(--bg);overflow-y:auto}
+.stack.in{animation:pushIn var(--t-push) var(--ease-out) both}
+.stack.out{animation:pushOut var(--t-push) var(--ease-in) both}
+@keyframes pushIn{from{transform:translateX(100%)}to{transform:none}}
+@keyframes pushOut{from{transform:none}to{transform:translateX(100%)}}
+.viewport.pushed .screen{animation:parentBack var(--t-push) var(--ease-out) both}
+@keyframes parentBack{from{transform:none;filter:brightness(1)}to{transform:translateX(-22%);filter:brightness(.62)}}
+
+/* SHEET — transient, on top, from the edge it will return to */
+.scrim{position:absolute;inset:0;z-index:30;background:rgba(4,6,9,.66);opacity:0}
+.scrim.in{animation:fadeIn var(--t-sheet) var(--ease-out) both}
+.scrim.out{animation:fadeOut var(--t-sheet) var(--ease-in) both}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:31;background:var(--card);
+  border-top:1px solid var(--line2);border-radius:22px 22px 0 0;padding:10px 16px 18px;
+  max-height:86%;overflow-y:auto;box-shadow:0 -24px 60px -20px #000}
+.sheet.in{animation:sheetIn var(--t-sheet) var(--ease-out) both}
+.sheet.out{animation:sheetOut var(--t-sheet) var(--ease-in) both}
+@keyframes sheetIn{from{transform:translateY(100%)}to{transform:none}}
+@keyframes sheetOut{from{transform:none}to{transform:translateY(100%)}}
+.sheet .grab{width:38px;height:4px;border-radius:99px;background:var(--line2);margin:0 auto 14px}
+
+@media (prefers-reduced-motion:reduce){
+  .screen,.stack,.sheet,.scrim{animation-duration:1ms !important}
+}
+
+/* ── furniture (same system as the mockup) ─────────────────────────────── */
+.sb{display:flex;justify-content:space-between;padding:9px 18px 0;font-size:11.5px;
+  font-weight:600;color:var(--ink2)}
+.sb .r{opacity:.7;font-size:9px}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 6px}
+.topbar .ttl{font-size:17px;font-weight:750;letter-spacing:-.02em}
+.lens{display:flex;background:var(--well);border:1px solid var(--line);border-radius:999px;padding:3px}
+.lens b{padding:6px 13px;border-radius:999px;font-size:12px;font-weight:650;color:var(--ink2)}
+.lens b.on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line2)}
+.hero{padding:10px 18px 18px}
+.eye{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.fig{font-size:46px;font-weight:800;letter-spacing:-.035em;line-height:1.02;margin-top:5px;
+  font-variant-numeric:tabular-nums}
+.fig.sm{font-size:38px}
+.fig u{text-decoration:none;font-size:21px;font-weight:650;color:var(--ink3)}
+.sub{font-size:13px;color:var(--ink2);margin-top:6px}
+.sub b{color:var(--ink);font-weight:650}
+.deriv{display:flex;margin-top:15px;border:1px solid var(--line);border-radius:12px;
+  background:var(--card);overflow:hidden}
+.deriv div{flex:1;padding:10px 8px;text-align:center;position:relative}
+.deriv div + div{border-left:1px solid var(--line)}
+.deriv .op{position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:12px;
+  background:var(--card);color:var(--ink3);font-size:12px;text-align:center}
+.deriv .n{font-size:14.5px;font-weight:750;font-variant-numeric:tabular-nums}
+.deriv .l{font-size:9.5px;color:var(--ink3);margin-top:3px}
+.body{padding:0 14px;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;
+  width:100%;text-align:left;color:inherit;font:inherit;display:block}
+button.card{cursor:pointer;transition:transform .12s var(--ease-out)}
+button.card:active{transform:scale(.985)}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;gap:10px}
+.ch .t{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.ch .a{font-size:12px;font-weight:650;color:var(--acc);display:inline-flex;align-items:center;gap:3px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat .k{font-size:10.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink3)}
+.stat .v{font-size:22px;font-weight:750;letter-spacing:-.025em;margin-top:5px;font-variant-numeric:tabular-nums}
+.stat .s{font-size:11.5px;color:var(--ink3);margin-top:3px}
+.stat .s.good{color:var(--good)}.stat .s.warn{color:var(--warn)}
+.row{display:flex;align-items:center;gap:12px;min-height:54px;padding:7px 0;width:100%;
+  background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.row + .row{border-top:1px solid var(--line)}
+.ic{width:36px;height:36px;border-radius:11px;flex:none;display:grid;place-items:center}
+.ic svg{width:17px;height:17px}
+.row .m{flex:1;min-width:0}
+.row .m .n{font-size:14px;font-weight:650}
+.row .m .s{font-size:11.5px;color:var(--ink3);margin-top:2px;display:flex;align-items:center;gap:6px}
+.row .rt .a{font-size:14.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.row .rt .a.in{color:var(--good)}
+.row .chev{color:var(--ink3);display:grid;place-items:center;flex:none}
+.row .chev svg{width:15px;height:15px}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;
+  border-radius:6px;padding:2px 6px;letter-spacing:.01em}
+.tag.warn{background:rgba(233,178,60,.14);color:var(--warn)}
+.tag.bad{background:rgba(240,100,92,.14);color:var(--bad)}
+.tag.quiet{background:var(--raised);color:var(--ink2)}
+.tag svg{width:11px;height:11px}
+.bar{height:7px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:8px;position:relative}
+.bar i{display:block;height:100%;border-radius:99px;
+  transition:width calc(700ms * var(--t)) var(--ease-both)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.btn{min-height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;gap:8px;
+  font-size:14.5px;font-weight:700;background:var(--acc);color:var(--on-acc);border:0;width:100%;cursor:pointer}
+.btn svg{width:17px;height:17px}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.tabbar{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);
+  padding:8px 0 12px;background:var(--bg);flex:none}
+.tabbar button{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;
+  color:var(--ink3);font-weight:650;background:none;border:0;cursor:pointer;padding:4px 0;min-height:48px;
+  transition:color calc(160ms * var(--t)) var(--ease-out)}
+.tabbar button.on{color:var(--acc)}
+.tabbar svg{width:20px;height:20px;transition:transform calc(220ms * var(--t)) var(--ease-out)}
+.tabbar button.on svg{transform:translateY(-1px) scale(1.06)}
+.seg{display:flex;background:var(--well);border:1px solid var(--line);border-radius:12px;padding:3px;
+  gap:2px;margin:0 14px 12px}
+.seg button{flex:1;padding:9px 0;border-radius:9px;font-size:12.5px;font-weight:650;color:var(--ink2);
+  background:none;border:0;cursor:pointer;transition:background calc(180ms * var(--t)) var(--ease-out)}
+.seg button.on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line2)}
+.donut{width:84px;height:84px;border-radius:50%;flex:none;position:relative}
+.donut i{position:absolute;inset:13px;border-radius:50%;background:var(--card);display:grid;
+  place-items:center;font-style:normal;text-align:center;line-height:1.15}
+.donut i b{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;display:block}
+.donut i s{font-size:9px;color:var(--ink3);text-decoration:none;display:block;margin-top:1px}
+.ring{width:80px;height:80px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
+.ring i{position:absolute;inset:9px;border-radius:50%;background:var(--bg)}
+.ring span{position:relative;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.macros{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+.macro .l{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+.macro .v{font-size:17px;font-weight:750;margin-top:5px;font-variant-numeric:tabular-nums}
+.macro .v s{font-size:11px;color:var(--ink3);text-decoration:none;font-weight:600}
+.backbar{display:flex;align-items:center;gap:10px;padding:12px 14px 8px}
+.backbar button{display:inline-flex;align-items:center;gap:4px;background:none;border:0;color:var(--acc);
+  font:650 14px/1 var(--sans);cursor:pointer;min-height:44px;padding:0}
+.backbar svg{width:17px;height:17px}
+
+/* ── the PACE bar — the display idea being tested ──────────────────────── */
+.pace{position:relative;height:12px;border-radius:99px;background:var(--raised);margin-top:10px;overflow:visible}
+.pace .fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;
+  transition:width calc(700ms * var(--t)) var(--ease-both)}
+.pace .tick{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--ink);border-radius:2px;
+  box-shadow:0 0 0 3px var(--card)}
+.pace .tick::after{content:attr(data-l);position:absolute;top:-16px;left:50%;transform:translateX(-50%);
+  font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);white-space:nowrap}
+.paceleg{display:flex;justify-content:space-between;margin-top:13px;font-size:11.5px;color:var(--ink3)}
+</style>
+</head>
+<body>
+
+<div class="lab-top">
+  <h1>Display, navigation, motion</h1>
+  <p>It works. Tap the bar or <b style="color:var(--ink2)">swipe the screen sideways</b>; tap any row to
+  drill in; tap a charge to open a sheet. Change the settings underneath and drive it again.</p>
+</div>
+
+<div class="lab-phone"><div class="lab-frame" id="frame"></div></div>
+
+<div class="lab-ctl">
+  <div class="grp"><span class="lbl">Motion</span><div class="opts" id="c-tx"></div></div>
+  <div class="grp"><span class="lbl">Speed</span><div class="opts" id="c-sp"></div></div>
+  <div class="grp"><span class="lbl">Budget as</span><div class="opts" id="c-bd"></div></div>
+  <div class="lab-hint" id="hint"></div>
+</div>
+
+<script>
+const P = {
+  cart:'<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+  fuel:'<line x1="3" x2="15" y1="22" y2="22"/><line x1="4" x2="14" y1="9" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/>',
+  utensils:'<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+  home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
+  wallet:'<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  heart:'<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  pie:'<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+  grid:'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  chev:'<path d="m9 18 6-6-6-6"/>',
+  back:'<path d="m15 18-6-6 6-6"/>',
+  arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  help:'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  calendar:'<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  bank:'<line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  scan:'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8"/><path d="M11 8v8"/><path d="M15 8v8"/>',
+};
+const I = n => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + P[n] + '</svg>';
+const ico = (c, n) => '<span class="ic" style="background:color-mix(in srgb,' + c + ' 18%,transparent);color:' + c + '">' + I(n) + '</span>';
+
+/* ── numbers ───────────────────────────────────────────────────────────── */
+const D = {
+  free: 1573, cash: 2322, bills: 449, floor: 300, payday: "Sep 30", days: 18,
+  spent: 719, target: 1250, day: 6, ofDays: 15,
+  env: [["Groceries", 392, 500, "--c-groc", "cart"], ["Gas + convenience", 83, 250, "--c-gas", "fuel"],
+        ["Dining out", 168, 150, "--c-dine", "utensils"]],
+};
+const money = n => "$" + n.toLocaleString("en-US");
+
+/* ═══ THE DISPLAY QUESTION ═════════════════════════════════════════════════
+   One fact — $719 of $1,250 on day 6 of 15 — three ways.
+
+   BAR    shows how much of the limit is gone. It cannot tell you whether that
+          is a lot FOR DAY SIX, which is the only thing you need to know.
+   DONUT  shows composition beautifully and magnitude badly; it has no way at
+          all to draw "over", and no way to draw time.
+   PACE   the fill is the money, the tick is where you SHOULD be by now. Fill
+          past tick = spending faster than the cycle. One glance, no arithmetic.
+   ════════════════════════════════════════════════════════════════════════ */
+function budgetBlock(kind) {
+  const pctMoney = D.spent / D.target * 100;
+  const pctTime = D.day / D.ofDays * 100;
+  const ahead = pctMoney > pctTime;
+  const head = '<div class="ch"><span class="t">This cycle</span>' +
+    '<span class="a">Insights ' + I("chev") + '</span></div>';
+
+  if (kind === "bar") {
+    return '<button class="card" data-go="insights">' + head +
+      '<div style="display:flex;align-items:baseline;justify-content:space-between">' +
+      '<span style="font-size:23px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em">' +
+      money(D.spent) + '</span><span style="font-size:12.5px;color:var(--ink3)">of ' + money(D.target) + '</span></div>' +
+      '<div class="bar" style="height:9px"><i style="width:' + pctMoney.toFixed(0) + '%;background:var(--good)"></i></div>' +
+      '<div class="paceleg" style="margin-top:8px"><span>' + Math.round(pctMoney) + '% of the budget</span>' +
+      '<span>' + money(D.target - D.spent) + ' left</span></div></button>';
+  }
+  if (kind === "donut") {
+    return '<button class="card" data-go="insights">' + head +
+      '<div style="display:flex;align-items:center;gap:16px">' +
+      '<div class="donut" style="background:conic-gradient(var(--c-groc) 0 47%,var(--c-dine) 47% 60%,' +
+      'var(--c-house) 60% 72%,var(--c-gas) 72% 85%,var(--c-misc) 85% 100%)"><i><b>' + money(D.spent) +
+      '</b><s>of ' + money(D.target) + '</s></i></div>' +
+      '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;font-size:12.5px">' +
+      [["Groceries", "$392", "--c-groc"], ["Dining out", "$84", "--c-dine"], ["Household", "$70", "--c-house"],
+       ["Gas", "$83", "--c-gas"], ["Else", "$90", "--c-misc"]].map(function (x) {
+        return '<div style="display:flex;align-items:center;gap:8px"><span class="dot" style="background:var(' + x[2] + ')"></span>' +
+          '<span style="flex:1;color:var(--ink2)">' + x[0] + '</span><b style="font-variant-numeric:tabular-nums">' + x[1] + '</b></div>';
+      }).join("") + '</div></div></button>';
+  }
+  /* pace */
+  return '<button class="card" data-go="insights">' + head +
+    '<div style="display:flex;align-items:baseline;justify-content:space-between">' +
+    '<span style="font-size:23px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em">' +
+    money(D.spent) + '</span><span style="font-size:12.5px;color:var(--ink3)">of ' + money(D.target) + '</span></div>' +
+    '<div class="pace">' +
+    '<div class="fill" style="width:' + pctMoney.toFixed(1) + '%;background:' +
+    (ahead ? "var(--warn)" : "var(--good)") + '"></div>' +
+    '<div class="tick" data-l="day ' + D.day + '" style="left:' + pctTime.toFixed(1) + '%"></div>' +
+    '</div>' +
+    '<div class="paceleg"><span style="color:' + (ahead ? "var(--warn)" : "var(--good)") + ';font-weight:650">' +
+    (ahead ? "Ahead of pace" : "On pace") + '</span>' +
+    '<span>' + money(D.target - D.spent) + ' left &middot; ' + (D.ofDays - D.day) + ' days</span></div></button>';
+}
+
+/* ── screens ───────────────────────────────────────────────────────────── */
+const SB = '<div class="sb"><span>9:41</span><span class="r">&#9679;&#9679;&#9679; &#9650; &#9632;</span></div>';
+const TOP = t => '<div class="topbar"><div class="ttl">' + (t || "") + '</div>' +
+  '<div class="lens"><b class="on">Mine</b><b>Both</b></div></div>';
+
+function envRow(e) {
+  const [name, spent, target, v, icon] = e;
+  const pct = Math.min(100, spent / target * 100), over = spent > target;
+  const fill = over
+    ? "repeating-linear-gradient(-45deg,var(" + v + ") 0 5px,color-mix(in srgb,var(" + v + ") 45%,#000) 5px 10px)"
+    : "var(" + v + ")";
+  return '<div style="padding:9px 0">' +
+    '<div style="display:flex;align-items:center;gap:9px">' +
+    '<span class="dot" style="background:var(' + v + ')"></span>' +
+    '<span style="flex:1;font-size:13.5px;font-weight:650">' + name + '</span>' +
+    '<span style="font-size:12.5px;color:var(--ink3);font-variant-numeric:tabular-nums">' +
+    '<b style="color:var(--ink);font-weight:700">$' + spent + '</b> / $' + target + '</span></div>' +
+    '<div class="bar"><i style="width:' + pct.toFixed(0) + '%;background:' + fill + '"></i></div>' +
+    (over ? '<div style="margin-top:6px"><span class="tag bad">' + I("alert") + 'over by $' + (spent - target) + '</span></div>' : "") +
+    '</div>';
+}
+
+const SCREENS = {
+  home: () => SB + TOP("") +
+    '<div class="hero"><div class="eye">truly free</div><div class="fig">' + money(D.free) + '</div>' +
+    '<div class="sub">after everything due before payday on <b>' + D.payday + '</b> &middot; ' + D.days + ' days &middot; <b>$87</b> a day</div>' +
+    '<div class="deriv"><div><div class="n">' + money(D.cash) + '</div><div class="l">in the bank</div></div>' +
+    '<div><span class="op">&minus;</span><div class="n">' + money(D.bills) + '</div><div class="l">bills to come</div></div>' +
+    '<div><span class="op">&minus;</span><div class="n">' + money(D.floor) + '</div><div class="l">your floor</div></div></div></div>' +
+    '<div class="body">' +
+    budgetBlock(state.budget) +
+    '<button class="card" data-push="bills"><div class="ch"><span class="t">Before payday</span>' +
+    '<span class="a">All bills ' + I("chev") + '</span></div>' +
+    '<div style="display:flex">' +
+    '<div style="flex:1"><div style="font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Sep 17</div>' +
+    '<div style="font-size:12.5px;font-weight:650;margin-top:3px">Verizon</div><div style="font-size:12.5px;font-weight:750;font-variant-numeric:tabular-nums">&minus;$83</div></div>' +
+    '<div style="flex:1;border-left:1px solid var(--line);padding-left:11px"><div style="font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Sep 20</div>' +
+    '<div style="font-size:12.5px;font-weight:650;margin-top:3px">Claude Pro</div><div style="font-size:12.5px;font-weight:750;font-variant-numeric:tabular-nums">&minus;$20</div></div>' +
+    '<div style="flex:1;border-left:1px solid var(--line);padding-left:11px"><div style="font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Sep 30</div>' +
+    '<div style="font-size:12.5px;font-weight:650;margin-top:3px">Card &middot;&middot;4728</div><div style="font-size:12.5px;font-weight:750;font-variant-numeric:tabular-nums">&minus;$346</div></div>' +
+    '</div></button>' +
+    '<div class="card"><div class="ch"><span class="t">Envelopes</span></div>' + D.env.map(envRow).join("") + '</div>' +
+    '<div class="card"><div class="ch"><span class="t">Just happened</span><span class="a" data-go="activity">All ' + I("chev") + '</span></div>' +
+    txnRow("--c-groc", "cart", "Sam&rsquo;s Club", "Groceries &middot; today", "&minus;$229.81") +
+    txnRow("--c-gas", "fuel", "QuikTrip", "Gas &middot; yesterday", "&minus;$9.07") +
+    '</div></div>',
+
+  insights: () => SB + TOP("Insights") +
+    '<div class="hero" style="padding-top:4px"><div class="eye">spent this cycle</div>' +
+    '<div class="fig sm">' + money(D.spent) + ' <u>of ' + money(D.target) + '</u></div>' +
+    '<div class="sub">Sep 4 &ndash; Sep 18 &middot; day ' + D.day + ' of ' + D.ofDays + '</div></div>' +
+    '<div class="body">' + budgetBlock(state.budget) +
+    '<div class="card"><div class="ch"><span class="t">Against your own average</span><span class="a">6 cycles</span></div>' +
+    cmp("Groceries", 392, 332) + cmp("Dining out", 84, 122) + cmp("Gas", 83, 91) +
+    '<div style="font-size:11.5px;color:var(--ink3);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
+    'The line is your own six-cycle average. Bars past it are the ones to look at.</div></div></div>',
+
+  activity: () => SB + TOP("Activity") +
+    '<div class="hero" style="padding-top:4px;padding-bottom:12px"><div class="eye">this cycle</div>' +
+    '<div class="fig sm">' + money(D.spent) + ' <u>&middot; 47 charges</u></div>' +
+    '<div class="sub"><b>2</b> the app could not place</div></div>' +
+    '<div class="seg"><button class="on">All</button><button>In budget</button><button>Needs you 2</button></div>' +
+    '<div class="body"><div class="card"><div class="ch"><span class="t">Today</span><span class="a">$229.81</span></div>' +
+    txnRow("--c-groc", "cart", "Sam&rsquo;s Club", "Groceries", "&minus;$229.81") + '</div>' +
+    '<div class="card"><div class="ch"><span class="t">Yesterday</span><span class="a">$124.67</span></div>' +
+    txnRow("--c-gas", "fuel", "QuikTrip", "Gas", "&minus;$9.07") +
+    '<button class="row" data-sheet="1">' + ico("var(--ink3)", "help") +
+    '<div class="m"><div class="n">SQ *JOHNNY&rsquo;S</div><div class="s"><span class="tag warn">' + I("alert") + 'needs you</span></div></div>' +
+    '<div class="rt"><div class="a">&minus;$18.40</div></div><span class="chev">' + I("chev") + '</span></button>' +
+    txnRow("--c-misc", "receipt", "Verizon", "Bill &middot; not in budget", "&minus;$83.00") + '</div></div>',
+
+  health: () => SB + TOP("Health") +
+    '<div class="seg"><button class="on">Today</button><button>Workouts</button><button>Progress</button></div>' +
+    '<div class="hero" style="padding-top:2px">' +
+    '<div style="display:flex;align-items:center;gap:18px"><div style="flex:1">' +
+    '<div class="eye">calories left</div><div class="fig">1,270</div>' +
+    '<div class="sub">of <b>2,800</b> &middot; 3 meals logged</div></div>' +
+    '<div class="ring" style="background:conic-gradient(var(--good) 0 55%,var(--raised) 55% 100%)"><i></i><span>55%</span></div></div>' +
+    '<div class="macros">' + mac("Protein", 111, 130, "--mp") + mac("Carbs", 180, 410, "--mc") + mac("Fat", 38, 70, "--mf") + '</div></div>' +
+    '<div class="body"><div class="card"><div class="ch"><span class="t">Today&rsquo;s meals</span><span class="a">Copy day</span></div>' +
+    mealRow("Breakfast", "3 items &middot; 30p 70c 20f", "575") +
+    mealRow("Lunch", "3 items &middot; 80p 95c 9f", "806") +
+    '<button class="btn" style="margin-top:12px">' + I("plus") + 'Add a meal</button></div></div>',
+
+  profile: () => SB + TOP("Profile") +
+    '<div class="hero" style="padding-top:6px;padding-bottom:16px">' +
+    '<div style="display:flex;align-items:center;gap:14px">' +
+    '<span style="width:54px;height:54px;border-radius:50%;background:var(--c-house);color:#0b0e13;' +
+    'display:grid;place-items:center;font-size:21px;font-weight:800">G</span>' +
+    '<div><div style="font-size:21px;font-weight:750;letter-spacing:-.02em">Gino</div>' +
+    '<div style="font-size:12.5px;color:var(--ink3);margin-top:2px">ginocirino007@gmail.com</div>' +
+    '<div style="font-size:11.5px;color:var(--good);margin-top:4px">Synced 2 minutes ago</div></div></div></div>' +
+    '<div class="body"><div class="card"><div class="ch"><span class="t">Accounts</span></div>' +
+    txnRow("--good", "bank", "Checking &middot;&middot;&middot;&middot;4662", "Gino", "$1,306.67") +
+    txnRow("--c-dine", "bank", "SafeBalance &middot;&middot;&middot;&middot;0366", "Xinyan", "$1,000.00") +
+    txnRow("--bad", "wallet", "Card &middot;&middot;&middot;&middot;4728", "26.49% APR", "&minus;$4,113.01") + '</div>' +
+    '<button class="card" data-push="bills"><div class="ch"><span class="t">Bills</span>' +
+    '<span class="a">Open ' + I("chev") + '</span></div>' +
+    '<div style="font-size:13px;color:var(--ink2)">6 this month &middot; $449 still to go</div></button></div>',
+};
+
+function txnRow(v, icon, n, s, a) {
+  return '<button class="row" data-sheet="1">' + ico("var(" + v + ")", icon) +
+    '<div class="m"><div class="n">' + n + '</div><div class="s">' + s + '</div></div>' +
+    '<div class="rt"><div class="a">' + a + '</div></div><span class="chev">' + I("chev") + '</span></button>';
+}
+function mealRow(n, s, kcal) {
+  return '<button class="row" data-sheet="1"><span class="ic" style="background:var(--raised);color:var(--ink2)">' +
+    I("utensils") + '</span><div class="m"><div class="n">' + n + '</div><div class="s">' + s + '</div></div>' +
+    '<div class="rt"><div class="a">' + kcal + '</div></div><span class="chev">' + I("chev") + '</span></button>';
+}
+function mac(n, have, target, v) {
+  return '<div class="macro"><div class="l"><span class="dot" style="background:var(' + v + ')"></span>' + n + '</div>' +
+    '<div class="v">' + have + '<s> / ' + target + '</s></div>' +
+    '<div class="bar" style="margin-top:6px"><i style="width:' + Math.min(100, have / target * 100).toFixed(0) +
+    '%;background:var(' + v + ')"></i></div></div>';
+}
+function cmp(name, now, avg) {
+  const ratio = now / avg, w = Math.min(100, ratio * 50), up = ratio > 1;
+  return '<div style="padding:9px 0"><div style="display:flex;align-items:baseline;gap:8px">' +
+    '<span style="flex:1;font-size:13.5px;font-weight:650">' + name + '</span>' +
+    '<span style="font-size:12px;color:var(--ink3)">avg $' + avg + '</span>' +
+    '<span style="font-size:12.5px;font-weight:750;color:' + (up ? "var(--warn)" : "var(--good)") +
+    ';min-width:42px;text-align:right">' + (up ? "+" : "−") + Math.abs(Math.round((ratio - 1) * 100)) + '%</span></div>' +
+    '<div class="bar" style="position:relative;margin-top:7px"><i style="width:' + w.toFixed(1) +
+    '%;background:' + (up ? "var(--warn)" : "var(--good)") + '"></i>' +
+    '<span style="position:absolute;left:50%;top:-2px;bottom:-2px;width:1.5px;background:var(--ink2);opacity:.6"></span></div></div>';
+}
+
+const STACKS = {
+  bills: () => '<div class="backbar"><button data-pop="1">' + I("back") + 'Home</button>' +
+    '<span style="font-size:17px;font-weight:750;letter-spacing:-.02em;margin-left:2px">Bills</span></div>' +
+    '<div class="body"><div class="card"><div class="ch"><span class="t">September</span>' +
+    '<span class="a">$449 still to go</span></div>' +
+    bill("Sep 1", "Rent", "$1,715.00", 1) + bill("Sep 8", "Car insurance", "$295.29", 1) +
+    bill("Sep 10", "Spotify", "$11.99", 1) + bill("Sep 17", "Verizon", "$83.00", 0) +
+    bill("Sep 20", "Claude Pro", "$20.00", 0) + bill("Sep 30", "Card &middot;&middot;&middot;&middot;4728", "$346.00", 0) +
+    '</div><button class="btn ghost">' + I("plus") + 'Add a bill</button></div>',
+};
+function bill(date, name, amt, paid) {
+  return '<div class="row" style="opacity:' + (paid ? ".42" : "1") + ';cursor:default">' +
+    '<span class="ic" style="background:' + (paid ? "rgba(63,208,138,.12)" : "var(--raised)") + ';color:' +
+    (paid ? "var(--good)" : "var(--ink2)") + '">' + I(paid ? "check" : "calendar") + '</span>' +
+    '<div class="m"><div class="n">' + name + '</div><div class="s">' + date + (paid ? " &middot; paid" : "") + '</div></div>' +
+    '<div class="rt"><div class="a">' + amt + '</div></div></div>';
+}
+
+const SHEET = () => '<div class="grab"></div>' +
+  '<div style="text-align:center"><div style="font-size:12.5px;color:var(--ink3)">Yesterday &middot; 7:42 pm</div>' +
+  '<div style="font-size:20px;font-weight:750;margin-top:3px;letter-spacing:-.02em">SQ *JOHNNY&rsquo;S</div>' +
+  '<div style="font-size:34px;font-weight:800;margin-top:7px;letter-spacing:-.035em;font-variant-numeric:tabular-nums">&minus;$18.40</div></div>' +
+  '<div class="card" style="margin-top:18px;background:rgba(233,178,60,.07);border-color:rgba(233,178,60,.22)">' +
+  '<div style="display:flex;gap:10px"><span style="color:var(--warn);flex:none;margin-top:1px">' + I("help") + '</span>' +
+  '<div style="font-size:12.5px;color:var(--warn);line-height:1.5"><b>Why this one needs you.</b> &ldquo;SQ *&rdquo; is a ' +
+  'Square card reader, so the line the bank sends does not name the business.</div></div></div>' +
+  '<div class="ch" style="margin:16px 0 9px"><span class="t">Category</span></div>' +
+  '<div style="display:flex;flex-wrap:wrap;gap:7px">' +
+  [["Dining out", "--c-dine"], ["Groceries", "--c-groc"], ["Household", "--c-house"], ["Gas", "--c-gas"]]
+    .map(function (c, i) {
+      return '<span style="display:inline-flex;align-items:center;gap:7px;border:1px solid ' +
+        (i === 0 ? "var(--acc)" : "var(--line)") + ';border-radius:999px;padding:9px 13px;font-size:12.5px;' +
+        'font-weight:650;color:' + (i === 0 ? "var(--ink)" : "var(--ink2)") + '">' +
+        '<span class="dot" style="background:var(' + c[1] + ')"></span>' + c[0] + '</span>';
+    }).join("") + '</div>' +
+  '<button class="btn" style="margin-top:18px" data-close="1">' + I("check") + 'Always file as Dining out</button>';
+
+/* ── the shell ─────────────────────────────────────────────────────────── */
+const TABS = [["home", "Home", "home"], ["insights", "Insights", "pie"], ["activity", "Activity", "grid"],
+              ["health", "Health", "heart"], ["profile", "Profile", "user"]];
+const state = { tab: 0, tx: "axis", speed: 1, budget: "pace", busy: false };
+const frame = document.getElementById("frame");
+
+frame.innerHTML = '<div class="app tx-axis" id="app">' +
+  '<div class="viewport" id="vp"></div>' +
+  '<div class="tabbar" id="bar">' + TABS.map(function (t, i) {
+    return '<button data-tab="' + i + '" class="' + (i === 0 ? "on" : "") + '">' + I(t[2]) + t[1] + '</button>';
+  }).join("") + '</div></div>';
+const app = document.getElementById("app"), vp = document.getElementById("vp"), bar = document.getElementById("bar");
+
+function mount(i) {
+  const s = document.createElement("div");
+  s.className = "screen";
+  s.dataset.i = i;
+  s.innerHTML = SCREENS[TABS[i][0]]();
+  vp.appendChild(s);
+  return s;
+}
+mount(0);
+
+function go(i) {
+  if (state.busy || i === state.tab || i < 0 || i > 4) return;
+  const dir = i > state.tab ? "fwd" : "back";
+  const old = vp.querySelector('.screen[data-i="' + state.tab + '"]');
+  const next = mount(i);
+  state.busy = true;
+  next.classList.add("enter", dir);
+  old.classList.add("exit", dir);
+  const done = () => {
+    old.remove();
+    next.classList.remove("enter", dir);
+    state.busy = false;
+  };
+  if (state.tx === "none") done();
+  else setTimeout(done, 240 * state.speed + 30);
+  state.tab = i;
+  [...bar.children].forEach((b, n) => b.classList.toggle("on", n === i));
+}
+
+/* push / pop */
+function push(name) {
+  if (vp.querySelector(".stack")) return;
+  const st = document.createElement("div");
+  st.className = "stack in";
+  st.innerHTML = STACKS[name]();
+  vp.appendChild(st);
+  vp.classList.add("pushed");
+  setTimeout(() => st.classList.remove("in"), 280 * state.speed + 30);
+}
+function pop() {
+  const st = vp.querySelector(".stack");
+  if (!st) return;
+  st.classList.add("out");
+  vp.classList.remove("pushed");
+  vp.querySelectorAll(".screen").forEach(s => { s.style.animation = "none"; s.style.transform = ""; s.style.filter = ""; });
+  setTimeout(() => st.remove(), 280 * state.speed + 20);
+}
+/* sheet */
+function openSheet() {
+  if (vp.querySelector(".sheet")) return;
+  const sc = document.createElement("div"); sc.className = "scrim in";
+  const sh = document.createElement("div"); sh.className = "sheet in"; sh.innerHTML = SHEET();
+  vp.appendChild(sc); vp.appendChild(sh);
+  setTimeout(() => { sc.classList.remove("in"); sc.style.opacity = 1; sh.classList.remove("in"); }, 320 * state.speed + 30);
+  sc.addEventListener("click", closeSheet);
+}
+function closeSheet() {
+  const sc = vp.querySelector(".scrim"), sh = vp.querySelector(".sheet");
+  if (!sh) return;
+  sc.style.opacity = ""; sc.classList.add("out"); sh.classList.add("out");
+  setTimeout(() => { sc.remove(); sh.remove(); }, 320 * state.speed + 20);
+}
+
+/* one delegated listener for the whole prototype */
+frame.addEventListener("click", e => {
+  const tab = e.target.closest("[data-tab]");
+  if (tab) return go(+tab.dataset.tab);
+  const sheet = e.target.closest("[data-sheet]");
+  if (sheet) return openSheet();
+  const close = e.target.closest("[data-close]");
+  if (close) return closeSheet();
+  const p = e.target.closest("[data-push]");
+  if (p) return push(p.dataset.push);
+  const back = e.target.closest("[data-pop]");
+  if (back) return pop();
+  const goto = e.target.closest("[data-go]");
+  if (goto) return go(TABS.findIndex(t => t[0] === goto.dataset.go));
+  const seg = e.target.closest(".seg button");
+  if (seg) { [...seg.parentElement.children].forEach(b => b.classList.remove("on")); seg.classList.add("on"); }
+});
+
+/* swipe between tabs — free on a phone, and it removes a reach to the bottom
+   of the screen for the most common move there is */
+let sx = 0, sy = 0, tracking = false;
+vp.addEventListener("touchstart", e => {
+  if (vp.querySelector(".sheet") || vp.querySelector(".stack")) return;
+  sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+}, { passive: true });
+vp.addEventListener("touchend", e => {
+  if (!tracking) return;
+  tracking = false;
+  const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+  if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.6) go(state.tab + (dx < 0 ? 1 : -1));
+}, { passive: true });
+
+/* ── controls ──────────────────────────────────────────────────────────── */
+const HINTS = {
+  none: "No transition. Fastest, and you lose every clue about where you went — after a swipe you cannot tell whether you moved left or right.",
+  fade: "A cross-fade says the screen changed but not WHERE you went. It is the safe choice and the uninformative one.",
+  slide: "The whole screen travels the full width. It reads as a page turn — fine for a wizard, too heavy for siblings you flick between all day.",
+  axis: "Shared axis: a short travel plus a fade. Both screens move together along the direction you travelled, so the motion says “same level, different place”. This is the default.",
+};
+const BHINTS = {
+  bar: "A plain bar answers “how much of the limit is gone” and cannot answer “is that a lot for day 6” — which is the only question worth asking mid-cycle.",
+  donut: "A donut shows composition well and magnitude badly. It cannot draw “over” at all, and it has nowhere to put time.",
+  pace: "The fill is the money; the tick is where you should be by now. Fill past tick = spending faster than the cycle, read in one glance with no arithmetic. This is the one I would ship.",
+};
+function ctl(id, opts, key, after) {
+  const el = document.getElementById(id);
+  el.innerHTML = opts.map(o => '<button data-v="' + o[0] + '" class="' + (state[key] === o[0] ? "on" : "") + '">' + o[1] + '</button>').join("");
+  el.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state[key] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v;
+    [...el.children].forEach(x => x.classList.toggle("on", x === b));
+    after();
+  });
+}
+function hint() {
+  document.getElementById("hint").innerHTML =
+    "<b>Motion &mdash;</b> " + HINTS[state.tx] + "<br><b>Display &mdash;</b> " + BHINTS[state.budget];
+}
+ctl("c-tx", [["axis", "Shared axis"], ["slide", "Slide"], ["fade", "Fade"], ["none", "None"]], "tx", () => {
+  app.className = "app tx-" + state.tx; hint();
+});
+ctl("c-sp", [[1, "Normal"], [2.5, "Slow"], [5, "Very slow"]], "speed", () => {
+  frame.style.setProperty("--t", state.speed);
+});
+ctl("c-bd", [["pace", "Pace bar"], ["bar", "Plain bar"], ["donut", "Donut"]], "budget", () => {
+  const cur = vp.querySelector('.screen[data-i="' + state.tab + '"]');
+  if (cur) cur.innerHTML = SCREENS[TABS[state.tab][0]]();
+  hint();
+});
+hint();
+</script>
+</body>
+</html>
