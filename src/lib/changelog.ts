@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.12c",
+    date: "September 12, 2026",
+    notes: [
+      "You can photograph a nutrition label now. In the meal builder, tap \"Scan a nutrition label\" — or, when a barcode isn't in any database, \"Scan the nutrition label\". The phone reads the panel itself; the photo never leaves it.",
+      "It checks the label against itself before it trusts it. A label prints most numbers twice — the grams and the % Daily Value, the calories and the fat/carbs/protein they come from — so a misread digit usually disagrees with its other copy. Those rows get a green tick. A number that disagrees is flagged red, and nothing saves until you decide it.",
+      "Three things it always asks you: the serving size (a wrong serving scales every number, and nothing on the label can catch it), anything it couldn't read, and the few numbers with no second copy to check against, like total sugars.",
+      "The first scan downloads the reader — about 20 MB, once — so do it on Wi-Fi. It needs iOS 16.4 or newer. It's been tested on the FDA's sample labels, including a tilted photo, but not yet on your real groceries or your phones — if a label reads wrong, that's exactly what I need to hear.",
+    ],
+  },
+  {
     version: "2026.09.12b",
     date: "September 12, 2026",
     notes: [

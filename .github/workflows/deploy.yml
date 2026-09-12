@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       # The categorizer exists in two copies and only the one under
       # supabase/functions/_shared runs on the live bank feed. scripts/
@@ -52,8 +52,16 @@ jobs:
 
       - name: Did anything under supabase/functions change?
         id: changed
+        # Compare against what was on main BEFORE this push, not HEAD~1. A push
+        # carries many commits; HEAD~1 only sees the last one, so a function
+        # change a few commits down (with a changelog commit on top) was
+        # silently skipped.
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            CHANGED=$(git diff --name-only "$BEFORE" HEAD -- supabase/functions supabase/config.toml)
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
             CHANGED=$(git diff --name-only HEAD~1 HEAD -- supabase/functions supabase/config.toml)
           else
             # No parent to compare against (first commit, or a force-push that
@@ -98,11 +106,11 @@ jobs:
           REF: ganzefaciiyibselizqi
         run: |
           set -e
-          for fn in notify plaid cron-notify plaid-webhook announce-update food-lookup; do
+          for fn in notify plaid cron-notify plaid-webhook announce-update food-lookup food-label-save; do
             echo "── deploying $fn"
             supabase functions deploy "$fn" --project-ref "$REF"
           done
-          echo "All six edge functions deployed."
+          echo "All seven edge functions deployed."
 
   build:
     runs-on: ubuntu-latest
