@@ -1492,11 +1492,22 @@ input[type="number"] {
   margin-bottom: 21px;
 }
 .hb-mark {
-  /* The mark's own cast light, thrown down and to the right to agree with the
-     key light — not a symmetric glow, which would contradict it. */
+  margin-bottom: 13px;
+}
+/* The mark's own cast light, thrown down and to the right to agree with the key
+   light — not a symmetric glow, which would contradict it.
+   
+   It sits on the SVG, not on the wrapper, and that placement is the fix for a
+   real bug rather than a preference. The sheen inside the mark travels from off
+   its left edge to off its right, which widens the group's bounding box — and a
+   CSS filter takes its region from that box, so with the filter on the wrapper
+   the mark cast a faint horizontal bar underneath itself the full width of the
+   sheen's travel. An SVG root clips its own content to its viewport before a CSS
+   filter runs, so moving the filter one element in makes the region honest.
+   (A clip-path on the inner group does NOT fix it — the bbox is unchanged.) */
+.hb-mark > svg {
   filter: drop-shadow(6px 12px 26px rgba(11, 9, 7, 0.75))
     drop-shadow(-2px -3px 16px rgba(218, 178, 73, 0.22));
-  margin-bottom: 13px;
 }
 .hb-title {
   font-family: var(--font-display);

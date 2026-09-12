@@ -88,14 +88,6 @@ export function Logo({
           />
           <rect x="48.8" y="0" width="2.4" height="62" fill="#000" />
         </mask>
-        {/* The sheen travels from off-left to off-right, which WIDENS the
-            group's bounding box — and a CSS drop-shadow on the wrapper takes
-            its region from that box, so the mark was casting a faint bar
-            underneath itself the whole width of the sheen's travel. Clipping
-            the group to the viewBox keeps the bbox honest. */}
-        <clipPath id={`${M}c`}>
-          <rect x="0" y="0" width="100" height="100" />
-        </clipPath>
         {animated && (
           <linearGradient id={S} x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#fff" stopOpacity="0" />
@@ -105,11 +97,14 @@ export function Logo({
         )}
       </defs>
 
-      <g mask={`url(#${M})`} clipPath={`url(#${M}c)`}>
+      <g mask={`url(#${M})`}>
         <rect x="0" y="0" width="50" height="100" fill={`url(#${L})`} />
         <rect x="50" y="0" width="50" height="100" fill={`url(#${R})`} />
         {/* The sheen rides INSIDE the mask, so it lights the mark and never
-            leaks a rectangle over whatever is behind it. */}
+            leaks a rectangle over whatever is behind it. Note that it still
+            widens this group's BOUNDING BOX as it travels — which is why any
+            CSS drop-shadow on this mark belongs on the <svg> and not on a
+            wrapper around it. See .hb-mark > svg in index.css. */}
         {animated && (
           <rect
             className="hb-sheen"
