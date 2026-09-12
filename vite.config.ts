@@ -8,6 +8,15 @@ export default defineConfig(({ mode }) => ({
   // GitHub Pages serves the app under /homebase/ in production; dev/preview
   // stays at the root so the local server and tooling work normally.
   base: mode === 'production' ? '/homebase/' : '/',
+  // The label reader's worker imports onnxruntime-web and lazy-loads parts of
+  // itself; that needs ES-module worker output (the default 'iife' can't code-
+  // split). Module workers run on iOS Safari 15+ and Chrome 80+.
+  worker: { format: 'es' },
+  // Pre-bundling onnxruntime-web in dev rewrites its import.meta.url-relative
+  // asset lookups into .vite/deps, where the .wasm doesn't exist. We pass the
+  // runtime's bytes in ourselves, but excluding it keeps dev identical to the
+  // production build instead of working by accident.
+  optimizeDeps: { exclude: ['onnxruntime-web'] },
   plugins: [
     react(),
     tailwindcss(),
@@ -40,7 +49,30 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         // Precache the app shell so it opens instantly; Supabase API/realtime
         // calls are cross-origin and always hit the network (fresh data).
+        //
+        // The label reader's files are deliberately NOT in this list: the ONNX
+        // models (6.2 MB) and onnxruntime's .wasm (14 MB) would make every app
+        // install and every update download 20 MB for a feature most opens never
+        // touch. They are cached the first time a scan actually needs them
+        // (runtimeCaching below).
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        runtimeCaching: [
+          {
+            // Cache-first: these files are immutable. Model URLs carry their
+            // sha256 prefix in ?v=, and the .wasm name carries Vite's content
+            // hash, so a changed file is a new URL rather than a stale hit —
+            // and the loader re-checks every model's hash anyway. Once cached,
+            // the second scan works with no network at all.
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/models/pp-ocrv6-tiny/') || /\/assets\/ort-wasm[^/]*\.wasm$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'label-reader',
+              expiration: { maxEntries: 8 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
         // Pull our Web Push handlers (push / notificationclick) into the generated
         // service worker so notifications work in the installed PWA.
         importScripts: ['push-sw.js'],
