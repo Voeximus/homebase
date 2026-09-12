@@ -1,0 +1,29 @@
+Nutrition label images for the reader's tests and the ?labellab harness.
+
+fda-label-1.png
+  The FDA's sample Nutrition Facts label ("Label 1"), a US government work in
+  the public domain. Downloaded 2026-09-12 from
+    https://www.fda.gov/media/132222/download
+  listed on
+    https://www.fda.gov/food/nutrition-food-labeling-and-critical-foods/nutrition-facts-label-images-download
+  The PDF is vector; the label panel was rendered at 250 dpi (PyMuPDF, clip
+  rect 303,137 → 491,468 pt) to a 653×1150 RGB PNG. The FDA notes these samples
+  are "for educational purposes only" and do not meet 21 CFR 101.9 as printed.
+
+fda-label-1.tokens.json
+  The reader's exact output for fda-label-1.png at engine
+  pp-ocrv6-tiny@9ef676d6ed3c with onnxruntime-web 1.29.0 — the golden file
+  tests/labelScan.ocr.test.ts holds every change against. Regenerate only on
+  purpose:  npx vite-node scripts/ocr-smoke.ts tests/fixtures/labels/fda-label-1.png --json
+
+fda-dual-column.png
+  "Dual Column Display, Per Serving and Per Container", page 7 of the FDA's
+  "The New Nutrition Facts Label: Examples of Different Formats"
+    https://www.fda.gov/media/99203/download
+  rendered at 250 dpi (clip rect 190,215 → 440,545 pt), 869×1147.
+
+fda-label-1-photo-sim.jpg
+  Derived from fda-label-1.png to stand in for a phone photo: paper tint on a
+  grey-brown card, rotated 3°, Gaussian blur σ=1.0 px, 60,000 pixels of ±18
+  noise (seed 7), 1200×1600, JPEG quality 88. Not a real photograph; real
+  photos from both phones are still the missing evaluation set.

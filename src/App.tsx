@@ -25,6 +25,11 @@ const DesignLab = import.meta.env.DEV
 const MealLab = import.meta.env.DEV
   ? lazy(() => import("./views/redesign/MealLab").then((m) => ({ default: m.MealLab })))
   : null;
+// ?labellab — the nutrition-label reader harness (photos/camera → OCR → parse →
+// verify). Same DEV-only gating, so neither it nor the fixtures it loads ship.
+const LabelLab = import.meta.env.DEV
+  ? lazy(() => import("./views/redesign/LabelLab").then((m) => ({ default: m.LabelLab })))
+  : null;
 
 export default function App() {
   if (
@@ -48,6 +53,18 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <MealLab />
+      </Suspense>
+    );
+  }
+  if (
+    import.meta.env.DEV &&
+    LabelLab &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("labellab")
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <LabelLab />
       </Suspense>
     );
   }
