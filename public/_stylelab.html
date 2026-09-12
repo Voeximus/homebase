@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0d12">
+<title>Homebase — pick a direction</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; padding:0; }
+  body {
+    background:#0a0d12; color:#eef2f7;
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding-bottom:60px;
+  }
+
+  /* ── chooser chrome. Deliberately NOT themed — it is the frame, not the picture ── */
+  .bar { position:sticky; top:0; z-index:50; background:#0a0d12; border-bottom:1px solid #232d3a; padding:10px 0 8px; }
+  .bar h1 { margin:0 14px 2px; font-size:14px; font-weight:700; letter-spacing:-0.01em; }
+  .bar p  { margin:0 14px 9px; font-size:11.5px; color:#7c8696; }
+  .picks { display:flex; gap:6px; overflow-x:auto; padding:0 14px 2px; scrollbar-width:none; }
+  .picks::-webkit-scrollbar { display:none; }
+  .picks button {
+    flex:none; min-height:44px; padding:0 14px; border-radius:999px; cursor:pointer;
+    border:1px solid #232d3a; background:#121822; color:#97a3b2;
+    font:600 12.5px/1 inherit; display:inline-flex; align-items:center; gap:7px;
+  }
+  .picks button .dot { width:9px; height:9px; border-radius:50%; }
+  .picks button.on { background:#eef2f7; color:#0a0d12; border-color:#eef2f7; }
+  .premise { margin:12px 14px 10px; font-size:12.5px; line-height:1.55; color:#97a3b2; }
+  .premise b { color:#eef2f7; font-weight:650; }
+
+  .phone { margin:0 auto; width:100%; max-width:390px; padding:0 8px; }
+  .screen { border-radius:22px; overflow:hidden; border:1px solid #232d3a; }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Every direction sets THE SAME variables. Nothing below the themes
+     hard-codes a colour, so the only thing that changes between them is the
+     system itself — which is the point of comparing them on one screen.
+     ══════════════════════════════════════════════════════════════════════ */
+  .t {
+    --bg:#0a0d12; --card:#121822; --well:#18212d; --edge:#232d3a;
+    --ink:#eef2f7; --ink2:#97a3b2; --ink3:#7c8696;
+    --acc:#34c5e8; --on-acc:#04212b; --good:#46d18a; --warn:#e3b341; --bad:#e5544e;
+    --hero:linear-gradient(150deg,#10b981,#06b6d4 52%,#3b82f6);
+    --hero-ink:#ffffff; --hero-ink2:rgba(255,255,255,.86);
+    --r:18px; --r-sm:12px; --pad:16px; --gap:12px;
+    --face:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    --num:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    --num-w:700; --num-ls:-0.02em;
+    --lbl-tr:none; --lbl-ls:0; --lbl-w:600; --lbl-size:11.5px;
+    --border:1px solid var(--edge); --shadow:none;
+    --c1:#22c55e; --c2:#8b5cf6; --c3:#06b6d4; --c4:#f97316; --c5:#b0559b;
+    background:var(--bg); color:var(--ink); font-family:var(--face); padding-bottom:14px;
+  }
+
+  /* A · GRAPHITE — what is live today */
+  .t.graphite {}
+
+  /* B · DAYLIGHT — the app in daylight instead of a dark cockpit */
+  .t.daylight {
+    --bg:#f4f6f8; --card:#ffffff; --well:#eef2f6; --edge:#e2e7ec;
+    --ink:#0f151c; --ink2:#55606d; --ink3:#78828f;
+    --acc:#1f6feb; --on-acc:#ffffff; --good:#07724d; --warn:#8a5a00; --bad:#b42318;
+    --hero:linear-gradient(150deg,#1f6feb,#3b82f6 55%,#0ea5e9);
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 8px 20px -12px rgba(16,24,40,.22);
+    --c1:#07724d; --c2:#6941c6; --c3:#0e7490; --c4:#b54708; --c5:#a4327d;
+  }
+
+  /* C · LEDGER — a printed statement: rules, not cards; type does the work */
+  .t.ledger {
+    --bg:#fbfaf7; --card:#fbfaf7; --well:#efece5; --edge:#dad5cb;
+    --ink:#17140f; --ink2:#524d3e; --ink3:#6f6959;
+    --acc:#1a5c3a; --on-acc:#ffffff; --good:#1a5c3a; --warn:#7d5f0f; --bad:#9c3520;
+    --hero:#fbfaf7; --hero-ink:#17140f; --hero-ink2:#524d3e;
+    --r:0px; --r-sm:0px; --pad:16px; --gap:0px;
+    --face:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --num:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --num-w:600; --num-ls:0;
+    --lbl-tr:uppercase; --lbl-ls:.1em; --lbl-w:700; --lbl-size:10px;
+    --border:0; --shadow:none;
+    --c1:#1a5c3a; --c2:#463a86; --c3:#1b636b; --c4:#8f4e0e; --c5:#823159;
+  }
+
+  /* D · INSTRUMENT — an instrument, not a product */
+  .t.instrument {
+    --bg:#000000; --card:#0a0a0a; --well:#111111; --edge:#252525;
+    --ink:#e8e8e8; --ink2:#909090; --ink3:#707070;
+    --acc:#00e5a0; --on-acc:#00160f; --good:#00e5a0; --warn:#ffb020; --bad:#ff5c4d;
+    --hero:#0a0a0a; --hero-ink:#e8e8e8; --hero-ink2:#909090;
+    --r:3px; --r-sm:2px; --pad:14px; --gap:8px;
+    --face:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,monospace;
+    --num:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,monospace;
+    --num-w:500; --num-ls:-0.01em;
+    --lbl-tr:uppercase; --lbl-ls:.14em; --lbl-w:500; --lbl-size:10px;
+    --c1:#00e5a0; --c2:#8b7bff; --c3:#33c9ff; --c4:#ffb020; --c5:#ff7ad9;
+  }
+
+  /* E · MIDNIGHT — confident, contemporary, rounded */
+  .t.midnight {
+    --bg:#0a0e1c; --card:#141a2e; --well:#1c2440; --edge:#252e4d;
+    --ink:#eef1fb; --ink2:#9aa4c6; --ink3:#828db0;
+    --acc:#7c8cff; --on-acc:#0a0e1c; --good:#2ee6a8; --warn:#ffc24b; --bad:#ff6b6b;
+    --hero:linear-gradient(145deg,#6d5cff,#4f8bff 55%,#22d3ee);
+    --r:24px; --r-sm:16px; --pad:18px; --gap:14px;
+    --num-w:800; --num-ls:-0.03em;
+    --shadow:0 20px 40px -28px rgba(0,0,0,.9);
+    --c1:#2ee6a8; --c2:#9b7bff; --c3:#3ecfff; --c4:#ff9f45; --c5:#ff6fbf;
+  }
+
+  /* F · NATIVE — feel like the phone, not like an app */
+  .t.native {
+    --bg:#f2f2f7; --card:#ffffff; --well:#f2f2f7; --edge:#d6d6db;
+    --ink:#000000; --ink2:#3c3c43; --ink3:#82828a;
+    --acc:#007aff; --on-acc:#ffffff; --good:#1e7a35; --warn:#a34a00; --bad:#d70015;
+    --hero:#ffffff; --hero-ink:#000000; --hero-ink2:#6c6c70;
+    --r:10px; --r-sm:8px; --pad:16px; --gap:10px;
+    --num-w:600; --num-ls:-0.02em;
+    --lbl-size:12.5px; --lbl-w:400;
+    --border:0; --shadow:none;
+    --c1:#1e7a35; --c2:#5856d6; --c3:#00668f; --c4:#a34a00; --c5:#8e2378;
+  }
+
+  /* ══ the screen, written once ══════════════════════════════════════════ */
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); }
+  .seg { display:flex; gap:4px; background:var(--well); border:var(--border); border-radius:999px; padding:3px; }
+  .native .seg, .ledger .seg { border:1px solid var(--edge); }
+  .seg span { padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; color:var(--ink2); }
+  .seg span.on { background:var(--acc); color:var(--on-acc); }
+
+  .hero { background:var(--hero); color:var(--hero-ink); padding:16px 20px 18px; border-radius:0 0 var(--r) var(--r); }
+  .ledger .hero, .native .hero { border-bottom:1px solid var(--edge); }
+  .hero .k { font-size:var(--lbl-size); font-weight:var(--lbl-w); letter-spacing:var(--lbl-ls); text-transform:var(--lbl-tr); color:var(--hero-ink2); }
+  .hero .row { display:flex; align-items:flex-end; justify-content:space-between; margin-top:4px; }
+  .hero .big { font-family:var(--num); font-size:38px; font-weight:var(--num-w); letter-spacing:var(--num-ls); line-height:1; font-variant-numeric:tabular-nums; }
+  .hero .pct { font-size:12.5px; font-weight:600; color:var(--hero-ink2); padding-bottom:3px; }
+
+  .wrap { padding:var(--gap) 14px 0; display:flex; flex-direction:column; gap:var(--gap); }
+  .ledger .wrap { padding:0; gap:0; }
+  .card { background:var(--card); border:var(--border); border-radius:var(--r); padding:var(--pad); box-shadow:var(--shadow); }
+  .ledger .card { border-top:1px solid var(--edge); }
+
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:var(--gap); }
+  .ledger .two { gap:0; }
+  .ledger .two .card + .card { border-left:1px solid var(--edge); }
+
+  .k { font-size:var(--lbl-size); font-weight:var(--lbl-w); letter-spacing:var(--lbl-ls); text-transform:var(--lbl-tr); color:var(--ink2); }
+  .v { font-family:var(--num); font-size:23px; font-weight:var(--num-w); letter-spacing:var(--num-ls); margin-top:5px; font-variant-numeric:tabular-nums; }
+  .s { font-size:11.5px; color:var(--ink3); margin-top:3px; }
+  .s.good { color:var(--good); } .s.warn { color:var(--warn); }
+
+  .budget { display:flex; align-items:center; gap:14px; }
+  .donut { width:64px; height:64px; border-radius:50%; flex:none; position:relative;
+           background:conic-gradient(var(--c1) 0 47%, var(--c3) 47% 60%, var(--c4) 60% 72%, var(--c2) 72% 85%, var(--c5) 85% 100%); }
+  .donut i { position:absolute; inset:11px; border-radius:50%; background:var(--card); display:grid; place-items:center;
+             font-family:var(--num); font-size:13px; font-weight:var(--num-w); font-style:normal; }
+  .track { height:8px; border-radius:99px; background:var(--well); overflow:hidden; margin-top:9px; }
+  .ledger .track, .instrument .track { border-radius:0; }
+  .ledger .track { background:var(--well); }
+  .track i { display:block; height:100%; width:57%; background:var(--good); border-radius:99px; }
+  .ledger .track i, .instrument .track i { border-radius:0; }
+  .between { display:flex; justify-content:space-between; align-items:baseline; }
+
+  .rowitem { display:flex; align-items:center; gap:12px; padding:10px 0; }
+  .rowitem + .rowitem { border-top:1px solid var(--edge); }
+  .chip { width:34px; height:34px; border-radius:var(--r-sm); flex:none; display:grid; place-items:center; font-size:13px; }
+  .instrument .chip, .ledger .chip { border-radius:0; }
+  .rowitem .nm { font-size:13.5px; font-weight:600; }
+  .rowitem .sub { font-size:11px; color:var(--ink3); margin-top:1px; }
+  .rowitem .amt { margin-left:auto; font-family:var(--num); font-size:14px; font-weight:var(--num-w);
+                  font-variant-numeric:tabular-nums; letter-spacing:var(--num-ls); }
+  .amt.in { color:var(--good); }
+
+  .tabs { display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid var(--edge); padding:9px 0 12px; background:var(--bg); margin-top:var(--gap); }
+  .tabs span { text-align:center; font-size:10.5px; color:var(--ink3); }
+  .tabs span.on { color:var(--acc); font-weight:700; }
+  .tabs span b { display:block; font-size:17px; font-weight:400; line-height:1.3; }
+
+  .verdict { margin:16px 14px 0; padding:13px 14px; border:1px solid #232d3a; border-radius:12px; background:#121822; font-size:12.5px; line-height:1.55; color:#97a3b2; }
+  .verdict b { color:#eef2f7; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1>Pick a direction</h1>
+  <p>Same screen, same numbers, six different systems. Tap to switch.</p>
+  <div class="picks" id="picks"></div>
+</div>
+
+<p class="premise" id="premise"></p>
+
+<div class="phone">
+  <div class="screen"><div class="t graphite" id="stage"></div></div>
+</div>
+
+<div class="verdict">
+  Tell me a letter — or a letter plus what you would change about it. None of this is
+  built into the app; it is a flat page, so we can argue about the look before I touch
+  any code. <b>Mixing is allowed</b> (&ldquo;D but not black&rdquo;, &ldquo;B with F&rsquo;s lists&rdquo;).
+</div>
+
+<script>
+const THEMES = [
+  { id:"graphite", name:"A · Graphite", dot:"#34c5e8",
+    premise:"<b>What is live today.</b> Cool graphite, cyan signal, colour-coded categories. It is here so you have something to measure against — if nothing beats it, that is an answer too." },
+  { id:"daylight", name:"B · Daylight", dot:"#1f6feb",
+    premise:"<b>The app in daylight.</b> White cards on a light field, one blue for anything you can act on, real shadows instead of borders. The premise: money software you read like a document, not a cockpit you monitor in the dark." },
+  { id:"ledger", name:"C · Ledger", dot:"#1a5c3a",
+    premise:"<b>A printed statement.</b> No cards at all — hairline rules, a serif, one column. The premise: this is a book of record, and a book of record does not need boxes around everything." },
+  { id:"instrument", name:"D · Instrument", dot:"#00e5a0",
+    premise:"<b>An instrument, not a product.</b> True black, monospace throughout, square corners, one green readout. No gradients, no rounding, no decoration. The premise: you are reading a gauge." },
+  { id:"midnight", name:"E · Midnight", dot:"#7c8cff",
+    premise:"<b>Contemporary.</b> Deep navy, big soft-rounded cards, a violet-to-cyan hero, saturated data colours. The premise: it should look like the best-made app on your phone." },
+  { id:"native", name:"F · Native", dot:"#007aff",
+    premise:"<b>Feel like the phone.</b> The system’s own grouped-list look — white rows on light grey, separators, iOS blue. The premise: nothing to learn, because it already looks like Settings." },
+];
+
+const SCREEN = [
+'<div class="topbar">',
+'  <div class="seg"><span class="on">Finance</span><span>Health</span></div>',
+'  <div class="seg"><span class="on">Mine</span><span>Household</span></div>',
+'</div>',
+'<div class="hero">',
+'  <div class="k">debt left</div>',
+'  <div class="row"><div class="big">$5,837</div><div class="pct">31% cleared</div></div>',
+'</div>',
+'<div class="wrap">',
+'  <div class="two">',
+'    <div class="card"><div class="k">Cash</div><div class="v">$2,322</div><div class="s warn">~$144.43 waiting to post</div></div>',
+'    <div class="card"><div class="k">Payoff</div><div class="v">Oct 2026</div><div class="s">$991 on Jun 30</div></div>',
+'  </div>',
+'  <div class="card">',
+'    <div class="budget">',
+'      <div class="donut"><i>$719</i></div>',
+'      <div style="flex:1;min-width:0">',
+'        <div class="between"><span class="k">This cycle</span><span class="s" style="margin:0">of $1,250</span></div>',
+'        <div class="s" style="margin-top:2px">Jul 31 &ndash; Aug 14 &middot; day 6 of 15</div>',
+'        <div class="track"><i></i></div>',
+'        <div class="between" style="margin-top:6px"><span class="s good" style="margin:0">on track</span><span class="s" style="margin:0">$531 left</span></div>',
+'      </div>',
+'    </div>',
+'  </div>',
+'  <div class="card">',
+'    <div class="k" style="margin-bottom:4px">Recent</div>',
+'    <div class="rowitem"><span class="chip" style="background:color-mix(in srgb,var(--c1) 18%,transparent);color:var(--c1)">&#9679;</span><div><div class="nm">Sam&rsquo;s Club</div><div class="sub">Groceries &middot; today</div></div><div class="amt">-$229.81</div></div>',
+'    <div class="rowitem"><span class="chip" style="background:color-mix(in srgb,var(--c2) 18%,transparent);color:var(--c2)">&#9679;</span><div><div class="nm">QuikTrip</div><div class="sub">Gas &middot; yesterday</div></div><div class="amt">-$9.07</div></div>',
+'    <div class="rowitem"><span class="chip" style="background:color-mix(in srgb,var(--c4) 18%,transparent);color:var(--c4)">&#9679;</span><div><div class="nm">Verizon</div><div class="sub">Bill &middot; Jun 17</div></div><div class="amt">-$83.00</div></div>',
+'    <div class="rowitem"><span class="chip" style="background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)">&#9679;</span><div><div class="nm">Payroll</div><div class="sub">Income &middot; Jun 15</div></div><div class="amt in">+$1,400.00</div></div>',
+'  </div>',
+'</div>',
+'<div class="tabs">',
+'  <span class="on"><b>&#9737;</b>Home</span><span><b>&#9680;</b>Insights</span><span><b>&#9635;</b>Activity</span><span><b>&#9678;</b>Profile</span>',
+'</div>'
+].join("\n");
+
+const picks = document.getElementById("picks");
+const stage = document.getElementById("stage");
+const premise = document.getElementById("premise");
+let active = THEMES[0].id;
+
+function render() {
+  stage.className = "t " + active;
+  stage.innerHTML = SCREEN;
+  premise.innerHTML = THEMES.find(function (t) { return t.id === active; }).premise;
+  Array.prototype.forEach.call(picks.children, function (b) {
+    b.classList.toggle("on", b.dataset.id === active);
+  });
+  try { localStorage.setItem("hb-stylelab", active); } catch (e) { /* private mode */ }
+}
+
+THEMES.forEach(function (t) {
+  const b = document.createElement("button");
+  b.dataset.id = t.id;
+  b.innerHTML = '<span class="dot" style="background:' + t.dot + '"></span>' + t.name;
+  b.onclick = function () { active = t.id; render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  picks.appendChild(b);
+});
+
+try {
+  const s = localStorage.getItem("hb-stylelab");
+  if (s && THEMES.some(function (t) { return t.id === s; })) active = s;
+} catch (e) { /* private mode */ }
+render();
+</script>
+</body>
+</html>
