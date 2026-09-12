@@ -1,32 +1,54 @@
 @import "tailwindcss";
 
-/* ── Mission Control · "Instrument" theme ────────────────────────────────────
-   Engineering-friendly re-skin: cool graphite canvas with a faint blueprint
-   grid, monospaced tabular readouts, technical mono labels, a precise cyan
-   "signal" accent, and green reserved for good money. Hierarchy still comes
-   from fill depth (canvas → tile → hero), not shadows. */
+/* ── The system ───────────────────────────────────────────────────────────────
+   A cool near-black ground with three steps of depth, one accent, three
+   reserved status colours and three inks.
+
+   The one rule the whole palette hangs on: THE ACCENT IS THE ONLY COLOUR THAT
+   IS BOTH A FILL AND AN INK, so it is the only one that has to be unique in
+   both roles. It means exactly one thing — you can act on this — and it is
+   never a label colour, never a data series, never a background wash.
+
+   Status (mint / gold / ember) is text and tinted tags only, and always ships
+   beside a word. Categories (catColor.ts) are dots, slices and fills only, and
+   are never text colour. Because the two never meet in the same role, a green
+   category and a green "on track" can coexist without ambiguity.
+
+   The three inks were solved against the DEEPEST surface they sit on, not the
+   canvas: --color-faint at its old value measured 3.84:1 on `raised`, under
+   what small text needs, and it carries every eyebrow and caption in the app. */
 @theme {
-  --color-bg: #0a0d12; /* cool graphite-black canvas */
-  --color-tile: #121822; /* default panel fill */
-  --color-raised: #18212d; /* nested wells / mini-stats */
-  --color-recessed: #0c1016; /* the pressed-in next-move slip */
-  --color-hero: #0e1b1f; /* cyan-tinted dark — ONLY the hero panel */
-  --color-edge: #232d3a; /* 1px hairline panel border */
-  --color-edgehero: #1d3d3e; /* cyan-tinted hero border */
+  --color-bg: #0b0e13; /* canvas */
+  --color-tile: #141a23; /* default panel */
+  --color-raised: #1c2430; /* nested well */
+  --color-recessed: #080a0e; /* pressed in, deeper than the canvas */
+  --color-hero: #141a23; /* the hero is the page now, not a tinted slab */
+  --color-edge: #222b38; /* 1px hairline */
+  --color-edgehero: #2e3947; /* the stronger divider */
+  --color-well: #080a0e;
 
-  --color-accent: #34c5e8; /* signal cyan — interactive, momentum, CTAs, road */
-  --color-mint: #46d18a; /* green — good money: cash, cleared, on-track */
-  --color-gold: #e3b341; /* amber — the 90-day streak ring, near-limit */
-  --color-ember: #e5544e; /* red — ONLY the …4728 card + over-limit bars */
+  --color-accent: #38c6e8; /* THE accent — interactive, and nothing else */
+  --color-mint: #3fd08a; /* good money: cash, cleared, on track */
+  --color-gold: #e9b23c; /* attention: pending, near limit, needs you */
+  --color-ember: #f0645c; /* over, owed, late */
 
-  --color-bone: #eef2f7; /* cool off-white — readouts + headlines (brightened) */
-  --color-taupe: #97a3b2; /* labels, captions (brightened for contrast) */
-  --color-faint: #7c8696; /* tertiary hints, last4 (was #687180 — too dim) */
+  --color-bone: #f0f4f8; /* readouts + headlines */
+  --color-taupe: #a8b4c2; /* secondary */
+  --color-faint: #8b96a5; /* the dimmest ink that still has to be read — 5.2:1 */
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
     "Roboto Mono", Menlo, Consolas, monospace;
+
+  /* Motion. Every duration in the app derives from these, so a change of pace
+     is one edit. The rule: motion describes the SPATIAL RELATIONSHIP between
+     two screens and nothing else. */
+  --t-lat: 240ms; /* sibling ↔ sibling (tab to tab) */
+  --t-push: 280ms; /* parent → child */
+  --t-sheet: 320ms; /* transient on top */
+  --ease-in: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-out: cubic-bezier(0.05, 0.7, 0.1, 1);
 }
 
 :root {
@@ -49,13 +71,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: var(--color-bone);
-  background-color: #0a0d12;
+  background-color: #0b0e13;
   /* faint blueprint grid + one cool signal glow up top */
-  background-image:
-    radial-gradient(1100px 560px at 50% -12%, rgba(52, 197, 232, 0.05), transparent 70%),
-    linear-gradient(rgba(120, 160, 200, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 160, 200, 0.025) 1px, transparent 1px);
-  background-size: 100% 100%, 28px 28px, 28px 28px;
+  /* One soft light from above, and nothing else. The blueprint grid that used
+     to be here competed with every hairline in the app for the same job. */
+  background-image: radial-gradient(
+    1100px 620px at 50% -14%,
+    rgba(56, 198, 232, 0.055),
+    transparent 70%
+  );
+  background-size: 100% 100%;
   background-attachment: fixed;
   overscroll-behavior-y: none;
 }
@@ -107,6 +132,41 @@ input[type="number"] {
 .scroll-soft::-webkit-scrollbar-thumb {
   background: rgba(139, 151, 166, 0.25);
   border-radius: 9999px;
+}
+
+/* ── Lateral motion ──────────────────────────────────────────────────────────
+   Tab to tab. The arriving screen travels 22px from the direction you came and
+   fades up; both are short, because this is a move you make dozens of times a
+   day and anything that reads as a "page turn" starts to feel slow on the third
+   repeat. Off entirely under reduced motion — direction is a nicety, and the
+   screen is correct without it. */
+@media (prefers-reduced-motion: no-preference) {
+  .tab-in-fwd {
+    animation: tabInFwd var(--t-lat) var(--ease-out) both;
+  }
+  .tab-in-back {
+    animation: tabInBack var(--t-lat) var(--ease-out) both;
+  }
+  @keyframes tabInFwd {
+    from {
+      opacity: 0;
+      transform: translateX(22px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes tabInBack {
+    from {
+      opacity: 0;
+      transform: translateX(-22px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 /* ── Technical mono label — the "instrument" voice for every eyebrow ───────── */

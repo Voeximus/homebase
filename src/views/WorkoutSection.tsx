@@ -728,7 +728,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
         <div className="mt-3 grid grid-cols-2 gap-3">
           {order.map((p) => (
             <div key={p} className="rounded-[14px] px-3 py-2" style={{ background: "rgba(0,0,0,0.16)" }}>
-              <div className="text-[11px] font-semibold" style={{ color: p === you ? "#ffe7d4" : "#cdfff5" }}>
+              <div className="text-[11px] font-semibold" style={{ color: p === you ? "#efdcc4" : "#cdf2e4" }}>
                 {p === you ? t("You") : PERSON_NAME[p]}
               </div>
               <div className="num text-[20px] font-bold">{t("{n} days", { n: week[p] })}</div>

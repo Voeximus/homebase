@@ -70,10 +70,10 @@ export const SEED_RECURRING: SeedRecurring[] = [
 ];
 
 export const SEED_DEBTS: SeedDebt[] = [
-  { name: "Card (…0001)", balance: 0, apr: 0, minPayment: 0, color: "#ef4444" },
-  { name: "Card (…0002)", balance: 0, minPayment: 0, color: "#f59e0b" },
-  { name: "Loan", balance: 0, color: "#6366f1" },
-  { name: "Family loan", balance: 0, color: "#ec4899" },
+  { name: "Card (…0001)", balance: 0, apr: 0, minPayment: 0, color: "#d9483f" },
+  { name: "Card (…0002)", balance: 0, minPayment: 0, color: "#c9982b" },
+  { name: "Loan", balance: 0, color: "#6a75e0" },
+  { name: "Family loan", balance: 0, color: "#c25a86" },
 ];
 
 // Cadence -> monthly multiplier. Biweekly uses ×2 (the conservative

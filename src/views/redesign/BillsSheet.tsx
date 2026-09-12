@@ -28,26 +28,26 @@ function BillLine({ b, onPay }: { b: MonthCalBill; onPay?: (b: MonthCalBill) => 
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className="truncate text-[13px]"
-          style={{ color: b.paid ? "#7e8a98" : "#e6edf3", textDecoration: b.paid ? "line-through" : "none" }}
+          style={{ color: b.paid ? "#8b96a5" : "#f0f4f8", textDecoration: b.paid ? "line-through" : "none" }}
         >
           {b.name}
         </span>
-        <span className="text-[11px]" style={{ color: b.paid ? "#6b9e83" : "#7e8a98" }}>
+        <span className="text-[11px]" style={{ color: b.paid ? "#4f9b87" : "#8b96a5" }}>
           {b.paid ? t("paid {date}", { date: b.paidDate ?? "" }) : t("due {date}", { date: b.dateLabel })}
         </span>
       </span>
-      <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}>
+      <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#8b96a5" : "#f0f4f8" }}>
         {b.variable && !b.paid ? "~" : ""}
         {money2(b.amount)}
       </span>
     </div>
   );
   return !b.paid && onPay ? (
-    <button onClick={() => onPay(b)} className="w-full text-left" style={{ borderTop: "1px solid #141b24" }}>
+    <button onClick={() => onPay(b)} className="w-full text-left" style={{ borderTop: "1px solid #141a23" }}>
       {inner}
     </button>
   ) : (
-    <div style={{ borderTop: "1px solid #141b24" }}>{inner}</div>
+    <div style={{ borderTop: "1px solid #141a23" }}>{inner}</div>
   );
 }
 
@@ -70,18 +70,18 @@ function BillContainer({
 }) {
   const total = bills.reduce((s, b) => s + b.amount, 0);
   return (
-    <div className="mb-2 overflow-hidden rounded-xl" style={{ border: "1px solid #1b232e" }}>
-      <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-3" style={{ background: "#131a23" }}>
+    <div className="mb-2 overflow-hidden rounded-xl" style={{ border: "1px solid #222b38" }}>
+      <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-3" style={{ background: "#141a23" }}>
         {open ? (
-          <ChevronDown size={16} style={{ color: "#8b97a6" }} />
+          <ChevronDown size={16} style={{ color: "#8b96a5" }} />
         ) : (
-          <ChevronRight size={16} style={{ color: "#8b97a6" }} />
+          <ChevronRight size={16} style={{ color: "#8b96a5" }} />
         )}
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />
         <span className="flex-1 text-left text-[13.5px] font-semibold text-bone">{title}</span>
         <span
           className="rounded-full px-1.5 text-[11px] font-semibold"
-          style={{ background: "#1b232e", color: "#9aa6b2" }}
+          style={{ background: "#222b38", color: "#a8b4c2" }}
         >
           {bills.length}
         </span>
@@ -89,7 +89,7 @@ function BillContainer({
       </button>
       {open &&
         (bills.length === 0 ? (
-          <p className="px-3.5 py-3 text-[12px]" style={{ color: "#7e8a98" }}>
+          <p className="px-3.5 py-3 text-[12px]" style={{ color: "#8b96a5" }}>
             {t("Nothing here this month.")}
           </p>
         ) : (
@@ -154,9 +154,9 @@ export function BillsSheet({
       <div
         className="max-h-[86vh] w-full max-w-[420px] overflow-y-auto"
         style={{
-          background: "#0f141c",
-          border: "1px solid #232d3a",
-          borderTop: "2px solid #fb923c",
+          background: "#0b0e13",
+          border: "1px solid #222b38",
+          borderTop: "2px solid #c07a1e",
           borderRadius: "22px",
           padding: "16px",
         }}
@@ -165,17 +165,17 @@ export function BillsSheet({
         <div className="mb-3.5 flex items-center gap-2.5">
           <span
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            style={{ background: "#2a2016", color: "#fb923c" }}
+            style={{ background: "#271c10", color: "#c07a1e" }}
           >
             <Receipt size={18} />
           </span>
           <div className="flex-1 text-[18px] font-bold text-bone">{t("Bills")}</div>
           {!showCal && (
-            <span className="text-[12px]" style={{ color: "#8b97a6" }}>
+            <span className="text-[12px]" style={{ color: "#8b96a5" }}>
               {mc.monthLabel}
             </span>
           )}
-          <button onClick={onClose} style={{ color: "#7a8595" }}>
+          <button onClick={onClose} style={{ color: "#8b96a5" }}>
             <X size={20} />
           </button>
         </div>
@@ -183,13 +183,13 @@ export function BillsSheet({
         {!showCal && (
           <div
             className="mb-3 rounded-[14px] px-3 py-2.5"
-            style={{ background: "#141a24", border: "1px solid #232d3a" }}
+            style={{ background: "#141a23", border: "1px solid #222b38" }}
           >
-            <div className="text-[11.5px]" style={{ color: "#8b97a6" }}>
+            <div className="text-[11.5px]" style={{ color: "#8b96a5" }}>
               {cycle.label} ·{" "}
               {daysLeft === 0 ? t("last day") : t("{n} days left", { n: daysLeft })}
             </div>
-            <div className="mt-0.5 text-[13.5px] font-semibold" style={{ color: "#fb923c" }}>
+            <div className="mt-0.5 text-[13.5px] font-semibold" style={{ color: "#c07a1e" }}>
               {beforePayday.total > 0
                 ? t("{amount} still due before payday", {
                     amount: money2(beforePayday.total),
@@ -198,7 +198,7 @@ export function BillsSheet({
               {/* Named separately because it is a different kind of fact: not
                   "coming up" but "already past its date and still unpaid". */}
               {beforePayday.overdueTotal > 0 && (
-                <span style={{ color: "#e8746a" }}>
+                <span style={{ color: "#f0645c" }}>
                   {" · "}
                   {t("{amount} already overdue", { amount: money2(beforePayday.overdueTotal) })}
                 </span>
@@ -213,7 +213,7 @@ export function BillsSheet({
           <>
             <BillContainer
               title={t("Unpaid · posting")}
-              accent="#fb923c"
+              accent="#c07a1e"
               bills={unpaid}
               open={openUnpaid}
               onToggle={() => setOpenUnpaid((v) => !v)}
@@ -221,7 +221,7 @@ export function BillsSheet({
             />
             <BillContainer
               title={t("Paid")}
-              accent="#46d18a"
+              accent="#3fd08a"
               bills={paid}
               open={openPaid}
               onToggle={() => setOpenPaid((v) => !v)}
@@ -229,7 +229,7 @@ export function BillsSheet({
             <button
               onClick={() => setShowCal(true)}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[13px] font-semibold"
-              style={{ background: "#0e2230", border: "1px solid #1d5066", color: "#34c5e8" }}
+              style={{ background: "#10323f", border: "1px solid #22566a", color: "#38c6e8" }}
             >
               <CalendarDays size={16} /> {t("Open the money calendar")}
             </button>

@@ -23,9 +23,9 @@ export const HEALTH_THEMES: {
   edge: string;
   blurb: string;
 }[] = [
-  { id: "original", label: "Calm", swatch: "#34d399", ground: "#101319", edge: "#262d3a", blurb: "Warm ground" },
-  { id: "instrument", label: "Instrument", swatch: "#22d3ee", ground: "#080b0e", edge: "#1c2731", blurb: "Precise, mono" },
-  { id: "bold", label: "Bold", swatch: "#a3e635", ground: "#0d0e12", edge: "#2c3340", blurb: "Big type" },
+  { id: "original", label: "Calm", swatch: "#3fd08a", ground: "#101319", edge: "#262d3a", blurb: "Warm ground" },
+  { id: "instrument", label: "Instrument", swatch: "#38c6e8", ground: "#080b0e", edge: "#1c2731", blurb: "Precise, mono" },
+  { id: "bold", label: "Bold", swatch: "#3fd08a", ground: "#0d0e12", edge: "#2c3340", blurb: "Big type" },
 ];
 
 const KEY = "hb-health-theme";

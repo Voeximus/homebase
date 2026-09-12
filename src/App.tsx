@@ -127,7 +127,6 @@ function Shell() {
         />
       ) : mode === "health" ? (
         <HealthView
-          mode={mode}
           onMode={setMode}
           owner={who}
           lens={lens}
@@ -135,7 +134,6 @@ function Shell() {
         />
       ) : (
         <FinanceGate
-          mode={mode}
           onMode={setMode}
           owner={who}
           lens={lens}
@@ -147,13 +145,11 @@ function Shell() {
 }
 
 function FinanceGate({
-  mode,
   onMode,
   owner,
   lens,
   onLens,
 }: {
-  mode: AppMode;
   onMode: (m: AppMode) => void;
   owner: Owner;
   lens: Lens;
@@ -162,6 +158,6 @@ function FinanceGate({
   const { loading } = useStore();
   if (loading) return <FullScreenLoader />;
   return (
-    <FinanceTabs mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
+    <FinanceTabs onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
   );
 }

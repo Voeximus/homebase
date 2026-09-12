@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Wallet, HeartPulse } from "lucide-react";
-import { TabNav, type TabKey } from "./TabNav";
+import { TabNav, type TabKey, type NavKey } from "./TabNav";
 import { HomeTab } from "./HomeTab";
 import { InsightsTab, type InsightsVM } from "./InsightsTab";
 import { ActivityTab, type ActivityVM } from "./ActivityTab";
@@ -94,17 +93,18 @@ const MOCK_ACTIVITY: ActivityVM = {
 
 const MOCK_PROFILE: ProfileVM = {
   ownerName: "Demo",
-  ownerColor: "#ef8136",
+  ownerColor: "#c07a1e",
   email: "demo@example.com",
   bankName: "Bank of America",
   bankSub: "Connected · 2 logins",
   cardsSub: "…4728 + …6813 linked · auto-syncs",
   accounts: [
-    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#5b82b3" },
-    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#687180" },
-    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#46d18a" },
+    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#8b96a5" },
+    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#8b96a5" },
+    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#3fd08a" },
   ],
   lang: "en",
+  cashFloor: 300,
   lens: "me",
   variableBills: [
     { id: "electric", name: "Electric (SRP)", icon: "electric", est: "~$89.92 · est. from last 3", on: true },
@@ -136,6 +136,12 @@ const HOME: HomeVM = {
   nextAmount: 991,
   nextDate: "Jun 30",
   cash: 2322,
+  // the home headline: cash − what is still due before payday − the floor
+  trulyFree: 1573,
+  committed: 449,
+  cashFloor: 300,
+  daysToPayday: 18,
+  paydayLabel: "Sep 30",
   cashAccounts: 3,
   processing: 144.43,
   debtLeft: 5837,
@@ -175,33 +181,23 @@ function TopBar() {
   return (
     <div
       className="flex items-center justify-between px-4 py-2.5"
-      style={{ background: "#0b0f17" }}
+      style={{ background: "#0b0e13" }}
     >
-      <span
-        className="flex items-center gap-2 rounded-full p-0.5 text-[12px]"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
-      >
-        <span
-          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-semibold"
-          style={{ background: "#34c5e8", color: "#06303a" }}
-        >
-          <Wallet size={14} /> Finance
-        </span>
-        <span className="flex items-center gap-1.5 px-3 py-1.5" style={{ color: "#8b97a6" }}>
-          <HeartPulse size={14} /> Health
-        </span>
-      </span>
+      {/* The lab mirrors the app: Finance/Health is a slot in the tab bar now,
+          so the only switch left up here is the one that changes what the
+          numbers mean rather than where you are. */}
+      <span className="text-[15px] font-bold tracking-[-0.02em]">Home</span>
       <span
         className="flex rounded-full p-0.5 text-[12px]"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        style={{ background: "#141a23", border: "1px solid #222b38" }}
       >
         <span
           className="rounded-full px-3 py-1.5 font-semibold"
-          style={{ background: "#0b0f17", color: "#e6edf3" }}
+          style={{ background: "#0b0e13", color: "#f0f4f8" }}
         >
           Mine
         </span>
-        <span className="px-3 py-1.5" style={{ color: "#8b97a6" }}>
+        <span className="px-3 py-1.5" style={{ color: "#8b96a5" }}>
           Household
         </span>
       </span>
@@ -217,7 +213,7 @@ export function DesignLab() {
   return (
     <div
       className="mx-auto flex min-h-screen max-w-[440px] flex-col"
-      style={{ background: "#0b0f17" }}
+      style={{ background: "#0b0e13" }}
     >
       <TopBar />
       <div className="flex-1 overflow-y-auto">
@@ -231,7 +227,7 @@ export function DesignLab() {
           <ProfileTab vm={MOCK_PROFILE} />
         )}
       </div>
-      <TabNav active={tab} onTab={setTab} />
+      <TabNav active={tab} onTab={(k: NavKey) => k !== "health" && setTab(k)} />
       <BillsSheet
         open={billsOpen}
         onClose={() => setBillsOpen(false)}

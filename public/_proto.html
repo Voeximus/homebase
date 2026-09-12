@@ -43,7 +43,7 @@ html,body{margin:0;padding:0}
   --ease-both:cubic-bezier(.3,0,0,1);
 }
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
-  -webkit-font-smoothing:antialiased;padding-bottom:260px}
+  -webkit-font-smoothing:antialiased;padding-bottom:230px}
 
 /* ── lab chrome ─────────────────────────────────────────────────────────── */
 .lab-top{padding:12px 16px 10px;border-bottom:1px solid var(--line)}
@@ -56,7 +56,25 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15p
 /* the control panel — pinned, because you change a setting and immediately
    want to drive the thing again */
 .lab-ctl{position:fixed;left:0;right:0;bottom:0;z-index:90;background:rgba(11,14,19,.96);
-  backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:12px 16px calc(14px + env(safe-area-inset-bottom))}
+  backdrop-filter:blur(14px);border-top:1px solid var(--line);
+  padding:4px 16px calc(14px + env(safe-area-inset-bottom));
+  transition:transform .26s var(--ease-out)}
+/* Collapsed: the CONTENT closes, not the panel.
+   The first version slid the whole panel down with
+   `transform:translateY(calc(100% - 34px))` and silently did nothing — the
+   percentage resolved against a box whose height the transform was itself
+   changing, so it computed to an identity matrix. Collapsing the inner block
+   has no such circularity: a max-height that animates and a handle that never
+   moves. */
+.lab-ctl-inner{overflow:hidden;max-height:280px;opacity:1;
+  transition:max-height .26s var(--ease-out),opacity .16s linear}
+.lab-ctl.min .lab-ctl-inner{max-height:0;opacity:0}
+.lab-ctl.min .lab-handle{margin-bottom:0}
+.lab-handle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  min-height:34px;background:none;border:0;color:var(--ink3);font:700 10px/1 var(--sans);
+  letter-spacing:.14em;text-transform:uppercase;cursor:pointer;margin-bottom:6px}
+.lab-handle span{width:26px;height:3px;border-radius:99px;background:var(--line2)}
+.lab-handle em{font-style:normal}
 .lab-ctl .grp{display:flex;align-items:center;gap:9px;margin-bottom:9px}
 .lab-ctl .grp:last-child{margin-bottom:0}
 .lab-ctl .lbl{font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
@@ -66,6 +84,12 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15p
 .lab-ctl button{flex:none;min-height:34px;padding:0 11px;border-radius:9px;border:1px solid var(--line);
   background:var(--card);color:var(--ink2);font:650 12px/1 var(--sans)}
 .lab-ctl button.on{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+/* The browser's own focus ring was firing on click and painting a white
+   outline around whichever chip was last pressed — next to a real filled
+   selected state it reads as a bug rather than as focus. Keyboard focus still
+   gets a ring; a mouse or thumb press does not. */
+.lab-ctl button:focus{outline:none}
+.lab-ctl button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .lab-hint{font-size:11px;color:var(--ink3);margin-top:10px;line-height:1.5}
 .lab-hint b{color:var(--ink2)}
 
@@ -258,11 +282,14 @@ button.card:active{transform:scale(.985)}
 
 <div class="lab-phone"><div class="lab-frame" id="frame"></div></div>
 
-<div class="lab-ctl">
-  <div class="grp"><span class="lbl">Motion</span><div class="opts" id="c-tx"></div></div>
-  <div class="grp"><span class="lbl">Speed</span><div class="opts" id="c-sp"></div></div>
-  <div class="grp"><span class="lbl">Budget as</span><div class="opts" id="c-bd"></div></div>
-  <div class="lab-hint" id="hint"></div>
+<div class="lab-ctl" id="ctl">
+  <button class="lab-handle" id="min"><span></span><em id="minlbl">Hide controls</em><span></span></button>
+  <div class="lab-ctl-inner">
+    <div class="grp"><span class="lbl">Motion</span><div class="opts" id="c-tx"></div></div>
+    <div class="grp"><span class="lbl">Speed</span><div class="opts" id="c-sp"></div></div>
+    <div class="grp"><span class="lbl">Budget as</span><div class="opts" id="c-bd"></div></div>
+    <div class="lab-hint" id="hint"></div>
+  </div>
 </div>
 
 <script>
@@ -630,15 +657,15 @@ vp.addEventListener("touchend", e => {
 
 /* ── controls ──────────────────────────────────────────────────────────── */
 const HINTS = {
-  none: "No transition. Fastest, and you lose every clue about where you went — after a swipe you cannot tell whether you moved left or right.",
-  fade: "A cross-fade says the screen changed but not WHERE you went. It is the safe choice and the uninformative one.",
-  slide: "The whole screen travels the full width. It reads as a page turn — fine for a wizard, too heavy for siblings you flick between all day.",
-  axis: "Shared axis: a short travel plus a fade. Both screens move together along the direction you travelled, so the motion says “same level, different place”. This is the default.",
+  none: "Cuts instantly. No direction information at all.",
+  fade: "Cross-fade. Says the screen changed, not where you went.",
+  slide: "Full-width travel. Reads as a page turn.",
+  axis: "30% travel + fade, both screens moving together. Says “same level, different place”.",
 };
 const BHINTS = {
-  bar: "A plain bar answers “how much of the limit is gone” and cannot answer “is that a lot for day 6” — which is the only question worth asking mid-cycle.",
-  donut: "A donut shows composition well and magnitude badly. It cannot draw “over” at all, and it has nowhere to put time.",
-  pace: "The fill is the money; the tick is where you should be by now. Fill past tick = spending faster than the cycle, read in one glance with no arithmetic. This is the one I would ship.",
+  bar: "Fill = money spent against the limit. No time in it.",
+  donut: "Composition of the spend. No limit line, no time, cannot draw “over”.",
+  pace: "Fill = money, tick = where you should be by now. Carries both.",
 };
 function ctl(id, opts, key, after) {
   const el = document.getElementById(id);
@@ -654,6 +681,10 @@ function hint() {
   document.getElementById("hint").innerHTML =
     "<b>Motion &mdash;</b> " + HINTS[state.tx] + "<br><b>Display &mdash;</b> " + BHINTS[state.budget];
 }
+document.getElementById("min").addEventListener("click", function () {
+  const min = document.getElementById("ctl").classList.toggle("min");
+  document.getElementById("minlbl").textContent = min ? "Show controls" : "Hide controls";
+});
 ctl("c-tx", [["axis", "Shared axis"], ["slide", "Slide"], ["fade", "Fade"], ["none", "None"]], "tx", () => {
   app.className = "app tx-" + state.tx; hint();
 });

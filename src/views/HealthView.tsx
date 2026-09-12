@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Check, Dumbbell, Languages, LogOut, Palette, Settings, UtensilsCrossed, X } from "lucide-react";
 import { t } from "../lib/i18n";
 import { useAuth } from "../auth/AuthProvider";
-import { ModeToggle, type AppMode } from "../components/ModeToggle";
+import { type AppMode } from "../components/ModeToggle";
+import { TabNav, type NavKey } from "./redesign/TabNav";
 import { useLang } from "../components/LanguageProvider";
 import type { Lens } from "../lib/lens";
 import type { Owner } from "../lib/owner";
@@ -34,11 +35,11 @@ const SECTIONS = [
 ];
 
 export function HealthView({
-  mode,
   onMode,
   owner,
 }: {
-  mode: AppMode;
+  // `mode` is gone: this only renders in health mode, and the switch out of it
+  // is the tab bar now rather than a toggle in the header.
   onMode: (m: AppMode) => void;
   owner: Owner;
   // kept on the type so App's call stays valid; Health uses per-section switches.
@@ -61,11 +62,26 @@ export function HealthView({
       <div className={`htheme htheme-${theme} min-h-screen`}>
         <header className="safe-top" style={{ borderBottom: "1px solid var(--color-edge)" }}>
           <div className="mx-auto flex h-14 max-w-[640px] items-center gap-2 px-4">
-            <ModeToggle mode={mode} onMode={onMode} />
-            <div className="min-w-0 flex-1" />
+            {/* Health's own two sections. They used to be the bottom bar; with
+                Health itself a slot in the app's bar, sub-navigation moves up
+                here — one bar at the bottom, one segmented control at the top,
+                and never two bars arguing about which level they are. */}
+            <div className="h-seg min-w-0 flex-1">
+              {SECTIONS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setSub(id)}
+                  className={sub === id ? "on" : ""}
+                  aria-current={sub === id ? "page" : undefined}
+                >
+                  <Icon size={15} />
+                  {t(label)}
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => setSettingsOpen(true)}
-              className="grid h-10 w-10 place-items-center rounded-full"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full"
               style={{ color: "var(--color-taupe)" }}
               aria-label={t("Settings")}
             >
@@ -88,19 +104,22 @@ export function HealthView({
           )}
         </main>
 
-        <nav className="h-tabs" aria-label={t("Health sections")}>
-          {SECTIONS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              onClick={() => setSub(id)}
-              className={sub === id ? "on" : ""}
-              aria-current={sub === id ? "page" : undefined}
-            >
-              <Icon size={19} />
-              {t(label)}
-            </button>
-          ))}
-        </nav>
+        <TabNav
+          active="health"
+          onTab={(k: NavKey) => {
+            if (k !== "health") {
+              // Leaving Health means leaving the mode. The finance shell reads
+              // its own persisted tab, so the destination is remembered rather
+              // than always dumping you on Home.
+              try {
+                localStorage.setItem("hb-fin-tab", k);
+              } catch {
+                /* storage unavailable — finance opens on its last tab anyway */
+              }
+              onMode("finance");
+            }
+          }}
+        />
 
         <SettingsSheet
           open={settingsOpen}

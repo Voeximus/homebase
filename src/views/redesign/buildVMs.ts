@@ -29,6 +29,7 @@ import {
 } from "../../lib/plan";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
+import { getFloor } from "../../lib/floor";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
 import { t } from "../../lib/i18n";
@@ -46,9 +47,9 @@ const fmtMY = (d: Date) =>
 const fmtDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 const OWNER_DOT: Record<string, string> = {
-  Gino: "#5b82b3",
-  Xinyan: "#46d18a",
-  Joint: "#687180",
+  Gino: "#8b96a5",
+  Xinyan: "#3fd08a",
+  Joint: "#8b96a5",
 };
 
 const shortDebt = (n: string) => {
@@ -338,6 +339,41 @@ export function buildFinanceVMs(
   const unpaidBills = outEntries.filter((e) => !isBillPaid(e)).sort((a, b) => a.day - b.day);
   const paidBills = outEntries.filter(isBillPaid);
   const leftThisMonth = unpaidBills.reduce((s, e) => s + e.amount, 0);
+
+  // ── What is actually free ────────────────────────────────────────────────
+  // The home screen used to lead with the envelope remainder, which is a number
+  // that will read "$531 left" on the last day of the month with rent due
+  // tomorrow. This is the one that cannot do that:
+  //
+  //     truly free = cash − everything still due before the next payday − floor
+  //
+  // `cycle.start`, not today, is the left edge on purpose: an unpaid bill whose
+  // due day has already slipped past still comes out of the paycheck that is
+  // already sitting in the account. The same choice BillsSheet makes, and for
+  // the same reason.
+  const committedBills = unpaidBills
+    .map((e) => ({
+      e,
+      on: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(Math.min(e.day, daysInMonth))}`,
+    }))
+    .filter((x) => x.on >= cycle.start && x.on <= cycle.end);
+  // A pay cycle is about a fortnight, so it routinely crosses into next month —
+  // and rent on the 1st is exactly the bill this number exists to warn about.
+  // Missing it would make `trulyFree` too generous in the week it matters most.
+  const [endY, endM] = cycle.end.split("-").map(Number);
+  const crossesMonth = endY !== now.getFullYear() || endM - 1 !== now.getMonth();
+  const nextMonthCommitted = crossesMonth
+    ? monthlySchedule(data.recurring, `${endY}-${pad(endM)}`, data.transactions, data.debts)
+        .entries.filter((e) => e.direction === "out")
+        .map((e) => ({ e, on: `${endY}-${pad(endM)}-${pad(e.day)}` }))
+        .filter((x) => x.on >= cycle.start && x.on <= cycle.end)
+    : [];
+  const committed = [...committedBills, ...nextMonthCommitted].reduce((s, x) => s + x.e.amount, 0);
+  const cashFloor = getFloor();
+  // Never below zero. A negative "free" is not information, it is alarm — the
+  // committed figure beside it already says how far under water the cycle is.
+  const trulyFree = Math.max(0, cash - committed - cashFloor);
+  const daysToPayday = Math.max(1, cycle.days - cycle.dayIndex + 1);
   const calMap: Record<number, { in: boolean; out: boolean }> = {};
   entries.forEach((e) => {
     const d = Math.min(e.day, daysInMonth);
@@ -487,6 +523,11 @@ export function buildFinanceVMs(
     cash,
     cashAccounts: cashAcctCount,
     processing,
+    trulyFree,
+    committed,
+    cashFloor,
+    daysToPayday,
+    paydayLabel: fmtDay(new Date(cycle.end + "T12:00:00")),
     debtLeft: math.totalDebt,
     debtProgressPct: clearedPct,
     budgetSpent: spent,
@@ -660,9 +701,10 @@ export function buildFinanceVMs(
       name: `${a.name} …${a.last4 ?? ""}`,
       owner: a.owner,
       balance: a.balance,
-      dot: OWNER_DOT[a.owner] ?? "#687180",
+      dot: OWNER_DOT[a.owner] ?? "#8b96a5",
     })),
     lang: extra.lang,
+    cashFloor,
     lens,
     variableBills: data.recurring
       .filter((r) => r.variable && r.active)

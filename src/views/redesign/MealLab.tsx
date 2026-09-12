@@ -123,7 +123,7 @@ export function MealLab() {
         <FinanceProvider>
           <AuthProvider>
             <div className="fixed inset-0 z-[60] overflow-auto">
-              <HealthView mode="health" onMode={() => setTab("meal")} owner="gino" lens="me" onLens={() => undefined} />
+              <HealthView onMode={() => setTab("meal")} owner="gino" lens="me" onLens={() => undefined} />
             </div>
           </AuthProvider>
         </FinanceProvider>

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronDown,
   Languages,
+  ShieldCheck,
   Users,
   HeartPulse,
   Bell,
@@ -40,6 +41,8 @@ export interface ProfileVM {
   cardsSub: string;
   accounts: { name: string; owner: string; balance: number; dot: string }[];
   lang: "en" | "zh";
+  /** The buffer held back from "truly free" — see lib/floor.ts. */
+  cashFloor: number;
   lens: "me" | "all";
   variableBills: { id: string; name: string; icon: "electric" | "phone"; est: string; on: boolean }[];
 }
@@ -65,14 +68,14 @@ function AuditPanel({ result }: { result: AuditResult }) {
         <span
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
           style={{
-            background: result.clean ? "#16241c" : "#2a1618",
-            color: result.clean ? "#46d18a" : "#e8746a",
+            background: result.clean ? "#12231d" : "#2d1614",
+            color: result.clean ? "#3fd08a" : "#f0645c",
           }}
         >
           {result.clean ? <CircleCheck size={17} /> : <AlertTriangle size={17} />}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold" style={{ color: "#e6edf3" }}>
+          <span className="block text-[14px] font-semibold" style={{ color: "#f0f4f8" }}>
             {result.clean
               ? t("Every number checks out")
               : t("{n} check{s} did not add up", {
@@ -80,7 +83,7 @@ function AuditPanel({ result }: { result: AuditResult }) {
                   s: failing.length > 1 ? "s" : "",
                 })}
           </span>
-          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "#8b97a6" : "#e8a09a" }}>
+          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "#8b96a5" : "#f0a49d" }}>
             {result.clean
               ? t("{n} of {n} internal checks passed — the app agrees with itself.", {
                   n: result.checks.length,
@@ -89,9 +92,9 @@ function AuditPanel({ result }: { result: AuditResult }) {
           </span>
         </span>
         {open ? (
-          <ChevronDown size={16} style={{ color: "#8b97a6" }} />
+          <ChevronDown size={16} style={{ color: "#8b96a5" }} />
         ) : (
-          <ChevronRight size={16} style={{ color: "#8b97a6" }} />
+          <ChevronRight size={16} style={{ color: "#8b96a5" }} />
         )}
       </button>
 
@@ -101,19 +104,19 @@ function AuditPanel({ result }: { result: AuditResult }) {
             <div key={c.id} className="flex gap-2.5">
               <span
                 className="mt-[3px] h-2 w-2 shrink-0 rounded-full"
-                style={{ background: c.status === "ok" ? "#46d18a" : "#e8746a" }}
+                style={{ background: c.status === "ok" ? "#3fd08a" : "#f0645c" }}
               />
               <span className="min-w-0">
-                <span className="block text-[12.5px] font-medium" style={{ color: "#c9d4de" }}>
+                <span className="block text-[12.5px] font-medium" style={{ color: "#dfe6ee" }}>
                   {t(c.question)}
                 </span>
-                <span className="block text-[11.5px] leading-snug" style={{ color: "#8b97a6" }}>
+                <span className="block text-[11.5px] leading-snug" style={{ color: "#8b96a5" }}>
                   {c.detail}
                 </span>
               </span>
             </div>
           ))}
-          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "#74838f" }}>
+          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "#8b96a5" }}>
             {t(
               "Each of these compares one of your numbers against the same number worked out a second, separate way. They are exact — anything other than a perfect match is a real mistake, not a rounding difference, which is why there is no 'maybe' here.",
             )}
@@ -133,6 +136,7 @@ interface ProfileTaps {
   onSignOut?: () => void;
   onAdvanced?: () => void;
   onLang?: (l: "en" | "zh") => void;
+  onFloor?: (n: number) => void;
   onLens?: (l: "me" | "all") => void;
   onToggleVariableBill?: (id: string, on: boolean) => void;
 }
@@ -144,7 +148,7 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
       <div className="eyebrow mb-2 px-1 text-taupe">{label}</div>
       <div
         className="overflow-hidden rounded-[16px] border"
-        style={{ background: "#141a24", borderColor: "#232d3a" }}
+        style={{ background: "#141a23", borderColor: "#222b38" }}
       >
         {children}
       </div>
@@ -161,7 +165,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
       onClick={onToggle}
       disabled={!onToggle}
       className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
-      style={{ background: on ? "#34c5e8" : "#2a3441" }}
+      style={{ background: on ? "#38c6e8" : "#2e3947" }}
       aria-pressed={on}
     >
       <span
@@ -173,7 +177,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
 }
 
 // A horizontal divider matching the in-group row border.
-const ROW_BORDER = "#1d2530";
+const ROW_BORDER = "#1e2633";
 
 // Phone push notifications — self-contained (reads/sets its own state via the
 // push lib). Subscribing once covers transaction + health + bill alerts.
@@ -246,21 +250,21 @@ function PushRow() {
                 : t("On — transaction & health alerts on this phone");
   return (
     <div className="flex items-center gap-3 border-b p-4" style={{ borderColor: ROW_BORDER }}>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#34c5e826", color: "#34c5e8" }}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#38c6e826", color: "#38c6e8" }}>
         <Bell size={17} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-medium text-bone">{t("Notifications")}</div>
         {/* Orange, not grey: "not registered" is a fault to act on, not a preference
             that happens to be off. */}
-        <div className="text-[11.5px]" style={{ color: broken ? "#f97316" : "#8b97a6" }}>{sub}</div>
+        <div className="text-[11.5px]" style={{ color: broken ? "#c07a1e" : "#8b96a5" }}>{sub}</div>
       </div>
       <button
         type="button"
         onClick={toggle}
         disabled={busy || locked}
         className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
-        style={{ background: registered ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
+        style={{ background: registered ? "#38c6e8" : "#2e3947", opacity: locked ? 0.45 : 1 }}
         aria-pressed={registered}
       >
         <span className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all" style={{ left: registered ? "19px" : "3px" }} />
@@ -306,7 +310,7 @@ export function ProfileTab({
           <div className="text-[20px] font-bold leading-tight">{vm.ownerName}</div>
           <div className="truncate text-[12px] opacity-90">{vm.email}</div>
           <div className="mt-1 flex items-center gap-1.5 text-[11px] opacity-90">
-            <span className="h-2 w-2 rounded-full" style={{ background: "#46d18a" }} />
+            <span className="h-2 w-2 rounded-full" style={{ background: "#3fd08a" }} />
             {t("Synced · this device is {name}", { name: vm.ownerName })}
           </div>
         </div>
@@ -333,17 +337,17 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#34c5e826", color: "#34c5e8" }}
+              style={{ background: "#38c6e826", color: "#38c6e8" }}
             >
               <Landmark size={17} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{vm.bankName}</div>
-              <div className="text-[12px]" style={{ color: "#46d18a" }}>
+              <div className="text-[12px]" style={{ color: "#3fd08a" }}>
                 {vm.bankSub}
               </div>
             </div>
-            <CircleCheck size={18} style={{ color: "#46d18a" }} />
+            <CircleCheck size={18} style={{ color: "#3fd08a" }} />
           </button>
 
           <button
@@ -353,17 +357,17 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#f0556e26", color: "#f0556e" }}
+              style={{ background: "#f0645c26", color: "#f0645c" }}
             >
               <CreditCard size={17} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Cards as debt")}</div>
-              <div className="text-[12px]" style={{ color: "#8b97a6" }}>
+              <div className="text-[12px]" style={{ color: "#8b96a5" }}>
                 {vm.cardsSub}
               </div>
             </div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "#8b96a5" }} />
           </button>
 
           <button
@@ -372,14 +376,14 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#a78bfa26", color: "#a78bfa" }}
+              style={{ background: "#987de426", color: "#987de4" }}
             >
               <FileUp size={17} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Import a statement")}</div>
             </div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "#8b96a5" }} />
           </button>
         </Group>
 
@@ -398,7 +402,7 @@ export function ProfileTab({
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.dot }} />
               <div className="min-w-0 flex-1">
                 <div className="text-[14px] font-medium text-bone">{a.name}</div>
-                <div className="text-[12px]" style={{ color: "#8b97a6" }}>
+                <div className="text-[12px]" style={{ color: "#8b96a5" }}>
                   {a.owner}
                 </div>
               </div>
@@ -409,13 +413,45 @@ export function ProfileTab({
 
         {/* ── Preferences ── */}
         <Group label={t("Preferences")}>
+          {/* The one input the "truly free" headline needs and cannot derive:
+              how close to zero you are willing to run. Everything else in that
+              number comes from the bank; this part is a judgement, so it has to
+              be yours. Stepped rather than typed — it is a comfort setting, not
+              an amount, and a free-text field invites precision it does not
+              have. */}
           <div
             className="flex items-center gap-3 border-b p-4"
             style={{ borderColor: ROW_BORDER }}
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#22d3ee26", color: "#22d3ee" }}
+              style={{ background: "#3fd08a26", color: "#3fd08a" }}
+            >
+              <ShieldCheck size={17} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-medium text-bone">{t("Your floor")}</div>
+              <div className="mt-0.5 text-[11.5px] text-faint">{t("Held back")}</div>
+            </div>
+            <Segmented
+              options={[
+                { key: "0", label: "$0" },
+                { key: "200", label: "$200" },
+                { key: "300", label: "$300" },
+                { key: "500", label: "$500" },
+              ]}
+              active={String(vm.cashFloor)}
+              onSelect={(k) => taps.onFloor?.(Number(k))}
+            />
+          </div>
+
+          <div
+            className="flex items-center gap-3 border-b p-4"
+            style={{ borderColor: ROW_BORDER }}
+          >
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+              style={{ background: "#38c6e826", color: "#38c6e8" }}
             >
               <Languages size={17} />
             </span>
@@ -436,7 +472,7 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#a78bfa26", color: "#a78bfa" }}
+              style={{ background: "#987de426", color: "#987de4" }}
             >
               <Users size={17} />
             </span>
@@ -459,12 +495,12 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#fb718526", color: "#fb7185" }}
+              style={{ background: "#e0607f26", color: "#e0607f" }}
             >
               <HeartPulse size={17} />
             </span>
             <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Health mode")}</div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "#8b96a5" }} />
           </button>
         </Group>
 
@@ -484,13 +520,13 @@ export function ProfileTab({
               >
                 <span
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-                  style={{ background: "#f9731626", color: "#f97316" }}
+                  style={{ background: "#c07a1e26", color: "#c07a1e" }}
                 >
                   <Icon size={17} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-medium text-bone">{b.name}</div>
-                  <div className="text-[12px]" style={{ color: "#8b97a6" }}>
+                  <div className="text-[12px]" style={{ color: "#8b96a5" }}>
                     {b.est}
                   </div>
                 </div>
@@ -511,7 +547,7 @@ export function ProfileTab({
         <button
           onClick={taps.onSignOut}
           className="flex items-center justify-center gap-2 rounded-[16px] border p-4 text-[14px] font-medium transition active:scale-[0.99]"
-          style={{ borderColor: "#232d3a", color: "#8b97a6" }}
+          style={{ borderColor: "#222b38", color: "#8b96a5" }}
         >
           <LogOut size={17} /> {t("Sign out")}
         </button>
@@ -520,7 +556,7 @@ export function ProfileTab({
         <button
           onClick={taps.onAdvanced}
           className="h-hit flex items-center gap-2.5 px-1 text-[12px] transition active:scale-[0.99]"
-          style={{ color: "#7a8595" }}
+          style={{ color: "#8b96a5" }}
         >
           <AlertTriangle size={15} />
           <span className="flex-1 text-left">{t("Advanced · re-seed, clear all data")}</span>
@@ -546,7 +582,7 @@ function Segmented<T extends string>({
   return (
     <span
       className="flex shrink-0 items-center rounded-full p-0.5"
-      style={{ background: "#1d2530" }}
+      style={{ background: "#1e2633" }}
     >
       {options.map((o) => {
         const isOn = o.key === active;
@@ -559,8 +595,8 @@ function Segmented<T extends string>({
             className="h-hit rounded-full px-2.5 py-1 text-[12px] font-medium transition"
             style={
               isOn
-                ? { background: "#34c5e8", color: "#0b0f17" }
-                : { color: "#8b97a6" }
+                ? { background: "#38c6e8", color: "#0b0e13" }
+                : { color: "#8b96a5" }
             }
           >
             {t(o.label)}

@@ -41,7 +41,7 @@ export function BillCalendar({
         <button
           onClick={() => flip(-1)}
           className="rounded-lg p-1.5"
-          style={{ background: "#161c26", color: "#9aa6b2" }}
+          style={{ background: "#1c2430", color: "#a8b4c2" }}
           aria-label={t("Previous month")}
         >
           <ChevronLeft size={18} />
@@ -55,7 +55,7 @@ export function BillCalendar({
                 setSelectedDay(null);
               }}
               className="text-[11px] underline"
-              style={{ color: "#8b97a6" }}
+              style={{ color: "#8b96a5" }}
             >
               {t("This month")}
             </button>
@@ -64,7 +64,7 @@ export function BillCalendar({
         <button
           onClick={() => flip(1)}
           className="rounded-lg p-1.5"
-          style={{ background: "#161c26", color: "#9aa6b2" }}
+          style={{ background: "#1c2430", color: "#a8b4c2" }}
           aria-label={t("Next month")}
         >
           <ChevronRight size={18} />
@@ -76,14 +76,14 @@ export function BillCalendar({
         {t("S M T W T F S")
           .split(" ")
           .map((d, i) => (
-            <div key={i} className="text-center text-[10px]" style={{ color: "#5f6a78" }}>
+            <div key={i} className="text-center text-[10px]" style={{ color: "#8b96a5" }}>
               {d}
             </div>
           ))}
       </div>
 
       {/* day grid */}
-      <div className="grid grid-cols-7 gap-px text-[12.5px]" style={{ color: "#cdd6e0" }}>
+      <div className="grid grid-cols-7 gap-px text-[12.5px]" style={{ color: "#dfe6ee" }}>
         {cells.map((d, i) => {
           if (d === null) return <div key={i} />;
           const ev = calBy.get(d);
@@ -94,12 +94,12 @@ export function BillCalendar({
               key={i}
               onClick={() => setSelectedDay(isSel ? null : d)}
               className="flex flex-col items-center justify-start rounded-lg py-1 transition"
-              style={{ background: isSel ? "#1b2735" : "transparent" }}
+              style={{ background: isSel ? "#1c2430" : "transparent" }}
             >
               {isToday ? (
                 <span
                   className="flex h-6 w-6 items-center justify-center rounded-full font-bold"
-                  style={{ background: "#34c5e8", color: "#06303a" }}
+                  style={{ background: "#38c6e8", color: "#04212b" }}
                 >
                   {d}
                 </span>
@@ -108,9 +108,9 @@ export function BillCalendar({
               )}
               {ev && !isToday && (
                 <span className="mt-0.5 flex gap-0.5">
-                  {ev.out && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#fb923c" }} />}
-                  {ev.paid && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#7a8595" }} />}
-                  {ev.pay && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#46d18a" }} />}
+                  {ev.out && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#c07a1e" }} />}
+                  {ev.paid && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#8b96a5" }} />}
+                  {ev.pay && <span className="h-[5px] w-[5px] rounded-full" style={{ background: "#3fd08a" }} />}
                 </span>
               )}
             </button>
@@ -120,10 +120,10 @@ export function BillCalendar({
 
       {/* selected-day agenda */}
       {selectedDay && (
-        <div className="mt-3 border-t pt-3" style={{ borderColor: "#1b232e" }}>
+        <div className="mt-3 border-t pt-3" style={{ borderColor: "#222b38" }}>
           <div className="mb-2 text-[12px] font-semibold text-bone">{t("{mon} {day}", { mon, day: selectedDay })}</div>
           {dayBills.length === 0 ? (
-            <p className="text-[12px]" style={{ color: "#7e8a98" }}>
+            <p className="text-[12px]" style={{ color: "#8b96a5" }}>
               {t("Nothing due this day.")}
             </p>
           ) : (
@@ -142,17 +142,17 @@ export function BillCalendar({
                     <span
                       className="text-[13px]"
                       style={{
-                        color: b.paid ? "#7e8a98" : "#e6edf3",
+                        color: b.paid ? "#8b96a5" : "#f0f4f8",
                         textDecoration: b.paid ? "line-through" : "none",
                       }}
                     >
                       {b.name}
                     </span>
-                    <span className="text-[11px]" style={{ color: b.paid ? "#6b9e83" : "#7e8a98" }}>
+                    <span className="text-[11px]" style={{ color: b.paid ? "#4f9b87" : "#8b96a5" }}>
                       {b.paid ? t("paid {date}", { date: b.paidDate ?? "" }) : t("due {date}", { date: b.dateLabel })}
                     </span>
                   </span>
-                  <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}>
+                  <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#8b96a5" : "#f0f4f8" }}>
                     {b.variable && !b.paid ? "~" : ""}
                     {money2(b.amount)}
                   </span>
@@ -164,15 +164,15 @@ export function BillCalendar({
       )}
 
       {/* legend */}
-      <div className="mt-3 flex gap-3.5 border-t pt-3" style={{ borderColor: "#1b232e" }}>
-        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#46d18a" }} /> {t("Payday")}
+      <div className="mt-3 flex gap-3.5 border-t pt-3" style={{ borderColor: "#222b38" }}>
+        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#a8b4c2" }}>
+          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#3fd08a" }} /> {t("Payday")}
         </span>
-        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#fb923c" }} /> {t("Bill due")}
+        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#a8b4c2" }}>
+          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#c07a1e" }} /> {t("Bill due")}
         </span>
-        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#7a8595" }} /> {t("Paid")}
+        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#a8b4c2" }}>
+          <span className="h-[7px] w-[7px] rounded-full" style={{ background: "#8b96a5" }} /> {t("Paid")}
         </span>
       </div>
 
@@ -180,7 +180,7 @@ export function BillCalendar({
         <button
           onClick={onBack}
           className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[13px] font-semibold"
-          style={{ background: "#161c26", color: "#8b97a6" }}
+          style={{ background: "#1c2430", color: "#8b96a5" }}
         >
           <ArrowLeft size={16} /> {t("Back to the list")}
         </button>
