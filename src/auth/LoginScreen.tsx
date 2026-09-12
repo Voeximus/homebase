@@ -54,7 +54,7 @@ export function LoginScreen() {
       <main className="hb-login-inner">
         <header className="hb-login-head">
           <div className="hb-mark" style={{ animationDelay: "60ms" }}>
-            <Logo size={84} animated title="Homebase" />
+            <Logo size={84} title="Homebase" />
           </div>
           <h1 className="hb-title" style={{ animationDelay: "160ms" }}>
             Homebase

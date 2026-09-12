@@ -28,6 +28,16 @@ import { useId } from "react";
  *
  * Each half is lit from above-left and falls into shadow at the lower right,
  * which is the same single light source the rest of the app is painted under.
+ *
+ * It does not move. There was a highlight that swept across it every seven
+ * seconds; it came out for two reasons. The visible one is that it travelled
+ * from off the mark's left edge to off its right, which widens the group's
+ * bounding box for the whole flight — and a CSS filter on any ancestor takes
+ * its region from that box, so the mark cast a faint bar underneath itself.
+ * Neither a clip-path nor a nested viewport fixes that (clipping changes what
+ * paints, not what the box measures). The better reason is that the front door
+ * already has one thing moving on it, and a logo that shines on a timer is a
+ * tic rather than a shine — a painted panel does not shimmer.
  */
 
 // Inset so the rounded stroke grows the shape back out to fill the box.
@@ -37,13 +47,10 @@ const STROKE = 13;
 export function Logo({
   size = 48,
   className,
-  /** A slow sheen across the mark. Off by default — it belongs on the intro. */
-  animated = false,
   title,
 }: {
   size?: number | string;
   className?: string;
-  animated?: boolean;
   title?: string;
 }) {
   // useId, because two marks on one page would otherwise share gradient ids and
@@ -52,7 +59,6 @@ export function Logo({
   const L = `hbL${uid}`;
   const R = `hbR${uid}`;
   const M = `hbM${uid}`;
-  const S = `hbS${uid}`;
 
   return (
     <svg
@@ -88,33 +94,11 @@ export function Logo({
           />
           <rect x="48.8" y="0" width="2.4" height="62" fill="#000" />
         </mask>
-        {animated && (
-          <linearGradient id={S} x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="#fff" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#fff" stopOpacity="0.55" />
-            <stop offset="1" stopColor="#fff" stopOpacity="0" />
-          </linearGradient>
-        )}
       </defs>
 
       <g mask={`url(#${M})`}>
         <rect x="0" y="0" width="50" height="100" fill={`url(#${L})`} />
         <rect x="50" y="0" width="50" height="100" fill={`url(#${R})`} />
-        {/* The sheen rides INSIDE the mask, so it lights the mark and never
-            leaks a rectangle over whatever is behind it. Note that it still
-            widens this group's BOUNDING BOX as it travels — which is why any
-            CSS drop-shadow on this mark belongs on the <svg> and not on a
-            wrapper around it. See .hb-mark > svg in index.css. */}
-        {animated && (
-          <rect
-            className="hb-sheen"
-            x="-60"
-            y="0"
-            width="60"
-            height="100"
-            fill={`url(#${S})`}
-          />
-        )}
       </g>
     </svg>
   );
@@ -126,16 +110,14 @@ export function Logo({
  */
 export function Wordmark({
   size = 34,
-  animated = false,
   className,
 }: {
   size?: number;
-  animated?: boolean;
   className?: string;
 }) {
   return (
     <span className={`inline-flex items-center ${className ?? ""}`} style={{ gap: size * 0.32 }}>
-      <Logo size={size * 1.18} animated={animated} title="Homebase" />
+      <Logo size={size * 1.18} title="Homebase" />
       <span
         style={{
           // The inscription face. A humanist roman beside a lapis-and-gold

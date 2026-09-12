@@ -125,7 +125,7 @@ function FirstLaunch({
     <>
       <header className="hb-crest">
         <div className="hb-mark" style={{ animationDelay: "60ms" }}>
-          <Logo size={84} animated title="Homebase" />
+          <Logo size={84} title="Homebase" />
         </div>
         <h1 className="hb-title" style={{ animationDelay: "150ms" }}>
           Homebase
@@ -219,7 +219,7 @@ function Returning({
     <>
       <header className="hb-crest">
         <div className="hb-mark" style={{ animationDelay: "50ms" }}>
-          <Logo size={84} animated title="Homebase" />
+          <Logo size={84} title="Homebase" />
         </div>
         <h1 className="hb-greet" style={{ animationDelay: "140ms" }}>
           {t(greeting())} <em>{t(OWNER_NAME[owner])}</em>
