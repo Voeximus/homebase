@@ -1,6 +1,6 @@
 // Renders a nutrition panel as the tokens an OCR engine would hand back, then
 // damages them the ways real engines do: words split or merged unpredictably,
-// boxes jittered, the whole photo slightly skewed, token order shuffled, and
+// boxes jittered, the photo sheared or rotated, token order shuffled, and
 // unrelated text (brand, ingredients, barcode) on the same page.
 //
 // Every perturbation is driven by a seeded generator, so a failing seed is a
@@ -41,8 +41,18 @@ export interface Perturb {
   unitSplit?: number;
   /** Max vertical jitter per token, px. */
   jitter?: number;
-  /** Max skew, degrees (the actual skew is drawn from ±this). */
+  /**
+   * Max shear, degrees (drawn from ±this): rows slope but columns stay vertical.
+   * Not what a tilted phone does — that is `tilt` — but close to what perspective
+   * does to part of a curved pack, so both are kept.
+   */
   skew?: number;
+  /**
+   * Max rotation, degrees (drawn from ±this): the whole panel turns, so rows slope
+   * AND columns lean, and every box grows to hold its rotated text — exactly what
+   * the recogniser returns for a phone held off level. Real photos run 2–6°.
+   */
+  tilt?: number;
   shuffle?: boolean;
   noise?: boolean;
 }
@@ -174,6 +184,33 @@ export function renderPanel(spec: PanelSpec, p: Perturb = { seed: 1 }): OcrPage 
     const h = t.h + t.w * Math.abs(tan);
     return { text: t.text, x: t.x + (r() * 2 - 1) * 0.5 * (p.jitter ?? 0), y: cy - h / 2, w: t.w, h };
   });
+
+  if (p.tilt) {
+    // Rotate every box about the panel's centre and return the axis-aligned box
+    // around the rotated text, as a detector does. The angle is drawn only when
+    // tilt is set, so untilted seeds keep producing the exact same pages.
+    const a = (((r() * 2 - 1) * p.tilt) * Math.PI) / 180;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    const ox = left + 170;
+    const oy = (top + panel.bottom) / 2;
+    for (const t of out) {
+      const cx = t.x + t.w / 2 - ox;
+      const cy = t.y + t.h / 2 - oy;
+      const nx = ox + cx * cos - cy * sin;
+      const ny = oy + cx * sin + cy * cos;
+      const w = t.w * Math.abs(cos) + t.h * Math.abs(sin);
+      const h = t.w * Math.abs(sin) + t.h * Math.abs(cos);
+      Object.assign(t, { x: nx - w / 2, y: ny - h / 2, w, h });
+    }
+    // Keep the page in positive coordinates, as an image would be.
+    const dx = Math.max(0, 20 - Math.min(...out.map((t) => t.x)));
+    const dy = Math.max(0, 20 - Math.min(...out.map((t) => t.y)));
+    for (const t of out) {
+      t.x += dx;
+      t.y += dy;
+    }
+  }
 
   if (p.shuffle) {
     for (let i = out.length - 1; i > 0; i--) {

@@ -72,6 +72,21 @@ describe("round trip — the 192 real US panels", () => {
     expect(failures, `seed ${seed}: ${rate.toFixed(1)}% of panels fully recovered`).toEqual([]);
   });
 
+  // A phone held off level ROTATES the panel (rows slope and columns lean), which
+  // is not the shear above. At 3° the FDA sample label's whole %DV column once
+  // slipped a row; real photos run 2–6°, so the round trip holds at ±6°.
+  it.each(SEEDS)("recovers them all from a photo tilted up to ±6°, seed %i", (seed) => {
+    const failures: string[] = [];
+    PANELS.forEach((p, i) => {
+      const servings = 2 + ((i * 7 + seed) % 11);
+      const page = renderPanel(usPanelSpec({ ...p, servings }), { ...HARSH(seed * 1000 + i), tilt: 6 });
+      const d = diffUs(p, servings, parseLabel(page));
+      if (d.length) failures.push(`#${i} ${p.name}: ${d.join("; ")}`);
+    });
+    const rate = ((PANELS.length - failures.length) / PANELS.length) * 100;
+    expect(failures, `tilt seed ${seed}: ${rate.toFixed(1)}% of panels fully recovered`).toEqual([]);
+  });
+
   it("keeps raw as the printed text and points at the source token", () => {
     const p = PANELS[0];
     const page = renderPanel(usPanelSpec({ ...p, servings: 8 }), HARSH(77));
@@ -217,8 +232,10 @@ describe("US dual column", () => {
     ] as Line[],
   };
 
-  it.each([0, 1, 2])("gives per serving first, per container second (seed %i)", (seed) => {
-    const got = parseLabel(renderPanel(spec, seed === 0 ? { seed: 5 } : { ...HARSH(seed), skew: 1, merge: 0.2 }))!;
+  // Tilted seeds matter most here: with two amount columns, a leaning page walks
+  // the per-container amounts toward the per-serving column centre down the panel.
+  it.each([[0, 0], [1, 0], [2, 0], [3, 6], [4, 6], [5, 6]])("gives per serving first, per container second (seed %i, tilt ±%i°)", (seed, tilt) => {
+    const got = parseLabel(renderPanel(spec, seed === 0 ? { seed: 5 } : { ...HARSH(seed), skew: 1, merge: 0.2, tilt }))!;
     expect(got.columns).toHaveLength(2);
     const [serving, container] = got.columns;
     expect(serving.basis).toBe("serving");
@@ -261,9 +278,9 @@ describe("EU", () => {
   };
   const header = ["Typical values", "per 100g", "per 30g portion"];
 
-  it.each([0, 1, 2])("energy on one line '1046 kJ / 250 kcal' (seed %i)", (seed) => {
+  it.each([[0, 0], [1, 0], [2, 0], [3, 6], [4, 6], [5, 6]])("energy on one line '1046 kJ / 250 kcal' (seed %i, tilt ±%i°)", (seed, tilt) => {
     const spec = tableSpec({ title: ["Nutrition information"], header, columns: COLS, rows: rows([["Energy", "1046 kJ / 250 kcal", "314 kJ / 75 kcal"]], false) });
-    expectEu(parseLabel(renderPanel(spec, seed ? { ...HARSH(seed), merge: 0.2, tight: 0 } : { seed: 9 })));
+    expectEu(parseLabel(renderPanel(spec, seed ? { ...HARSH(seed), merge: 0.2, tight: 0, tilt } : { seed: 9 })));
   });
 
   it("energy merged as '1046kJ/250kcal'", () => {
@@ -334,7 +351,7 @@ describe("China", () => {
     expect(col.fields.kcal).toBeUndefined();
   });
 
-  it.each([0, 1, 2])("GB 28050-2025 style: adds 饱和脂肪 and 糖, per 100 g and per 份 (seed %i)", (seed) => {
+  it.each([[0, 0], [1, 0], [2, 0], [3, 6], [4, 6], [5, 6]])("GB 28050-2025 style: adds 饱和脂肪 and 糖, per 100 g and per 份 (seed %i, tilt ±%i°)", (seed, tilt) => {
     const spec = tableSpec({
       title: ["营养成分表"],
       header: ["项目", "每100克", "每份(30克)", "NRV%"],
@@ -350,7 +367,7 @@ describe("China", () => {
         ["钠", "350毫克", "105毫克", "5%"],
       ],
     });
-    const got = parseLabel(renderPanel(spec, seed ? { ...HARSH(seed), merge: 0.2 } : { seed: 21 }))!;
+    const got = parseLabel(renderPanel(spec, seed ? { ...HARSH(seed), merge: 0.2, tilt } : { seed: 21 }))!;
     expect(got.regime).toBe("cn");
     expect(got.columns).toHaveLength(2);
     const [per100, portion] = got.columns;
