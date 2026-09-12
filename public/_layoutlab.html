@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0d12">
+<title>Homebase — pick a layout</title>
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; padding:0; }
+  body {
+    background:#0a0d12; color:#eef2f7;
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding-bottom:64px;
+  }
+
+  /* ── The palette is FROZEN at what is live today. The only variable on this
+       page is the arrangement — change two things at once and you learn
+       nothing about either. ── */
+  :root {
+    --bg:#0a0d12; --card:#121822; --well:#18212d; --edge:#232d3a;
+    --ink:#eef2f7; --ink2:#97a3b2; --ink3:#7c8696;
+    --acc:#34c5e8; --on-acc:#04212b; --good:#46d18a; --warn:#e3b341; --bad:#e5544e;
+    --hero:linear-gradient(150deg,#10b981,#06b6d4 52%,#3b82f6);
+    --c1:#22c55e; --c2:#8b5cf6; --c3:#06b6d4; --c4:#f97316; --c5:#b0559b;
+    --num:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+
+  /* ── chooser chrome ── */
+  .bar { position:sticky; top:0; z-index:50; background:var(--bg); border-bottom:1px solid var(--edge); padding:10px 0 8px; }
+  .bar h1 { margin:0 14px 2px; font-size:14px; font-weight:700; letter-spacing:-0.01em; }
+  .bar p  { margin:0 14px 9px; font-size:11.5px; color:var(--ink3); }
+  .picks { display:flex; gap:6px; overflow-x:auto; padding:0 14px 2px; scrollbar-width:none; }
+  .picks::-webkit-scrollbar { display:none; }
+  .picks button {
+    flex:none; min-height:44px; padding:0 14px; border-radius:999px; cursor:pointer;
+    border:1px solid var(--edge); background:var(--card); color:var(--ink2);
+    font:600 12.5px/1 inherit;
+  }
+  .picks button.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .premise { margin:12px 14px 10px; font-size:12.5px; line-height:1.55; color:var(--ink2); }
+  .premise b { color:var(--ink); font-weight:650; }
+  .premise .q { display:block; margin-top:5px; color:var(--ink3); font-size:11.5px; }
+
+  .phone { margin:0 auto; width:100%; max-width:390px; padding:0 8px; }
+  .screen { border-radius:22px; overflow:hidden; border:1px solid var(--edge); background:var(--bg); }
+
+  /* ── shared furniture every layout may use ── */
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; }
+  .seg { display:flex; gap:4px; background:var(--well); border:1px solid var(--edge); border-radius:999px; padding:3px; }
+  .seg span { padding:6px 11px; border-radius:999px; font-size:12px; font-weight:600; color:var(--ink2); }
+  .seg span.on { background:var(--acc); color:var(--on-acc); }
+  .wrap { padding:12px 14px 0; display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--edge); border-radius:18px; padding:16px; }
+  .k { font-size:11.5px; font-weight:600; color:var(--ink2); }
+  .kk { font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3); }
+  .v { font-family:var(--num); font-size:23px; font-weight:700; letter-spacing:-.02em; margin-top:5px; font-variant-numeric:tabular-nums; }
+  .s { font-size:11.5px; color:var(--ink3); margin-top:3px; }
+  .s.good { color:var(--good); } .s.warn { color:var(--warn); } .s.bad { color:var(--bad); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .between { display:flex; justify-content:space-between; align-items:baseline; }
+  .track { height:8px; border-radius:99px; background:var(--well); overflow:hidden; margin-top:9px; }
+  .track i { display:block; height:100%; background:var(--good); border-radius:99px; }
+  .tabs { display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid var(--edge); padding:9px 0 12px; margin-top:12px; }
+  .tabs span { text-align:center; font-size:10.5px; color:var(--ink3); }
+  .tabs span.on { color:var(--acc); font-weight:700; }
+  .tabs span b { display:block; font-size:17px; font-weight:400; line-height:1.3; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+  .chip { width:34px; height:34px; border-radius:11px; flex:none; display:grid; place-items:center; font-size:12px; }
+  .rowitem { display:flex; align-items:center; gap:12px; padding:10px 0; }
+  .rowitem + .rowitem { border-top:1px solid var(--edge); }
+  .rowitem .nm { font-size:13.5px; font-weight:600; }
+  .rowitem .sub { font-size:11px; color:var(--ink3); margin-top:1px; }
+  .rowitem .amt { margin-left:auto; font-family:var(--num); font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .amt.in { color:var(--good); }
+  .hero { background:var(--hero); color:#fff; padding:16px 20px 18px; border-radius:0 0 18px 18px; }
+  .hero .big { font-size:38px; font-weight:700; letter-spacing:-.02em; line-height:1; font-variant-numeric:tabular-nums; }
+  .donut { width:64px; height:64px; border-radius:50%; flex:none; position:relative;
+           background:conic-gradient(var(--c1) 0 47%,var(--c3) 47% 60%,var(--c4) 60% 72%,var(--c2) 72% 85%,var(--c5) 85% 100%); }
+  .donut i { position:absolute; inset:11px; border-radius:50%; background:var(--card); display:grid; place-items:center;
+             font-size:13px; font-weight:700; font-style:normal; }
+
+  /* ── B · ONE QUESTION ── */
+  .oneq { padding:34px 20px 22px; text-align:center; }
+  .oneq .lead { font-size:12.5px; color:var(--ink2); }
+  .oneq .huge { font-size:66px; font-weight:800; letter-spacing:-.045em; line-height:1;
+                margin:8px 0 6px; font-variant-numeric:tabular-nums; }
+  .oneq .until { font-size:12.5px; color:var(--ink3); }
+  .oneq .meter { height:6px; border-radius:99px; background:var(--well); overflow:hidden; margin:20px 0 8px; }
+  .oneq .meter i { display:block; height:100%; width:43%; background:var(--good); }
+  .oneq .fine { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 14px;
+                font-size:11.5px; color:var(--ink3); margin-top:14px; }
+  .oneq .fine b { color:var(--ink2); font-weight:600; font-variant-numeric:tabular-nums; }
+  .oneq .more { margin:22px auto 0; display:block; border:1px solid var(--edge); background:transparent;
+                color:var(--ink2); border-radius:999px; min-height:44px; padding:0 20px; font:600 12.5px/1 inherit; }
+
+  /* ── C · RUNWAY ── */
+  .runway { padding:4px 0 0; }
+  .rw-head { padding:14px 18px 12px; }
+  .rw-head .bal { font-size:34px; font-weight:700; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums; }
+  .rw-list { position:relative; padding:0 18px; }
+  .rw-list::before { content:""; position:absolute; left:31px; top:0; bottom:16px; width:2px; background:var(--edge); }
+  .ev { display:flex; gap:14px; padding:11px 0; position:relative; }
+  .ev .mark { width:27px; display:flex; justify-content:center; padding-top:5px; flex:none; }
+  .ev .mark .dot { box-shadow:0 0 0 4px var(--bg); }
+  .ev .body { flex:1; min-width:0; }
+  .ev .d { font-size:10.5px; color:var(--ink3); letter-spacing:.04em; text-transform:uppercase; font-weight:700; }
+  .ev .nm { font-size:13.5px; font-weight:600; margin-top:1px; }
+  .ev .rt { text-align:right; flex:none; }
+  .ev .amt { font-size:13.5px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .ev .run { font-size:11px; color:var(--ink3); font-variant-numeric:tabular-nums; margin-top:2px; }
+  .ev.low .body .nm { color:var(--warn); }
+  .ev.low .run { color:var(--warn); font-weight:700; }
+  .lowbar { margin:8px 18px 0; padding:11px 13px; border:1px solid #3a3320; background:#1d1a10;
+            border-radius:12px; font-size:12px; color:var(--warn); }
+
+  /* ── D · ENVELOPES ── */
+  .strip { display:flex; gap:0; border-bottom:1px solid var(--edge); }
+  .strip div { flex:1; padding:12px 14px; }
+  .strip div + div { border-left:1px solid var(--edge); }
+  .strip .v { font-size:19px; margin-top:3px; }
+  .env { padding:14px 16px 4px; }
+  .env .row { padding:11px 0; }
+  .env .row + .row { border-top:1px solid var(--edge); }
+  .env .line { display:flex; align-items:center; gap:9px; }
+  .env .nm { font-size:13.5px; font-weight:600; flex:1; }
+  .env .fig { font-size:12.5px; font-variant-numeric:tabular-nums; color:var(--ink2); }
+  .env .fig b { color:var(--ink); font-weight:700; }
+  .env .ebar { height:7px; border-radius:99px; background:var(--well); overflow:hidden; margin-top:7px; }
+  .env .ebar i { display:block; height:100%; border-radius:99px; }
+  .env .tag { font-size:10.5px; color:var(--ink3); margin-top:5px; }
+  .env .tag.tight { color:var(--warn); } .env .tag.over { color:var(--bad); }
+
+  /* ── E · HOUSEHOLD ── */
+  .hh { display:grid; grid-template-columns:1fr 1fr; }
+  .hh > div { padding:15px 14px; }
+  .hh > div + div { border-left:1px solid var(--edge); }
+  .hh .who { display:flex; align-items:center; gap:8px; }
+  .hh .av { width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
+            font-size:12px; font-weight:800; color:#0b0f17; }
+  .hh .nm { font-size:12.5px; font-weight:700; }
+  .hh .v { font-size:21px; }
+  .joint { border-top:1px solid var(--edge); padding:14px; }
+
+  /* ── F · FEED ── */
+  .feedhead { padding:13px 16px; border-bottom:1px solid var(--edge); display:flex;
+              align-items:center; justify-content:space-between; }
+  .feedhead .t { font-size:13px; font-weight:700; }
+  .feedhead .n { font-size:12px; color:var(--ink3); font-variant-numeric:tabular-nums; }
+  .marker { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--well);
+            border-top:1px solid var(--edge); border-bottom:1px solid var(--edge); }
+  .marker .t { font-size:12px; font-weight:700; color:var(--ink); }
+  .marker .s { font-size:11px; color:var(--ink3); margin:0; }
+  .feedrows { padding:0 16px; }
+
+  /* ── G · GRID ── */
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px 14px 0; }
+  .grid .card { padding:13px; border-radius:14px; }
+  .grid .card.full { grid-column:1 / -1; }
+  .grid .v { font-size:20px; margin-top:4px; }
+  .grid .s { font-size:10.5px; }
+  .grid .kk { font-size:9.5px; }
+
+  .verdict { margin:16px 14px 0; padding:13px 14px; border:1px solid var(--edge); border-radius:12px;
+             background:var(--card); font-size:12.5px; line-height:1.55; color:var(--ink2); }
+  .verdict b { color:var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1>Pick a layout</h1>
+  <p>Same numbers, same colours, seven arrangements. Tap to switch.</p>
+  <div class="picks" id="picks"></div>
+</div>
+
+<p class="premise" id="premise"></p>
+
+<div class="phone">
+  <div class="screen" id="stage"></div>
+</div>
+
+<div class="verdict">
+  Colour is deliberately frozen at what is live now — the only thing changing between
+  these is <b>what is on the screen and in what order</b>. Pick a letter, or say which
+  pieces of which. Layout and paint are separate choices; we can settle this one first.
+</div>
+
+<script>
+/* One set of numbers, used by every layout, so nothing differs but the shape. */
+const TABS = '<div class="tabs"><span class="on"><b>&#9737;</b>Home</span><span><b>&#9680;</b>Insights</span><span><b>&#9635;</b>Activity</span><span><b>&#9678;</b>Profile</span></div>';
+const TOP = '<div class="topbar"><div class="seg"><span class="on">Finance</span><span>Health</span></div><div class="seg"><span class="on">Mine</span><span>Household</span></div></div>';
+
+const RECENT = [
+  ["Sam&rsquo;s Club", "Groceries &middot; today", "-$229.81", "var(--c1)", ""],
+  ["QuikTrip", "Gas &middot; yesterday", "-$9.07", "var(--c2)", ""],
+  ["Verizon", "Bill &middot; Jun 17", "-$83.00", "var(--c4)", ""],
+  ["Payroll", "Income &middot; Jun 15", "+$1,400.00", "var(--good)", "in"],
+];
+const recentRows = (n) => RECENT.slice(0, n).map(function (r) {
+  return '<div class="rowitem"><span class="chip" style="background:color-mix(in srgb,' + r[3] +
+    ' 18%,transparent);color:' + r[3] + '">&#9679;</span><div><div class="nm">' + r[0] +
+    '</div><div class="sub">' + r[1] + '</div></div><div class="amt ' + r[4] + '">' + r[2] + '</div></div>';
+}).join("");
+
+const ENV = [
+  ["Groceries", 392, 500, "var(--c1)"],
+  ["Gas + convenience", 83, 250, "var(--c2)"],
+  ["Dining out", 84, 150, "var(--c3)"],
+  ["Household + hygiene", 70, 200, "var(--c4)"],
+  ["Dog &middot; car &middot; subs", 90, 150, "var(--c5)"],
+];
+
+const LAYOUTS = [
+  {
+    id:"bento", name:"A · Bento",
+    premise:"<b>What is live today.</b> A gradient hero for the debt, two small tiles, then a stack of one-topic cards. Every fact gets its own box, and the boxes are all about the same size." +
+      "<span class='q'>The thing to watch for: nothing on it is bigger than anything else, so the screen has no opinion about what matters most.</span>",
+    html: TOP +
+      '<div class="hero"><div class="k" style="color:rgba(255,255,255,.86)">debt left</div>' +
+      '<div class="between" style="margin-top:4px"><div class="big">$5,837</div><div style="font-size:12.5px;color:rgba(255,255,255,.86);padding-bottom:3px">31% cleared</div></div></div>' +
+      '<div class="wrap">' +
+      '<div class="two"><div class="card"><div class="k">Cash</div><div class="v">$2,322</div><div class="s warn">~$144.43 waiting to post</div></div>' +
+      '<div class="card"><div class="k">Payoff</div><div class="v">Oct 2026</div><div class="s">$991 on Jun 30</div></div></div>' +
+      '<div class="card"><div style="display:flex;align-items:center;gap:14px"><div class="donut"><i>$719</i></div><div style="flex:1;min-width:0">' +
+      '<div class="between"><span class="k">This cycle</span><span class="s" style="margin:0">of $1,250</span></div>' +
+      '<div class="s" style="margin-top:2px">Jul 31 &ndash; Aug 14 &middot; day 6 of 15</div>' +
+      '<div class="track"><i style="width:57%"></i></div>' +
+      '<div class="between" style="margin-top:6px"><span class="s good" style="margin:0">on track</span><span class="s" style="margin:0">$531 left</span></div>' +
+      '</div></div></div>' +
+      '<div class="card"><div class="between"><span class="k">Bills &middot; $449 left</span><span class="s" style="margin:0">&rsaquo;</span></div><div class="s">next: Claude Pro &middot; Jun 20</div></div>' +
+      '<div class="card"><div class="between"><span class="k" style="color:var(--bad)">Unusual purchases</span><span class="s" style="margin:0">&rsaquo;</span></div><div class="s">3 buys ran higher than usual</div></div>' +
+      '<div class="card"><div class="between" style="margin-bottom:4px"><span class="kk">Recent</span><span class="s" style="margin:0">$1,136 since Mon</span></div>' + recentRows(3) + '</div>' +
+      '</div>' + TABS,
+  },
+  {
+    id:"oneq", name:"B · One question",
+    premise:"<b>The screen answers one thing: can I spend?</b> One number at the size it deserves, the date it has to last until, and a single line of everything else. Debt, bills and the ledger all still exist — they live one tab over." +
+      "<span class='q'>The bet: you open this app to make one decision, and a screen that answers seven questions answers none of them fast.</span>",
+    html: TOP +
+      '<div class="oneq">' +
+      '<div class="lead">safe to spend</div>' +
+      '<div class="huge">$531</div>' +
+      '<div class="until">until Aug 14 &middot; 9 days &middot; about $59/day</div>' +
+      '<div class="meter"><i></i></div>' +
+      '<div class="between" style="font-size:11px;color:var(--ink3)"><span>$719 spent</span><span>day 6 of 15</span></div>' +
+      '<div class="fine"><span>cash <b>$2,322</b></span><span>bills due <b>$449</b></span><span>debt <b>$5,837</b></span><span>owed you <b>$64.50</b></span></div>' +
+      '<button class="more">Everything else &nbsp;&rsaquo;</button>' +
+      '</div>' +
+      '<div class="wrap"><div class="card"><div class="between" style="margin-bottom:4px"><span class="kk">Today</span><span class="s" style="margin:0">$229.81</span></div>' + recentRows(1) + '</div></div>' +
+      TABS,
+  },
+  {
+    id:"runway", name:"C · Runway",
+    premise:"<b>Money is a sequence, not a set of boxes.</b> Today at the top, then every dated thing that is actually going to happen — bills, paydays, the card payment — with the balance after each one, and the low point called out." +
+      "<span class='q'>This is the Forecast tab's one good idea, moved onto the screen you actually open. It answers &ldquo;when does it get tight&rdquo; without you doing arithmetic.</span>",
+    html: TOP +
+      '<div class="runway">' +
+      '<div class="rw-head"><div class="kk">balance today</div><div class="bal">$2,322</div>' +
+      '<div class="s">$144.43 still settling &middot; next 30 days below</div></div>' +
+      '<div class="lowbar">Tightest point is <b>$913 on Jul 1</b>, right after rent. Nine days from now.</div>' +
+      '<div class="rw-list" style="margin-top:8px">' +
+      ev("Jun 17", "Verizon", "-$83.00", "$2,239", "var(--c4)") +
+      ev("Jun 20", "Claude Pro", "-$20.00", "$2,219", "var(--c5)") +
+      ev("Jun 30", "Payday", "+$1,400.00", "$3,619", "var(--good)") +
+      ev("Jun 30", "Card payment &middot;&middot;&middot;&middot;4728", "-$991.00", "$2,628", "var(--acc)") +
+      ev("Jul 1", "Rent", "-$1,715.00", "$913", "var(--warn)", true) +
+      ev("Jul 5", "Car loan", "-$232.67", "$680", "var(--c2)") +
+      ev("Jul 15", "Payday", "+$1,400.00", "$2,080", "var(--good)") +
+      '</div></div>' + TABS,
+  },
+  {
+    id:"envelopes", name:"D · Envelopes",
+    premise:"<b>Budget-first.</b> The strip at the top is everything you cannot change this week; the rest of the screen is the five envelopes you can, sorted by how close each one is to blowing." +
+      "<span class='q'>The bet: cash and debt are outcomes you check occasionally, and the envelopes are the thing you actually steer day to day.</span>",
+    html: TOP +
+      '<div class="strip">' +
+      '<div><div class="kk">Cash</div><div class="v">$2,322</div></div>' +
+      '<div><div class="kk">Debt</div><div class="v">$5,837</div></div>' +
+      '<div><div class="kk">Bills due</div><div class="v">$449</div></div>' +
+      '</div>' +
+      '<div class="env">' +
+      '<div class="between" style="padding:4px 0 8px"><span class="kk">This cycle &middot; day 6 of 15</span><span class="s good" style="margin:0">$531 left</span></div>' +
+      ENV.slice().sort(function (a, b) { return b[1] / b[2] - a[1] / a[2]; }).map(function (e) {
+        const pct = Math.min(100, e[1] / e[2] * 100);
+        const tight = pct >= 75, over = pct >= 100;
+        return '<div class="row"><div class="line"><span class="dot" style="background:' + e[3] + '"></span>' +
+          '<span class="nm">' + e[0] + '</span>' +
+          '<span class="fig"><b>$' + e[1] + '</b> / $' + e[2] + '</span></div>' +
+          '<div class="ebar"><i style="width:' + pct.toFixed(0) + '%;background:' + (over ? "var(--bad)" : e[3]) + '"></i></div>' +
+          '<div class="tag' + (over ? " over" : tight ? " tight" : "") + '">' +
+          (over ? "over by $" + (e[1] - e[2]) : tight ? "$" + (e[2] - e[1]) + " left · running hot" : "$" + (e[2] - e[1]) + " left") +
+          '</div></div>';
+      }).join("") +
+      '</div>' + TABS,
+  },
+  {
+    id:"household", name:"E · Household",
+    premise:"<b>Two people, shown as two people.</b> Your column and Xinyan&rsquo;s side by side, each with their own cash, their own spend and what they are owed; anything joint spans both underneath." +
+      "<span class='q'>Today that split is a toggle you have to remember to flip. This makes it the shape of the screen instead.</span>",
+    html: TOP.replace('<div class="seg"><span class="on">Mine</span><span>Household</span></div>', '<div class="seg"><span>Mine</span><span class="on">Household</span></div>') +
+      '<div class="hh">' +
+      person("G", "#f97316", "Gino", "$1,306", "$742", "$0") +
+      person("X", "#2dd4bf", "Xinyan", "$1,016", "$394", "$64.50") +
+      '</div>' +
+      '<div class="joint">' +
+      '<div class="between" style="margin-bottom:9px"><span class="kk">Joint</span><span class="s" style="margin:0">day 6 of 15</span></div>' +
+      '<div class="between"><span class="k">Budget</span><span class="s" style="margin:0"><b style="color:var(--ink)">$719</b> of $1,250</span></div>' +
+      '<div class="track"><i style="width:57%"></i></div>' +
+      '<div class="between" style="margin-top:12px"><span class="k">Bills left this month</span><span class="s" style="margin:0">$449</span></div>' +
+      '<div class="between" style="margin-top:8px"><span class="k">Debt left</span><span class="s" style="margin:0">$5,837 &middot; 31% cleared</span></div>' +
+      '</div>' +
+      '<div class="wrap"><div class="card"><div class="kk" style="margin-bottom:4px">Recent &middot; both of you</div>' + recentRows(3) + '</div></div>' +
+      TABS,
+  },
+  {
+    id:"feed", name:"F · Feed",
+    premise:"<b>Chronological, like a messages app.</b> The screen is the ledger, and the summaries are markers dropped into it — a cycle header, a payday, a bill block — so the totals appear where they happened instead of in a box above." +
+      "<span class='q'>The bet: what you actually want on opening is &ldquo;what just happened&rdquo;, and everything else is context around that.</span>",
+    html: TOP +
+      '<div class="feedhead"><span class="t">$719 spent this cycle</span><span class="n">$531 left &middot; day 6/15</span></div>' +
+      '<div class="feedrows">' + recentRows(1) + '</div>' +
+      '<div class="marker"><span class="chip" style="background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)">&#9679;</span>' +
+      '<div><div class="t">3 buys ran higher than usual</div><div class="s">tap to review</div></div></div>' +
+      '<div class="feedrows">' + recentRows(2).split('<div class="rowitem">').slice(2).map(function (x) { return '<div class="rowitem">' + x; }).join("") + '</div>' +
+      '<div class="marker"><span class="chip" style="background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)">&#9679;</span>' +
+      '<div><div class="t">Bills &middot; $449 left this month</div><div class="s">next: Claude Pro &middot; Jun 20</div></div></div>' +
+      '<div class="feedrows">' + RECENT.slice(2).map(function (r) {
+        return '<div class="rowitem"><span class="chip" style="background:color-mix(in srgb,' + r[3] +
+          ' 18%,transparent);color:' + r[3] + '">&#9679;</span><div><div class="nm">' + r[0] +
+          '</div><div class="sub">' + r[1] + '</div></div><div class="amt ' + r[4] + '">' + r[2] + '</div></div>';
+      }).join("") + '</div>' +
+      '<div class="marker"><span class="chip" style="background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)">&#9679;</span>' +
+      '<div><div class="t">Payday &middot; cycle started</div><div class="s">Jun 15 &middot; $2,322 on hand</div></div></div>' +
+      TABS,
+  },
+  {
+    id:"grid", name:"G · Grid",
+    premise:"<b>No hero at all.</b> Eight equal tiles, one fact each, everything above the fold. Nothing is styled as more important than anything else — you choose what to look at." +
+      "<span class='q'>The opposite bet to B. Worth seeing next to it, because between them they bracket the whole question.</span>",
+    html: TOP +
+      '<div class="grid">' +
+      tile("Safe to spend", "$531", "9 days left", "good") +
+      tile("Cash", "$2,322", "$144 settling", "warn") +
+      tile("Spent this cycle", "$719", "of $1,250") +
+      tile("Bills due", "$449", "next Jun 20") +
+      tile("Debt left", "$5,837", "31% cleared") +
+      tile("Payoff", "Oct 2026", "$991 on Jun 30") +
+      tile("Owed to you", "$64.50", "1 unsettled") +
+      tile("Needs review", "3", "ran high", "bad") +
+      '<div class="card full"><div class="between" style="margin-bottom:4px"><span class="kk">Recent</span><span class="s" style="margin:0">$1,136 since Mon</span></div>' + recentRows(2) + '</div>' +
+      '</div>' + TABS,
+  },
+];
+
+function ev(date, name, amt, run, colour, low) {
+  return '<div class="ev' + (low ? " low" : "") + '"><div class="mark"><span class="dot" style="background:' + colour + '"></span></div>' +
+    '<div class="body"><div class="d">' + date + '</div><div class="nm">' + name + '</div></div>' +
+    '<div class="rt"><div class="amt" style="color:' + (amt.charAt(0) === "+" ? "var(--good)" : "var(--ink)") + '">' + amt + '</div>' +
+    '<div class="run">' + run + '</div></div></div>';
+}
+function person(initial, colour, name, cash, spent, owed) {
+  return '<div><div class="who"><span class="av" style="background:' + colour + '">' + initial + '</span>' +
+    '<span class="nm">' + name + '</span></div>' +
+    '<div class="kk" style="margin-top:11px">Cash</div><div class="v">' + cash + '</div>' +
+    '<div class="kk" style="margin-top:11px">Spent this cycle</div><div class="v" style="font-size:17px">' + spent + '</div>' +
+    '<div class="s" style="margin-top:9px">owed back ' + owed + '</div></div>';
+}
+function tile(k, v, s, tone) {
+  return '<div class="card"><div class="kk">' + k + '</div><div class="v">' + v + '</div>' +
+    '<div class="s ' + (tone || "") + '">' + s + '</div></div>';
+}
+
+const picks = document.getElementById("picks");
+const stage = document.getElementById("stage");
+const premise = document.getElementById("premise");
+let active = LAYOUTS[0].id;
+
+function render() {
+  const l = LAYOUTS.find(function (x) { return x.id === active; });
+  stage.innerHTML = l.html;
+  premise.innerHTML = l.premise;
+  Array.prototype.forEach.call(picks.children, function (b) {
+    b.classList.toggle("on", b.dataset.id === active);
+  });
+  try { localStorage.setItem("hb-layoutlab", active); } catch (e) { /* private mode */ }
+}
+
+LAYOUTS.forEach(function (l) {
+  const b = document.createElement("button");
+  b.dataset.id = l.id;
+  b.textContent = l.name;
+  b.onclick = function () { active = l.id; render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  picks.appendChild(b);
+});
+
+try {
+  const s = localStorage.getItem("hb-layoutlab");
+  if (s && LAYOUTS.some(function (x) { return x.id === s; })) active = s;
+} catch (e) { /* private mode */ }
+render();
+</script>
+</body>
+</html>
