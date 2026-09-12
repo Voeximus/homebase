@@ -32,3 +32,4 @@ docs/snapshots/
 
 # vitest
 .vitest/
+.claude/worktrees/
