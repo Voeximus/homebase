@@ -88,8 +88,8 @@ export function TxnSheet({
       <div
         className="max-h-[86vh] w-full max-w-[420px] overflow-y-auto"
         style={{
-          background: "#12100c",
-          border: "1px solid #332b20",
+          background: "#0f141c",
+          border: "1px solid #232d3a",
           borderTop: `2px solid ${catColor(txn.categoryId)}`,
           borderRadius: "22px",
           padding: "16px",
@@ -98,7 +98,7 @@ export function TxnSheet({
       >
         <div className="mb-3 flex items-start gap-2.5">
           {splitting && (
-            <button onClick={() => setSplitting(false)} style={{ color: "#9e9180" }} aria-label="Back">
+            <button onClick={() => setSplitting(false)} style={{ color: "#7a8595" }} aria-label="Back">
               <ChevronLeft size={20} />
             </button>
           )}
@@ -106,7 +106,7 @@ export function TxnSheet({
             <div className="break-words text-[15px] font-bold text-bone">
               {splitting ? t("Split transaction") : txn.description || txn.categoryId}
             </div>
-            <div className="mt-0.5 text-[12px]" style={{ color: "#9e9180" }}>
+            <div className="mt-0.5 text-[12px]" style={{ color: "#8b97a6" }}>
               {fmtDate(txn.date)} · {money2(txn.amount)}
             </div>
             {/* What the bank actually wrote. Shown only when it says more than the
@@ -116,13 +116,13 @@ export function TxnSheet({
             {!splitting && txn.rawDescription && txn.rawDescription !== txn.description && (
               <div
                 className="mt-1 break-words font-mono text-[10.5px] leading-snug"
-                style={{ color: "#9e9180" }}
+                style={{ color: "#7a8595" }}
               >
                 {txn.rawDescription}
               </div>
             )}
           </div>
-          <button onClick={onClose} style={{ color: "#9e9180" }}>
+          <button onClick={onClose} style={{ color: "#7a8595" }}>
             <X size={20} />
           </button>
         </div>
@@ -140,15 +140,15 @@ export function TxnSheet({
           <>
             {/* current split summary (when this txn is already split) */}
             {hasSplits && (
-              <div className="mb-3 rounded-xl p-3" style={{ background: "#1c1811", border: "1px solid #332b20" }}>
+              <div className="mb-3 rounded-xl p-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="eyebrow flex items-center gap-1.5" style={{ color: "#9e9180" }}>
+                  <span className="eyebrow flex items-center gap-1.5" style={{ color: "#8b97a6" }}>
                     <SplitSquareHorizontal size={13} /> {t("Split across {n} categories", { n: txn.splits!.length })}
                   </span>
                   <button
                     onClick={() => setTransactionSplits(txn.id, null)}
                     className="text-[11px] font-medium"
-                    style={{ color: "#eb7867" }}
+                    style={{ color: "#f0556e" }}
                   >
                     {t("Remove split")}
                   </button>
@@ -167,7 +167,7 @@ export function TxnSheet({
                 <button
                   onClick={() => setSplitting(true)}
                   className="mt-2 w-full rounded-lg py-2 text-[12.5px] font-semibold"
-                  style={{ background: "#223059", color: "#7f9ff7" }}
+                  style={{ background: "#0e2230", color: "#34c5e8" }}
                 >
                   {t("Edit split")}
                 </button>
@@ -177,7 +177,7 @@ export function TxnSheet({
             {!hasSplits && (
               <>
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="eyebrow" style={{ color: "#9e9180" }}>
+                  <span className="eyebrow" style={{ color: "#8b97a6" }}>
                     {t("Category")}
                   </span>
                   {/* No "Remember" offer on a linked row — a toggle that reads
@@ -189,8 +189,8 @@ export function TxnSheet({
                       className="rounded-full px-2.5 py-1 text-[11px] font-medium transition"
                       style={
                         remember
-                          ? { background: "#223059", color: "#7f9ff7" }
-                          : { background: "#332b20", color: "#9e9180" }
+                          ? { background: "#0e2230", color: "#34c5e8" }
+                          : { background: "#1b232e", color: "#7e8a98" }
                       }
                     >
                       {remember ? t("✓ Remember merchant") : t("Just this one")}
@@ -221,12 +221,12 @@ export function TxnSheet({
                         }}
                         className="flex flex-col items-center gap-1.5 rounded-xl py-2.5 transition"
                         style={{
-                          background: on ? col + "26" : "#1c1811",
-                          border: `1px solid ${on ? col : "#332b20"}`,
+                          background: on ? col + "26" : "#141a24",
+                          border: `1px solid ${on ? col : "#232d3a"}`,
                         }}
                       >
                         <Icon size={18} style={{ color: col }} />
-                        <span className="text-[9.5px] leading-tight" style={{ color: "#e6dccb" }}>
+                        <span className="text-[9.5px] leading-tight" style={{ color: "#cdd6e0" }}>
                           {c.name}
                         </span>
                       </button>
@@ -234,7 +234,7 @@ export function TxnSheet({
                   })}
                 </div>
                 {(linked || twoDepartments || !remember) && (
-                  <p className="mt-1.5 text-[11px]" style={{ color: "#9e9180" }}>
+                  <p className="mt-1.5 text-[11px]" style={{ color: "#7a8595" }}>
                     {linked
                       ? t("Sets only this charge — a bill or transfer payment doesn't teach the merchant.")
                       : twoDepartments
@@ -252,11 +252,11 @@ export function TxnSheet({
             {linkedBill && (
               <div
                 className="mt-2.5 rounded-xl p-2.5"
-                style={{ background: "#1c1811", border: "1px solid #332b20" }}
+                style={{ background: "#141a24", border: "1px solid #232d3a" }}
               >
-                <p className="text-[12px]" style={{ color: "#9e9180" }}>
+                <p className="text-[12px]" style={{ color: "#8b97a6" }}>
                   {t("Marking paid")}:{" "}
-                  <span style={{ color: "#f5efe4", fontWeight: 600 }}>{linkedBill.name}</span>
+                  <span style={{ color: "#e6ecf3", fontWeight: 600 }}>{linkedBill.name}</span>
                   {billLink?.monthKey ? ` · ${billLink.monthKey}` : ""}
                   {linkedBill.amount > 0 ? ` · ${t("bill is")} ${money2(linkedBill.amount)}` : ""}
                 </p>
@@ -266,7 +266,7 @@ export function TxnSheet({
                     onClose();
                   }}
                   className="mt-2 w-full rounded-lg py-2 text-[12px] font-semibold"
-                  style={{ background: "#341713", color: "#eb7867" }}
+                  style={{ background: "#2a1518", color: "#f0556e" }}
                 >
                   {t("Not this bill — put it back to unpaid")}
                 </button>
@@ -278,15 +278,15 @@ export function TxnSheet({
               <button
                 onClick={() => setSplitting(true)}
                 className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold"
-                style={{ background: "#1c1811", border: "1px solid #332b20", color: "#7f9ff7" }}
+                style={{ background: "#141a24", border: "1px solid #232d3a", color: "#34c5e8" }}
               >
                 <SplitSquareHorizontal size={15} /> {t("Split across categories")}
               </button>
             )}
 
-            <div className="mt-3.5 rounded-xl p-3" style={{ background: "#1c1811", border: "1px solid #332b20" }}>
+            <div className="mt-3.5 rounded-xl p-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
               <p className="text-[12px] font-semibold text-bone">{t("Repeats every month or year?")}</p>
-              <p className="mb-2 text-[11px]" style={{ color: "#9e9180" }}>
+              <p className="mb-2 text-[11px]" style={{ color: "#8b97a6" }}>
                 {t("Make it a bill — it joins your calendar and leaves variable spend.")}
               </p>
               <div className="flex gap-2">
@@ -296,7 +296,7 @@ export function TxnSheet({
                     onClose();
                   }}
                   className="flex-1 rounded-lg py-2 text-[12.5px] font-semibold"
-                  style={{ background: "#223059", color: "#7f9ff7" }}
+                  style={{ background: "#0e2230", color: "#34c5e8" }}
                 >
                   {t("Monthly")}
                 </button>
@@ -306,7 +306,7 @@ export function TxnSheet({
                     onClose();
                   }}
                   className="flex-1 rounded-lg py-2 text-[12.5px] font-semibold"
-                  style={{ background: "#223059", color: "#7f9ff7" }}
+                  style={{ background: "#0e2230", color: "#34c5e8" }}
                 >
                   {t("Yearly")}
                 </button>
@@ -324,7 +324,7 @@ export function TxnSheet({
                     onClose();
                   }}
                   className="flex-1 rounded-xl py-2.5 text-[12px] font-medium"
-                  style={{ background: "#262016", color: "#9e9180" }}
+                  style={{ background: "#161c26", color: "#8b97a6" }}
                 >
                   {t("Set aside · not my budget")}
                 </button>
@@ -334,7 +334,7 @@ export function TxnSheet({
                     onClose();
                   }}
                   className="flex-1 rounded-xl py-2.5 text-[12px] font-semibold"
-                  style={{ background: "#12231f", color: "#39c0b4" }}
+                  style={{ background: "#16241b", color: "#7fbf6a" }}
                 >
                   {t("Set aside · owed back to me")}
                 </button>
@@ -346,7 +346,7 @@ export function TxnSheet({
                 onClose();
               }}
               className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold"
-              style={{ background: "#341713", color: "#eb7867" }}
+              style={{ background: "#2a1518", color: "#f0556e" }}
             >
               <Trash2 size={16} /> {t("Delete transaction")}
             </button>
@@ -450,35 +450,35 @@ function SplitEditor({
         onClick={() => !balanced && fillRemaining()}
         className="mb-3 w-full rounded-2xl px-4 py-3 text-left"
         style={{
-          background: balanced ? "#0c2b26" : "#12100c",
-          border: `1px solid ${balanced ? "#0a4a41" : "#2d3354"}`,
+          background: balanced ? "#102a1d" : "#0e1726",
+          border: `1px solid ${balanced ? "#1f6f47" : "#26344a"}`,
         }}
       >
         <div className="flex items-end justify-between">
           <div>
-            <div className="stat-key" style={{ color: balanced ? "#39c0b4" : "#c6b9a6" }}>
+            <div className="stat-key" style={{ color: balanced ? "#46d18a" : "#88a0c2" }}>
               {balanced ? t("All allocated") : t("Left to allocate")}
             </div>
             <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="stat text-[27px]" style={{ color: balanced ? "#39c0b4" : "#f5efe4" }}>
+              <span className="stat text-[27px]" style={{ color: balanced ? "#46d18a" : "#eaf1fa" }}>
                 {money2(balanced ? 0 : remaining)}
               </span>
-              {balanced && <Check size={18} style={{ color: "#39c0b4" }} />}
+              {balanced && <Check size={18} style={{ color: "#46d18a" }} />}
             </div>
           </div>
           <div className="text-right">
             <div className="num text-[13px] font-semibold text-bone">
-              {money2(sum)} <span style={{ color: "#9e9180", fontWeight: 400 }}>/ {money2(total)}</span>
+              {money2(sum)} <span style={{ color: "#7a8595", fontWeight: 400 }}>/ {money2(total)}</span>
             </div>
             {!balanced && remaining > 0 && (
-              <div className="mt-0.5 text-[10.5px] font-medium" style={{ color: "#7f9ff7" }}>{t("tap to fill the rest")}</div>
+              <div className="mt-0.5 text-[10.5px] font-medium" style={{ color: "#34c5e8" }}>{t("tap to fill the rest")}</div>
             )}
           </div>
         </div>
-        <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#262016" }}>
+        <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#1b2433" }}>
           <div
             className="h-full rounded-full"
-            style={{ width: `${pct}%`, background: balanced ? "#39c0b4" : "#7f9ff7", transition: "width .2s ease" }}
+            style={{ width: `${pct}%`, background: balanced ? "#46d18a" : "#34c5e8", transition: "width .2s ease" }}
           />
         </div>
       </button>
@@ -488,7 +488,7 @@ function SplitEditor({
           const col = catColor(r.categoryId);
           const rowAvail = Math.max(0, round2(total - sumExcept(rows, i)));
           return (
-            <div key={i} className="flex items-center gap-2 rounded-xl p-2" style={{ background: "#1c1811", border: "1px solid #332b20" }}>
+            <div key={i} className="flex items-center gap-2 rounded-xl p-2" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
               <span className="h-7 w-1.5 shrink-0 rounded-full" style={{ background: col }} />
               <div className="relative min-w-0 flex-1">
                 <select
@@ -497,7 +497,7 @@ function SplitEditor({
                   className="w-full appearance-none rounded-lg bg-transparent py-1.5 pl-1 pr-5 text-[13px] font-medium text-bone outline-none"
                 >
                   {cats.map((c) => (
-                    <option key={c.id} value={c.id} style={{ background: "#12100c" }}>
+                    <option key={c.id} value={c.id} style={{ background: "#0f141c" }}>
                       {c.name}
                     </option>
                   ))}
@@ -508,24 +508,24 @@ function SplitEditor({
                 <button
                   onClick={() => fillRow(i)}
                   className="shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-semibold"
-                  style={{ background: "#223059", color: "#7f9ff7" }}
+                  style={{ background: "#0e2230", color: "#34c5e8" }}
                   aria-label="Fill remaining"
                 >
                   +{money2(remaining)}
                 </button>
               )}
-              <div className="flex items-center gap-0.5 rounded-lg px-2 py-1.5" style={{ background: "#12100c", border: "1px solid #332b20" }}>
-                <span className="text-[12px]" style={{ color: "#9e9180" }}>$</span>
+              <div className="flex items-center gap-0.5 rounded-lg px-2 py-1.5" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
+                <span className="text-[12px]" style={{ color: "#5f6a78" }}>$</span>
                 <input
                   value={r.amount}
                   inputMode="decimal"
                   onChange={(e) => setAmount(i, e.target.value)}
                   placeholder="0.00"
-                  className="num w-[58px] bg-transparent text-right text-[14px] font-semibold text-bone outline-none placeholder:text-[#9e9180]"
+                  className="num w-[58px] bg-transparent text-right text-[14px] font-semibold text-bone outline-none placeholder:text-[#5f6a78]"
                 />
               </div>
               {rows.length > 2 && (
-                <button onClick={() => removeRow(i)} style={{ color: "#9e9180" }} aria-label="Remove split row">
+                <button onClick={() => removeRow(i)} style={{ color: "#7a8595" }} aria-label="Remove split row">
                   <X size={16} />
                 </button>
               )}
@@ -539,14 +539,14 @@ function SplitEditor({
           onClick={addRow}
           disabled={rows.length >= cats.length}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12.5px] font-semibold transition"
-          style={{ background: "#1c1811", border: "1px solid #332b20", color: "#7f9ff7", opacity: rows.length >= cats.length ? 0.4 : 1 }}
+          style={{ background: "#141a24", border: "1px solid #232d3a", color: "#34c5e8", opacity: rows.length >= cats.length ? 0.4 : 1 }}
         >
           <Plus size={14} /> {t("Add category")}
         </button>
         <button
           onClick={evenSplit}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12.5px] font-semibold transition"
-          style={{ background: "#1c1811", border: "1px solid #332b20", color: "#c6b9a6" }}
+          style={{ background: "#141a24", border: "1px solid #232d3a", color: "#9aa6b2" }}
         >
           {t("Even split")}
         </button>
@@ -556,7 +556,7 @@ function SplitEditor({
         onClick={save}
         disabled={!valid}
         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-        style={{ background: "linear-gradient(150deg,#00a483,#00aaac)", opacity: valid ? 1 : 0.4 }}
+        style={{ background: "linear-gradient(150deg,#10b981,#06b6d4)", opacity: valid ? 1 : 0.4 }}
       >
         <Check size={16} /> {valid ? t("Save split") : !balanced ? t("Allocate all {amt} to save", { amt: money2(remaining) }) : t("Use 2+ categories")}
       </button>

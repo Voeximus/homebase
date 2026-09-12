@@ -2,6 +2,10 @@
 // PWA icon and the in-app component can never drift apart again — which is
 // exactly what had happened: a house in the favicon, a lucide Wallet on the
 // login screen.
+//
+// The gradient here MUST match src/components/Logo.tsx. If you re-pigment the
+// mark, change both and re-run this script, or the tab icon and the in-app mark
+// quietly become two different logos again.
 import fs from "node:fs";
 import sharp from "sharp";
 
@@ -18,11 +22,11 @@ function mark(scale = 1, cx = 50, cy = 54) {
   const t = `translate(${cx - 50 * scale} ${cy - 54 * scale}) scale(${scale})`;
   return `
   <defs>
-    <linearGradient id="L" x1="16" y1="16" x2="54" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#9ab6ff"/><stop offset="1" stop-color="#2d3d97"/>
+    <linearGradient id="L" x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#06b6d4"/>
     </linearGradient>
-    <linearGradient id="R" x1="46" y1="14" x2="88" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f0cd7c"/><stop offset="0.55" stop-color="#d3a63f"/><stop offset="1" stop-color="#8f6a15"/>
+    <linearGradient id="R" x1="48" y1="18" x2="86" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#3b82f6"/>
     </linearGradient>
     <mask id="M">
       <path d="${PLATE}" fill="#fff" stroke="#fff" stroke-width="${SW}" stroke-linejoin="round" paint-order="stroke"/>
@@ -48,10 +52,10 @@ fs.writeFileSync(`${OUT}/favicon.svg`, favicon + "\n");
 const tile = (safe) => `<svg width="1024" height="1024" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <radialGradient id="glow" cx="50" cy="46" r="42" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#dab249" stop-opacity="0.15"/><stop offset="1" stop-color="#dab249" stop-opacity="0"/>
+      <stop offset="0" stop-color="#06b6d4" stop-opacity="0.22"/><stop offset="1" stop-color="#06b6d4" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect width="100" height="100" fill="#12100c"/>
+  <rect width="100" height="100" fill="#0a0d12"/>
   <rect width="100" height="100" fill="url(#glow)"/>
   ${mark(safe, 50, 52)}
 </svg>`;

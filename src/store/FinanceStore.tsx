@@ -1338,7 +1338,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             name,
             balance: bal,
             original_balance: bal,
-            color: "#cb5843", // vermilion, half-tone
+            color: "#e26d5c",
             provider_account_id: acct.providerAccountId,
           })
           .select()

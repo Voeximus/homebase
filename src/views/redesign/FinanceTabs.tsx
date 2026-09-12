@@ -47,7 +47,7 @@ function Seg({
     <button
       onClick={onClick}
       className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition"
-      style={active ? { background: "#7f9ff7", color: "#101a33", fontWeight: 600 } : { color: "#9e9180" }}
+      style={active ? { background: "#34c5e8", color: "#06303a", fontWeight: 600 } : { color: "#8b97a6" }}
     >
       {children}
     </button>
@@ -68,11 +68,11 @@ function TopBar({
   return (
     <div
       className="flex items-center justify-between px-4 pb-2.5"
-      style={{ background: "#12100c", paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
+      style={{ background: "#0b0f17", paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
     >
       <span
         className="flex rounded-full p-0.5"
-        style={{ background: "#1c1811", border: "1px solid #332b20" }}
+        style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <Seg active={mode === "finance"} onClick={() => onMode("finance")}>
           <Wallet size={14} /> {t("Finance")}
@@ -83,7 +83,7 @@ function TopBar({
       </span>
       <span
         className="flex rounded-full p-0.5"
-        style={{ background: "#1c1811", border: "1px solid #332b20" }}
+        style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <Seg active={lens === "me"} onClick={() => onLens("me")}>
           <User size={14} /> {t("Mine")}
@@ -219,7 +219,7 @@ export function FinanceTabs({
   return (
     <div
       className="mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
-      style={{ background: "#12100c" }}
+      style={{ background: "#0b0f17" }}
     >
       <TopBar mode={mode} onMode={onMode} lens={lens} onLens={onLens} />
       <div

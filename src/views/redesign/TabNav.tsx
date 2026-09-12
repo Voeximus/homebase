@@ -20,8 +20,8 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
     <nav
       className="grid grid-cols-4 border-t pt-2"
       style={{
-        background: "#161309",
-        borderColor: "#2a2419",
+        background: "#10141d",
+        borderColor: "#1d2530",
         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
       }}
       aria-label={t("Sections")}
@@ -34,7 +34,7 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
             onClick={() => onTab(key)}
             aria-current={on ? "page" : undefined}
             className="flex min-h-[48px] flex-col items-center justify-center gap-1 text-[11px] transition active:scale-95"
-            style={{ color: on ? "#7f9ff7" : "#9e9180" }}
+            style={{ color: on ? "#34c5e8" : "#7a8595" }}
           >
             <Icon size={21} />
             {t(label)}

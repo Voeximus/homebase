@@ -37,7 +37,7 @@ export function CategorySheet({
   const pct = vm.target > 0 ? Math.min(100, (vm.spent / vm.target) * 100) : 0;
   const over = vm.spent > vm.target;
   const near = !over && pct > 80;
-  const barColor = over ? "#eb7867" : near ? "#dab249" : c;
+  const barColor = over ? "#f0556e" : near ? "#e3b341" : c;
   const left = vm.target - vm.spent;
 
   return (
@@ -49,8 +49,8 @@ export function CategorySheet({
       <div
         className="max-h-[86vh] w-full max-w-[420px] overflow-y-auto"
         style={{
-          background: "#12100c",
-          border: "1px solid #332b20",
+          background: "#0f141c",
+          border: "1px solid #232d3a",
           borderTop: `2px solid ${c}`,
           borderRadius: "22px",
           padding: "16px",
@@ -66,24 +66,24 @@ export function CategorySheet({
             <Icon size={19} />
           </span>
           <div className="flex-1 text-[18px] font-bold text-bone">{vm.label}</div>
-          <button onClick={onClose} style={{ color: "#9e9180" }}>
+          <button onClick={onClose} style={{ color: "#7a8595" }}>
             <X size={20} />
           </button>
         </div>
 
         <div
           className="mb-3.5 rounded-2xl p-3.5"
-          style={{ background: "#1c1811", border: "1px solid #332b20" }}
+          style={{ background: "#141a24", border: "1px solid #232d3a" }}
         >
           <div className="flex items-baseline justify-between">
-            <span className="text-[12.5px]" style={{ color: "#9e9180" }}>
+            <span className="text-[12.5px]" style={{ color: "#8b97a6" }}>
               {t("Spent this month")}
             </span>
             <span className="text-[15px] font-bold text-bone">
-              {money2(vm.spent)} <span style={{ color: "#9e9180", fontWeight: 400 }}>/ {money2(vm.target)}</span>
+              {money2(vm.spent)} <span style={{ color: "#7a8595", fontWeight: 400 }}>/ {money2(vm.target)}</span>
             </span>
           </div>
-          <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#453a2b" }}>
+          <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
             <div className="h-full" style={{ width: `${pct}%`, background: barColor }} />
           </div>
           <div className="mt-1.5 text-[11.5px] font-medium" style={{ color: barColor }}>
@@ -96,14 +96,14 @@ export function CategorySheet({
               much of this bar is still settling rather than presenting it as
               final. Without this line a bar at 346% just looks broken. */}
           {vm.pending > 0 && (
-            <div className="mt-1 text-[11px]" style={{ color: "#9e9180" }}>
+            <div className="mt-1 text-[11px]" style={{ color: "#7e8a98" }}>
               {t("{amount} of this is still processing at the bank", { amount: money2(vm.pending) })}
             </div>
           )}
         </div>
 
         {vm.txns.length === 0 ? (
-          <p className="py-6 text-center text-[13px]" style={{ color: "#9e9180" }}>
+          <p className="py-6 text-center text-[13px]" style={{ color: "#7e8a98" }}>
             {t("Nothing in this category yet.")}
           </p>
         ) : (
@@ -113,7 +113,7 @@ export function CategorySheet({
                 key={tx.id}
                 onClick={() => onTxn?.(tx.id)}
                 className="flex w-full items-center gap-3 py-2.5 text-left"
-                style={{ borderBottom: "1px solid #332b20" }}
+                style={{ borderBottom: "1px solid #1b232e" }}
               >
                 <span
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]"
@@ -123,7 +123,7 @@ export function CategorySheet({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] font-medium text-bone">{tx.name}</div>
-                  <div className="text-[11px]" style={{ color: "#9e9180" }}>
+                  <div className="text-[11px]" style={{ color: "#7e8a98" }}>
                     {tx.dateLabel} · {t("tap to recategorize")}
                   </div>
                 </div>

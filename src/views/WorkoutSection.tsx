@@ -587,7 +587,7 @@ function EditWorkoutSheet({
             <button
               onClick={() => setSearchOpen(true)}
               className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[12px] py-2.5 text-[13px] font-semibold transition active:scale-[0.98]"
-              style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+              style={{ background: "rgba(52,197,232,0.13)", color: "var(--color-accent)" }}
             >
               <Plus size={15} /> {t("Add exercise")}
             </button>
@@ -728,7 +728,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
         <div className="mt-3 grid grid-cols-2 gap-3">
           {order.map((p) => (
             <div key={p} className="rounded-[14px] px-3 py-2" style={{ background: "rgba(0,0,0,0.16)" }}>
-              <div className="text-[11px] font-semibold" style={{ color: p === you ? "#f0ddc6" : "#d6efe7" }}>
+              <div className="text-[11px] font-semibold" style={{ color: p === you ? "#ffe7d4" : "#cdfff5" }}>
                 {p === you ? t("You") : PERSON_NAME[p]}
               </div>
               <div className="num text-[20px] font-bold">{t("{n} days", { n: week[p] })}</div>

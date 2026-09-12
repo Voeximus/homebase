@@ -151,7 +151,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
 
       {/* the band */}
       <div className="relative my-3 h-[40px]">
-        <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full" style={{ background: "#453a2b" }} />
+        <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full" style={{ background: "#222b38" }} />
         <div className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full" style={{ left: `${lo}%`, width: `${hi - lo}%`, background: acc, opacity: 0.5 }} />
         <div className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2" style={{ left: `${lo}%`, background: acc }} />
         <div className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2" style={{ left: `${hi}%`, background: acc }} />
@@ -182,7 +182,7 @@ export function CalibrationGauge({ person, acc }: { person: Person; acc: string 
                 : t("{remaining} lb to go · {pct}% there", { remaining: toGo!.toFixed(1), pct: Math.round(donePct) })}
             </b>
           </span>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#453a2b" }}>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
             <div className="h-full rounded-full" style={{ width: `${donePct}%`, background: acc, transition: "width .5s ease" }} />
           </div>
         </div>

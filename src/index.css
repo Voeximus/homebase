@@ -1,172 +1,32 @@
 @import "tailwindcss";
 
-/* ══ THE WORKSHOP ════════════════════════════════════════════════════════════
-   The whole app is painted from one system, and the system is a Renaissance
-   workshop's — not as decoration, but because a painter's constraints and a
-   dark UI's constraints turn out to be the same constraints.
-
-   ── 1. THREE DISHES ─────────────────────────────────────────────────────────
-   Cennino Cennini's "Il Libro dell'Arte" (c. 1400) tells the apprentice to
-   grind a pigment, then set out THREE dishes of it: the pure colour, and two
-   progressively cut with lead white. You lay the darkest in the shadow, the
-   middle in the half-tone, the lightest in the light.
-
-   A UI needs a colour to do exactly three jobs, and they need three different
-   luminances or they fail:
-
-       OMBRA  (L≈.32)  fills, washes, large areas       — must recede
-       MEZZA  (L≈.52–.67) chart marks, bars, slices     — must separate
-       LUME   (L≈.70–.78) text, icons, accents          — must be READ
-
-   White text on a mid-toned swatch is the contrast failure that kept coming
-   back in this app, and it came back because ONE value of a hue was being
-   asked to do all three jobs. Three dishes makes that impossible by
-   construction: ink comes from the lume dish, marks from the mezza dish,
-   fills from the ombra dish, and nothing borrows across.
-
-   ── 2. THE GROUND IS WARM ───────────────────────────────────────────────────
-   A panel was prepared with gesso and then an imprimatura — a thin warm earth
-   wash, terra rossa or umber — so the light in the finished painting comes out
-   of a brown-black, never a blue-black. This app's canvas was #0a0d12, a cool
-   graphite. It is now #12100c, a warm umber-black at the same depth. That one
-   change does more than any other single thing here: every pigment laid over
-   it separates by TEMPERATURE as well as by lightness.
-
-   ── 3. THE PIGMENTS ARE SCARCE, AND THAT IS THE POINT ───────────────────────
-   A Renaissance palette is not a colour wheel. It is the short list of what
-   could actually be ground, and the expensive ones were written into the
-   contract: ultramarine from lapis lazuli cost more than gold and was reserved
-   for the one figure that mattered. So:
-
-       LAPIS      — interactive. Anything you can act on.
-       GOLD       — the single most important fact on the screen. Reserved.
-       VERDIGRIS  — good money: cash, cleared, on track.
-       VERMILION  — over, owed, late. Reserved.
-
-   Four meanings, four pigments, and a rule that none of them is ever spent on
-   decoration. Every value below is computed, not picked — see catColor.ts for
-   the categorical set and the validator run behind it.
-
-   ── 4. PROPORTION ───────────────────────────────────────────────────────────
-   Two ladders, both out of Pacioli's "De Divina Proportione" (1509, illustrated
-   by Leonardo), each used for the job it actually suits:
-
-     TYPE  steps by √φ = 1.272, so every SECOND step is the golden section
-           exactly. 15 → 19.1 → 24.3; and 15 → 24.3 is φ.
-     SPACE steps by Fibonacci (3 5 8 13 21 34 55), whose ratios converge on φ
-           and which lands on whole pixels — φ itself does not.
-   ════════════════════════════════════════════════════════════════════════════ */
-
-/* The two voices. Both self-hosted (no CDN, works offline, no layout shift
-   from a font that never arrives).
-
-   EB GARAMOND is a revival of Claude Garamond's romans of the 1530s, which are
-   themselves cut after Griffo's type for Aldus Manutius in Venice — the actual
-   letterform of the period. It is THE INSCRIPTION here: titles, the wordmark,
-   and the one big number a screen is about.
-
-   SOURCE SANS 3 is a humanist sans — its skeleton is the same Renaissance
-   roman, just without the serifs — so it sits under Garamond without arguing.
-   It is THE WORKING HAND: every label, row, control and dense readout. (A
-   geometric sans would have fought the serif; Inter would have made this look
-   like every other app.) */
-@font-face {
-  font-family: "EB Garamond";
-  font-style: normal;
-  font-weight: 400 800;
-  font-display: swap;
-  src: url("/fonts/eb-garamond-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: "EB Garamond";
-  font-style: italic;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("/fonts/eb-garamond-italic-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: "Source Sans 3";
-  font-style: normal;
-  font-weight: 300 800;
-  font-display: swap;
-  src: url("/fonts/source-sans-3-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
+/* ── Mission Control · "Instrument" theme ────────────────────────────────────
+   Engineering-friendly re-skin: cool graphite canvas with a faint blueprint
+   grid, monospaced tabular readouts, technical mono labels, a precise cyan
+   "signal" accent, and green reserved for good money. Hierarchy still comes
+   from fill depth (canvas → tile → hero), not shadows. */
 @theme {
-  /* ── The prepared panel ── gesso over board, then a warm imprimatura. Depth
-     comes from fill, never from a drop shadow: a painted panel has no shadow
-     under its own forms, it has darker paint. */
-  --color-bg: #12100c; /* imprimatura — the canvas */
-  --color-tile: #1c1811; /* gesso — the default panel */
-  --color-raised: #262016; /* the nested well, one step into the light */
-  --color-recessed: #0b0907; /* bole — pressed in, deeper than the canvas */
-  --color-hero: #1a1a26; /* lapis-tinted dark — ONLY the hero panel */
-  --color-edge: #332b20; /* hairline, warm */
-  --color-edgehero: #2d3354; /* the hero's lapis-tinted hairline */
-  --color-well: #0b0907; /* alias of bole, used by the health themes */
+  --color-bg: #0a0d12; /* cool graphite-black canvas */
+  --color-tile: #121822; /* default panel fill */
+  --color-raised: #18212d; /* nested wells / mini-stats */
+  --color-recessed: #0c1016; /* the pressed-in next-move slip */
+  --color-hero: #0e1b1f; /* cyan-tinted dark — ONLY the hero panel */
+  --color-edge: #232d3a; /* 1px hairline panel border */
+  --color-edgehero: #1d3d3e; /* cyan-tinted hero border */
 
-  /* ── The reserved pigments, three dishes each ── */
-  --color-lapis-ombra: #223059;
-  --color-lapis: #4f65b6; /* mezza — marks */
-  --color-lapis-lume: #7f9ff7; /* lume — ink */
-  --color-gold-ombra: #413000;
-  --color-gold: #a98304;
-  --color-gold-lume: #dab249;
-  --color-verdigris-ombra: #003c37;
-  --color-verdigris: #00a483;
-  --color-verdigris-lume: #39c0b4;
-  --color-vermilion-ombra: #53221b;
-  --color-vermilion: #cb5843;
-  --color-vermilion-lume: #eb7867;
+  --color-accent: #34c5e8; /* signal cyan — interactive, momentum, CTAs, road */
+  --color-mint: #46d18a; /* green — good money: cash, cleared, on-track */
+  --color-gold: #e3b341; /* amber — the 90-day streak ring, near-limit */
+  --color-ember: #e5544e; /* red — ONLY the …4728 card + over-limit bars */
 
-  /* ── The four meanings. These are the names the app actually reaches for. ── */
-  --color-accent: #7f9ff7; /* LAPIS — you can act on this */
-  --color-mint: #39c0b4; /* VERDIGRIS — good money */
-  --color-gilt: #dab249; /* GOLD LEAF — the one fact that matters. Reserved. */
-  --color-ember: #eb7867; /* VERMILION — over, owed, late. Reserved. */
+  --color-bone: #eef2f7; /* cool off-white — readouts + headlines (brightened) */
+  --color-taupe: #97a3b2; /* labels, captions (brightened for contrast) */
+  --color-faint: #7c8696; /* tertiary hints, last4 (was #687180 — too dim) */
 
-  /* ── Lead white through bone black ── the ink ladder. Warm, like the ground:
-     a cool grey on a warm panel reads as a mistake rather than as a choice. */
-  --color-bone: #f5efe4; /* biacca — lead white: readouts + headlines */
-  --color-taupe: #c6b9a6; /* labels, captions */
-  --color-faint: #9e9180; /* the dimmest ink that still has to be read — 5.7:1 */
-
-  /* ── The two voices ── */
-  --font-display: "EB Garamond", "Iowan Old Style", "Palatino Linotype",
-    Palatino, Georgia, "Times New Roman", serif;
-  --font-sans: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
     "Roboto Mono", Menlo, Consolas, monospace;
-
-  /* ── Divine proportion, twice ──
-     TYPE: √φ per step (1.272), so every second step is exactly golden. */
-  --text-micro: 11.8px;
-  --text-body: 15px;
-  --text-lead: 19.1px;
-  --text-title: 24.3px;
-  --text-head: 30.9px;
-  --text-hero: 39.3px;
-  --text-grand: 50px;
-
-  /* SPACE: Fibonacci, whose ratios converge on φ and which lands on whole
-     pixels — φ compounded does not. */
-  --spacing-f1: 3px;
-  --spacing-f2: 5px;
-  --spacing-f3: 8px;
-  --spacing-f4: 13px;
-  --spacing-f5: 21px;
-  --spacing-f6: 34px;
-  --spacing-f7: 55px;
 }
 
 :root {
@@ -184,40 +44,18 @@ body {
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
-  letter-spacing: 0;
+  letter-spacing: -0.006em; /* a hair tighter — reads more deliberate at UI sizes */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: var(--color-bone);
-  background-color: #12100c;
-  /* The imprimatura. A warm earth wash, laid on unevenly the way a brush lays
-     it: one broad light from above-left (chiaroscuro has a DIRECTION), a
-     cooler lapis reflection bouncing from below-right, and a fine canvas
-     tooth over the whole panel so the ground has a surface instead of being
-     a flat fill. The blueprint grid that used to be here was a different
-     app's idea of what a surface is. */
+  background-color: #0a0d12;
+  /* faint blueprint grid + one cool signal glow up top */
   background-image:
-    radial-gradient(
-      1200px 700px at 12% -8%,
-      rgba(218, 178, 73, 0.06),
-      transparent 62%
-    ),
-    radial-gradient(
-      900px 620px at 104% 106%,
-      rgba(127, 159, 247, 0.05),
-      transparent 60%
-    ),
-    repeating-linear-gradient(
-      118deg,
-      rgba(245, 239, 228, 0.011) 0 1px,
-      transparent 1px 4px
-    ),
-    repeating-linear-gradient(
-      28deg,
-      rgba(11, 9, 7, 0.16) 0 1px,
-      transparent 1px 5px
-    );
-  background-size: 100% 100%, 100% 100%, 7px 7px, 9px 9px;
+    radial-gradient(1100px 560px at 50% -12%, rgba(52, 197, 232, 0.05), transparent 70%),
+    linear-gradient(rgba(120, 160, 200, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 160, 200, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
   background-attachment: fixed;
   overscroll-behavior-y: none;
 }
@@ -267,135 +105,48 @@ input[type="number"] {
   height: 6px;
 }
 .scroll-soft::-webkit-scrollbar-thumb {
-  background: rgba(198, 185, 166, 0.22);
+  background: rgba(139, 151, 166, 0.25);
   border-radius: 9999px;
 }
 
-/* ── TWO VOICES ──────────────────────────────────────────────────────────────
-   One rule decides which face a piece of text wears, everywhere in the app:
-
-     THE INSCRIPTION (serif) — the NAME of a thing, and the ONE number a screen
-       is about. Titles, the wordmark, hero figures, empty-state headlines.
-     THE WORKING HAND (sans) — everything you operate or scan. Labels, rows,
-       buttons, tables, dense readouts.
-
-   It is the same division a Renaissance page makes between the carved
-   capitals over a door and the humanist hand in the ledger inside it, and it
-   is doing real work here: the serif gets used rarely enough to stay an event,
-   and the sans never has to be elegant at 11px. */
-
-/* Roman capitals. On Trajan's Column the letters are all capitals, widely
-   spaced, cut small under a much larger thing — which is exactly what an
-   eyebrow is. The sans carries it because at 11px a serif in caps fills its
-   own counters. */
+/* ── Technical mono label — the "instrument" voice for every eyebrow ───────── */
 .eyebrow {
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.15em;
-  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-size: 10.5px;
   font-weight: 600;
   line-height: 1.3;
 }
 
-/* Dense tabular readout — the ledger hand. Sans, so a column of forty rows
-   stays scannable, with tabular figures so the decimal points line up. */
+/* Monospaced tabular readout for the big numbers — telemetry, not marketing */
 .num {
-  font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: -0.01em;
-  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
-/* ── The inscription ────────────────────────────────────────────────────────
-   Garamond's romans were cut for a printed page, not a phone, so they need
-   three things to hold up here: real size (they are drawn for display), tight
-   line height (the x-height is small, so default leading reads as a gap), and
-   LINING TABULAR figures — the face defaults to old-style text figures, which
-   are beautiful in a sentence and wrong in a money column, since the 3 4 5 7 9
-   drop below the baseline. */
-.inscr {
-  font-family: var(--font-display);
-  font-weight: 500;
-  letter-spacing: 0.002em;
-  line-height: 1.12;
-  text-wrap: balance;
-}
-.figure {
-  font-family: var(--font-display);
-  font-variant-numeric: tabular-nums lining-nums;
-  font-feature-settings: "tnum" 1, "lnum" 1;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  line-height: 1;
-}
-/* An engraved capital opening a section — the versal. Reserved: one per screen
-   at most, and never on something you can tap. */
-.versal {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 24.3px; /* body × φ */
-  line-height: 1.14;
-  letter-spacing: 0.004em;
-  color: var(--color-bone);
-  text-wrap: balance;
-}
-/* The one editorial line on a screen. Aldus Manutius had Griffo cut the first
-   italic in Venice in 1501 — the italic IS a Renaissance invention, so it gets
-   used here for the one sentence per screen that is written rather than
-   labelled, and nowhere else. */
-.aldine {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 400;
-  letter-spacing: 0.006em;
-}
-
-/* A ruled line. Not a border — a drawn rule, heavier in the middle and fading
-   at both ends, the way an engraver's rule does. */
-.rule {
-  height: 1px;
-  border: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--color-edge) 12%,
-    var(--color-edge) 88%,
-    transparent
-  );
-}
-.rule-gilt {
-  height: 1px;
-  border: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(218, 178, 73, 0.42) 22%,
-    rgba(218, 178, 73, 0.42) 78%,
-    transparent
-  );
-}
-
-/* ── Type scale — a consistent hierarchy for headline surfaces ─────────────── */
+/* ── Type scale — a consistent, premium hierarchy for headline surfaces ─────── */
 /* Big hero stat (the macro counters). PROPORTIONAL bold with tabular figures —
    even digit widths for alignment, but real letter spacing so it never crams. */
 .stat {
   font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums lining-nums;
-  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
   letter-spacing: 0;
   line-height: 1;
 }
 /* A small all-caps key over a stat (PROTEIN, KCAL LEFT) */
 .stat-key {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
-/* Section / card titles */
+/* Section / card titles — proportional, confident weight */
 .h-title {
   font-weight: 650;
-  letter-spacing: -0.004em;
+  letter-spacing: -0.011em;
 }
 
 /* ══ HEALTH MODE ════════════════════════════════════════════════════════════
@@ -421,164 +172,140 @@ input[type="number"] {
    ── 3. DATA LEGEND (--mc-p / --mc-c / --mc-f) ── protein, carbs, fat. FIXED
       across all three themes, because a legend that moves is not a legend.
 
-   Re-pigmented 2026-09-11 onto the workshop palette at the top of this file,
-   and recomputed rather than re-picked. Run against the dark surfaces this app
+   The legend was computed, not picked. Run against the dark surfaces this app
    actually uses, all-pairs (every macro can sit beside every other), Machado
    2009 CVD simulation:
 
-        protein  madder lake  #cc5a7f
-        carbs    ultramarine  #5889e6
-        fat      orpiment     #ab9100
-        worst pair ΔE 12.3 deuteranopia · 21.1 normal vision
-        contrast on panel 4.3 : 1 → 5.9 : 1   (marks need 3:1)
+        protein #d55181   carbs #3987e5   fat #c98500
+        worst pair ΔE 13.2 deuteranopia · 19.3 normal vision
+        contrast on panel 4.4 : 1 → 6.0 : 1   (marks need 3:1)
 
-   The hue POSITIONS are deliberately the ones they have always had — crimson,
-   blue, yellow — so nothing he has already learned to read moves. What changed
-   is that all three are now real pigments at computed lightnesses, and the
-   worst normal-vision pair improved from 19.3 to 21.1.
+   The previous rose/sky/gold trio FAILED the dark-mode lightness band on all
+   three colors and put protein ΔE 0 from the accent.
 
-   That result also fixes the accent: carbs own blue, protein owns crimson, fat
-   owns yellow, so the accent has to live in the green→cyan arc or it collides
-   with a macro. All three theme accents were re-checked there and each clears
-   every macro (worst pair ΔE 12.4 deutan · 18.0 normal):
+   That result also fixes the accent: carbs own blue, protein owns magenta, fat
+   owns amber, so the accent has to live in the teal→lime arc or it collides with
+   a macro. All three theme accents were re-checked there and leave the trio's
+   worst pair untouched — i.e. each is comfortably clear of all three:
 
-        Florence #31ce97 · Venice #00cdb8 · Siena #00c8d9
-        accent on panel 8.5 : 1 → 8.8 : 1 ; dark label on accent ≥ 9 : 1
-
-   Lac purple was tried for Siena — the other open arc — and REJECTED by the
-   numbers: ΔE 7.6 from protein under deuteranopia. Under CVD it and madder are
-   the same pink.
+        Calm #34d399 · Instrument #22d3ee · Bold #a3e635
+        accent on panel 9.0 : 1 → 11.5 : 1 ; dark label on accent 9.9 : 1 → 12.7 : 1
 
    ── 4. STATUS (--h-good / --h-over) ── reserved. Never reused as a series, and
       never carried by color alone: an over-target number always ships with the
       word "over" beside it.
 
-   The three finishes are three workshops, and they differ by GROUND
-   TEMPERATURE, TYPE and DENSITY rather than by fighting over hue — which is
-   why they feel like three finishes of one app instead of three apps.
-   ════════════════════════════════════════════════════════════════════════════ */
+   The themes therefore differ by GROUND TEMPERATURE, TYPE and DENSITY rather
+   than by fighting over hue — which is also why they now feel like three
+   finishes of one app instead of three apps. */
 
 .htheme {
   min-height: 100vh;
   background: var(--color-bg);
 
   /* The macro legend. Identical in every theme, on purpose. */
-  --mc-p: #cc5a7f; /* madder lake */
-  --mc-c: #5889e6; /* ultramarine */
-  --mc-f: #ab9100; /* orpiment */
+  --mc-p: #d55181;
+  --mc-c: #3987e5;
+  --mc-f: #c98500;
   /* Reserved status. Always shipped with a word, never color alone. */
-  --h-good: #00a483; /* verdigris */
-  --h-over: #eb7867; /* vermilion */
+  --h-good: #199e70;
+  --h-over: #e66767;
 
-  /* One spacing scale for the whole mode — Fibonacci, like the rest of the app.
-     Every gap, pad and inset below comes from these four values; the old file
-     had 8/9/10/11/13/14/16/17/18px doing the same job in different places,
-     which is what makes a layout feel approximate even when nothing is
-     visibly wrong. */
-  --h-1: 5px;
-  --h-2: 8px;
-  --h-3: 13px;
-  --h-4: 21px;
+  /* One spacing scale for the whole mode. Every gap, pad and inset below comes
+     from these four values — the old file had 8/9/10/11/13/14/16/17/18px doing
+     the same job in different places, which is what makes a layout feel
+     approximate even when nothing is visibly wrong. */
+  --h-1: 6px;
+  --h-2: 10px;
+  --h-3: 14px;
+  --h-4: 20px;
 }
-/* numerals follow the theme */
+/* numerals follow the theme: sans for Calm/Bold, mono for Instrument */
 .htheme .num,
 .htheme .hb-num {
   font-family: var(--h-num-font);
-  font-variant-numeric: tabular-nums lining-nums;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── Florence — gesso and silverpoint. The drawing workshop: warm prepared
-   ground, restrained, malachite green for anything you can act on. Warm ground
-   against a cool accent is the oldest trick there is and it still works — the
-   accent separates from the page by temperature as well as by lightness, so it
-   stays findable at any size. */
+/* ── Calm — warm graphite ground, cool emerald accent ──────────────────────
+   Warm ground against a cool accent is the oldest trick there is and it still
+   works: the accent separates from the page by temperature as well as by
+   lightness, so it stays findable at any size. */
 .htheme-original {
-  --color-bg: #14110c;
-  --color-tile: #1e1a13;
-  --color-raised: #282117;
-  --color-well: #0c0a07;
-  --color-hero: #1e1a13;
-  --color-edge: #362e22;
-  --color-edgehero: #3d3527;
-  --color-bone: #f5efe4;
-  --color-taupe: #c6b9a6;
+  --color-bg: #101319;
+  --color-tile: #161b26;
+  --color-raised: #1c222e;
+  --color-well: #0d1015;
+  --color-hero: #161b26;
+  --color-edge: #262d3a;
+  --color-edgehero: #2b3342;
+  --color-bone: #e9edf3;
+  --color-taupe: #9aa5b4;
   /* --color-faint is the DIMMEST ink in the theme and it still has to be read:
      it carries the "/ 130" beside each macro, the weekday letters and the "kcal"
-     unit. A contrast audit of the rendered page once put it at 4.33:1 — fourteen
-     elements, all this one token, all just under what small text needs. It is
-     held at 5.6:1 on the panel now. */
-  --color-faint: #9e9180;
-  --color-accent: #31ce97; /* malachite */
-  --h-on-accent: #04281b;
+     unit. A contrast audit of the rendered page put it at 4.33:1 — fourteen
+     elements, all of them this one token, all just under the 4.5:1 small text
+     needs. Lifted until the worst of the three panels clears it. */
+  --color-faint: #8a95a6;
+  --color-accent: #34d399;
+  --h-on-accent: #06231a;
   --h-num-font: var(--font-sans);
-  /* Florence is the drawing workshop, so its one big number is drawn: the
-     inscription face, with lining tabular figures forced on (Garamond defaults
-     to old-style, which is beautiful in a sentence and wrong in a column). */
-  --h-fig-font: var(--font-display);
-  --h-fig-w: 600;
   --h-radius: 18px;
-  --h-hero-size: 48px;
-  --h-disp-w: 700;
-  --h-disp-ls: -1.2px;
+  --h-hero-size: 44px;
+  --h-disp-w: 750;
+  --h-disp-ls: -1.6px;
   --h-stat-size: 23px;
-  --h-lbl-ls: 0.08em;
+  --h-lbl-ls: 0.06em;
   --h-lbl-tr: uppercase;
-  --h-hl: #453b2c;
+  --h-hl: #313a49;
 }
-/* ── Venice — colorito. The deepest ground of the three and the only cool one,
-   because Venetian painting is built on lapis and glaze rather than on drawing.
-   Monospaced readouts: this is the instrument finish. */
+/* ── Instrument — near-black cool ground, cyan signal, monospaced readouts ── */
 .htheme-instrument {
-  --color-bg: #0d0e14;
-  --color-tile: #161823;
-  --color-raised: #1e2130;
-  --color-well: #08090e;
-  --color-hero: #161823;
-  --color-edge: #292d3d;
-  --color-edgehero: #2f3347;
-  --color-bone: #edeff7;
-  --color-taupe: #b9bdd0;
-  --color-faint: #9096ac;
-  --color-accent: #00cdb8; /* verdigris */
-  --h-on-accent: #00241f;
+  --color-bg: #080b0e;
+  --color-tile: #0e1419;
+  --color-raised: #131b21;
+  --color-well: #070a0d;
+  --color-hero: #0e1419;
+  --color-edge: #1c2731;
+  --color-edgehero: #203039;
+  --color-bone: #dde7ec;
+  --color-taupe: #8ca0ab;
+  --color-faint: #7e929d;
+  --color-accent: #22d3ee;
+  --h-on-accent: #041d24;
   --h-num-font: var(--font-mono);
-  --h-fig-font: var(--font-mono);
-  --h-fig-w: 600;
   --h-radius: 13px;
   --h-hero-size: 38px;
   --h-disp-w: 600;
   --h-disp-ls: -1.2px;
   --h-stat-size: 21px;
-  --h-lbl-ls: 0.11em;
+  --h-lbl-ls: 0.1em;
   --h-lbl-tr: uppercase;
-  --h-hl: #363c50;
+  --h-hl: #2a3b45;
 }
-/* ── Siena — terra di Siena and gold. The reddest earth and the biggest type;
-   the altarpiece finish. */
+/* ── Bold — deep warm black, lime accent, big confident type ───────────────── */
 .htheme-bold {
-  --color-bg: #17100b;
-  --color-tile: #221811;
-  --color-raised: #2d2117;
-  --color-well: #0e0906;
-  --color-hero: #221811;
-  --color-edge: #3d2c1f;
-  --color-edgehero: #453324;
-  --color-bone: #faf2e6;
-  --color-taupe: #cdbda5;
-  --color-faint: #a5947e;
-  --color-accent: #00c8d9; /* azurite */
-  --h-on-accent: #002229;
+  --color-bg: #0d0e12;
+  --color-tile: #171a22;
+  --color-raised: #1f232d;
+  --color-well: #0a0b0e;
+  --color-hero: #171a22;
+  --color-edge: #2c3340;
+  --color-edgehero: #333b4a;
+  --color-bone: #f3f6f9;
+  --color-taupe: #a6b1bd;
+  --color-faint: #939eab;
+  --color-accent: #a3e635;
+  --h-on-accent: #17230a;
   --h-num-font: var(--font-sans);
-  --h-fig-font: var(--font-sans);
-  --h-fig-w: 800;
   --h-radius: 22px;
   --h-hero-size: 54px;
-  --h-disp-w: 800;
-  --h-disp-ls: -1.8px;
+  --h-disp-w: 820;
+  --h-disp-ls: -2.2px;
   --h-stat-size: 27px;
-  --h-lbl-ls: 0.06em;
+  --h-lbl-ls: 0.05em;
   --h-lbl-tr: uppercase;
-  --h-hl: #50392a;
+  --h-hl: #3d4658;
 }
 
 /* ── Type roles ──────────────────────────────────────────────────────────────
@@ -602,10 +329,9 @@ input[type="number"] {
   color: var(--color-faint);
 }
 .h-display {
-  font-family: var(--h-fig-font, var(--h-num-font));
-  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-family: var(--h-num-font);
   font-size: var(--h-hero-size);
-  font-weight: var(--h-fig-w, var(--h-disp-w));
+  font-weight: var(--h-disp-w);
   letter-spacing: var(--h-disp-ls);
   line-height: 0.95;
   font-variant-numeric: tabular-nums;
@@ -1201,11 +927,10 @@ input[type="number"] {
   transform: translate(-50%, -50%);
 }
 
-
 /* The same trick .h-hit performs, applied where a control's INK has to stay
    small: a segmented control at 44px tall is a slab, and the day arrows at 44px
-   crowd the date between them. The ::after grows the touch area past the
-   painted edge instead. */
+   crowd the date between them. These measured 36-40px against a 44px minimum;
+   the ::after grows the touch area past the painted edge instead. */
 .h-seg button,
 .h-daynav button,
 .hb-seg button,
@@ -1246,12 +971,8 @@ input[type="number"] {
   margin-bottom: var(--h-1);
 }
 .h-empty .t {
-  /* The inscription face, at a size it can actually hold — a serif set at 14px
-     bold closes up its own counters and just reads as a heavy sans. */
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.004em;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--color-bone);
 }
 .h-empty .s {
@@ -1383,389 +1104,95 @@ input[type="number"] {
 }
 
 /* ══ THE FRONT DOOR ══════════════════════════════════════════════════════════
-   Two screens share this language, because they are the same threshold: the
-   sign-in screen, and the intro screen you get on every cold launch.
+   The intro screen. Everything that moves here is CSS, every piece of it is
+   gated behind prefers-reduced-motion, and none of it blocks the form — a
+   person who opens this app wants to be inside it, not watching it. */
 
-   It is built as an ALTARPIECE, which is not decoration — it is the layout
-   problem already solved. A Renaissance altarpiece has exactly the structure
-   this screen needs:
-
-     THE PANEL      one figure, centred, larger than everything else — here the
-                    mark and the name.
-     THE OPENINGS   flanking arches. Two doors: Finance and Health. They take
-                    the mark's own two pigments, ultramarine on the left and
-                    gold on the right, in the mark's own order, so the first
-                    screen of a cold launch explains the logo without a word.
-     THE PREDELLA   the band of small panels beneath, each carrying one fact.
-                    On an altarpiece it is the narrative; here it is where you
-                    stand, so the screen answers "how am I doing" before you
-                    have chosen a door.
-
-   And ONE LIGHT. Chiaroscuro means the light has a direction: a warm raking
-   light from the upper left, a cool lapis reflection bouncing back from the
-   lower right, and every panel on the screen lit and shadowed to agree with
-   them. Nothing here has a generic drop shadow pointing its own way.
-
-   Everything that moves is CSS, all of it gated behind prefers-reduced-motion,
-   and none of it blocks the form — a person who opens this app wants to be
-   inside it, not watching it. */
-
-.hb-login,
-.hb-door {
+.hb-login {
   position: relative;
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 21px 21px calc(21px + env(safe-area-inset-bottom));
+  padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
   overflow: hidden;
   isolation: isolate;
 }
 
-/* The light. Two slow fields behind everything; at this blur they read as
-   light rather than as shapes, which is the difference between atmosphere and
-   two visible blobs. */
+/* Two slow colour fields behind everything. At this blur they read as light,
+   not as shapes — the difference between atmosphere and two visible blobs. */
 .hb-aurora {
   position: absolute;
   inset: -25%;
   z-index: -1;
   pointer-events: none;
-  /* The chroma comes from the stops' own alpha. `mix-blend-mode: screen` was
-     the obvious way to keep these bright over a near-black ground — and on a
-     z-index:-1 layer inside an `isolation: isolate` parent it made every
-     SIBLING vanish: the mark, the word and the whole form painted to nothing
-     while the aurora rendered fine. Alpha gets the same colour with none of
-     that. */
-  filter: blur(100px);
-  opacity: 0.95;
+  /* Heavier blur, and the chroma comes from the stops' own alpha.
+     `mix-blend-mode: screen` was the obvious way to keep these bright over a
+     near-black ground — and on a z-index:-1 layer inside an `isolation: isolate`
+     parent it made every SIBLING vanish: the mark, the word and the whole form
+     painted to nothing while the aurora rendered fine. Alpha gets the same
+     colour with none of that. */
+  filter: blur(96px);
+  opacity: 0.9;
 }
 .hb-aurora span {
   position: absolute;
   display: block;
   border-radius: 50%;
 }
-/* The key light: warm, high and to the left, the way it falls in every painting
-   this is drawn from. Placed to frame the mark rather than parked in a corner
-   where it would read as vignetting. */
+/* Placed to frame the mark — upper-left and lower-right of the composition —
+   rather than parked in the screen's corners where they read as vignetting. */
 .hb-aurora .a1 {
-  width: 64vmax;
-  height: 64vmax;
-  left: -20%;
-  top: -16%;
-  background: radial-gradient(
-    circle,
-    rgba(218, 178, 73, 0.6) 0%,
-    rgba(171, 145, 0, 0.22) 44%,
-    transparent 70%
-  );
+  width: 62vmax;
+  height: 62vmax;
+  left: -18%;
+  top: -14%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.85) 0%, rgba(6, 182, 212, 0.34) 44%, transparent 70%);
 }
-/* The bounce: cool, low and to the right. A single warm light with no cool
-   reflected light is what makes a rendered thing look plastic. */
 .hb-aurora .a2 {
   width: 58vmax;
   height: 58vmax;
-  right: -22%;
-  bottom: -18%;
-  background: radial-gradient(
-    circle,
-    rgba(79, 101, 182, 0.72) 0%,
-    rgba(34, 48, 89, 0.34) 46%,
-    transparent 70%
-  );
+  right: -20%;
+  bottom: -16%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.8) 0%, rgba(99, 102, 241, 0.3) 46%, transparent 70%);
 }
 
-.hb-login-inner,
-.hb-door-inner {
+.hb-login-inner {
   width: 100%;
-  max-width: 392px;
+  max-width: 380px;
   position: relative;
 }
-
-/* ── The panel ─────────────────────────────────────────────────────────────── */
-.hb-login-head,
-.hb-crest {
+.hb-login-head {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  margin-bottom: 26px;
 }
-.hb-login-head {
-  margin-bottom: 21px;
-}
-/* The mark's own cast light, thrown down and to the right to agree with the key
-   light — not a symmetric glow, which would contradict it.
-
-   It belongs on the WRAPPER. Putting it on the <svg> clips the shadow at the
-   svg's own viewport and leaves a hard edge where it is cut; the sheen's travel
-   is dealt with at the source instead, by a nested svg inside the mark (see
-   Logo.tsx). */
 .hb-mark {
-  filter: drop-shadow(6px 12px 26px rgba(11, 9, 7, 0.75))
-    drop-shadow(-2px -3px 16px rgba(218, 178, 73, 0.22));
-  margin-bottom: 13px;
+  /* Larger than the word beside it: the mark is the identity, the word is the
+     caption. At 76 against a 34px title the type was leading. */
+  /* The mark's own cast light, so it sits ON the canvas rather than in front
+     of it. Sized off the mark, not a fixed blur, so it scales with it. */
+  filter: drop-shadow(0 10px 30px rgba(6, 182, 212, 0.34));
+  margin-bottom: 16px;
 }
 .hb-title {
-  font-family: var(--font-display);
-  font-size: 39.3px; /* body × √φ⁴ */
-  font-weight: 600;
-  letter-spacing: 0.005em;
+  font-size: 32px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
   line-height: 1;
   color: var(--color-bone);
   margin: 0;
 }
-/* A gilt rule under the name. Gold leaf on an altarpiece is laid on the frame,
-   not on the figure — so here it is a line, not a fill. */
-.hb-gilt {
-  width: 132px;
-  height: 2px;
-  margin: 13px 0 0;
-  border: 0;
-  border-radius: 2px;
-  /* Two layers, because leaf is not a flat colour: the sheet itself, and the
-     line of light where it catches. */
-  background:
-    linear-gradient(
-      90deg,
-      transparent,
-      rgba(240, 205, 124, 1) 34%,
-      rgba(255, 236, 187, 1) 50%,
-      rgba(240, 205, 124, 1) 66%,
-      transparent
-    );
-  box-shadow: 0 0 14px rgba(218, 178, 73, 0.45);
-}
 .hb-sub {
-  margin: 13px 0 0;
-  font-size: 14px;
+  margin: 10px 0 0;
+  font-size: 13.5px;
   line-height: 1.5;
   color: var(--color-taupe);
   /* Balanced, not ragged: at 30ch this line broke after "in one", leaving
      "place." alone on the second row under a centred headline. */
   max-width: 34ch;
   text-wrap: balance;
-}
-.hb-greet {
-  font-family: var(--font-display);
-  font-size: 24.3px; /* body × φ */
-  font-weight: 500;
-  line-height: 1.2;
-  color: var(--color-bone);
-  margin: 13px 0 0;
-}
-.hb-greet em {
-  font-style: italic;
-  font-weight: 500;
-  color: var(--color-gold-lume);
-}
-.hb-motto {
-  margin: 5px 0 0;
-  font-family: var(--font-display);
-  font-style: italic;
-  font-size: 15px;
-  letter-spacing: 0.01em;
-  color: var(--color-faint);
-}
-
-/* ── The openings ──────────────────────────────────────────────────────────── */
-.hb-doors {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 13px;
-  margin-top: 21px;
-}
-/* A real arch: a dome over a plinth. The top radius is larger than half the
-   card's width so the curve is a true semicircle rather than a soft corner —
-   which is what makes it read as a DOOR and not as another rounded tile. */
-.hb-arch {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 21px 13px 16px;
-  min-height: 186px;
-  border: 1px solid var(--color-edge);
-  /* Percentages, not a huge px value: with `999px 999px 16px 16px` the CSS
-     radius-scaling rule shrinks EVERY corner by the same factor to make them
-     fit, so the 16px feet collapsed to about 1px and the "arch" was really a
-     rounded-top rectangle. At 50%/46% the dome is a true semicircle and the
-     feet keep their 16px. */
-  border-radius: 50% 50% 16px 16px / 46% 46% 16px 16px;
-  background:
-    radial-gradient(
-      120% 78% at 26% 6%,
-      rgba(245, 239, 228, 0.055),
-      transparent 62%
-    ),
-    color-mix(in srgb, var(--color-tile) 88%, transparent);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
-  color: var(--color-bone);
-  cursor: pointer;
-  text-align: center;
-  /* Lit from the upper left, shadowed to the lower right. One light. */
-  box-shadow:
-    inset 0 1px 0 rgba(245, 239, 228, 0.08),
-    inset -1px -1px 0 rgba(11, 9, 7, 0.5),
-    10px 18px 40px -22px rgba(0, 0, 0, 0.95);
-  transition:
-    transform 0.16s cubic-bezier(0.3, 0.9, 0.3, 1),
-    border-color 0.18s,
-    box-shadow 0.18s;
-}
-.hb-arch:hover {
-  border-color: var(--hb-pig, var(--color-accent));
-}
-.hb-arch:active {
-  transform: scale(0.975);
-}
-/* The niche. A circular recess cut into the dome, holding the emblem — which is
-   how a figure sits in a Renaissance façade, and which gives the icon a reason
-   to be round. The inset shadow is the recess; the pigment is the door's. */
-.hb-arch .em {
-  width: 66px;
-  height: 66px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--hb-pig);
-  background: radial-gradient(
-    circle at 34% 26%,
-    color-mix(in srgb, var(--hb-pig) 30%, transparent),
-    color-mix(in srgb, var(--hb-pig) 9%, transparent) 72%
-  );
-  box-shadow:
-    inset 2px 3px 9px rgba(11, 9, 7, 0.82),
-    inset -1px -1px 5px color-mix(in srgb, var(--hb-pig) 30%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--hb-pig) 34%, transparent);
-}
-.hb-arch .nm {
-  margin-top: 8px;
-  font-family: var(--font-sans);
-  font-size: 11.8px;
-  font-weight: 700;
-  letter-spacing: 0.17em;
-  text-transform: uppercase;
-  color: var(--color-bone);
-}
-.hb-arch .fact {
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--color-faint);
-  max-width: 17ch;
-}
-/* Chosen: the door opens — it takes the light, the others let go of it. */
-.hb-arch.chosen {
-  border-color: var(--hb-pig);
-  box-shadow:
-    inset 0 1px 0 rgba(245, 239, 228, 0.1),
-    0 0 0 1px color-mix(in srgb, var(--hb-pig) 55%, transparent),
-    0 0 48px -6px color-mix(in srgb, var(--hb-pig) 42%, transparent);
-}
-
-/* ── The predella ──────────────────────────────────────────────────────────── */
-.hb-predella {
-  margin-top: 21px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border: 1px solid var(--color-edge);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--color-recessed) 74%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  overflow: hidden;
-}
-.hb-pred {
-  padding: 13px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  min-height: 72px;
-  text-align: center;
-  border-left: 1px solid var(--color-edge);
-}
-.hb-pred:first-child {
-  border-left: 0;
-}
-.hb-pred .k {
-  font-size: 9.6px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--color-faint);
-}
-.hb-pred .v {
-  font-family: var(--font-display);
-  font-variant-numeric: tabular-nums lining-nums;
-  font-feature-settings: "tnum" 1, "lnum" 1;
-  font-size: 19.1px;
-  font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -0.01em;
-  color: var(--color-bone);
-}
-/* Exactly one figure on this screen is gilded — the money actually available,
-   which is the single fact the whole app exists to keep honest. */
-.hb-pred.gilt .v {
-  color: var(--color-gold-lume);
-}
-.hb-pred .s {
-  font-size: 10.5px;
-  line-height: 1.25;
-  color: var(--color-faint);
-}
-
-/* ── First launch: whose phone is this ─────────────────────────────────────── */
-.hb-who {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 21px;
-}
-.hb-who button {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  width: 100%;
-  min-height: 64px;
-  padding: 0 16px;
-  border: 1px solid var(--color-edge);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--color-tile) 86%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--color-bone);
-  font-family: var(--font-display);
-  font-size: 19.1px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(245, 239, 228, 0.07),
-    8px 14px 30px -20px rgba(0, 0, 0, 0.9);
-  transition: border-color 0.18s, transform 0.14s;
-}
-.hb-who button:hover {
-  border-color: var(--color-accent);
-}
-.hb-who button:active {
-  transform: scale(0.985);
-}
-/* The initial in a medal — a struck disc, lit from the same upper left. */
-.hb-medal {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  flex: none;
-  font-family: var(--font-display);
-  font-size: 19.1px;
-  font-weight: 700;
-  line-height: 1;
-  box-shadow:
-    inset 1px 2px 5px rgba(255, 255, 255, 0.32),
-    inset -1px -2px 5px rgba(11, 9, 7, 0.42);
 }
 
 /* The card reads as glass over the aurora rather than as a flat tile: a
@@ -1813,8 +1240,8 @@ input[type="number"] {
   color: var(--color-faint);
 }
 .hb-field input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(127, 159, 247, 0.2);
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
 }
 .hb-pw {
   position: relative;
@@ -1847,12 +1274,12 @@ input[type="number"] {
   line-height: 1.45;
 }
 .hb-msg.bad {
-  background: rgba(235, 120, 103, 0.13);
+  background: rgba(232, 116, 106, 0.12);
   color: #f0a79f;
 }
 .hb-msg.good {
-  background: rgba(0, 164, 131, 0.14);
-  color: #7fd6c8;
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
 }
 
 /* The one primary action on the screen, carrying the brand across it. */
@@ -1865,20 +1292,13 @@ input[type="number"] {
   margin-top: 2px;
   border: 0;
   border-radius: 13px;
-  font-family: var(--font-sans);
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.01em;
-  color: #0b1024;
+  letter-spacing: -0.01em;
+  color: #04231f;
   cursor: pointer;
-  /* LAPIS, and only lapis. The first version of this ran the mark's two
-     pigments across the button — and blue interpolated to gold in sRGB passes
-     straight through grey, so the middle third of the primary action on the
-     app's first screen was mud. The rule settles it anyway: lapis means "you
-     can act on this", and this is the one thing on the screen you act on. It
-     is still lit from the upper left like everything else. */
-  background: linear-gradient(128deg, #93b0ff 0%, #6d8ded 52%, #4f65b6 100%);
-  box-shadow: 0 12px 28px -14px rgba(79, 101, 182, 0.85);
+  background: linear-gradient(120deg, #34d399 0%, #06b6d4 52%, #3b82f6 100%);
+  box-shadow: 0 12px 28px -14px rgba(6, 182, 212, 0.9);
   transition: transform 0.12s, filter 0.16s;
 }
 .hb-go:hover {
@@ -1906,7 +1326,7 @@ input[type="number"] {
 }
 .hb-swap span {
   font-weight: 700;
-  color: var(--color-accent);
+  color: #22d3ee;
 }
 .hb-swap:hover span {
   text-decoration: underline;
@@ -1917,48 +1337,10 @@ input[type="number"] {
      gates input — the form is present and focusable the whole time. */
   .hb-mark,
   .hb-title,
-  .hb-gilt,
   .hb-sub,
-  .hb-greet,
-  .hb-motto,
   .hb-card,
-  .hb-doors,
-  .hb-predella,
-  .hb-who,
   .hb-swap {
     animation: hbRise 0.6s cubic-bezier(0.2, 0.7, 0.25, 1) both;
-  }
-  /* The gilt rule is drawn rather than lifted — it is a line, so it arrives the
-     way a line is made. */
-  .hb-gilt {
-    animation-name: hbDraw;
-  }
-  @keyframes hbDraw {
-    from {
-      opacity: 0;
-      transform: scaleX(0.12);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  /* The doors open on the throw: the chosen one takes the light and lifts, the
-     other lets go and falls back into the panel. */
-  .hb-arch {
-    transition:
-      transform 0.44s cubic-bezier(0.3, 0.85, 0.25, 1),
-      opacity 0.44s ease,
-      border-color 0.18s,
-      box-shadow 0.28s;
-  }
-  .hb-doors.thrown .hb-arch {
-    opacity: 0;
-    transform: translateY(10px) scale(0.94);
-  }
-  .hb-doors.thrown .hb-arch.chosen {
-    opacity: 1;
-    transform: translateY(-10px) scale(1.04);
   }
   @keyframes hbRise {
     from {
@@ -1990,6 +1372,15 @@ input[type="number"] {
     }
   }
 
+  /* A sheen crossing the mark. Long pause between passes — a highlight that
+     comes round every few seconds is a nervous tic, not a shine. */
+  .hb-sheen {
+    animation: hbSheen 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  @keyframes hbSheen {
+    0%, 62% { transform: translateX(0); }
+    88%, 100% { transform: translateX(215px); }
+  }
 
   .hb-spin {
     animation: hbSpin 0.9s linear infinite;

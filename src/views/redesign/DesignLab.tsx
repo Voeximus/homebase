@@ -94,15 +94,15 @@ const MOCK_ACTIVITY: ActivityVM = {
 
 const MOCK_PROFILE: ProfileVM = {
   ownerName: "Demo",
-  ownerColor: "#d47c2e",
+  ownerColor: "#ef8136",
   email: "demo@example.com",
   bankName: "Bank of America",
   bankSub: "Connected · 2 logins",
   cardsSub: "…4728 + …6813 linked · auto-syncs",
   accounts: [
-    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#9e9180" },
-    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#9e9180" },
-    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#39c0b4" },
+    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#5b82b3" },
+    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#687180" },
+    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#46d18a" },
   ],
   lang: "en",
   lens: "me",
@@ -175,33 +175,33 @@ function TopBar() {
   return (
     <div
       className="flex items-center justify-between px-4 py-2.5"
-      style={{ background: "#12100c" }}
+      style={{ background: "#0b0f17" }}
     >
       <span
         className="flex items-center gap-2 rounded-full p-0.5 text-[12px]"
-        style={{ background: "#1c1811", border: "1px solid #332b20" }}
+        style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <span
           className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-semibold"
-          style={{ background: "#7f9ff7", color: "#101a33" }}
+          style={{ background: "#34c5e8", color: "#06303a" }}
         >
           <Wallet size={14} /> Finance
         </span>
-        <span className="flex items-center gap-1.5 px-3 py-1.5" style={{ color: "#9e9180" }}>
+        <span className="flex items-center gap-1.5 px-3 py-1.5" style={{ color: "#8b97a6" }}>
           <HeartPulse size={14} /> Health
         </span>
       </span>
       <span
         className="flex rounded-full p-0.5 text-[12px]"
-        style={{ background: "#1c1811", border: "1px solid #332b20" }}
+        style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <span
           className="rounded-full px-3 py-1.5 font-semibold"
-          style={{ background: "#12100c", color: "#f5efe4" }}
+          style={{ background: "#0b0f17", color: "#e6edf3" }}
         >
           Mine
         </span>
-        <span className="px-3 py-1.5" style={{ color: "#9e9180" }}>
+        <span className="px-3 py-1.5" style={{ color: "#8b97a6" }}>
           Household
         </span>
       </span>
@@ -217,7 +217,7 @@ export function DesignLab() {
   return (
     <div
       className="mx-auto flex min-h-screen max-w-[440px] flex-col"
-      style={{ background: "#12100c" }}
+      style={{ background: "#0b0f17" }}
     >
       <TopBar />
       <div className="flex-1 overflow-y-auto">

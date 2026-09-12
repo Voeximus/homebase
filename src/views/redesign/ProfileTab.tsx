@@ -65,14 +65,14 @@ function AuditPanel({ result }: { result: AuditResult }) {
         <span
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
           style={{
-            background: result.clean ? "#12231f" : "#341713",
-            color: result.clean ? "#39c0b4" : "#eb7867",
+            background: result.clean ? "#16241c" : "#2a1618",
+            color: result.clean ? "#46d18a" : "#e8746a",
           }}
         >
           {result.clean ? <CircleCheck size={17} /> : <AlertTriangle size={17} />}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold" style={{ color: "#f5efe4" }}>
+          <span className="block text-[14px] font-semibold" style={{ color: "#e6edf3" }}>
             {result.clean
               ? t("Every number checks out")
               : t("{n} check{s} did not add up", {
@@ -80,7 +80,7 @@ function AuditPanel({ result }: { result: AuditResult }) {
                   s: failing.length > 1 ? "s" : "",
                 })}
           </span>
-          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "#9e9180" : "#eeada0" }}>
+          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "#8b97a6" : "#e8a09a" }}>
             {result.clean
               ? t("{n} of {n} internal checks passed — the app agrees with itself.", {
                   n: result.checks.length,
@@ -89,9 +89,9 @@ function AuditPanel({ result }: { result: AuditResult }) {
           </span>
         </span>
         {open ? (
-          <ChevronDown size={16} style={{ color: "#9e9180" }} />
+          <ChevronDown size={16} style={{ color: "#8b97a6" }} />
         ) : (
-          <ChevronRight size={16} style={{ color: "#9e9180" }} />
+          <ChevronRight size={16} style={{ color: "#8b97a6" }} />
         )}
       </button>
 
@@ -101,19 +101,19 @@ function AuditPanel({ result }: { result: AuditResult }) {
             <div key={c.id} className="flex gap-2.5">
               <span
                 className="mt-[3px] h-2 w-2 shrink-0 rounded-full"
-                style={{ background: c.status === "ok" ? "#39c0b4" : "#eb7867" }}
+                style={{ background: c.status === "ok" ? "#46d18a" : "#e8746a" }}
               />
               <span className="min-w-0">
-                <span className="block text-[12.5px] font-medium" style={{ color: "#e6dccb" }}>
+                <span className="block text-[12.5px] font-medium" style={{ color: "#c9d4de" }}>
                   {t(c.question)}
                 </span>
-                <span className="block text-[11.5px] leading-snug" style={{ color: "#9e9180" }}>
+                <span className="block text-[11.5px] leading-snug" style={{ color: "#8b97a6" }}>
                   {c.detail}
                 </span>
               </span>
             </div>
           ))}
-          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "#9e9180" }}>
+          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "#74838f" }}>
             {t(
               "Each of these compares one of your numbers against the same number worked out a second, separate way. They are exact — anything other than a perfect match is a real mistake, not a rounding difference, which is why there is no 'maybe' here.",
             )}
@@ -144,7 +144,7 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
       <div className="eyebrow mb-2 px-1 text-taupe">{label}</div>
       <div
         className="overflow-hidden rounded-[16px] border"
-        style={{ background: "#1c1811", borderColor: "#332b20" }}
+        style={{ background: "#141a24", borderColor: "#232d3a" }}
       >
         {children}
       </div>
@@ -161,7 +161,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
       onClick={onToggle}
       disabled={!onToggle}
       className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
-      style={{ background: on ? "#7f9ff7" : "#453a2b" }}
+      style={{ background: on ? "#34c5e8" : "#2a3441" }}
       aria-pressed={on}
     >
       <span
@@ -173,7 +173,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
 }
 
 // A horizontal divider matching the in-group row border.
-const ROW_BORDER = "#2a2419";
+const ROW_BORDER = "#1d2530";
 
 // Phone push notifications — self-contained (reads/sets its own state via the
 // push lib). Subscribing once covers transaction + health + bill alerts.
@@ -246,21 +246,21 @@ function PushRow() {
                 : t("On — transaction & health alerts on this phone");
   return (
     <div className="flex items-center gap-3 border-b p-4" style={{ borderColor: ROW_BORDER }}>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#7f9ff726", color: "#7f9ff7" }}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#34c5e826", color: "#34c5e8" }}>
         <Bell size={17} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-medium text-bone">{t("Notifications")}</div>
         {/* Orange, not grey: "not registered" is a fault to act on, not a preference
             that happens to be off. */}
-        <div className="text-[11.5px]" style={{ color: broken ? "#d47c2e" : "#9e9180" }}>{sub}</div>
+        <div className="text-[11.5px]" style={{ color: broken ? "#f97316" : "#8b97a6" }}>{sub}</div>
       </div>
       <button
         type="button"
         onClick={toggle}
         disabled={busy || locked}
         className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
-        style={{ background: registered ? "#7f9ff7" : "#453a2b", opacity: locked ? 0.45 : 1 }}
+        style={{ background: registered ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
         aria-pressed={registered}
       >
         <span className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all" style={{ left: registered ? "19px" : "3px" }} />
@@ -303,10 +303,10 @@ export function ProfileTab({
           {vm.ownerName.slice(0, 1)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="inscr text-[23px] leading-tight">{vm.ownerName}</div>
+          <div className="text-[20px] font-bold leading-tight">{vm.ownerName}</div>
           <div className="truncate text-[12px] opacity-90">{vm.email}</div>
           <div className="mt-1 flex items-center gap-1.5 text-[11px] opacity-90">
-            <span className="h-2 w-2 rounded-full" style={{ background: "#39c0b4" }} />
+            <span className="h-2 w-2 rounded-full" style={{ background: "#46d18a" }} />
             {t("Synced · this device is {name}", { name: vm.ownerName })}
           </div>
         </div>
@@ -333,17 +333,17 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#7f9ff726", color: "#7f9ff7" }}
+              style={{ background: "#34c5e826", color: "#34c5e8" }}
             >
               <Landmark size={17} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{vm.bankName}</div>
-              <div className="text-[12px]" style={{ color: "#39c0b4" }}>
+              <div className="text-[12px]" style={{ color: "#46d18a" }}>
                 {vm.bankSub}
               </div>
             </div>
-            <CircleCheck size={18} style={{ color: "#39c0b4" }} />
+            <CircleCheck size={18} style={{ color: "#46d18a" }} />
           </button>
 
           <button
@@ -353,17 +353,17 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#eb786726", color: "#eb7867" }}
+              style={{ background: "#f0556e26", color: "#f0556e" }}
             >
               <CreditCard size={17} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Cards as debt")}</div>
-              <div className="text-[12px]" style={{ color: "#9e9180" }}>
+              <div className="text-[12px]" style={{ color: "#8b97a6" }}>
                 {vm.cardsSub}
               </div>
             </div>
-            <ChevronRight size={18} style={{ color: "#9e9180" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
 
           <button
@@ -372,14 +372,14 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#b271c626", color: "#b271c6" }}
+              style={{ background: "#a78bfa26", color: "#a78bfa" }}
             >
               <FileUp size={17} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Import a statement")}</div>
             </div>
-            <ChevronRight size={18} style={{ color: "#9e9180" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
         </Group>
 
@@ -398,7 +398,7 @@ export function ProfileTab({
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.dot }} />
               <div className="min-w-0 flex-1">
                 <div className="text-[14px] font-medium text-bone">{a.name}</div>
-                <div className="text-[12px]" style={{ color: "#9e9180" }}>
+                <div className="text-[12px]" style={{ color: "#8b97a6" }}>
                   {a.owner}
                 </div>
               </div>
@@ -415,7 +415,7 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#7f9ff726", color: "#7f9ff7" }}
+              style={{ background: "#22d3ee26", color: "#22d3ee" }}
             >
               <Languages size={17} />
             </span>
@@ -436,7 +436,7 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#b271c626", color: "#b271c6" }}
+              style={{ background: "#a78bfa26", color: "#a78bfa" }}
             >
               <Users size={17} />
             </span>
@@ -459,12 +459,12 @@ export function ProfileTab({
           >
             <span
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: "#e0698426", color: "#e06984" }}
+              style={{ background: "#fb718526", color: "#fb7185" }}
             >
               <HeartPulse size={17} />
             </span>
             <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Health mode")}</div>
-            <ChevronRight size={18} style={{ color: "#9e9180" }} />
+            <ChevronRight size={18} style={{ color: "#7a8595" }} />
           </button>
         </Group>
 
@@ -484,13 +484,13 @@ export function ProfileTab({
               >
                 <span
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-                  style={{ background: "#d47c2e26", color: "#d47c2e" }}
+                  style={{ background: "#f9731626", color: "#f97316" }}
                 >
                   <Icon size={17} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-medium text-bone">{b.name}</div>
-                  <div className="text-[12px]" style={{ color: "#9e9180" }}>
+                  <div className="text-[12px]" style={{ color: "#8b97a6" }}>
                     {b.est}
                   </div>
                 </div>
@@ -511,7 +511,7 @@ export function ProfileTab({
         <button
           onClick={taps.onSignOut}
           className="flex items-center justify-center gap-2 rounded-[16px] border p-4 text-[14px] font-medium transition active:scale-[0.99]"
-          style={{ borderColor: "#332b20", color: "#9e9180" }}
+          style={{ borderColor: "#232d3a", color: "#8b97a6" }}
         >
           <LogOut size={17} /> {t("Sign out")}
         </button>
@@ -520,7 +520,7 @@ export function ProfileTab({
         <button
           onClick={taps.onAdvanced}
           className="h-hit flex items-center gap-2.5 px-1 text-[12px] transition active:scale-[0.99]"
-          style={{ color: "#9e9180" }}
+          style={{ color: "#7a8595" }}
         >
           <AlertTriangle size={15} />
           <span className="flex-1 text-left">{t("Advanced · re-seed, clear all data")}</span>
@@ -546,7 +546,7 @@ function Segmented<T extends string>({
   return (
     <span
       className="flex shrink-0 items-center rounded-full p-0.5"
-      style={{ background: "#2a2419" }}
+      style={{ background: "#1d2530" }}
     >
       {options.map((o) => {
         const isOn = o.key === active;
@@ -559,8 +559,8 @@ function Segmented<T extends string>({
             className="h-hit rounded-full px-2.5 py-1 text-[12px] font-medium transition"
             style={
               isOn
-                ? { background: "#7f9ff7", color: "#12100c" }
-                : { color: "#9e9180" }
+                ? { background: "#34c5e8", color: "#0b0f17" }
+                : { color: "#8b97a6" }
             }
           >
             {t(o.label)}

@@ -12,20 +12,12 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "2026.09.11d",
+    version: "2026.09.11e",
     date: "September 11, 2026",
     notes: [
-      "The Forecast tab is gone. The bottom bar is four tabs now, each one a quarter of the width.",
-      "The whole app is repainted. The canvas was a cool blue-grey; it is a warm brown-black now, the way a painter prepares a panel before anything goes on it — and every colour on top of it separates by warmth as well as by brightness, which is most of why the old screens felt flat.",
-      "Colours are chosen the way a Renaissance workshop chose them: a short list of real pigments, and the expensive ones reserved. Blue means you can tap it. Gold means this is the one thing on the screen that matters. Green means good money. Red means over, owed or late. Nothing gets spent on decoration.",
-      "Every colour in the app is computed now, not picked. Each one sits at an exact lightness, and the set was run through the colour-blindness check before it shipped. That found a real bug: Pets and Kids were the SAME colour — not similar, the identical value — so a dog expense and a child expense were indistinguishable on every chart. Pets has its own pigment now.",
-      "Two typefaces instead of one. The name of a thing and the one big number a screen is about are set in Garamond — the actual letterform of the period. Everything you tap, scan or read in a list stays in a plain face, because that is what plain faces are good at.",
-      "The intro screen is rebuilt. It used to be a greeting and a two-way switch: a whole screen, every time you open the app, that told you nothing. It now shows what you have, what is due next and what is left to spend BEFORE you pick a door — read from the same numbers the Home tab shows, so the two can never disagree.",
-      "The two doors on that screen are the two halves of the logo, in the logo's own colours and order. That is the only explanation of the mark anyone gets, and it is enough.",
-      "The logo is re-pigmented to ultramarine and gold. The old green and blue halves were nearly the same brightness, so in greyscale or at 16 pixels the split disappeared and it read as one blob.",
-      "The three Health looks are now Florence, Venice and Siena, and they finally look like three different things — a warm gesso ground, a deep cool one, and red earth — instead of three tints of the same grey.",
-      "\"Where every dollar goes\" had its labels inside the bar, at 10px, on fills that could not all carry text that small. The bar is a picture now and the row under it is the legend.",
-      "Checked the whole thing the same way as last time: no text below the readable standard and nothing too small to tap, across every tab, every Health look, the sign-in screen and the intro.",
+      "The look is back to what it was. The warm brown repaint, the new typefaces and the rebuilt intro screen are all reverted — you didn't like the direction, so it's gone rather than tweaked.",
+      "Three things stayed, because none of them were about the look. The Forecast tab is removed and the bottom bar is four tabs. Pets and Kids had the SAME colour — not similar, the identical value — so a dog expense and a child expense were indistinguishable on every chart; Pets is its own colour now. And a handful of controls that were a few pixels too small to hit reliably (the Activity filters, Refresh, the language switch, the day arrows, Copy day) now have a full-size touch area without looking any bigger.",
+      "There's a style chooser to look at when you have a minute: open /_stylelab.html on your phone. Six different directions for the app, all rendered on the real Home screen with the same numbers, so you can pick one before I build anything. Nothing in it is wired into the app.",
     ],
   },
   {
