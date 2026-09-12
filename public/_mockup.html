@@ -4,47 +4,89 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0e13">
-<title>Homebase — full mockup</title>
+<title>Homebase — full mockup v2</title>
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
-   EVERY SCREEN OF THE APP, one coherent design, so it can be judged as a
-   whole instead of a fragment at a time.
+   EVERY SCREEN, one design. v2 — refinement pass.
 
-   Chrome classes are namespaced `lab-`; everything else is the app. (The last
-   lab page had `.bar` meaning two different things and the envelope fills
-   silently rendered at height 0.)
+   What changed from v1, and why:
+
+   1. THE HERO IS HONEST NOW. v1 led with "safe to spend $531", which was the
+      envelope remainder — a number that will happily say you are fine the day
+      before $1,715 of rent leaves. It is now cash minus everything committed
+      before the next payday minus a floor, and the subtraction is printed
+      under it rather than hidden.
+
+   2. ONE NAVIGATION SYSTEM. v1 stacked two pill rows on top of a tab bar.
+      Finance/Health moved into the bar (five slots); only Mine/Both stays on
+      screen, and Health gets its own segmented control because it now needs
+      sub-navigation of its own.
+
+   3. THE COLOURS WERE WRONG AND THE VALIDATOR SAID SO. v1's palette was
+      eyeballed, and `dining` measured ΔE 4.4 from the ACCENT — i.e. a category
+      that looked tappable. Re-solved with the accent locked into the run:
+
+        accent #38c6e8   groceries #369e4e   gas #987de4
+        dining #a3468c   household #8f6700   misc #0871c1
+        worst category pair ΔE 16.4 normal · 8.3 CVD, all ≥ 3:1
+        every category ≥ ΔE 20 from the accent
+
+      THE RULE that falls out of it: the accent is the only colour that is both
+      a fill and an ink, so it is the only one that must be unique in both
+      roles. Status (good/warn/bad) appears ONLY as text or a tinted tag with a
+      word beside it; categories appear ONLY as dots, slices and fills. They
+      never meet in the same role, which is why a green category and a green
+      "on track" can coexist.
+
+   4. OVER BUDGET IS A TEXTURE, NOT A RECOLOUR. Turning an over-spent bar red
+      throws away which category it is. It keeps its colour, gains a hatch, and
+      says the word.
+
+   5. REAL ICONS. v1 used ● for everything, which is what made it read as a
+      wireframe rather than an app.
+
+   Chrome classes are namespaced `lab-`.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 
 :root{
-  /* ground — a near-black with a slight blue cast, three steps of depth */
   --bg:#0b0e13; --card:#141a23; --raised:#1c2430; --well:#080a0e;
   --line:#222b38; --line2:#2e3947;
-  /* ink — three values, and only three */
-  --ink:#f0f4f8; --ink2:#9aa7b6; --ink3:#747f8d;
-  /* one accent: THIS IS SOMETHING YOU CAN DO. never a label, never a series */
+  /* Three inks, and the ladder between them is real. The first pass had
+     --ink3 at #747f8d, which measured 3.84:1 on the raised surface — under the
+     4.5 small text needs, and it was carrying 109 pieces of text: every
+     eyebrow, every caption, the whole derivation strip. One token, 109
+     failures. Both lower inks lifted, and pulled apart so they are still
+     three distinguishable levels rather than three names for grey. */
+  --ink:#f0f4f8; --ink2:#a8b4c2; --ink3:#8b96a5;
+
+  /* THE ACCENT — the only colour that is both a fill and an ink, so the only
+     one that has to be unique in both roles. It means exactly one thing:
+     you can act on this. */
   --acc:#38c6e8; --on-acc:#04212b;
-  /* status — reserved, never reused as a category */
+
+  /* STATUS — text and tinted tags only, always with a word. Never a slice. */
   --good:#3fd08a; --warn:#e9b23c; --bad:#f0645c;
-  /* categories */
-  --c-groc:#34c97a; --c-gas:#8b7bf2; --c-dine:#22b8d8; --c-house:#f08a3c;
-  --c-misc:#c464b8; --c-bill:#5b9bf5; --c-health:#f2708f;
-  /* macros — fixed legend */
+
+  /* CATEGORIES — dots, slices and fills only. Never text colour.
+     Solved all-pairs with the accent locked in; see the note above. */
+  --c-groc:#369e4e; --c-gas:#987de4; --c-dine:#a3468c;
+  --c-house:#8f6700; --c-misc:#0871c1;
+
+  /* MACROS — a fixed legend, identical on every health screen */
   --mp:#e8608f; --mc:#4d93f0; --mf:#dfa32e;
-  --r:14px; --r-in:10px;
+
+  --r:14px;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
 
-body{
-  background:var(--bg); color:var(--ink); font-family:var(--sans);
-  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
-  padding-bottom:80px;
-}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;
+  line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:80px}
 
-/* ── lab chrome ───────────────────────────────────────────────────────────── */
-.lab-top{position:sticky;top:0;z-index:80;background:rgba(11,14,19,.92);
+/* ── lab chrome ─────────────────────────────────────────────────────────── */
+.lab-top{position:sticky;top:0;z-index:80;background:rgba(11,14,19,.94);
   backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:10px 0 8px}
 .lab-top h1{margin:0 16px 2px;font-size:14px;font-weight:700;letter-spacing:-.01em}
 .lab-top p{margin:0 16px 9px;font-size:11.5px;color:var(--ink3)}
@@ -53,56 +95,65 @@ body{
 .lab-jump a{flex:none;min-height:40px;display:inline-flex;align-items:center;padding:0 13px;
   border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink2);
   font-size:12px;font-weight:600;text-decoration:none}
-.lab-sec{margin:30px 16px 0;font-size:10.5px;font-weight:800;letter-spacing:.16em;
+.lab-sec{margin:32px 16px 0;font-size:10.5px;font-weight:800;letter-spacing:.16em;
   text-transform:uppercase;color:var(--ink3)}
 .lab-name{margin:16px 16px 3px;font-size:17px;font-weight:700;letter-spacing:-.01em}
 .lab-why{margin:0 16px 12px;font-size:12.5px;line-height:1.55;color:var(--ink2);max-width:520px}
 .lab-why b{color:var(--ink);font-weight:650}
+.lab-new{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--acc);border:1px solid rgba(56,198,232,.35);
+  border-radius:5px;padding:1px 5px;margin-left:7px;vertical-align:2px}
 .lab-phone{margin:0 auto 6px;width:100%;max-width:392px;padding:0 8px}
-.lab-screen{border:1px solid var(--line);border-radius:26px;overflow:hidden;background:var(--bg);
-  position:relative;box-shadow:0 24px 60px -40px #000}
-/* a sheet is absolutely positioned to the bottom of its frame, so the frame
-   needs a real height to hold it — the content behind it is only a hero tall */
-.lab-screen.tall{min-height:690px}
-.lab-note{margin:10px 16px 0;font-size:11.5px;color:var(--ink3);max-width:520px}
+.lab-screen{border:1px solid var(--line);border-radius:26px;overflow:hidden;
+  background:var(--bg);position:relative;box-shadow:0 24px 60px -40px #000}
+.lab-screen.tall{min-height:700px}
 .lab-end{margin:34px 16px 0;padding:14px 15px;border:1px solid var(--line);border-radius:14px;
   background:var(--card);font-size:12.5px;line-height:1.6;color:var(--ink2);max-width:520px}
 .lab-end b{color:var(--ink)}
 
-/* ═══ APP ══════════════════════════════════════════════════════════════════ */
+/* ═══ APP ════════════════════════════════════════════════════════════════ */
+.sb{display:flex;justify-content:space-between;align-items:center;padding:9px 18px 0;
+  font-size:11.5px;font-weight:600;color:var(--ink2)}
+.sb .r{display:flex;gap:5px;align-items:center;opacity:.7;font-size:9px}
 
-/* status bar + chrome */
-.sb{display:flex;justify-content:space-between;align-items:center;padding:9px 18px 2px;
-  font-size:11.5px;font-weight:600;color:var(--ink2);letter-spacing:.01em}
-.sb .r{display:flex;gap:5px;align-items:center;opacity:.75}
+/* one switch, not two. Finance/Health went to the tab bar. */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 6px}
+.lens{display:flex;background:var(--well);border:1px solid var(--line);border-radius:999px;padding:3px}
+.lens b{padding:6px 13px;border-radius:999px;font-size:12px;font-weight:650;color:var(--ink2)}
+.lens b.on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line2)}
+.icobtn{width:36px;height:36px;border-radius:11px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink2);display:grid;place-items:center}
 
-.nav{display:flex;align-items:center;justify-content:space-between;padding:8px 14px 12px}
-.pill{display:flex;background:var(--well);border:1px solid var(--line);border-radius:999px;padding:3px}
-.pill b{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;color:var(--ink2)}
-.pill b.on{background:var(--acc);color:var(--on-acc)}
-.icobtn{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:var(--card);
-  color:var(--ink2);display:grid;place-items:center;font-size:15px}
-
-/* the ONE hero per screen — this is the fix for "nothing is bigger than
-   anything else". An eyebrow, the number at a size nothing else gets, and one
-   line that says what to do about it. */
-.hero{padding:12px 18px 20px}
-.hero .eye{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
-.hero .fig{font-size:46px;font-weight:800;letter-spacing:-.035em;line-height:1.02;margin-top:6px;
+/* the ONE hero per screen */
+.hero{padding:10px 18px 18px}
+.eye{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.fig{font-size:46px;font-weight:800;letter-spacing:-.035em;line-height:1.02;margin-top:5px;
   font-variant-numeric:tabular-nums}
-.hero .fig.sm{font-size:38px}
-.hero .sub{font-size:13px;color:var(--ink2);margin-top:6px}
-.hero .sub b{color:var(--ink);font-weight:650}
-.hero .meter{height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:14px;display:flex}
-.hero .meter i{display:block;height:100%}
-.hero .legend{display:flex;justify-content:space-between;margin-top:7px;font-size:11.5px;color:var(--ink3)}
+.fig.sm{font-size:38px}
+.fig u{text-decoration:none;font-size:21px;font-weight:650;color:var(--ink3);letter-spacing:-.01em}
+.sub{font-size:13px;color:var(--ink2);margin-top:6px}
+.sub b{color:var(--ink);font-weight:650}
+
+/* the derivation, printed. A headline number you cannot check is a number you
+   have to trust, and this app's whole job is to not be trusted blindly. */
+.deriv{display:flex;margin-top:15px;border:1px solid var(--line);border-radius:12px;
+  background:var(--card);overflow:hidden}
+.deriv div{flex:1;padding:10px 8px;text-align:center;position:relative}
+.deriv div + div{border-left:1px solid var(--line)}
+.deriv .op{position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:12px;height:12px;
+  background:var(--card);color:var(--ink3);font-size:12px;line-height:12px;text-align:center}
+.deriv .n{font-size:14.5px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.deriv .l{font-size:9.5px;color:var(--ink3);margin-top:3px;letter-spacing:.04em}
+
+.meter{height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:14px}
+.meter i{display:block;height:100%;border-radius:99px}
+.legend{display:flex;justify-content:space-between;margin-top:7px;font-size:11.5px;color:var(--ink3)}
 
 .body{padding:0 14px;display:flex;flex-direction:column;gap:10px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
-.card.flat{background:transparent;border:0;padding:0}
-.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;gap:10px}
 .ch .t{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
-.ch .a{font-size:12px;font-weight:600;color:var(--acc)}
+.ch .a{font-size:12px;font-weight:650;color:var(--acc);display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 
@@ -112,68 +163,72 @@ body{
 .stat .s{font-size:11.5px;color:var(--ink3);margin-top:3px}
 .stat .s.good{color:var(--good)}.stat .s.warn{color:var(--warn)}.stat .s.bad{color:var(--bad)}
 
-/* rows — one shape for every list in the app */
-.row{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 0}
+.row{display:flex;align-items:center;gap:12px;min-height:54px;padding:7px 0}
 .row + .row{border-top:1px solid var(--line)}
-.row .ic{width:36px;height:36px;border-radius:11px;flex:none;display:grid;place-items:center;font-size:13px}
+.ic{width:36px;height:36px;border-radius:11px;flex:none;display:grid;place-items:center}
+.ic svg{width:17px;height:17px}
 .row .m{flex:1;min-width:0}
 .row .m .n{font-size:14px;font-weight:650;letter-spacing:-.005em}
-.row .m .s{font-size:11.5px;color:var(--ink3);margin-top:2px}
+.row .m .s{font-size:11.5px;color:var(--ink3);margin-top:2px;display:flex;align-items:center;gap:6px}
 .row .rt{text-align:right;flex:none}
 .row .rt .a{font-size:14.5px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .row .rt .a.in{color:var(--good)}
-.row .rt .s{font-size:11px;color:var(--ink3);margin-top:2px}
-.row .chev{color:var(--ink3);font-size:16px;flex:none}
+.row .chev{color:var(--ink3);flex:none;display:grid;place-items:center}
+.row .chev svg{width:15px;height:15px}
 
-.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;
-  border-radius:7px;padding:2px 7px;line-height:1.6}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;
+  border-radius:6px;padding:2px 6px;line-height:1.6;letter-spacing:.01em}
 .tag.warn{background:rgba(233,178,60,.14);color:var(--warn)}
 .tag.bad{background:rgba(240,100,92,.14);color:var(--bad)}
 .tag.good{background:rgba(63,208,138,.14);color:var(--good)}
 .tag.quiet{background:var(--raised);color:var(--ink2)}
+.tag svg{width:11px;height:11px}
 
 .bar{height:7px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:8px}
 .bar i{display:block;height:100%;border-radius:99px}
-
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
 
-.btn{min-height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;gap:8px;
-  font-size:14.5px;font-weight:700;background:var(--acc);color:var(--on-acc);border:0;width:100%}
+.btn{min-height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  gap:8px;font-size:14.5px;font-weight:700;background:var(--acc);color:var(--on-acc);border:0;width:100%}
+.btn svg{width:17px;height:17px}
 .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
 
-.tabbar{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);
+/* five slots now: Finance's three, Health, Profile */
+.tabbar{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);
   padding:8px 0 14px;margin-top:14px;background:var(--bg)}
-.tabbar span{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:var(--ink3);font-weight:600}
+.tabbar span{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9.5px;
+  color:var(--ink3);font-weight:650;letter-spacing:.01em}
 .tabbar span.on{color:var(--acc)}
-.tabbar span b{font-size:18px;font-weight:400;line-height:1}
+.tabbar svg{width:20px;height:20px}
 
-/* ── the runway strip: the next three dated things, inline ── */
-.rw{display:flex;gap:0}
-.rw div{flex:1;padding:0 2px}
+/* health's own sub-navigation, now that Health is one slot in the bar */
+.seg{display:flex;background:var(--well);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px;margin:0 14px}
+.seg b{flex:1;text-align:center;padding:9px 0;border-radius:9px;font-size:12.5px;font-weight:650;color:var(--ink2)}
+.seg b.on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line2)}
+
+.rw{display:flex}
+.rw div{flex:1}
 .rw div + div{border-left:1px solid var(--line);padding-left:11px;margin-left:11px}
-.rw .d{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+.rw .d{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
 .rw .n{font-size:12.5px;font-weight:650;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rw .a{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.rw .a{font-size:12.5px;font-weight:750;font-variant-numeric:tabular-nums;margin-top:2px}
 
-/* ── donut ── */
-.donut{width:82px;height:82px;border-radius:50%;flex:none;position:relative}
+.donut{width:84px;height:84px;border-radius:50%;flex:none;position:relative}
 .donut i{position:absolute;inset:13px;border-radius:50%;background:var(--card);display:grid;
   place-items:center;font-style:normal;text-align:center;line-height:1.15}
 .donut i b{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em;display:block}
-.donut i s{font-size:9.5px;color:var(--ink3);text-decoration:none;display:block;margin-top:1px}
+.donut i s{font-size:9px;color:var(--ink3);text-decoration:none;display:block;margin-top:1px}
 
-/* ── sheet ── */
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line2);
   border-radius:22px 22px 0 0;padding:10px 16px 20px;box-shadow:0 -24px 60px -20px #000}
 .sheet .grab{width:38px;height:4px;border-radius:99px;background:var(--line2);margin:0 auto 14px}
-.scrim{position:absolute;inset:0;background:rgba(4,6,9,.66);backdrop-filter:blur(2px)}
+.scrim{position:absolute;inset:0;background:rgba(4,6,9,.68)}
 
-/* ── health ── */
-.ring{width:78px;height:78px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
-.ring i{position:absolute;inset:8px;border-radius:50%;background:var(--bg)}
+.ring{width:80px;height:80px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
+.ring i{position:absolute;inset:9px;border-radius:50%;background:var(--bg)}
 .ring span{position:relative;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
 .macros{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
-.macro .l{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;
+.macro .l{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
 .macro .v{font-size:17px;font-weight:750;margin-top:5px;font-variant-numeric:tabular-nums}
 .macro .v s{font-size:11px;color:var(--ink3);text-decoration:none;font-weight:600}
@@ -183,38 +238,45 @@ body{
 .week b.on{background:rgba(63,208,138,.2);color:var(--good)}
 .week b.today{box-shadow:inset 0 0 0 1.5px var(--acc);color:var(--acc)}
 
-.seg{display:flex;background:var(--well);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
-.seg b{flex:1;text-align:center;padding:8px 0;border-radius:9px;font-size:12.5px;font-weight:650;color:var(--ink2)}
-.seg b.on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
-
 .field{background:var(--well);border:1px solid var(--line);border-radius:12px;min-height:46px;
   display:flex;align-items:center;padding:0 13px;font-size:14px;color:var(--ink3);gap:9px}
+.field svg{width:16px;height:16px}
 
-.spark{display:flex;align-items:flex-end;gap:3px;height:46px;margin-top:10px}
+.spark{display:flex;align-items:flex-end;gap:3px;height:44px;margin-top:10px}
 .spark i{flex:1;background:var(--raised);border-radius:3px 3px 0 0}
 .spark i.on{background:var(--acc)}
 
-/* ── shell / front door ── */
-.door{min-height:660px;display:flex;flex-direction:column;justify-content:center;padding:28px 22px;position:relative;overflow:hidden}
-.door .glow{position:absolute;inset:-30%;z-index:0;filter:blur(90px);opacity:.5;
-  background:radial-gradient(closest-side,rgba(56,198,232,.5),transparent 70%) 20% 10%/70% 70% no-repeat,
-             radial-gradient(closest-side,rgba(91,155,245,.42),transparent 70%) 90% 90%/70% 70% no-repeat}
+.empty{padding:38px 24px;text-align:center}
+.empty .ic{width:52px;height:52px;border-radius:17px;margin:0 auto 14px;background:var(--raised);color:var(--ink3)}
+.empty .ic svg{width:24px;height:24px}
+.empty .t{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.empty .s{font-size:12.5px;color:var(--ink3);margin-top:6px;max-width:30ch;margin-inline:auto;line-height:1.5}
+.skel{background:linear-gradient(90deg,var(--raised),var(--line2),var(--raised));
+  border-radius:7px;height:13px}
+
+/* front door */
+.door{min-height:672px;display:flex;flex-direction:column;justify-content:center;
+  padding:28px 22px;position:relative;overflow:hidden}
+.door .glow{position:absolute;inset:-30%;z-index:0;filter:blur(90px);opacity:.45;
+  background:radial-gradient(closest-side,rgba(56,198,232,.55),transparent 70%) 18% 8%/70% 70% no-repeat,
+             radial-gradient(closest-side,rgba(152,125,228,.4),transparent 70%) 92% 92%/70% 70% no-repeat}
 .door > *{position:relative;z-index:1}
-.mark{width:72px;height:72px;margin:0 auto}
-.door h2{text-align:center;font-size:30px;font-weight:800;letter-spacing:-.035em;margin:16px 0 0}
-.door .tag2{text-align:center;font-size:13.5px;color:var(--ink2);margin-top:8px}
-.doors{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:26px}
-.doors button{border:1px solid var(--line);background:rgba(20,26,35,.8);backdrop-filter:blur(10px);
-  border-radius:18px;padding:18px 12px;color:var(--ink);display:flex;flex-direction:column;
-  align-items:center;gap:8px;min-height:118px;justify-content:center}
-.doors .ic{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:19px}
-.doors .n{font-size:12.5px;font-weight:750;letter-spacing:.02em}
-.doors .s{font-size:11px;color:var(--ink3);text-align:center}
+.mark{width:70px;height:70px;margin:0 auto;display:block}
+.door h2{text-align:center;font-size:29px;font-weight:800;letter-spacing:-.035em;margin:16px 0 0}
+.door .tag2{text-align:center;font-size:13.5px;color:var(--ink2);margin-top:7px}
+.doors{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:24px}
+.doors button{border:1px solid var(--line);background:rgba(20,26,35,.82);backdrop-filter:blur(10px);
+  border-radius:18px;padding:17px 12px;color:var(--ink);display:flex;flex-direction:column;
+  align-items:center;gap:9px;min-height:120px;justify-content:center}
+.doors .ic{width:44px;height:44px;border-radius:14px}
+.doors .ic svg{width:20px;height:20px}
+.doors .n{font-size:12px;font-weight:800;letter-spacing:.09em}
+.doors .s{font-size:11.5px;color:var(--ink3);text-align:center;line-height:1.35}
 .facts{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:14px;
-  margin-top:11px;background:rgba(20,26,35,.7);backdrop-filter:blur(10px);overflow:hidden}
+  margin-top:11px;background:rgba(20,26,35,.75);backdrop-filter:blur(10px);overflow:hidden}
 .facts div{padding:12px 8px;text-align:center}
 .facts div + div{border-left:1px solid var(--line)}
-.facts .k{font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+.facts .k{font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
 .facts .v{font-size:16px;font-weight:750;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .facts .s{font-size:9.5px;color:var(--ink3);margin-top:2px}
 </style>
@@ -222,114 +284,154 @@ body{
 <body>
 
 <div class="lab-top">
-  <h1>Homebase — the whole app</h1>
-  <p>Every screen, one design. Scroll, or jump.</p>
+  <h1>Homebase — the whole app <span style="color:var(--acc)">v2</span></h1>
+  <p>Honest hero · one nav · validated colours · real icons</p>
   <div class="lab-jump">
     <a href="#shell">Open &amp; sign in</a>
     <a href="#finance">Finance</a>
     <a href="#sheets">Sheets</a>
     <a href="#health">Health</a>
+    <a href="#states">Empty &amp; loading</a>
   </div>
 </div>
 
-<div class="lab-sec" id="shell">Shell — what you see before anything else</div>
+<div class="lab-sec" id="shell">Shell</div>
 
 <div class="lab-name">Open</div>
-<p class="lab-why">Every cold launch. The two doors are the whole app; the strip underneath is where you
-stand, so the screen is worth the tap it costs you. <b>The numbers come from the same place Home reads
-them</b>, so the two can never disagree.</p>
+<p class="lab-why">Every cold launch. The strip underneath now leads with the honest number, so the
+screen earns the tap it costs.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-open"></div></div>
 
 <div class="lab-name">Sign in</div>
-<p class="lab-why">Once per device. Nothing on it but the mark, the name and the form.</p>
+<p class="lab-why">Once per device.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-login"></div></div>
 
-<div class="lab-sec" id="finance">Finance — four tabs</div>
+<div class="lab-sec" id="finance">Finance</div>
 
-<div class="lab-name">Home</div>
-<p class="lab-why"><b>One hero, at a size nothing else gets.</b> The old Home gave seven facts the same
-weight, so it had no opinion about what mattered. This one answers the question you actually open the app
-with — what can I spend — then the next three dated things, then the envelopes, then what just happened.
-Debt is still here; it stopped being the headline because it moves once a fortnight and your spending
-moves every day.</p>
+<div class="lab-name">Home <span class="lab-new">rebuilt</span></div>
+<p class="lab-why"><b>The hero is now a number that cannot lie to you.</b> v1 said &ldquo;safe to spend
+$531&rdquo; — the envelope remainder, which would happily read $531 the day before $1,715 of rent left the
+account. It is now cash minus everything committed before the next payday minus your floor, <b>and the
+subtraction is printed underneath</b> rather than asserted. The envelopes are still here; they moved below
+the thing that can actually hurt you.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-home"></div></div>
 
-<div class="lab-name">Insights</div>
-<p class="lab-why">Where it went, and whether that is normal. The donut names its five biggest slices and
-nothing more; the comparison row underneath is the part that is actually useful — this cycle against your
-own average, not against a budget you set once.</p>
+<div class="lab-name">Insights <span class="lab-new">real chart</span></div>
+<p class="lab-why">v1's comparison bars encoded nothing — I set the widths by hand, which is the exact
+thing this app exists to stop doing. Each bar is now this cycle as a fraction of your own six-cycle
+average, with the 100% line drawn, so &ldquo;+18%&rdquo; is something you can see rather than something you
+have to take my word for.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-insights"></div></div>
 
 <div class="lab-name">Activity</div>
-<p class="lab-why">The ledger. <b>Needs-review is a filter, not a nag</b> — and a charge only lands there
-when the app genuinely cannot tell, never when it already picked a category. Pending charges are marked
-inline rather than shoved into the review pile.</p>
+<p class="lab-why"><b>Needs-review is a filter, not a pile</b>, and a charge only lands there when the app
+genuinely cannot tell. Pending charges are marked inline instead of being swept in with them.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-activity"></div></div>
 
 <div class="lab-name">Profile</div>
-<p class="lab-why">Accounts, connections, and the switches. Grouped so the destructive things are not
-next to the harmless ones.</p>
+<p class="lab-why">Accounts, connections, switches. Mine/Both lives on every screen; everything else that
+is set once lives here.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-profile"></div></div>
 
-<div class="lab-sec" id="sheets">Sheets — what opens on top</div>
+<div class="lab-sec" id="sheets">Sheets</div>
 
 <div class="lab-name">A transaction</div>
-<p class="lab-why">Tap any row. The category is a choice you can change in one tap, not a form. If the app
-guessed, it says so and shows you why.</p>
+<p class="lab-why">The app says <b>why</b> it could not place the charge, not just that it could not.</p>
 <div class="lab-phone"><div class="lab-screen tall" id="s-txn"></div></div>
 
 <div class="lab-name">Bills</div>
-<p class="lab-why">What is due, in date order, with the ones already paid greyed rather than hidden — so
-you can see the month, not just the remainder.</p>
+<p class="lab-why">Paid ones stay, greyed — so you see the month rather than the remainder.</p>
 <div class="lab-phone"><div class="lab-screen tall" id="s-bills"></div></div>
 
-<div class="lab-sec" id="health">Health — four tabs</div>
+<div class="lab-sec" id="health">Health</div>
 
-<div class="lab-name">Today</div>
-<p class="lab-why">Same rule as Home: one hero. Calories left, the ring, then the three macros as a fixed
-legend that never changes colour between screens.</p>
+<div class="lab-name">Today <span class="lab-new">own sub-nav</span></div>
+<p class="lab-why">Health is one slot in the tab bar now, so it carries its own segmented control. Same
+rule as Home: one hero.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-today"></div></div>
 
 <div class="lab-name">Add food</div>
-<p class="lab-why">Search, scan, or reuse. The scanner is the primary action because it is the one that
-actually gets used.</p>
+<p class="lab-why">Scan is the primary action because it is the one that gets used.</p>
 <div class="lab-phone"><div class="lab-screen tall" id="s-food"></div></div>
 
 <div class="lab-name">Workouts</div>
-<p class="lab-why">The session as a list of sets you tick off, with last time's numbers beside each one so
-you know what to beat.</p>
+<p class="lab-why">Last time's numbers sit beside every set, so you know what you are trying to beat.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-workout"></div></div>
 
 <div class="lab-name">Progress</div>
-<p class="lab-why">Weight trend, the week, and whether the plan is working — one screen, no configuration.</p>
+<p class="lab-why">Weight, the week, and a plain sentence about whether the plan is working.</p>
 <div class="lab-phone"><div class="lab-screen" id="s-progress"></div></div>
 
+<div class="lab-sec" id="states">The states nobody mocks up</div>
+
+<div class="lab-name">Nothing yet, and still loading</div>
+<p class="lab-why">Two screens a design is usually judged without, and two you will actually see — the
+first week, and every cold start on a bad connection. The loading state holds the real layout so nothing
+jumps when the numbers land.</p>
+<div class="lab-phone"><div class="lab-screen" id="s-empty"></div></div>
+<div class="lab-phone" style="margin-top:14px"><div class="lab-screen" id="s-loading"></div></div>
+
 <div class="lab-end">
-  <b>This is one design, not a menu.</b> Tell me what is wrong with it and I will change that thing —
-  "the hero should be debt not spend", "too dark", "I hate the donut", "rows are too tall". It is a flat
-  page, so none of it is in the app yet and changes are cheap.
+  <b>Still one design, not a menu.</b> Same deal as before — name the thing and I will change it.
+  Nothing is in the app yet.
 </div>
 
 <script>
-/* ── one set of numbers across every screen ─────────────────────────────── */
-const SB = '<div class="sb"><span>9:41</span><span class="r">&#9679;&#9679;&#9679; &nbsp;&#9650;&nbsp; &#9632;</span></div>';
-const NAV = (l, r) => '<div class="nav"><div class="pill"><b class="' + (l === 0 ? 'on' : '') + '">Finance</b><b class="' + (l === 1 ? 'on' : '') + '">Health</b></div>' +
-  '<div class="pill"><b class="' + (r === 0 ? 'on' : '') + '">Mine</b><b class="' + (r === 1 ? 'on' : '') + '">Both</b></div></div>';
-const TABS = (i) => {
-  const t = [["◉","Home"],["◔","Insights"],["▦","Activity"],["◎","Profile"]];
-  return '<div class="tabbar">' + t.map((x, n) =>
-    '<span class="' + (n === i ? 'on' : '') + '"><b>' + x[0] + '</b>' + x[1] + '</span>').join("") + '</div>';
+/* ── icons (lucide-shaped, drawn inline so nothing loads) ──────────────── */
+const P = {
+  cart:'<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+  fuel:'<line x1="3" x2="15" y1="22" y2="22"/><line x1="4" x2="14" y1="9" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/>',
+  utensils:'<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+  home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  package:'<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
+  wallet:'<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  heart:'<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  pie:'<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+  grid:'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  chev:'<path d="m9 18 6-6-6-6"/>',
+  arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  circle:'<circle cx="12" cy="12" r="9"/>',
+  help:'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  scan:'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8"/><path d="M11 8v8"/><path d="M15 8v8"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  dumbbell:'<path d="M14.4 14.4 9.6 9.6"/><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/><path d="m21.5 21.5-1.4-1.4"/><path d="M3.9 3.9 2.5 2.5"/><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/>',
+  scale:'<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+  bank:'<line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
+  bell:'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  calendar:'<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  inbox:'<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
 };
-const HTABS = (i) => {
-  const t = [["◉","Today"],["▦","Meals"],["▲","Workouts"],["◔","Progress"]];
+const I = (n, extra) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round"' + (extra || "") + '>' + P[n] + '</svg>';
+
+/* ── shared furniture ──────────────────────────────────────────────────── */
+const SB = '<div class="sb"><span>9:41</span><span class="r">&#9679;&#9679;&#9679; &#9650; &#9632;</span></div>';
+const TOPBAR = (title) => '<div class="topbar">' +
+  (title ? '<div style="font-size:17px;font-weight:750;letter-spacing:-.02em">' + title + '</div>' : '<div></div>') +
+  '<div class="lens"><b class="on">Mine</b><b>Both</b></div></div>';
+
+/* five slots: the tab bar is now the ONLY navigation system on the screen */
+const BAR = (i) => {
+  const t = [["home","Home"],["pie","Insights"],["grid","Activity"],["heart","Health"],["user","Profile"]];
   return '<div class="tabbar">' + t.map((x, n) =>
-    '<span class="' + (n === i ? 'on' : '') + '"><b>' + x[0] + '</b>' + x[1] + '</span>').join("") + '</div>';
+    '<span class="' + (n === i ? "on" : "") + '">' + I(x[0]) + x[1] + '</span>').join("") + '</div>';
 };
-const ico = (c, g) => '<span class="ic" style="background:color-mix(in srgb,' + c + ' 16%,transparent);color:' + c + '">' + g + '</span>';
-const row = (c, g, n, s, a, cls, chev) =>
-  '<div class="row">' + ico(c, g) + '<div class="m"><div class="n">' + n + '</div><div class="s">' + s + '</div></div>' +
+const ico = (c, n) => '<span class="ic" style="background:color-mix(in srgb,' + c +
+  ' 18%,transparent);color:' + c + '">' + I(n) + '</span>';
+const chev = '<span class="chev">' + I("chev") + '</span>';
+const row = (c, g, n, s, a, cls, ch) =>
+  '<div class="row">' + ico(c, g) + '<div class="m"><div class="n">' + n + '</div>' +
+  (s ? '<div class="s">' + s + '</div>' : "") + '</div>' +
   (a ? '<div class="rt"><div class="a ' + (cls || "") + '">' + a + '</div></div>' : "") +
-  (chev ? '<span class="chev">&rsaquo;</span>' : "") + '</div>';
+  (ch ? chev : "") + '</div>';
 
 const MARK = '<svg class="mark" viewBox="0 0 100 100"><defs>' +
   '<linearGradient id="ml" x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">' +
@@ -345,89 +447,101 @@ const MARK = '<svg class="mark" viewBox="0 0 100 100"><defs>' +
 document.getElementById("s-open").innerHTML = SB +
   '<div class="door"><div class="glow"></div>' + MARK +
   '<h2>Good evening, Gino</h2>' +
-  '<div class="tag2">Thursday, 12 September</div>' +
+  '<div class="tag2">Friday, 12 September</div>' +
   '<div class="doors">' +
-  '<button><span class="ic" style="background:rgba(56,198,232,.14);color:var(--acc)">&#9673;</span>' +
-  '<span class="n">FINANCE</span><span class="s">$531 left to spend</span></button>' +
-  '<button><span class="ic" style="background:rgba(242,112,143,.14);color:var(--c-health)">&#9829;</span>' +
-  '<span class="n">HEALTH</span><span class="s">1,270 kcal left</span></button>' +
+  '<button><span class="ic" style="background:rgba(56,198,232,.14);color:var(--acc)">' + I("wallet") + '</span>' +
+  '<span class="n">FINANCE</span><span class="s">$1,573 free<br>after everything due</span></button>' +
+  '<button><span class="ic" style="background:rgba(232,96,143,.14);color:var(--mp)">' + I("heart") + '</span>' +
+  '<span class="n">HEALTH</span><span class="s">1,270 kcal left<br>3 meals logged</span></button>' +
   '</div>' +
   '<div class="facts">' +
-  '<div><div class="k">available</div><div class="v">$2,322</div><div class="s">$144 settling</div></div>' +
-  '<div><div class="k">next bill</div><div class="v">Rent</div><div class="s">Oct 1</div></div>' +
+  '<div><div class="k">in the bank</div><div class="v">$2,322</div><div class="s">$144 settling</div></div>' +
+  '<div><div class="k">next bill</div><div class="v">Verizon</div><div class="s">Sep 17 &middot; $83</div></div>' +
   '<div><div class="k">weight</div><div class="v">183.4</div><div class="s">&minus;1.4 / wk</div></div>' +
   '</div></div>';
 
 document.getElementById("s-login").innerHTML = SB +
   '<div class="door"><div class="glow"></div>' + MARK +
-  '<h2>Homebase</h2>' +
-  '<div class="tag2">Money and health, in one place.</div>' +
-  '<div style="margin-top:26px;display:flex;flex-direction:column;gap:11px">' +
-  '<div><div class="ch"><span class="t">Email</span></div><div class="field">you@example.com</div></div>' +
-  '<div><div class="ch"><span class="t">Password</span></div><div class="field">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;<span style="margin-left:auto">&#128065;</span></div></div>' +
-  '<button class="btn" style="margin-top:6px">Sign in &nbsp;&rarr;</button>' +
-  '<div style="text-align:center;font-size:12.5px;color:var(--ink3);margin-top:4px">Need an account? ' +
-  '<b style="color:var(--acc)">Sign up</b></div>' +
-  '</div></div>';
+  '<h2>Homebase</h2><div class="tag2">Money and health, in one place.</div>' +
+  '<div style="margin-top:26px;display:flex;flex-direction:column;gap:13px">' +
+  '<div><div class="eye" style="margin-bottom:7px">Email</div><div class="field">you@example.com</div></div>' +
+  '<div><div class="eye" style="margin-bottom:7px">Password</div><div class="field">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div></div>' +
+  '<button class="btn" style="margin-top:4px">Sign in ' + I("arrow") + '</button>' +
+  '<div style="text-align:center;font-size:12.5px;color:var(--ink3);margin-top:2px">Need an account? ' +
+  '<b style="color:var(--acc)">Sign up</b></div></div></div>';
 
 /* ── HOME ──────────────────────────────────────────────────────────────── */
-document.getElementById("s-home").innerHTML = SB + NAV(0, 0) +
+document.getElementById("s-home").innerHTML = SB + TOPBAR("") +
   '<div class="hero">' +
-  '<div class="eye">safe to spend</div>' +
-  '<div class="fig">$531</div>' +
-  '<div class="sub">until <b>Sep 18</b> &middot; 6 days &middot; about <b>$88</b> a day</div>' +
-  '<div class="meter"><i style="width:57%;background:var(--good)"></i></div>' +
-  '<div class="legend"><span>$719 of $1,250 spent</span><span>day 6 of 15</span></div>' +
-  '</div>' +
+  '<div class="eye">truly free</div>' +
+  '<div class="fig">$1,573</div>' +
+  '<div class="sub">after everything due before payday on <b>Sep 30</b> &middot; 18 days &middot; <b>$87</b> a day</div>' +
+  /* the subtraction, printed. This is the difference between a number you
+     trust and a number you can check. */
+  '<div class="deriv">' +
+  '<div><div class="n">$2,322</div><div class="l">in the bank</div></div>' +
+  '<div><span class="op">&minus;</span><div class="n">$449</div><div class="l">bills to come</div></div>' +
+  '<div><span class="op">&minus;</span><div class="n">$300</div><div class="l">your floor</div></div>' +
+  '</div></div>' +
+
   '<div class="body">' +
 
-  '<div class="card"><div class="ch"><span class="t">Coming up</span><span class="a">All bills &rsaquo;</span></div>' +
+  '<div class="card"><div class="ch"><span class="t">Before payday</span>' +
+  '<span class="a">All bills ' + I("chev") + '</span></div>' +
   '<div class="rw">' +
   '<div><div class="d">Sep 17</div><div class="n">Verizon</div><div class="a">&minus;$83</div></div>' +
-  '<div><div class="d">Sep 30</div><div class="n">Payday</div><div class="a" style="color:var(--good)">+$1,400</div></div>' +
-  '<div><div class="d">Oct 1</div><div class="n">Rent</div><div class="a" style="color:var(--warn)">&minus;$1,715</div></div>' +
-  '</div>' +
-  '<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-size:12px;color:var(--warn)">' +
-  'Tightest point is <b>$913 on Oct 1</b>, right after rent.</div></div>' +
+  '<div><div class="d">Sep 20</div><div class="n">Claude Pro</div><div class="a">&minus;$20</div></div>' +
+  '<div><div class="d">Sep 30</div><div class="n">Card &middot;&middot;4728</div><div class="a">&minus;$346</div></div>' +
+  '</div></div>' +
 
   '<div class="g2">' +
-  '<div class="card stat"><div class="k">Cash</div><div class="v">$2,322</div><div class="s warn">$144 still settling</div></div>' +
-  '<div class="card stat"><div class="k">Debt</div><div class="v">$5,837</div><div class="s good">31% cleared</div></div>' +
+  '<div class="card stat"><div class="k">Spent this cycle</div><div class="v">$719</div>' +
+  '<div class="s">of $1,250 &middot; day 6 of 15</div></div>' +
+  '<div class="card stat"><div class="k">Debt</div><div class="v">$5,837</div>' +
+  '<div class="s good">31% cleared</div></div>' +
   '</div>' +
 
-  '<div class="card"><div class="ch"><span class="t">Envelopes &middot; day 6 of 15</span><span class="a">Insights &rsaquo;</span></div>' +
-  env("Groceries", 392, 500, "var(--c-groc)") +
-  env("Gas + convenience", 83, 250, "var(--c-gas)") +
-  env("Dining out", 84, 150, "var(--c-dine)") +
+  '<div class="card"><div class="ch"><span class="t">Envelopes</span>' +
+  '<span class="a">Insights ' + I("chev") + '</span></div>' +
+  env("Groceries", 392, 500, "var(--c-groc)", "cart") +
+  env("Gas + convenience", 83, 250, "var(--c-gas)", "fuel") +
+  env("Dining out", 168, 150, "var(--c-dine)", "utensils") +
   '</div>' +
 
-  '<div class="card"><div class="ch"><span class="t">Just happened</span><span class="a">All &rsaquo;</span></div>' +
-  row("var(--c-groc)", "●", "Sam&rsquo;s Club", "Groceries &middot; today", "&minus;$229.81") +
-  row("var(--c-gas)", "●", "QuikTrip", "Gas &middot; yesterday", "&minus;$9.07") +
-  row("var(--good)", "●", "Payroll", "Income &middot; Sep 15", "+$1,400.00", "in") +
+  '<div class="card"><div class="ch"><span class="t">Just happened</span>' +
+  '<span class="a">All ' + I("chev") + '</span></div>' +
+  row("var(--c-groc)", "cart", "Sam&rsquo;s Club", "Groceries &middot; today", "&minus;$229.81") +
+  row("var(--c-gas)", "fuel", "QuikTrip", "Gas &middot; yesterday", "&minus;$9.07") +
+  row("var(--good)", "arrow", "Payroll", "Income &middot; Sep 15", "+$1,400.00", "in") +
   '</div>' +
-  '</div>' + TABS(0);
+  '</div>' + BAR(0);
 
-function env(name, spent, target, colour) {
+function env(name, spent, target, colour, icon) {
   const pct = Math.min(100, spent / target * 100);
-  const hot = pct >= 75;
+  const over = spent > target, hot = !over && pct >= 75;
+  /* OVER keeps the category's own colour and gains a hatch + the word.
+     Recolouring it red would throw away WHICH envelope blew. */
+  const fill = over
+    ? "repeating-linear-gradient(-45deg," + colour + " 0 5px,color-mix(in srgb," + colour + " 45%,#000) 5px 10px)"
+    : colour;
   return '<div style="padding:9px 0">' +
     '<div style="display:flex;align-items:center;gap:9px">' +
     '<span class="dot" style="background:' + colour + '"></span>' +
     '<span style="flex:1;font-size:13.5px;font-weight:650">' + name + '</span>' +
     '<span style="font-size:12.5px;color:var(--ink3);font-variant-numeric:tabular-nums">' +
     '<b style="color:var(--ink);font-weight:700">$' + spent + '</b> / $' + target + '</span></div>' +
-    '<div class="bar"><i style="width:' + pct.toFixed(0) + '%;background:' + colour + '"></i></div>' +
-    (hot ? '<div style="font-size:11px;color:var(--warn);margin-top:5px">$' + (target - spent) + ' left &middot; running hot</div>' : "") +
-    '</div>';
+    '<div class="bar"><i style="width:' + pct.toFixed(0) + '%;background:' + fill + '"></i></div>' +
+    (over ? '<div style="margin-top:6px"><span class="tag bad">' + I("alert") + 'over by $' + (spent - target) + '</span></div>'
+      : hot ? '<div style="font-size:11px;color:var(--warn);margin-top:5px">$' + (target - spent) + ' left &middot; running hot</div>'
+      : '') + '</div>';
 }
 
 /* ── INSIGHTS ──────────────────────────────────────────────────────────── */
-document.getElementById("s-insights").innerHTML = SB + NAV(0, 0) +
-  '<div class="hero">' +
+document.getElementById("s-insights").innerHTML = SB + TOPBAR("Insights") +
+  '<div class="hero" style="padding-top:4px">' +
   '<div class="eye">spent this cycle</div>' +
-  '<div class="fig sm">$719</div>' +
-  '<div class="sub">of <b>$1,250</b> &middot; Sep 4 &ndash; Sep 18 &middot; <b style="color:var(--good)">on track</b></div>' +
+  '<div class="fig sm">$719 <u>of $1,250</u></div>' +
+  '<div class="sub">Sep 4 &ndash; Sep 18 &middot; day 6 of 15 &middot; <b style="color:var(--good)">on track</b></div>' +
   '</div>' +
   '<div class="body">' +
   '<div class="card"><div style="display:flex;align-items:center;gap:16px">' +
@@ -439,261 +553,306 @@ document.getElementById("s-insights").innerHTML = SB + NAV(0, 0) +
   leg("Everything else", "$90", "var(--c-misc)") +
   '</div></div></div>' +
 
-  '<div class="card"><div class="ch"><span class="t">Against your own average</span></div>' +
-  cmp("Groceries", "+18%", "var(--warn)", 68) +
-  cmp("Dining out", "&minus;31%", "var(--good)", 34) +
-  cmp("Gas", "&minus;9%", "var(--good)", 44) +
-  '<div style="font-size:11.5px;color:var(--ink3);margin-top:11px;padding-top:10px;border-top:1px solid var(--line)">' +
-  'Compared with the last six cycles, not with a target you set once.</div></div>' +
+  '<div class="card"><div class="ch"><span class="t">Against your own average</span>' +
+  '<span class="a">6 cycles</span></div>' +
+  cmp("Groceries", 392, 332, "var(--c-groc)") +
+  cmp("Dining out", 84, 122, "var(--c-dine)") +
+  cmp("Gas", 83, 91, "var(--c-gas)") +
+  '<div style="font-size:11.5px;color:var(--ink3);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
+  'The line is your own six-cycle average, not a target you set once. Bars past it are the ones to look at.</div></div>' +
 
   '<div class="card"><div class="ch"><span class="t">Where every dollar goes</span></div>' +
   '<div style="display:flex;height:26px;gap:2px">' +
-  '<div style="width:46%;background:var(--c-bill);border-radius:6px"></div>' +
+  '<div style="width:46%;background:var(--c-misc);border-radius:6px"></div>' +
   '<div style="width:21%;background:var(--c-house);border-radius:6px"></div>' +
-  '<div style="width:33%;background:var(--acc);border-radius:6px"></div></div>' +
+  '<div style="width:33%;background:var(--c-gas);border-radius:6px"></div></div>' +
   '<div class="g3" style="margin-top:12px">' +
-  '<div class="stat"><div class="v mid">$2,742</div><div class="s"><span class="dot" style="background:var(--c-bill)"></span> Living</div></div>' +
+  '<div class="stat"><div class="v mid">$2,742</div><div class="s"><span class="dot" style="background:var(--c-misc)"></span> Living</div></div>' +
   '<div class="stat"><div class="v mid">$1,250</div><div class="s"><span class="dot" style="background:var(--c-house)"></span> Variable</div></div>' +
-  '<div class="stat"><div class="v mid">$1,983</div><div class="s"><span class="dot" style="background:var(--acc)"></span> At debt</div></div>' +
+  '<div class="stat"><div class="v mid">$1,983</div><div class="s"><span class="dot" style="background:var(--c-gas)"></span> At debt</div></div>' +
   '</div></div>' +
-  '</div>' + TABS(1);
+  '</div>' + BAR(1);
 
 function leg(n, v, c) {
   return '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px">' +
     '<span class="dot" style="background:' + c + '"></span><span style="flex:1;color:var(--ink2)">' + n + '</span>' +
     '<b style="font-variant-numeric:tabular-nums;font-weight:700">' + v + '</b></div>';
 }
-function cmp(n, delta, colour, pct) {
-  return '<div style="padding:8px 0">' +
+/* The bar IS the ratio: 50% of the track is your average, so a bar that ends
+   past the midline is a cycle running over it. Nothing is hand-placed. */
+function cmp(name, now, avg) {
+  const ratio = now / avg;
+  const w = Math.min(100, ratio * 50);
+  const up = ratio > 1;
+  const pct = Math.round((ratio - 1) * 100);
+  return '<div style="padding:9px 0">' +
     '<div style="display:flex;align-items:baseline;gap:8px">' +
-    '<span style="flex:1;font-size:13.5px;font-weight:650">' + n + '</span>' +
-    '<span style="font-size:12.5px;font-weight:700;color:' + colour + '">' + delta + '</span></div>' +
-    '<div class="bar" style="margin-top:7px"><i style="width:' + pct + '%;background:' + colour + '"></i></div></div>';
+    '<span style="flex:1;font-size:13.5px;font-weight:650">' + name + '</span>' +
+    '<span style="font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums">avg $' + avg + '</span>' +
+    '<span style="font-size:12.5px;font-weight:750;color:' + (up ? "var(--warn)" : "var(--good)") + ';' +
+    'font-variant-numeric:tabular-nums;min-width:42px;text-align:right">' +
+    (up ? "+" : "&minus;") + Math.abs(pct) + '%</span></div>' +
+    '<div class="bar" style="position:relative;margin-top:7px">' +
+    '<i style="width:' + w.toFixed(1) + '%;background:' + (up ? "var(--warn)" : "var(--good)") + '"></i>' +
+    '<span style="position:absolute;left:50%;top:-2px;bottom:-2px;width:1.5px;background:var(--ink2);opacity:.65"></span>' +
+    '</div></div>';
 }
 
 /* ── ACTIVITY ──────────────────────────────────────────────────────────── */
-document.getElementById("s-activity").innerHTML = SB + NAV(0, 0) +
-  '<div class="hero" style="padding-bottom:14px">' +
+document.getElementById("s-activity").innerHTML = SB + TOPBAR("Activity") +
+  '<div class="hero" style="padding-top:4px;padding-bottom:14px">' +
   '<div class="eye">this cycle</div>' +
-  '<div class="fig sm">$719</div>' +
-  '<div class="sub">47 charges &middot; <b>2</b> the app could not place</div>' +
+  '<div class="fig sm">$719 <u>&middot; 47 charges</u></div>' +
+  '<div class="sub"><b>2</b> the app could not place &middot; everything else is filed</div>' +
   '</div>' +
+  '<div style="padding:0 14px 10px"><div class="seg" style="margin:0">' +
+  '<b class="on">All</b><b>In budget</b><b>Needs you &nbsp;2</b></div></div>' +
   '<div class="body">' +
-  '<div class="seg"><b class="on">All</b><b>In budget</b><b>Needs you &nbsp;<span class="tag warn" style="padding:0 5px">2</span></b></div>' +
   '<div class="card"><div class="ch"><span class="t">Today</span><span class="a">$229.81</span></div>' +
-  row("var(--c-groc)", "●", "Sam&rsquo;s Club", "Groceries", "&minus;$229.81", "", 1) +
-  '</div>' +
-  '<div class="card"><div class="ch"><span class="t">Yesterday</span><span class="a">$112.47</span></div>' +
-  row("var(--c-gas)", "●", "QuikTrip", "Gas", "&minus;$9.07", "", 1) +
-  '<div class="row">' + ico("var(--ink3)", "?") +
-  '<div class="m"><div class="n">SQ *JOHNNY&rsquo;S</div><div class="s"><span class="tag warn">needs you</span></div></div>' +
-  '<div class="rt"><div class="a">&minus;$18.40</div></div><span class="chev">&rsaquo;</span></div>' +
-  row("var(--c-bill)", "●", "Verizon", "Bill &middot; not in budget", "&minus;$83.00", "", 1) +
-  '<div class="row">' + ico("var(--c-dine)", "●") +
-  '<div class="m"><div class="n">Chipotle</div><div class="s">Dining out &nbsp;<span class="tag quiet">pending</span></div></div>' +
-  '<div class="rt"><div class="a" style="color:var(--ink2)">&minus;$14.20</div></div><span class="chev">&rsaquo;</span></div>' +
-  '</div>' +
-  '</div>' + TABS(2);
+  row("var(--c-groc)", "cart", "Sam&rsquo;s Club", "Groceries", "&minus;$229.81", "", 1) + '</div>' +
+  '<div class="card"><div class="ch"><span class="t">Yesterday</span><span class="a">$124.67</span></div>' +
+  row("var(--c-gas)", "fuel", "QuikTrip", "Gas", "&minus;$9.07", "", 1) +
+  '<div class="row">' + ico("var(--ink3)", "help") +
+  '<div class="m"><div class="n">SQ *JOHNNY&rsquo;S</div>' +
+  '<div class="s"><span class="tag warn">' + I("alert") + 'needs you</span></div></div>' +
+  '<div class="rt"><div class="a">&minus;$18.40</div></div>' + chev + '</div>' +
+  row("var(--c-misc)", "receipt", "Verizon", "Bill &middot; not in budget", "&minus;$83.00", "", 1) +
+  '<div class="row">' + ico("var(--c-dine)", "utensils") +
+  '<div class="m"><div class="n">Chipotle</div>' +
+  '<div class="s">Dining out <span class="tag quiet">pending</span></div></div>' +
+  '<div class="rt"><div class="a" style="color:var(--ink2)">&minus;$14.20</div></div>' + chev + '</div>' +
+  '</div></div>' + BAR(2);
 
 /* ── PROFILE ───────────────────────────────────────────────────────────── */
-document.getElementById("s-profile").innerHTML = SB + NAV(0, 0) +
-  '<div class="hero" style="padding-bottom:16px">' +
+document.getElementById("s-profile").innerHTML = SB + TOPBAR("Profile") +
+  '<div class="hero" style="padding-top:6px;padding-bottom:16px">' +
   '<div style="display:flex;align-items:center;gap:14px">' +
-  '<span style="width:56px;height:56px;border-radius:50%;background:var(--c-house);color:#12100c;' +
-  'display:grid;place-items:center;font-size:22px;font-weight:800">G</span>' +
-  '<div><div style="font-size:22px;font-weight:750;letter-spacing:-.02em">Gino</div>' +
+  '<span style="width:54px;height:54px;border-radius:50%;background:var(--c-house);color:#0b0e13;' +
+  'display:grid;place-items:center;font-size:21px;font-weight:800">G</span>' +
+  '<div><div style="font-size:21px;font-weight:750;letter-spacing:-.02em">Gino</div>' +
   '<div style="font-size:12.5px;color:var(--ink3);margin-top:2px">ginocirino007@gmail.com</div>' +
-  '<div style="font-size:11.5px;color:var(--good);margin-top:4px">&#9679; Synced 2 minutes ago</div></div></div>' +
-  '</div>' +
+  '<div style="font-size:11.5px;color:var(--good);margin-top:4px">Synced 2 minutes ago</div></div></div></div>' +
   '<div class="body">' +
-  '<div class="card"><div class="ch"><span class="t">Accounts</span><span class="a">Add &rsaquo;</span></div>' +
-  row("var(--good)", "●", "Checking &middot;&middot;&middot;&middot;4662", "Gino", "$1,306.67", "", 1) +
-  row("var(--ink3)", "●", "SafeBalance &middot;&middot;&middot;&middot;1211", "Joint", "$15.48", "", 1) +
-  row("var(--c-dine)", "●", "SafeBalance &middot;&middot;&middot;&middot;0366", "Xinyan", "$1,000.00", "", 1) +
-  row("var(--bad)", "●", "Card &middot;&middot;&middot;&middot;4728", "26.49% APR &middot; $187 headroom", "&minus;$4,113.01", "", 1) +
+  '<div class="card"><div class="ch"><span class="t">Accounts</span><span class="a">Add ' + I("plus") + '</span></div>' +
+  row("var(--good)", "bank", "Checking &middot;&middot;&middot;&middot;4662", "Gino", "$1,306.67", "", 1) +
+  row("var(--ink3)", "bank", "SafeBalance &middot;&middot;&middot;&middot;1211", "Joint", "$15.48", "", 1) +
+  row("var(--c-dine)", "bank", "SafeBalance &middot;&middot;&middot;&middot;0366", "Xinyan", "$1,000.00", "", 1) +
+  row("var(--bad)", "wallet", "Card &middot;&middot;&middot;&middot;4728", "26.49% APR &middot; $187 headroom", "&minus;$4,113.01", "", 1) +
   '</div>' +
   '<div class="card"><div class="ch"><span class="t">Connections</span></div>' +
-  row("var(--c-bill)", "▦", "Bank of America", "Connected &middot; 2 logins", "", "", 1) +
-  row("var(--c-misc)", "▤", "Import a statement", "PDF or CSV", "", "", 1) +
+  row("var(--c-misc)", "bank", "Bank of America", "Connected &middot; 2 logins", "", "", 1) +
+  row("var(--c-gas)", "file", "Import a statement", "PDF or CSV", "", "", 1) +
   '</div>' +
   '<div class="card"><div class="ch"><span class="t">Preferences</span></div>' +
-  '<div class="row">' + ico("var(--acc)", "文") + '<div class="m"><div class="n">Language</div></div>' +
-  '<div class="pill"><b class="on">EN</b><b>&#20013;</b></div></div>' +
-  '<div class="row">' + ico("var(--acc)", "◑") + '<div class="m"><div class="n">Notifications</div>' +
-  '<div class="s">Bills, paydays, unusual charges</div></div><span class="chev">&rsaquo;</span></div>' +
+  '<div class="row">' + ico("var(--acc)", "globe") + '<div class="m"><div class="n">Language</div></div>' +
+  '<div class="lens"><b class="on">EN</b><b>&#20013;</b></div></div>' +
+  '<div class="row">' + ico("var(--acc)", "bell") + '<div class="m"><div class="n">Notifications</div>' +
+  '<div class="s">Bills, paydays, unusual charges</div></div>' + chev + '</div>' +
+  '<div class="row">' + ico("var(--acc)", "wallet") + '<div class="m"><div class="n">Your floor</div>' +
+  '<div class="s">Never counts the last $300 as free</div></div>' +
+  '<div class="rt"><div class="a">$300</div></div>' + chev + '</div>' +
   '</div>' +
-  '<button class="btn ghost" style="margin-top:2px;color:var(--bad);border-color:rgba(240,100,92,.3)">Sign out</button>' +
-  '</div>' + TABS(3);
+  '<button class="btn ghost" style="color:var(--bad);border-color:rgba(240,100,92,.28)">' +
+  I("logout") + 'Sign out</button>' +
+  '</div>' + BAR(4);
 
 /* ── SHEETS ────────────────────────────────────────────────────────────── */
-document.getElementById("s-txn").innerHTML = SB + NAV(0, 0) +
-  '<div style="filter:blur(1.5px);opacity:.5">' +
-  '<div class="hero"><div class="eye">this cycle</div><div class="fig sm">$719</div></div></div>' +
+document.getElementById("s-txn").innerHTML = SB + TOPBAR("Activity") +
+  '<div style="filter:blur(2px);opacity:.45"><div class="hero"><div class="eye">this cycle</div>' +
+  '<div class="fig sm">$719</div></div></div>' +
   '<div class="scrim"></div>' +
   '<div class="sheet"><div class="grab"></div>' +
   '<div style="text-align:center">' +
   '<div style="font-size:12.5px;color:var(--ink3)">Yesterday &middot; 7:42 pm</div>' +
-  '<div style="font-size:20px;font-weight:750;margin-top:4px;letter-spacing:-.02em">SQ *JOHNNY&rsquo;S</div>' +
-  '<div style="font-size:34px;font-weight:800;margin-top:8px;letter-spacing:-.035em;font-variant-numeric:tabular-nums">&minus;$18.40</div>' +
-  '</div>' +
-  '<div class="card" style="margin-top:18px;background:rgba(233,178,60,.08);border-color:rgba(233,178,60,.25)">' +
+  '<div style="font-size:20px;font-weight:750;margin-top:3px;letter-spacing:-.02em">SQ *JOHNNY&rsquo;S</div>' +
+  '<div style="font-size:34px;font-weight:800;margin-top:7px;letter-spacing:-.035em;font-variant-numeric:tabular-nums">&minus;$18.40</div></div>' +
+  '<div class="card" style="margin-top:18px;background:rgba(233,178,60,.07);border-color:rgba(233,178,60,.22)">' +
+  '<div style="display:flex;gap:10px"><span style="color:var(--warn);flex:none;margin-top:1px">' + I("help") + '</span>' +
   '<div style="font-size:12.5px;color:var(--warn);line-height:1.5">' +
-  '<b>The app could not place this one.</b> &ldquo;SQ *&rdquo; is a Square terminal, so the bank line does not ' +
-  'say what the business is. Pick once and it will remember.</div></div>' +
-  '<div class="ch" style="margin:16px 0 8px"><span class="t">Category</span></div>' +
+  '<b>Why this one needs you.</b> &ldquo;SQ *&rdquo; is a Square card reader, so the line the bank sends ' +
+  'does not name the business. Pick once and it will remember it forever.</div></div></div>' +
+  '<div class="ch" style="margin:16px 0 9px"><span class="t">Category</span></div>' +
   '<div style="display:flex;flex-wrap:wrap;gap:7px">' +
-  ['Dining out','Groceries','Household','Gas','Entertainment','Health'].map(function (c, i) {
-    return '<span style="border:1px solid ' + (i === 0 ? 'var(--acc)' : 'var(--line)') + ';border-radius:999px;' +
-      'padding:9px 13px;font-size:12.5px;font-weight:650;color:' + (i === 0 ? 'var(--acc)' : 'var(--ink2)') + '">' + c + '</span>';
-  }).join("") + '</div>' +
-  '<button class="btn" style="margin-top:18px">Save as Dining out</button>' +
+  [["Dining out","c-dine"],["Groceries","c-groc"],["Household","c-house"],["Gas","c-gas"],["Everything else","c-misc"]]
+    .map(function (c, i) {
+      return '<span style="display:inline-flex;align-items:center;gap:7px;border:1px solid ' +
+        (i === 0 ? "var(--acc)" : "var(--line)") + ';border-radius:999px;padding:9px 13px;font-size:12.5px;' +
+        'font-weight:650;color:' + (i === 0 ? "var(--ink)" : "var(--ink2)") + '">' +
+        '<span class="dot" style="background:var(--' + c[1] + ')"></span>' + c[0] + '</span>';
+    }).join("") + '</div>' +
+  '<button class="btn" style="margin-top:18px">' + I("check") + 'Always file this as Dining out</button>' +
   '</div>';
 
-document.getElementById("s-bills").innerHTML = SB + NAV(0, 0) +
-  '<div style="filter:blur(1.5px);opacity:.5"><div class="hero"><div class="eye">safe to spend</div>' +
-  '<div class="fig">$531</div></div></div>' +
+document.getElementById("s-bills").innerHTML = SB + TOPBAR("") +
+  '<div style="filter:blur(2px);opacity:.45"><div class="hero"><div class="eye">truly free</div>' +
+  '<div class="fig">$1,573</div></div></div>' +
   '<div class="scrim"></div>' +
-  '<div class="sheet" style="max-height:78%;overflow:auto"><div class="grab"></div>' +
-  '<div class="ch"><span class="t">September</span><span class="a">$449 left</span></div>' +
-  bill("Sep 1", "Rent", "$1,715.00", 1) +
-  bill("Sep 8", "Car insurance", "$295.29", 1) +
-  bill("Sep 10", "Spotify", "$11.99", 1) +
-  bill("Sep 17", "Verizon", "$83.00", 0) +
-  bill("Sep 20", "Claude Pro", "$20.00", 0) +
-  bill("Sep 30", "Card &middot;&middot;&middot;&middot;4728", "$346.00", 0) +
-  '<button class="btn ghost" style="margin-top:16px">Add a bill</button></div>';
+  '<div class="sheet" style="max-height:80%;overflow:auto"><div class="grab"></div>' +
+  '<div class="ch"><span class="t">September</span><span class="a">$449 still to go</span></div>' +
+  bill("Sep 1", "Rent", "$1,715.00", 1) + bill("Sep 8", "Car insurance", "$295.29", 1) +
+  bill("Sep 10", "Spotify", "$11.99", 1) + bill("Sep 17", "Verizon", "$83.00", 0) +
+  bill("Sep 20", "Claude Pro", "$20.00", 0) + bill("Sep 30", "Card &middot;&middot;&middot;&middot;4728", "$346.00", 0) +
+  '<button class="btn ghost" style="margin-top:16px">' + I("plus") + 'Add a bill</button></div>';
 
 function bill(date, name, amt, paid) {
-  return '<div class="row" style="opacity:' + (paid ? ".45" : "1") + '">' +
-    '<span class="ic" style="background:' + (paid ? "rgba(63,208,138,.12)" : "var(--raised)") + ';color:' +
-    (paid ? "var(--good)" : "var(--ink2)") + '">' + (paid ? "✓" : "○") + '</span>' +
+  return '<div class="row" style="opacity:' + (paid ? ".42" : "1") + '">' +
+    '<span class="ic" style="background:' + (paid ? "rgba(63,208,138,.12)" : "var(--raised)") +
+    ';color:' + (paid ? "var(--good)" : "var(--ink2)") + '">' + I(paid ? "check" : "calendar") + '</span>' +
     '<div class="m"><div class="n">' + name + '</div><div class="s">' + date + (paid ? " &middot; paid" : "") + '</div></div>' +
     '<div class="rt"><div class="a">' + amt + '</div></div></div>';
 }
 
 /* ── HEALTH ────────────────────────────────────────────────────────────── */
-document.getElementById("s-today").innerHTML = SB + NAV(1, 0) +
-  '<div class="hero">' +
+const HSEG = (i) => '<div class="seg" style="margin-bottom:12px">' +
+  ["Today", "Workouts", "Progress"].map((t, n) => '<b class="' + (n === i ? "on" : "") + '">' + t + '</b>').join("") + '</div>';
+
+document.getElementById("s-today").innerHTML = SB + TOPBAR("Health") + HSEG(0) +
+  '<div class="hero" style="padding-top:2px">' +
   '<div style="display:flex;align-items:center;gap:18px">' +
-  '<div style="flex:1"><div class="eye">calories left</div>' +
-  '<div class="fig">1,270</div>' +
+  '<div style="flex:1"><div class="eye">calories left</div><div class="fig">1,270</div>' +
   '<div class="sub">of <b>2,800</b> &middot; 3 meals logged</div></div>' +
   '<div class="ring" style="background:conic-gradient(var(--good) 0 55%,var(--raised) 55% 100%)">' +
-  '<i></i><span>55%</span></div>' +
-  '</div>' +
-  '<div class="macros">' +
-  macro("Protein", 111, 130, "var(--mp)") +
-  macro("Carbs", 180, 410, "var(--mc)") +
-  macro("Fat", 38, 70, "var(--mf)") +
-  '</div></div>' +
+  '<i></i><span>55%</span></div></div>' +
+  '<div class="macros">' + macro("Protein", 111, 130, "var(--mp)") +
+  macro("Carbs", 180, 410, "var(--mc)") + macro("Fat", 38, 70, "var(--mf)") + '</div></div>' +
   '<div class="body">' +
-  '<div class="card"><div class="ch"><span class="t">Today&rsquo;s meals</span><span class="a">Copy day</span></div>' +
-  meal("Breakfast", "3 items", "575", "30p &middot; 70c &middot; 20f") +
-  meal("Lunch", "3 items", "806", "80p &middot; 95c &middot; 9f") +
-  meal("Snack", "2 items", "150", "1p &middot; 16c &middot; 9f") +
-  '<button class="btn" style="margin-top:12px">+ &nbsp;Add a meal</button></div>' +
+  '<div class="card"><div class="ch"><span class="t">Today&rsquo;s meals</span>' +
+  '<span class="a">Copy day</span></div>' +
+  meal("Breakfast", "3 items &middot; 30p 70c 20f", "575") +
+  meal("Lunch", "3 items &middot; 80p 95c 9f", "806") +
+  meal("Snack", "2 items &middot; 1p 16c 9f", "150") +
+  '<button class="btn" style="margin-top:12px">' + I("plus") + 'Add a meal</button></div>' +
   '<div class="g2">' +
-  '<div class="card stat"><div class="k">This week</div><div class="v">4<s style="font-size:13px;color:var(--ink3);text-decoration:none"> / 5</s></div>' +
+  '<div class="card stat"><div class="k">This week</div><div class="v">4<u style="text-decoration:none;font-size:13px;color:var(--ink3)"> / 5</u></div>' +
   '<div class="week"><b class="on">M</b><b class="on">T</b><b class="on">W</b><b class="on">T</b><b class="today">F</b><b>S</b><b>S</b></div></div>' +
-  '<div class="card stat"><div class="k">Weight</div><div class="v">183.4<s style="font-size:13px;color:var(--ink3);text-decoration:none"> lb</s></div>' +
+  '<div class="card stat"><div class="k">Weight</div><div class="v">183.4<u style="text-decoration:none;font-size:13px;color:var(--ink3)"> lb</u></div>' +
   '<div class="s good">&minus;1.4 lb / week</div>' +
-  '<div class="spark"><i style="height:88%"></i><i style="height:80%"></i><i style="height:84%"></i><i style="height:70%"></i><i style="height:64%"></i><i style="height:58%"></i><i class="on" style="height:50%"></i></div></div>' +
-  '</div>' +
-  '</div>' + HTABS(0);
+  '<div class="spark"><i style="height:88%"></i><i style="height:80%"></i><i style="height:84%"></i>' +
+  '<i style="height:70%"></i><i style="height:64%"></i><i style="height:58%"></i><i class="on" style="height:50%"></i></div></div>' +
+  '</div></div>' + BAR(3);
 
 function macro(n, have, target, colour) {
   return '<div class="macro"><div class="l"><span class="dot" style="background:' + colour + '"></span>' + n + '</div>' +
     '<div class="v">' + have + '<s> / ' + target + '</s></div>' +
-    '<div class="bar" style="margin-top:6px"><i style="width:' + Math.min(100, have / target * 100).toFixed(0) + '%;background:' + colour + '"></i></div></div>';
+    '<div class="bar" style="margin-top:6px"><i style="width:' +
+    Math.min(100, have / target * 100).toFixed(0) + '%;background:' + colour + '"></i></div></div>';
 }
-function meal(n, items, kcal, macros) {
-  return '<div class="row">' +
-    '<span class="ic" style="background:var(--raised);color:var(--ink2)">&#9636;</span>' +
-    '<div class="m"><div class="n">' + n + '</div><div class="s">' + items + ' &middot; ' + macros + '</div></div>' +
-    '<div class="rt"><div class="a">' + kcal + '<s style="font-size:10.5px;color:var(--ink3);text-decoration:none"> kcal</s></div></div>' +
-    '<span class="chev">&rsaquo;</span></div>';
+function meal(n, s, kcal) {
+  return '<div class="row"><span class="ic" style="background:var(--raised);color:var(--ink2)">' + I("utensils") + '</span>' +
+    '<div class="m"><div class="n">' + n + '</div><div class="s">' + s + '</div></div>' +
+    '<div class="rt"><div class="a">' + kcal + '<u style="text-decoration:none;font-size:10.5px;color:var(--ink3)"> kcal</u></div></div>' +
+    chev + '</div>';
 }
 
-document.getElementById("s-food").innerHTML = SB + NAV(1, 0) +
-  '<div style="filter:blur(1.5px);opacity:.5"><div class="hero"><div class="eye">calories left</div>' +
+document.getElementById("s-food").innerHTML = SB + TOPBAR("Health") + HSEG(0) +
+  '<div style="filter:blur(2px);opacity:.45"><div class="hero"><div class="eye">calories left</div>' +
   '<div class="fig">1,270</div></div></div>' +
   '<div class="scrim"></div>' +
-  '<div class="sheet" style="max-height:82%"><div class="grab"></div>' +
-  '<div class="field" style="margin-bottom:12px">&#128269; &nbsp;Search 12,000 foods</div>' +
-  '<button class="btn" style="margin-bottom:14px">&#9635; &nbsp;Scan a barcode</button>' +
+  '<div class="sheet" style="max-height:84%"><div class="grab"></div>' +
+  '<button class="btn" style="margin-bottom:11px">' + I("scan") + 'Scan a barcode</button>' +
+  '<div class="field" style="margin-bottom:16px">' + I("search") + 'Search 12,000 foods</div>' +
   '<div class="ch"><span class="t">You eat these a lot</span></div>' +
   food("Chicken breast", "100 g &middot; 165 kcal", "31p 0c 4f") +
   food("Greek yoghurt", "170 g &middot; 100 kcal", "17p 6c 0f") +
   food("Jasmine rice", "1 cup &middot; 205 kcal", "4p 45c 0f") +
-  food("Olive oil", "1 tbsp &middot; 119 kcal", "0p 0c 14f") +
-  '</div>';
+  food("Olive oil", "1 tbsp &middot; 119 kcal", "0p 0c 14f") + '</div>';
 
 function food(n, s, m) {
-  return '<div class="row"><span class="ic" style="background:var(--raised);color:var(--ink2)">+</span>' +
+  return '<div class="row"><span class="ic" style="background:var(--raised);color:var(--acc)">' + I("plus") + '</span>' +
     '<div class="m"><div class="n">' + n + '</div><div class="s">' + s + '</div></div>' +
-    '<div class="rt"><div class="s" style="font-size:11px;color:var(--ink3)">' + m + '</div></div></div>';
+    '<div class="rt"><div style="font-size:11px;color:var(--ink3);font-variant-numeric:tabular-nums">' + m + '</div></div></div>';
 }
 
-document.getElementById("s-workout").innerHTML = SB + NAV(1, 0) +
-  '<div class="hero">' +
+document.getElementById("s-workout").innerHTML = SB + TOPBAR("Health") + HSEG(1) +
+  '<div class="hero" style="padding-top:2px">' +
   '<div class="eye">push day &middot; in progress</div>' +
-  '<div class="fig sm">6<span style="font-size:22px;color:var(--ink3);font-weight:650"> / 12 sets</span></div>' +
-  '<div class="sub">started 42 minutes ago &middot; <b>8,420 lb</b> moved</div>' +
-  '<div class="meter"><i style="width:50%;background:var(--acc)"></i></div>' +
-  '</div>' +
+  '<div class="fig sm">6 <u>of 12 sets</u></div>' +
+  '<div class="sub">42 minutes in &middot; <b>8,420 lb</b> moved</div>' +
+  '<div class="meter"><i style="width:50%;background:var(--acc)"></i></div></div>' +
   '<div class="body">' +
   '<div class="card"><div class="ch"><span class="t">Bench press</span><span class="a">e1RM 212 lb</span></div>' +
-  set(1, "135 lb", "12", 1, "135 &times; 12") + set(2, "155 lb", "10", 1, "155 &times; 10") +
-  set(3, "175 lb", "8", 1, "175 &times; 7") + set(4, "175 lb", "—", 0, "175 &times; 7") +
-  '</div>' +
+  set(1, "135", "12", 1, "135 &times; 12") + set(2, "155", "10", 1, "155 &times; 10") +
+  set(3, "175", "8", 1, "175 &times; 7") + set(4, "175", "&mdash;", 0, "175 &times; 7") + '</div>' +
   '<div class="card"><div class="ch"><span class="t">Incline dumbbell</span><span class="a">e1RM 96 lb</span></div>' +
-  set(1, "60 lb", "12", 1, "55 &times; 12") + set(2, "60 lb", "11", 1, "60 &times; 10") +
-  set(3, "60 lb", "—", 0, "60 &times; 10") +
-  '</div>' +
-  '<button class="btn">Finish workout</button>' +
-  '</div>' + HTABS(2);
+  set(1, "60", "12", 1, "55 &times; 12") + set(2, "60", "11", 1, "60 &times; 10") +
+  set(3, "60", "&mdash;", 0, "60 &times; 10") + '</div>' +
+  '<button class="btn">' + I("check") + 'Finish workout</button>' +
+  '</div>' + BAR(3);
 
 function set(n, weight, reps, done, last) {
-  return '<div class="row" style="min-height:50px">' +
+  return '<div class="row" style="min-height:48px">' +
     '<span class="ic" style="width:30px;height:30px;border-radius:9px;background:' +
-    (done ? "rgba(63,208,138,.14)" : "var(--raised)") + ';color:' + (done ? "var(--good)" : "var(--ink3)") + '">' +
-    (done ? "✓" : n) + '</span>' +
-    '<div class="m"><div class="n" style="font-variant-numeric:tabular-nums">' + weight + ' &times; ' + reps + '</div>' +
+    (done ? "rgba(63,208,138,.14)" : "var(--raised)") + ';color:' + (done ? "var(--good)" : "var(--ink3)") +
+    ';font-size:12px;font-weight:750">' + (done ? I("check") : n) + '</span>' +
+    '<div class="m"><div class="n" style="font-variant-numeric:tabular-nums">' + weight + ' lb &times; ' + reps + '</div>' +
     '<div class="s">last time ' + last + '</div></div>' +
-    (done ? '' : '<span class="tag quiet">log</span>') + '</div>';
+    (done ? "" : '<span class="tag quiet">log it</span>') + '</div>';
 }
 
-document.getElementById("s-progress").innerHTML = SB + NAV(1, 0) +
-  '<div class="hero">' +
-  '<div class="eye">weight</div>' +
-  '<div class="fig">183.4<span style="font-size:22px;color:var(--ink3);font-weight:650"> lb</span></div>' +
-  '<div class="sub"><b style="color:var(--good)">&minus;1.4 lb a week</b> over 6 weeks &middot; goal 175 by Nov</div>' +
-  '</div>' +
+document.getElementById("s-progress").innerHTML = SB + TOPBAR("Health") + HSEG(2) +
+  '<div class="hero" style="padding-top:2px">' +
+  '<div class="eye">weight</div><div class="fig">183.4 <u>lb</u></div>' +
+  '<div class="sub"><b style="color:var(--good)">&minus;1.4 lb a week</b> over 6 weeks &middot; goal 175 by November</div></div>' +
   '<div class="body">' +
   '<div class="card"><div class="ch"><span class="t">Trend</span><span class="a">6 weeks</span></div>' +
-  '<svg viewBox="0 0 300 90" style="width:100%;height:90px;display:block">' +
-  '<polyline fill="none" stroke="var(--line2)" stroke-width="1" points="0,20 300,20"/>' +
-  '<polyline fill="none" stroke="var(--line2)" stroke-width="1" points="0,55 300,55"/>' +
+  '<svg viewBox="0 0 300 92" style="width:100%;height:92px;display:block">' +
+  '<line x1="0" y1="22" x2="300" y2="22" stroke="var(--line)" stroke-width="1"/>' +
+  '<line x1="0" y1="56" x2="300" y2="56" stroke="var(--line)" stroke-width="1"/>' +
   '<polyline fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" ' +
   'points="6,14 54,22 102,19 150,36 198,44 246,58 294,70"/>' +
   '<circle cx="294" cy="70" r="4.5" fill="var(--acc)"/></svg>' +
   '<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink3);margin-top:4px">' +
-  '<span>Aug 1</span><span>Sep 12</span></div></div>' +
-
+  '<span>Aug 1</span><span>goal line</span><span>Sep 12</span></div></div>' +
   '<div class="card"><div class="ch"><span class="t">Is the plan working</span></div>' +
-  '<div style="font-size:13px;line-height:1.55;color:var(--ink2)">You have averaged <b style="color:var(--ink)">2,410 kcal</b> ' +
-  'against a <b style="color:var(--ink)">2,800</b> target and lost <b style="color:var(--good)">1.4 lb a week</b>. ' +
-  'That is faster than the 1 lb you planned for &mdash; either the target is low or the logging is light.</div>' +
+  '<div style="font-size:13px;line-height:1.55;color:var(--ink2)">You have averaged ' +
+  '<b style="color:var(--ink)">2,410 kcal</b> against a <b style="color:var(--ink)">2,800</b> target and lost ' +
+  '<b style="color:var(--good)">1.4 lb a week</b>. That is faster than the 1 lb you planned for &mdash; ' +
+  'either the target is too low or the logging is light.</div>' +
   '<div class="g2" style="margin-top:14px">' +
   '<div class="stat"><div class="k">Logged</div><div class="v mid">31 / 42</div><div class="s">days</div></div>' +
   '<div class="stat"><div class="k">Avg protein</div><div class="v mid">118 g</div><div class="s warn">under 130</div></div>' +
   '</div></div>' +
-
   '<div class="card"><div class="ch"><span class="t">This week</span></div>' +
   '<div class="week" style="margin-top:0"><b class="on">M</b><b class="on">T</b><b class="on">W</b>' +
   '<b class="on">T</b><b class="today">F</b><b>S</b><b>S</b></div>' +
   '<div style="font-size:11.5px;color:var(--ink3);margin-top:9px">4 of 5 planned days logged.</div></div>' +
-  '</div>' + HTABS(3);
+  '</div>' + BAR(3);
+
+/* ── STATES ────────────────────────────────────────────────────────────── */
+document.getElementById("s-empty").innerHTML = SB + TOPBAR("") +
+  '<div class="hero"><div class="eye">truly free</div><div class="fig">&mdash;</div>' +
+  '<div class="sub">Connect an account and this fills itself in.</div></div>' +
+  '<div class="body">' +
+  '<div class="card"><div class="empty">' +
+  '<div class="ic" style="display:grid;place-items:center">' + I("inbox") + '</div>' +
+  '<div class="t">No accounts yet</div>' +
+  '<div class="s">Link your bank and the last 90 days arrive already sorted. Nothing is typed in by hand.</div>' +
+  '<button class="btn" style="margin-top:18px">' + I("bank") + 'Connect a bank</button>' +
+  '<button class="btn ghost" style="margin-top:9px">' + I("file") + 'Import a statement instead</button>' +
+  '</div></div></div>' + BAR(0);
+
+document.getElementById("s-loading").innerHTML = SB + TOPBAR("") +
+  '<div class="hero"><div class="eye">truly free</div>' +
+  '<div class="skel" style="width:58%;height:42px;margin-top:7px"></div>' +
+  '<div class="skel" style="width:80%;height:12px;margin-top:12px"></div>' +
+  '<div class="deriv" style="opacity:.5">' +
+  '<div><div class="skel" style="width:60%;margin:2px auto"></div><div class="l">in the bank</div></div>' +
+  '<div><span class="op">&minus;</span><div class="skel" style="width:60%;margin:2px auto"></div><div class="l">bills to come</div></div>' +
+  '<div><span class="op">&minus;</span><div class="skel" style="width:60%;margin:2px auto"></div><div class="l">your floor</div></div>' +
+  '</div></div>' +
+  '<div class="body">' +
+  '<div class="card"><div class="ch"><span class="t">Before payday</span></div>' +
+  '<div class="skel" style="width:100%;height:34px"></div></div>' +
+  '<div class="g2"><div class="card"><div class="skel" style="width:52%;height:11px"></div>' +
+  '<div class="skel" style="width:74%;height:20px;margin-top:9px"></div></div>' +
+  '<div class="card"><div class="skel" style="width:52%;height:11px"></div>' +
+  '<div class="skel" style="width:74%;height:20px;margin-top:9px"></div></div></div>' +
+  '<div class="card"><div class="ch"><span class="t">Envelopes</span></div>' +
+  '<div class="skel" style="width:100%;height:11px"></div>' +
+  '<div class="skel" style="width:100%;height:7px;margin-top:9px"></div>' +
+  '<div class="skel" style="width:100%;height:11px;margin-top:16px"></div>' +
+  '<div class="skel" style="width:100%;height:7px;margin-top:9px"></div></div>' +
+  '</div>' + BAR(0);
 </script>
 </body>
 </html>
