@@ -5,12 +5,11 @@ import { HomeTab } from "./HomeTab";
 import { InsightsTab, type InsightsVM } from "./InsightsTab";
 import { ActivityTab, type ActivityVM } from "./ActivityTab";
 import { ProfileTab, type ProfileVM } from "./ProfileTab";
-import { ForecastTab } from "./ForecastTab";
 import { BillsSheet } from "./BillsSheet";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { OwedSheet } from "./OwedSheet";
 import type { HomeVM } from "./vm";
-import type { Debt, Recurring } from "../../types";
+import type { Recurring } from "../../types";
 import { monthCalendar } from "../../lib/schedule";
 
 // ── Mock view-models. These live ONLY in this dev-only harness (App.tsx lazy-
@@ -25,11 +24,6 @@ const MOCK_RECURRING: Recurring[] = [
   { id: "verizon", name: "Verizon", amount: 83, direction: "out", cadence: "monthly", active: true, dueDays: [17], variable: false, categoryId: "utilities" } as Recurring,
   { id: "cardpay", name: "Card payment (…4728)", amount: 134, direction: "out", cadence: "monthly", active: true, dueDays: [15], variable: false, categoryId: "other", linkedDebtId: "card" } as Recurring,
   { id: "pay", name: "Paycheck", amount: 5975, direction: "in", cadence: "monthly", active: true, dueDays: [15, 31] } as Recurring,
-];
-// Mock debts so the Forecast lab has a card to pay down and a payoff to reach.
-const MOCK_DEBTS: Debt[] = [
-  { id: "card", name: "Card (…4728)", balance: 4218.23, apr: 26.49, minPayment: 134 } as Debt,
-  { id: "cherry", name: "Cherry (dental)", balance: 910.29, apr: 0, minPayment: 151.72 } as Debt,
 ];
 const LAB_NOW = new Date(2026, 5, 30); // June 30 2026
 
@@ -100,15 +94,15 @@ const MOCK_ACTIVITY: ActivityVM = {
 
 const MOCK_PROFILE: ProfileVM = {
   ownerName: "Demo",
-  ownerColor: "#ef8136",
+  ownerColor: "#d47c2e",
   email: "demo@example.com",
   bankName: "Bank of America",
   bankSub: "Connected · 2 logins",
   cardsSub: "…4728 + …6813 linked · auto-syncs",
   accounts: [
-    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#5b82b3" },
-    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#687180" },
-    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#46d18a" },
+    { name: "Checking …4662", owner: "Gino", balance: 1306.67, dot: "#9e9180" },
+    { name: "SafeBalance …1211", owner: "Joint", balance: 15.48, dot: "#9e9180" },
+    { name: "SafeBalance …0366", owner: "Xinyan", balance: 1000.0, dot: "#39c0b4" },
   ],
   lang: "en",
   lens: "me",
@@ -181,33 +175,33 @@ function TopBar() {
   return (
     <div
       className="flex items-center justify-between px-4 py-2.5"
-      style={{ background: "#0b0f17" }}
+      style={{ background: "#12100c" }}
     >
       <span
         className="flex items-center gap-2 rounded-full p-0.5 text-[12px]"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        style={{ background: "#1c1811", border: "1px solid #332b20" }}
       >
         <span
           className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-semibold"
-          style={{ background: "#34c5e8", color: "#06303a" }}
+          style={{ background: "#7f9ff7", color: "#101a33" }}
         >
           <Wallet size={14} /> Finance
         </span>
-        <span className="flex items-center gap-1.5 px-3 py-1.5" style={{ color: "#8b97a6" }}>
+        <span className="flex items-center gap-1.5 px-3 py-1.5" style={{ color: "#9e9180" }}>
           <HeartPulse size={14} /> Health
         </span>
       </span>
       <span
         className="flex rounded-full p-0.5 text-[12px]"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
+        style={{ background: "#1c1811", border: "1px solid #332b20" }}
       >
         <span
           className="rounded-full px-3 py-1.5 font-semibold"
-          style={{ background: "#0b0f17", color: "#e6edf3" }}
+          style={{ background: "#12100c", color: "#f5efe4" }}
         >
           Mine
         </span>
-        <span className="px-3 py-1.5" style={{ color: "#8b97a6" }}>
+        <span className="px-3 py-1.5" style={{ color: "#9e9180" }}>
           Household
         </span>
       </span>
@@ -223,7 +217,7 @@ export function DesignLab() {
   return (
     <div
       className="mx-auto flex min-h-screen max-w-[440px] flex-col"
-      style={{ background: "#0b0f17" }}
+      style={{ background: "#12100c" }}
     >
       <TopBar />
       <div className="flex-1 overflow-y-auto">
@@ -231,8 +225,6 @@ export function DesignLab() {
           <HomeTab vm={HOME} taps={{ onBills: () => setBillsOpen(true), onOwed: () => setOwedOpen(true) }} />
         ) : tab === "insights" ? (
           <InsightsTab vm={MOCK_INSIGHTS} taps={{ onCategory: () => setEnvOpen(true) }} />
-        ) : tab === "forecast" ? (
-          <ForecastTab recurring={MOCK_RECURRING} transactions={[]} debts={MOCK_DEBTS} />
         ) : tab === "activity" ? (
           <ActivityTab vm={MOCK_ACTIVITY} />
         ) : (

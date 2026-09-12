@@ -108,8 +108,8 @@ export function UpdatePrompt() {
         top: "calc(env(safe-area-inset-top, 0px) + 10px)",
         // Distinct amber — deliberately OUTSIDE the app's blue/teal palette so an
         // update never blends into the finance chrome.
-        background: "linear-gradient(150deg,#fbbf24,#f97316)",
-        color: "#3a1d02",
+        background: "linear-gradient(150deg,#dab249,#d47c2e)",
+        color: "#341f02",
         boxShadow: "0 10px 26px -6px rgba(249,115,22,.65)",
         opacity: busy ? 0.75 : 1,
       }}

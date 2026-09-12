@@ -51,7 +51,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="bump rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
-        style={{ background: "#2a2410", color: "#e3b341" }}
+        style={{ background: "#2a2007", color: "#dab249" }}
       >
         ◌ {row.badgeLabel}
       </span>
@@ -68,7 +68,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: c + "26", color: "#dbe4ec" }}
+        style={{ background: c + "26", color: "#e6dccb" }}
       >
         <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c }} />
         {row.badgeLabel}
@@ -79,7 +79,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: "#2a2410", color: "#e3b341" }}
+        style={{ background: "#2a2007", color: "#dab249" }}
       >
         {row.badgeLabel}
       </span>
@@ -90,7 +90,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: "#16241b", color: "#7fbf6a" }}
+        style={{ background: "#12231f", color: "#39c0b4" }}
       >
         {row.badgeLabel}
       </span>
@@ -100,7 +100,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
   return (
     <span
       className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-      style={{ background: "#1b2129", color: "#8b97a6" }}
+      style={{ background: "#262016", color: "#9e9180" }}
     >
       {row.badgeLabel}
     </span>
@@ -147,17 +147,17 @@ export function ActivityTab({
       <button
         key={key}
         onClick={() => setFilter(key)}
-        className="flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]"
+        className="h-hit flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]"
         style={{
-          background: active ? "#0b0f17" : "transparent",
-          color: active ? "#e6edf3" : "#8b97a6",
+          background: active ? "#12100c" : "transparent",
+          color: active ? "#f5efe4" : "#9e9180",
         }}
       >
         {label}
         {badge != null && badge > 0 && (
           <span
             className="rounded-full px-1.5 text-[10px] font-bold"
-            style={{ background: "#e3b341", color: "#0b0f17" }}
+            style={{ background: "#dab249", color: "#12100c" }}
           >
             {badge}
           </span>
@@ -174,7 +174,7 @@ export function ActivityTab({
         className="flex items-start justify-between rounded-b-[24px] px-6 py-4 text-white"
       >
         <div>
-          <div className="text-[26px] font-bold leading-none tracking-tight">{t("Activity")}</div>
+          <div className="inscr text-[30px]">{t("Activity")}</div>
           <div className="mt-1.5 text-[12px] opacity-90">
             {t("spent {amount} since Monday", { amount: money(vm.sinceMonday) })}
           </div>
@@ -182,10 +182,10 @@ export function ActivityTab({
         <button
           onClick={doRefresh}
           disabled={refreshing}
-          className="flex min-h-[40px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-[0.97]"
+          className="h-hit flex min-h-[40px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-[0.97]"
           style={{
-            background: justRefreshed ? "rgba(70,209,138,.25)" : "rgba(255,255,255,.2)",
-            border: justRefreshed ? "1px solid rgba(70,209,138,.5)" : "1px solid rgba(255,255,255,.3)",
+            background: justRefreshed ? "rgba(0,164,131,.32)" : "rgba(245,239,228,.16)",
+            border: justRefreshed ? "1px solid rgba(57,192,180,.55)" : "1px solid rgba(245,239,228,.26)",
           }}
         >
           {justRefreshed ? (
@@ -205,7 +205,7 @@ export function ActivityTab({
         {/* ── Filter segmented bar ── */}
         <div
           className="flex gap-1 rounded-[13px] p-1"
-          style={{ background: "#141a24", border: "1px solid #232d3a" }}
+          style={{ background: "#1c1811", border: "1px solid #332b20" }}
         >
           {chip("all", t("All"))}
           {chip("budget", t("In budget"))}
@@ -215,13 +215,13 @@ export function ActivityTab({
         {/* ── still-processing notice — BoA holds pending charges as a lump and
               only itemizes each one when it posts, so explain where they are ── */}
         {vm.processing > 0 && (
-          <div className="flex items-start gap-2.5 rounded-[13px] p-3" style={{ background: "#241f12", border: "1px solid #4a3f1c" }}>
-            <span className="bump mt-0.5 text-[15px] leading-none" style={{ color: "#e3b341" }}>◌</span>
+          <div className="flex items-start gap-2.5 rounded-[13px] p-3" style={{ background: "#241b06", border: "1px solid #413000" }}>
+            <span className="bump mt-0.5 text-[15px] leading-none" style={{ color: "#dab249" }}>◌</span>
             <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] font-semibold" style={{ color: "#e3b341" }}>
+              <div className="text-[12.5px] font-semibold" style={{ color: "#dab249" }}>
                 {t("~{amount} processing", { amount: money(vm.processing) })}
               </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: "#9aa6b2" }}>
+              <div className="mt-0.5 text-[11px]" style={{ color: "#c6b9a6" }}>
                 {t("Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They'll appear + notify you the moment they clear.")}
               </div>
             </div>
@@ -237,7 +237,7 @@ export function ActivityTab({
                 disabled={idx >= months.length - 1}
                 aria-label={t("Previous month")}
                 className="h-hit rounded-md p-1 disabled:opacity-30"
-                style={{ color: "#9aa6b2" }}
+                style={{ color: "#c6b9a6" }}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -247,7 +247,7 @@ export function ActivityTab({
                 disabled={idx <= 0}
                 aria-label={t("Next month")}
                 className="h-hit rounded-md p-1 disabled:opacity-30"
-                style={{ color: "#9aa6b2" }}
+                style={{ color: "#c6b9a6" }}
               >
                 <ChevronRight size={16} />
               </button>
@@ -257,27 +257,27 @@ export function ActivityTab({
 
           <div
             className="flex flex-col rounded-[16px] border"
-            style={{ background: "#141a24", borderColor: "#232d3a" }}
+            style={{ background: "#1c1811", borderColor: "#332b20" }}
           >
             {shown.length === 0 && (
-              <p className="px-4 py-8 text-center text-[13px]" style={{ color: "#7e8a98" }}>
+              <p className="px-4 py-8 text-center text-[13px]" style={{ color: "#9e9180" }}>
                 {t("Nothing here yet.")}
               </p>
             )}
             {shown.map((r, i) => {
               const income = r.fate === "income";
               const review = r.fate === "review";
-              const c = income ? "#34c5e8" : catColor(r.catId);
+              const c = income ? "#7f9ff7" : catColor(r.catId);
               const Icon = income ? ArrowDownLeft : review ? HelpCircle : catIcon(r.catId);
-              const chipBg = income ? "#0e2230" : review ? "#2a2410" : c + "26";
-              const chipColor = income ? "#34c5e8" : review ? "#e3b341" : c;
+              const chipBg = income ? "#223059" : review ? "#2a2007" : c + "26";
+              const chipColor = income ? "#7f9ff7" : review ? "#dab249" : c;
               return (
                 <button
                   key={r.id}
                   onClick={() => taps.onRow?.(r.id)}
                   className="flex items-center gap-3 p-4 text-left transition active:scale-[0.99]"
                   style={{
-                    borderTop: i === 0 ? "none" : "1px solid #1c2530",
+                    borderTop: i === 0 ? "none" : "1px solid #332b20",
                   }}
                 >
                   <span
@@ -296,7 +296,7 @@ export function ActivityTab({
                   </div>
                   <span
                     className="shrink-0 text-[13.5px] font-semibold"
-                    style={{ color: income ? "#46d18a" : "#e6edf3" }}
+                    style={{ color: income ? "#39c0b4" : "#f5efe4" }}
                   >
                     {income ? "+" : "-"}
                     {money2(r.amount)}

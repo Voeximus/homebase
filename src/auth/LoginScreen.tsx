@@ -54,18 +54,21 @@ export function LoginScreen() {
       <main className="hb-login-inner">
         <header className="hb-login-head">
           <div className="hb-mark" style={{ animationDelay: "60ms" }}>
-            <Logo size={96} animated title="Homebase" />
+            <Logo size={84} animated title="Homebase" />
           </div>
           <h1 className="hb-title" style={{ animationDelay: "160ms" }}>
             Homebase
           </h1>
+          {/* Gold leaf goes on the frame, never on the figure — so the one
+              gilded thing on this screen is a rule, not a fill. */}
+          <hr className="hb-gilt" style={{ animationDelay: "250ms" }} />
           {/* The app is money AND body. The old line said "shared finances". */}
-          <p className="hb-sub" style={{ animationDelay: "240ms" }}>
+          <p className="hb-sub aldine" style={{ animationDelay: "320ms", fontSize: 17 }}>
             {t("Money and health, calibrated in one place.")}
           </p>
         </header>
 
-        <form onSubmit={submit} className="hb-card" style={{ animationDelay: "320ms" }}>
+        <form onSubmit={submit} className="hb-card" style={{ animationDelay: "400ms" }}>
           <label className="hb-field">
             <span>{t("Email")}</span>
             <input
@@ -118,7 +121,7 @@ export function LoginScreen() {
 
         <button
           className="hb-swap"
-          style={{ animationDelay: "400ms" }}
+          style={{ animationDelay: "470ms" }}
           onClick={() => {
             setMode((m) => (m === "in" ? "up" : "in"));
             setError(null);

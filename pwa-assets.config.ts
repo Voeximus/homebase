@@ -18,12 +18,12 @@ export default defineConfig({
     maskable: {
       sizes: [512, 1024],
       padding: 0,
-      resizeOptions: { background: "#0a0d12" },
+      resizeOptions: { background: "#12100c" },
     },
     apple: {
       sizes: [180],
       padding: 0,
-      resizeOptions: { background: "#0a0d12" },
+      resizeOptions: { background: "#12100c" },
     },
   },
   images: ["public/favicon.svg"],

@@ -682,7 +682,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
       )}
 
       {toast && (
-        <div className="pop rounded-[14px] px-4 py-3 text-center text-[13px] font-semibold" style={{ background: "#13211a", border: "1px solid #1f3a2c", color: "#9fe3c0" }}>
+        <div className="pop rounded-[14px] px-4 py-3 text-center text-[13px] font-semibold" style={{ background: "#0f1f1c", border: "1px solid #17443d", color: "#a8ded1" }}>
           {toast}
         </div>
       )}
@@ -739,9 +739,9 @@ function Ring({
   over,
   size,
   stroke,
-  color = "#ffffff",
+  color = "#f5efe4",
   track = "rgba(255,255,255,0.25)",
-  overColor = "#ffd1d1",
+  overColor = "#f4d2c8",
   children,
 }: {
   pct: number;
@@ -1103,7 +1103,7 @@ const DAY_STATUS_LABEL: Record<DayStatus, string> = {
 // standing in for it.)
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const weekPctColor = (pct: number | null): string =>
-  pct == null ? "var(--color-edge)" : pct >= 80 ? "var(--h-good)" : pct >= 50 ? "#c98500" : "var(--h-over)";
+  pct == null ? "var(--color-edge)" : pct >= 80 ? "var(--h-good)" : pct >= 50 ? "#ab9100" : "var(--h-over)";
 const BAR_H = 32; // px — the recent-weeks trend bar height
 
 // ── the home 2-up: mock hb-tiles; tap opens the full card ─────────────────────
@@ -1624,7 +1624,7 @@ function CopyButton({
         e.stopPropagation();
         setState((await copyText(text())) ? "ok" : "fail");
       }}
-      className={`h-link${state === "ok" ? " on" : ""}`}
+      className={`h-link h-hit${state === "ok" ? " on" : ""}`}
       style={style}
     >
       {state === "ok" ? <ClipboardCheck size={13} /> : <Copy size={13} />}

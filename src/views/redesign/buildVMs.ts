@@ -46,9 +46,9 @@ const fmtMY = (d: Date) =>
 const fmtDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 const OWNER_DOT: Record<string, string> = {
-  Gino: "#5b82b3",
-  Xinyan: "#46d18a",
-  Joint: "#687180",
+  Gino: "#9e9180",
+  Xinyan: "#39c0b4",
+  Joint: "#9e9180",
 };
 
 const shortDebt = (n: string) => {
@@ -660,7 +660,7 @@ export function buildFinanceVMs(
       name: `${a.name} …${a.last4 ?? ""}`,
       owner: a.owner,
       balance: a.balance,
-      dot: OWNER_DOT[a.owner] ?? "#687180",
+      dot: OWNER_DOT[a.owner] ?? "#9e9180",
     })),
     lang: extra.lang,
     lens,

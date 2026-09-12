@@ -273,7 +273,7 @@ export function BarcodeScanner({
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div
                   className="h-20 w-3/4 rounded-lg border-2"
-                  style={{ borderColor: seen ? "var(--h-good, #199e70)" : "var(--color-accent)" }}
+                  style={{ borderColor: seen ? "var(--h-good, #00a483)" : "var(--color-accent)" }}
                 />
               </div>
               {hasTorch && (

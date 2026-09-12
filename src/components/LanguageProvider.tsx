@@ -48,7 +48,7 @@ export function LangToggle() {
   return (
     <button
       onClick={() => setLang(lang === "en" ? "zh" : "en")}
-      className="notranslate flex items-center gap-1 rounded-full px-2 py-1.5 text-[12px] font-semibold text-taupe transition hover:bg-raised hover:text-bone"
+      className="h-hit notranslate flex min-h-[40px] items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-taupe transition hover:bg-raised hover:text-bone"
       aria-label={lang === "en" ? "切换到中文 · Switch to Chinese" : "Switch to English · 切换到英文"}
     >
       <Languages size={14} />

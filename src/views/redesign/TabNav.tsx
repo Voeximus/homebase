@@ -1,12 +1,11 @@
-import { Home, PieChart, TrendingUp, LayoutGrid, User, type LucideIcon } from "lucide-react";
+import { Home, PieChart, LayoutGrid, User, type LucideIcon } from "lucide-react";
 import { t } from "../../lib/i18n";
 
-export type TabKey = "home" | "insights" | "forecast" | "activity" | "profile";
+export type TabKey = "home" | "insights" | "activity" | "profile";
 
 const TABS: { key: TabKey; label: string; Icon: LucideIcon }[] = [
   { key: "home", label: "Home", Icon: Home },
   { key: "insights", label: "Insights", Icon: PieChart },
-  { key: "forecast", label: "Forecast", Icon: TrendingUp },
   { key: "activity", label: "Activity", Icon: LayoutGrid },
   { key: "profile", label: "Profile", Icon: User },
 ];
@@ -16,13 +15,13 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
     // `justify-around` sized each button to its own TEXT, so the targets
     // measured 29–36px wide with dead gutters between them — on the most-used
     // control in the app, at the bottom of a phone, where a thumb lands
-    // approximately. A five-column grid gives every tab an equal share of the
+    // approximately. An equal-column grid gives every tab the same share of the
     // full width and leaves no gap that does nothing.
     <nav
-      className="grid grid-cols-5 border-t pt-2"
+      className="grid grid-cols-4 border-t pt-2"
       style={{
-        background: "#10141d",
-        borderColor: "#1d2530",
+        background: "#161309",
+        borderColor: "#2a2419",
         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
       }}
       aria-label={t("Sections")}
@@ -35,7 +34,7 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
             onClick={() => onTab(key)}
             aria-current={on ? "page" : undefined}
             className="flex min-h-[48px] flex-col items-center justify-center gap-1 text-[11px] transition active:scale-95"
-            style={{ color: on ? "#34c5e8" : "#7a8595" }}
+            style={{ color: on ? "#7f9ff7" : "#9e9180" }}
           >
             <Icon size={21} />
             {t(label)}

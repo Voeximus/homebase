@@ -30,8 +30,11 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
       >
         <div className="flex items-center gap-1.5 text-[12px] opacity-90">{t("debt left")}</div>
         <div className="mt-0.5 flex items-end justify-between">
-          <div className="text-[40px] font-bold leading-none tracking-tight">{money(vm.debtLeft)}</div>
-          <div className="pb-1 text-[12px] opacity-90">
+          <div className="figure text-[44px]">{money(vm.debtLeft)}</div>
+          <div
+            className="pb-1 text-[12.5px] font-semibold"
+            style={{ color: "#dab249" }}
+          >
             {t("{pct}% cleared", { pct: Math.round(vm.debtProgressPct) })}
           </div>
         </div>
@@ -43,7 +46,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         {vm.overspent > 0 && (
           <div
             className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ background: "rgba(0,0,0,0.18)", color: "#ffe0c2" }}
+            style={{ background: "rgba(0,0,0,0.18)", color: "#f0ddc6" }}
           >
             {t("−{amount} · over budget this month", { amount: money(vm.overspent) })}
           </div>
@@ -55,14 +58,14 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         <button
           onClick={taps.onOwed}
           className="mx-4 mt-3 flex items-center justify-between rounded-[16px] border px-4 py-3 text-left transition active:scale-[0.99]"
-          style={{ background: "#13211a", borderColor: "#1f3a2c" }}
+          style={{ background: "#0f1f1c", borderColor: "#17443d" }}
         >
-          <span className="text-[12.5px] font-medium" style={{ color: "#7fbf6a" }}>
+          <span className="text-[12.5px] font-medium" style={{ color: "#39c0b4" }}>
             {t("Owed to you")}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="text-[18px] font-bold text-bone">{money2(vm.owedToYou)}</span>
-            <ChevronRight size={16} style={{ color: "#7e8a98" }} />
+            <ChevronRight size={16} style={{ color: "#9e9180" }} />
           </span>
         </button>
       )}
@@ -73,18 +76,18 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         <button
           onClick={taps.onCash}
           className="rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
-          style={{ background: "#13211a", borderColor: "#1f3a2c" }}
+          style={{ background: "#0f1f1c", borderColor: "#17443d" }}
         >
-          <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#46d18a" }}>
+          <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#39c0b4" }}>
             <Wallet size={14} /> {t("Cash")}
           </div>
-          <div className="mt-1.5 text-[22px] font-bold text-bone">{money(vm.cash)}</div>
+          <div className="figure mt-1.5 text-[24px] text-bone">{money(vm.cash)}</div>
           {vm.processing > 0 ? (
-            <div className="mt-0.5 text-[11px] font-medium" style={{ color: "#d9a441" }}>
+            <div className="mt-0.5 text-[11px] font-medium" style={{ color: "#dab249" }}>
               {t("~{amount} waiting to post", { amount: money2(vm.processing) })}
             </div>
           ) : (
-            <div className="mt-0.5 text-[11px]" style={{ color: "#7e8a98" }}>
+            <div className="mt-0.5 text-[11px]" style={{ color: "#9e9180" }}>
               {t("{n} accounts", { n: vm.cashAccounts })}
             </div>
           )}
@@ -94,7 +97,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         <button
           onClick={taps.onDebt}
           className="rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
-          style={{ background: "#15172b", borderColor: "#282a4a" }}
+          style={{ background: "#1a1a26", borderColor: "#2d3354" }}
         >
           {/* This tile used to print money(vm.debtLeft) and vm.debtProgressPct —
               the SAME two facts the gradient hero states 150px above it, in the
@@ -105,21 +108,24 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
               see beats a % you have to read) and now carries the two debt facts
               that were on no screen at all: when it is gone, and what leaves on
               payday. Both were already on the view-model, unused. */}
-          <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#818cf8" }}>
+          {/* Ink comes from the LUME dish, never the mezza. This label was set
+              in the mark-weight lapis and measured 4.4:1 on the tile — a tenth
+              under what 11.5px text needs. */}
+          <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#7f9ff7" }}>
             <Flame size={14} /> {t("Payoff")}
           </div>
-          <div className="mt-1.5 text-[22px] font-bold text-bone">{vm.debtFreeBy}</div>
-          <div className="mt-0.5 text-[11px]" style={{ color: "#7a8595" }}>
+          <div className="figure mt-1.5 text-[24px] text-bone">{vm.debtFreeBy}</div>
+          <div className="mt-0.5 text-[11px]" style={{ color: "#9e9180" }}>
             {vm.nextAmount > 0
               ? t("{amount} on {date}", { amount: money(vm.nextAmount), date: vm.nextDate })
               : t("{pct}% cleared", { pct: Math.round(vm.debtProgressPct) })}
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#453a2b" }}>
             <div
               className="h-full"
               style={{
                 width: `${vm.debtProgressPct}%`,
-                background: "linear-gradient(90deg,#6366f1,#22d3ee)",
+                background: "linear-gradient(90deg,#6379e2,#7f9ff7)",
               }}
             />
           </div>
@@ -129,7 +135,7 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         <button
           onClick={taps.onBudget}
           className="col-span-2 flex items-center gap-4 rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
+          style={{ background: "#1c1811", borderColor: "#332b20" }}
         >
           <div className="relative h-16 w-16 shrink-0">
             <div
@@ -138,9 +144,9 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
             />
             <div
               className="absolute inset-[10px] flex items-center justify-center rounded-full"
-              style={{ background: "#141a24" }}
+              style={{ background: "#1c1811" }}
             >
-              <span className="text-[13px] font-bold text-bone">{money(vm.budgetSpent)}</span>
+              <span className="figure text-[14px] text-bone">{money(vm.budgetSpent)}</span>
             </div>
           </div>
           <div className="min-w-0 flex-1">
@@ -158,20 +164,20 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
                 total: vm.budgetCycleDays,
               })}
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
+            <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "#453a2b" }}>
               <div
                 className="h-full rounded-full"
                 style={{
                   width: `${Math.min(100, (vm.budgetSpent / vm.budgetTarget) * 100)}%`,
                   background:
                     vm.budgetSpent <= vm.budgetTarget
-                      ? "linear-gradient(90deg,#22c55e,#46d18a)"
-                      : "#f0556e",
+                      ? "linear-gradient(90deg,#00a483,#39c0b4)"
+                      : "#eb7867",
                 }}
               />
             </div>
             <div className="mt-1.5 flex items-baseline justify-between text-[11.5px]">
-              <span style={{ color: vm.budgetSpent <= vm.budgetTarget ? "#46d18a" : "#f0556e" }}>
+              <span style={{ color: vm.budgetSpent <= vm.budgetTarget ? "#39c0b4" : "#eb7867" }}>
                 {vm.budgetSpent <= vm.budgetTarget ? t("on track") : t("over")}
               </span>
               <span className="text-taupe">
@@ -179,33 +185,33 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
               </span>
             </div>
           </div>
-          <ChevronRight size={18} style={{ color: "#7a8595" }} />
+          <ChevronRight size={18} style={{ color: "#9e9180" }} />
         </button>
 
         {/* Bills — critical daily glance */}
         <button
           onClick={taps.onBills}
           className="col-span-2 flex items-center gap-3 rounded-[18px] border p-4 text-left transition active:scale-[0.98]"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
+          style={{ background: "#1c1811", borderColor: "#332b20" }}
         >
           <span
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            style={{ background: "#2a2016", color: "#fb923c" }}
+            style={{ background: "#2b1d10", color: "#d47c2e" }}
           >
             <Receipt size={18} />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span className="text-[13.5px] font-semibold text-bone">{t("Bills")}</span>
-              <span className="text-[12px]" style={{ color: "#8b97a6" }}>
+              <span className="text-[12px]" style={{ color: "#9e9180" }}>
                 {t("{amount} left", { amount: money(vm.bills.left) })}
               </span>
             </div>
-            <div className="truncate text-[11.5px]" style={{ color: "#7e8a98" }}>
+            <div className="truncate text-[11.5px]" style={{ color: "#9e9180" }}>
               {t("next: {name} · {date}", { name: vm.bills.nextName, date: vm.bills.nextDate })}
             </div>
           </div>
-          <ChevronRight size={18} style={{ color: "#7a8595" }} />
+          <ChevronRight size={18} style={{ color: "#9e9180" }} />
         </button>
 
         {/* Anomaly alert */}
@@ -213,21 +219,21 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           <button
             onClick={taps.onAnomaly}
             className="col-span-2 flex items-center gap-3 rounded-[18px] border p-3.5 text-left transition active:scale-[0.98]"
-            style={{ background: "#1a1320", borderColor: "#3a2230" }}
+            style={{ background: "#1d1526", borderColor: "#3f1f18" }}
           >
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ background: "#f0556e" }}
+              style={{ background: "#eb7867" }}
             />
             <div className="flex-1">
-              <div className="text-[13px] font-semibold" style={{ color: "#f4a6b6" }}>
+              <div className="text-[13px] font-semibold" style={{ color: "#eeada0" }}>
                 {t("Unusual purchases")}
               </div>
-              <div className="text-[12px]" style={{ color: "#9aa6b2" }}>
+              <div className="text-[12px]" style={{ color: "#c6b9a6" }}>
                 {t("{n} buys ran higher than usual", { n: vm.anomalyCount })}
               </div>
             </div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "#9e9180" }} />
           </button>
         )}
 
@@ -235,18 +241,18 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
         <button
           onClick={taps.onRecent}
           className="col-span-2 rounded-[18px] border p-3.5 text-left transition active:scale-[0.98]"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
+          style={{ background: "#1c1811", borderColor: "#332b20" }}
         >
           <div className="mb-2 flex items-baseline justify-between">
             <span className="eyebrow text-taupe">{t("Recent")}</span>
-            <span className="text-[12px]" style={{ color: "#9aa6b2" }}>
+            <span className="text-[12px]" style={{ color: "#c6b9a6" }}>
               {t("{amount} since Mon", { amount: money(vm.sinceMonday) })}
             </span>
           </div>
           <div className="flex flex-col gap-2.5">
             {vm.recent.slice(0, 3).map((r) => {
               const Icon = catIcon(r.catId);
-              const c = r.income ? "#46d18a" : catColor(r.catId);
+              const c = r.income ? "#39c0b4" : catColor(r.catId);
               return (
                 <div key={r.id} className="flex items-center gap-3">
                   <span
@@ -257,14 +263,14 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-bone">{r.merchant}</div>
-                    <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "#7e8a98" }}>
-                      {r.pending && <span className="font-semibold" style={{ color: "#e3b341" }}>◌ {t("Processing")}</span>}
+                    <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "#9e9180" }}>
+                      {r.pending && <span className="font-semibold" style={{ color: "#dab249" }}>◌ {t("Processing")}</span>}
                       {r.pending ? "" : r.sub}
                     </div>
                   </div>
                   <span
                     className="text-[13px] font-semibold"
-                    style={{ color: r.income ? "#46d18a" : "#e6edf3" }}
+                    style={{ color: r.income ? "#39c0b4" : "#f5efe4" }}
                   >
                     {r.income ? "+" : "-"}
                     {money2(r.amount)}

@@ -25,6 +25,11 @@ const DesignLab = import.meta.env.DEV
 const MealLab = import.meta.env.DEV
   ? lazy(() => import("./views/redesign/MealLab").then((m) => ({ default: m.MealLab })))
   : null;
+// ?door — the intro screen on mock figures, so the front door can be worked on
+// without a session. DEV-ONLY, like the other two.
+const DoorLab = import.meta.env.DEV
+  ? lazy(() => import("./views/redesign/DoorLab").then((m) => ({ default: m.DoorLab })))
+  : null;
 
 export default function App() {
   if (
@@ -48,6 +53,18 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <MealLab />
+      </Suspense>
+    );
+  }
+  if (
+    import.meta.env.DEV &&
+    DoorLab &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("door")
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <DoorLab />
       </Suspense>
     );
   }

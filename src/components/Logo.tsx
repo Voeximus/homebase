@@ -17,6 +17,17 @@ import { useId } from "react";
  * The seam is a real hole punched with a mask, not a background-coloured rect,
  * so the mark drops onto a card, a gradient or a light chip without carrying a
  * stripe of the wrong colour with it.
+ *
+ * Re-pigmented 2026-09-11: ULTRAMARINE and GOLD. Those are the two pigments a
+ * Renaissance contract actually named — lapis lazuli, shipped from Afghanistan
+ * and priced above gold, and gold leaf itself — and they are the only pair in
+ * the app's palette that differs in LIGHTNESS as much as in hue. The old
+ * emerald→cyan→blue halves were near-isoluminant, so in greyscale, under
+ * colour-blindness, or at 16px the split quietly disappeared and the mark
+ * flattened into one blob. These two stay two.
+ *
+ * Each half is lit from above-left and falls into shadow at the lower right,
+ * which is the same single light source the rest of the app is painted under.
  */
 
 // Inset so the rounded stroke grows the shape back out to fill the box.
@@ -54,13 +65,16 @@ export function Logo({
       aria-hidden={title ? undefined : true}
     >
       <defs>
-        <linearGradient id={L} x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#34d399" />
-          <stop offset="1" stopColor="#06b6d4" />
+        {/* ultramarine — lit top-left, into shadow bottom-right */}
+        <linearGradient id={L} x1="16" y1="16" x2="54" y2="88" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#9ab6ff" />
+          <stop offset="1" stopColor="#2d3d97" />
         </linearGradient>
-        <linearGradient id={R} x1="48" y1="18" x2="86" y2="86" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#06b6d4" />
-          <stop offset="1" stopColor="#3b82f6" />
+        {/* gold leaf — the same light, one pigment over */}
+        <linearGradient id={R} x1="46" y1="14" x2="88" y2="88" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#f0cd7c" />
+          <stop offset="0.55" stopColor="#d3a63f" />
+          <stop offset="1" stopColor="#8f6a15" />
         </linearGradient>
         {/* The plate, minus the seam. White keeps, black cuts. */}
         <mask id={M}>
@@ -74,6 +88,14 @@ export function Logo({
           />
           <rect x="48.8" y="0" width="2.4" height="62" fill="#000" />
         </mask>
+        {/* The sheen travels from off-left to off-right, which WIDENS the
+            group's bounding box — and a CSS drop-shadow on the wrapper takes
+            its region from that box, so the mark was casting a faint bar
+            underneath itself the whole width of the sheen's travel. Clipping
+            the group to the viewBox keeps the bbox honest. */}
+        <clipPath id={`${M}c`}>
+          <rect x="0" y="0" width="100" height="100" />
+        </clipPath>
         {animated && (
           <linearGradient id={S} x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#fff" stopOpacity="0" />
@@ -83,7 +105,7 @@ export function Logo({
         )}
       </defs>
 
-      <g mask={`url(#${M})`}>
+      <g mask={`url(#${M})`} clipPath={`url(#${M}c)`}>
         <rect x="0" y="0" width="50" height="100" fill={`url(#${L})`} />
         <rect x="50" y="0" width="50" height="100" fill={`url(#${R})`} />
         {/* The sheen rides INSIDE the mask, so it lights the mark and never
@@ -121,10 +143,14 @@ export function Wordmark({
       <Logo size={size * 1.18} animated={animated} title="Homebase" />
       <span
         style={{
-          fontSize: size,
-          fontWeight: 700,
-          // Tight, because the word is long and the mark beside it is compact.
-          letterSpacing: "-0.035em",
+          // The inscription face. A humanist roman beside a lapis-and-gold
+          // plate is the lockup the mark was drawn for; a grotesque beside it
+          // was always going to read as a tech logo wearing a costume.
+          fontFamily: "var(--font-display)",
+          fontSize: size * 1.1,
+          fontWeight: 600,
+          // Garamond is already generously fitted — it wants air, not squeeze.
+          letterSpacing: "0.005em",
           color: "var(--color-bone)",
           lineHeight: 1,
         }}
