@@ -27,3 +27,9 @@ fda-label-1-photo-sim.jpg
   grey-brown card, rotated 3°, Gaussian blur σ=1.0 px, 60,000 pixels of ±18
   noise (seed 7), 1200×1600, JPEG quality 88. Not a real photograph; real
   photos from both phones are still the missing evaluation set.
+
+fda-dual-column.tokens.json
+fda-label-1-photo-sim.tokens.json
+  The reader's exact output for the two images above, same engine and runtime
+  as fda-label-1.tokens.json. Held by tests/labelScan.parse.real.test.ts and
+  tests/labelScan.e2e.test.ts. Regenerate the same way, only on purpose.
