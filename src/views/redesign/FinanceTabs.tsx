@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { User, Users } from "lucide-react";
+import { Wallet, HeartPulse, User, Users } from "lucide-react";
 import { useStore } from "../../store/FinanceStore";
 import { useAuth } from "../../auth/AuthProvider";
 import { useLang } from "../../components/LanguageProvider";
@@ -8,10 +8,7 @@ import { syncNow } from "../../lib/plaidClient";
 import type { AppMode } from "../../components/ModeToggle";
 import type { Owner } from "../../lib/owner";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
-import { saveFloor } from "../../lib/floor";
-import { TabNav, type TabKey, type NavKey } from "./TabNav";
-
-const TAB_ORDER: TabKey[] = ["home", "insights", "activity", "profile"];
+import { TabNav, type TabKey } from "./TabNav";
 import { HomeTab } from "./HomeTab";
 import { InsightsTab } from "./InsightsTab";
 import { ActivityTab } from "./ActivityTab";
@@ -50,7 +47,7 @@ function Seg({
     <button
       onClick={onClick}
       className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition"
-      style={active ? { background: "#38c6e8", color: "#04212b", fontWeight: 600 } : { color: "#8b96a5" }}
+      style={active ? { background: "#34c5e8", color: "#06303a", fontWeight: 600 } : { color: "#8b97a6" }}
     >
       {children}
     </button>
@@ -58,28 +55,35 @@ function Seg({
 }
 
 function TopBar({
-  title,
+  mode,
+  onMode,
   lens,
   onLens,
 }: {
-  title: string;
+  mode: AppMode;
+  onMode: (m: AppMode) => void;
   lens: Lens;
   onLens: (l: Lens) => void;
 }) {
   return (
     <div
       className="flex items-center justify-between px-4 pb-2.5"
-      style={{ background: "#0b0e13", paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
+      style={{ background: "#0b0f17", paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
     >
-      {/* The Finance/Health switch used to live here, above the content, while
-          the thing it is a sibling of — every other destination — lived in the
-          bar at the bottom. Health moved into that bar. What is left on screen
-          is the one control that changes what the numbers MEAN rather than
-          where you are. */}
-      <span className="text-[15px] font-bold tracking-[-0.02em]">{title}</span>
       <span
         className="flex rounded-full p-0.5"
-        style={{ background: "#141a23", border: "1px solid #222b38" }}
+        style={{ background: "#141a24", border: "1px solid #232d3a" }}
+      >
+        <Seg active={mode === "finance"} onClick={() => onMode("finance")}>
+          <Wallet size={14} /> {t("Finance")}
+        </Seg>
+        <Seg active={mode === "health"} onClick={() => onMode("health")}>
+          <HeartPulse size={14} /> {t("Health")}
+        </Seg>
+      </span>
+      <span
+        className="flex rounded-full p-0.5"
+        style={{ background: "#141a24", border: "1px solid #232d3a" }}
       >
         <Seg active={lens === "me"} onClick={() => onLens("me")}>
           <User size={14} /> {t("Mine")}
@@ -92,21 +96,14 @@ function TopBar({
   );
 }
 
-const TITLES: Record<TabKey, string> = {
-  home: "",
-  insights: "Insights",
-  activity: "Activity",
-  profile: "Profile",
-};
-
 export function FinanceTabs({
+  mode,
   onMode,
   owner,
   lens,
   onLens,
 }: {
-  // `mode` is gone from here: this component only ever renders in finance mode,
-  // and the switch that used to need it now lives in the tab bar.
+  mode: AppMode;
   onMode: (m: AppMode) => void;
   owner: Owner;
   lens: Lens;
@@ -117,35 +114,22 @@ export function FinanceTabs({
   const { setLang } = useLang();
   // Persist the active tab so a language switch (which remounts the whole tree
   // via LanguageProvider's key bump) doesn't throw you back to Home.
-  // The active tab AND which way it lies from the one before it, held together
-  // in one piece of state. The direction was a ref first — it is only read
-  // during the render the tab change already causes — but a ref read during
-  // render is exactly the thing React tells you not to do, and the two values
-  // change at the same instant anyway. One object, one update, one render.
-  const [nav, setNav] = useState<{ tab: TabKey; dir: 1 | -1 }>(() => {
+  const [tab, setTabState] = useState<TabKey>(() => {
     try {
       const t = localStorage.getItem("hb-fin-tab");
-      const tab = t === "insights" || t === "activity" || t === "profile" ? t : "home";
-      return { tab, dir: 1 };
+      return t === "insights" || t === "activity" || t === "profile" ? t : "home";
     } catch {
-      return { tab: "home", dir: 1 };
+      return "home";
     }
   });
-  const tab = nav.tab;
-  const dir = nav.dir;
   const setTab = (t: TabKey) => {
     try {
       localStorage.setItem("hb-fin-tab", t);
     } catch {
       /* ignore */
     }
-    setNav((prev) => ({
-      tab: t,
-      dir: TAB_ORDER.indexOf(t) >= TAB_ORDER.indexOf(prev.tab) ? 1 : -1,
-    }));
+    setTabState(t);
   };
-  // Bumped when the floor changes, purely to re-run the view-model memo.
-  const [floorV, setFloorV] = useState(0);
   const [, setSyncing] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -161,18 +145,14 @@ export function FinanceTabs({
   const [anomalyOpen, setAnomalyOpen] = useState(false);
   const [owedOpen, setOwedOpen] = useState(false);
 
-    const anySheetOpen =
+  const anySheetOpen =
     ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
     settingsOpen || billsOpen || !!payBillEntry || !!txnId || anomalyOpen || owedOpen;
 
   // The attack ladder reads the shared payoff projection from buildVMs (vms.deploy).
   const vms = useMemo(
     () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
-    // `floorV` looks unnecessary to the linter and is not: the floor is read
-    // from localStorage inside buildFinanceVMs, which no dependency can see, so
-    // this counter is the only thing that tells the memo the input changed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, owner, lens, session, floorV],
+    [data, owner, lens, session],
   );
 
   // The app checking its own arithmetic. Deliberately NOT lens-filtered: an
@@ -239,29 +219,13 @@ export function FinanceTabs({
   return (
     <div
       className="mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
-      style={{ background: "#0b0e13" }}
+      style={{ background: "#0b0f17" }}
     >
-      <TopBar title={TITLES[tab]} lens={lens} onLens={onLens} />
+      <TopBar mode={mode} onMode={onMode} lens={lens} onLens={onLens} />
       <div
         className="min-h-0 flex-1"
         style={{ overflowY: anySheetOpen ? "hidden" : "auto", overscrollBehaviorY: "contain" }}
       >
-        {/* ── Lateral motion ──────────────────────────────────────────────────
-            Tabs are SIBLINGS, so the transition has to say "same level,
-            different place" — a short travel in the direction you actually
-            travelled, plus a fade. A cross-fade would say the screen changed
-            without saying where you went; a full-width slide would say one
-            screen contains the other.
-
-            Only the arriving screen is animated. Animating the departing one
-            too would mean holding both in the tree through the transition, and
-            the cost of that here — two live view-models, two scroll positions,
-            two sets of sheet state — buys a refinement nobody can name after
-            240ms. The direction is what carries the meaning, and the entry
-            alone carries the direction.
-
-            `key` is the tab, so React remounts and the animation re-runs. */}
-        <div key={tab} className={dir > 0 ? "tab-in-fwd" : "tab-in-back"}>
         {tab === "home" ? (
           <HomeTab
             vm={vms.home}
@@ -302,24 +266,13 @@ export function FinanceTabs({
               onCards: () => setSettingsOpen(true),
               onAdvanced: () => setSettingsOpen(true),
               onLang: (l) => setLang(l),
-              // The floor lives in localStorage, which no React state watches —
-              // so the version bump is what makes the new headline appear. Same
-              // reason the language switch remounts the tree.
-              onFloor: (n) => {
-                saveFloor(n);
-                setFloorV((v) => v + 1);
-              },
               onLens,
               onToggleVariableBill: (id, on) => void setRecurringVariable(id, on),
             }}
           />
         )}
-        </div>
       </div>
-      <TabNav
-        active={tab}
-        onTab={(k: NavKey) => (k === "health" ? onMode("health") : setTab(k))}
-      />
+      <TabNav active={tab} onTab={setTab} />
 
       <LedgerSheet
         open={ledgerOpen}

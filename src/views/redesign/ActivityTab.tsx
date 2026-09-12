@@ -51,7 +51,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="bump rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
-        style={{ background: "#2b2410", color: "#e9b23c" }}
+        style={{ background: "#2a2410", color: "#e3b341" }}
       >
         ◌ {row.badgeLabel}
       </span>
@@ -68,7 +68,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: c + "26", color: "#dfe6ee" }}
+        style={{ background: c + "26", color: "#dbe4ec" }}
       >
         <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c }} />
         {row.badgeLabel}
@@ -79,7 +79,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: "#2b2410", color: "#e9b23c" }}
+        style={{ background: "#2a2410", color: "#e3b341" }}
       >
         {row.badgeLabel}
       </span>
@@ -90,7 +90,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: "#12231d", color: "#3fd08a" }}
+        style={{ background: "#16241b", color: "#7fbf6a" }}
       >
         {row.badgeLabel}
       </span>
@@ -100,7 +100,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
   return (
     <span
       className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-      style={{ background: "#1c2430", color: "#8b96a5" }}
+      style={{ background: "#1b2129", color: "#8b97a6" }}
     >
       {row.badgeLabel}
     </span>
@@ -149,15 +149,15 @@ export function ActivityTab({
         onClick={() => setFilter(key)}
         className="h-hit flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]"
         style={{
-          background: active ? "#0b0e13" : "transparent",
-          color: active ? "#f0f4f8" : "#8b96a5",
+          background: active ? "#0b0f17" : "transparent",
+          color: active ? "#e6edf3" : "#8b97a6",
         }}
       >
         {label}
         {badge != null && badge > 0 && (
           <span
             className="rounded-full px-1.5 text-[10px] font-bold"
-            style={{ background: "#e9b23c", color: "#0b0e13" }}
+            style={{ background: "#e3b341", color: "#0b0f17" }}
           >
             {badge}
           </span>
@@ -205,7 +205,7 @@ export function ActivityTab({
         {/* ── Filter segmented bar ── */}
         <div
           className="flex gap-1 rounded-[13px] p-1"
-          style={{ background: "#141a23", border: "1px solid #222b38" }}
+          style={{ background: "#141a24", border: "1px solid #232d3a" }}
         >
           {chip("all", t("All"))}
           {chip("budget", t("In budget"))}
@@ -215,13 +215,13 @@ export function ActivityTab({
         {/* ── still-processing notice — BoA holds pending charges as a lump and
               only itemizes each one when it posts, so explain where they are ── */}
         {vm.processing > 0 && (
-          <div className="flex items-start gap-2.5 rounded-[13px] p-3" style={{ background: "#241e0e", border: "1px solid #463a16" }}>
-            <span className="bump mt-0.5 text-[15px] leading-none" style={{ color: "#e9b23c" }}>◌</span>
+          <div className="flex items-start gap-2.5 rounded-[13px] p-3" style={{ background: "#241f12", border: "1px solid #4a3f1c" }}>
+            <span className="bump mt-0.5 text-[15px] leading-none" style={{ color: "#e3b341" }}>◌</span>
             <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] font-semibold" style={{ color: "#e9b23c" }}>
+              <div className="text-[12.5px] font-semibold" style={{ color: "#e3b341" }}>
                 {t("~{amount} processing", { amount: money(vm.processing) })}
               </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: "#a8b4c2" }}>
+              <div className="mt-0.5 text-[11px]" style={{ color: "#9aa6b2" }}>
                 {t("Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They'll appear + notify you the moment they clear.")}
               </div>
             </div>
@@ -237,7 +237,7 @@ export function ActivityTab({
                 disabled={idx >= months.length - 1}
                 aria-label={t("Previous month")}
                 className="h-hit rounded-md p-1 disabled:opacity-30"
-                style={{ color: "#a8b4c2" }}
+                style={{ color: "#9aa6b2" }}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -247,7 +247,7 @@ export function ActivityTab({
                 disabled={idx <= 0}
                 aria-label={t("Next month")}
                 className="h-hit rounded-md p-1 disabled:opacity-30"
-                style={{ color: "#a8b4c2" }}
+                style={{ color: "#9aa6b2" }}
               >
                 <ChevronRight size={16} />
               </button>
@@ -257,27 +257,27 @@ export function ActivityTab({
 
           <div
             className="flex flex-col rounded-[16px] border"
-            style={{ background: "#141a23", borderColor: "#222b38" }}
+            style={{ background: "#141a24", borderColor: "#232d3a" }}
           >
             {shown.length === 0 && (
-              <p className="px-4 py-8 text-center text-[13px]" style={{ color: "#8b96a5" }}>
+              <p className="px-4 py-8 text-center text-[13px]" style={{ color: "#7e8a98" }}>
                 {t("Nothing here yet.")}
               </p>
             )}
             {shown.map((r, i) => {
               const income = r.fate === "income";
               const review = r.fate === "review";
-              const c = income ? "#38c6e8" : catColor(r.catId);
+              const c = income ? "#34c5e8" : catColor(r.catId);
               const Icon = income ? ArrowDownLeft : review ? HelpCircle : catIcon(r.catId);
-              const chipBg = income ? "#10323f" : review ? "#2b2410" : c + "26";
-              const chipColor = income ? "#38c6e8" : review ? "#e9b23c" : c;
+              const chipBg = income ? "#0e2230" : review ? "#2a2410" : c + "26";
+              const chipColor = income ? "#34c5e8" : review ? "#e3b341" : c;
               return (
                 <button
                   key={r.id}
                   onClick={() => taps.onRow?.(r.id)}
                   className="flex items-center gap-3 p-4 text-left transition active:scale-[0.99]"
                   style={{
-                    borderTop: i === 0 ? "none" : "1px solid #222b38",
+                    borderTop: i === 0 ? "none" : "1px solid #1c2530",
                   }}
                 >
                   <span
@@ -296,7 +296,7 @@ export function ActivityTab({
                   </div>
                   <span
                     className="shrink-0 text-[13.5px] font-semibold"
-                    style={{ color: income ? "#3fd08a" : "#f0f4f8" }}
+                    style={{ color: income ? "#46d18a" : "#e6edf3" }}
                   >
                     {income ? "+" : "-"}
                     {money2(r.amount)}

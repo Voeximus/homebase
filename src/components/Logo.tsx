@@ -55,11 +55,11 @@ export function Logo({
     >
       <defs>
         <linearGradient id={L} x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#3fd08a" />
-          <stop offset="1" stopColor="#1f9fc0" />
+          <stop offset="0" stopColor="#34d399" />
+          <stop offset="1" stopColor="#06b6d4" />
         </linearGradient>
         <linearGradient id={R} x1="48" y1="18" x2="86" y2="86" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#1f9fc0" />
+          <stop offset="0" stopColor="#06b6d4" />
           <stop offset="1" stopColor="#3b82f6" />
         </linearGradient>
         {/* The plate, minus the seam. White keeps, black cuts. */}

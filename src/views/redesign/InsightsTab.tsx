@@ -63,7 +63,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
         {/* ── Spending gauge ── */}
         <div
           className="flex items-center gap-4 rounded-[18px] border p-4"
-          style={{ background: "#141a23", borderColor: "#222b38" }}
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
           <div className="relative h-[120px] w-[120px] shrink-0">
             <div
@@ -72,10 +72,10 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
             />
             <div
               className="absolute inset-[14px] flex flex-col items-center justify-center rounded-full"
-              style={{ background: "#141a23" }}
+              style={{ background: "#141a24" }}
             >
               <span className="text-[20px] font-bold text-bone">{money(vm.budgetSpent)}</span>
-              <span className="text-[11px]" style={{ color: "#8b96a5" }}>
+              <span className="text-[11px]" style={{ color: "#8b97a6" }}>
                 {t("of {amount}", { amount: money(vm.budgetTarget) })}
               </span>
             </div>
@@ -83,23 +83,23 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
           <div className="min-w-0 flex-1">
             <div
               className="text-[10.5px] font-semibold uppercase"
-              style={{ color: "#8b96a5", letterSpacing: "0.08em" }}
+              style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
             >
               {t("Spent this cycle")}
             </div>
             {/* Which paycheck's run this is, and how far into it — the same pace
                 line the Home tile carries, so the two screens agree. */}
-            <div className="mt-0.5 text-[11px]" style={{ color: "#8b96a5" }}>
+            <div className="mt-0.5 text-[11px]" style={{ color: "#8b97a6" }}>
               {t("day {n} of {total}", { n: vm.budgetCycleDay, total: vm.budgetCycleDays })}
             </div>
             <div
               className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"
-              style={{ color: onTrack ? "#3fd08a" : "#f0645c" }}
+              style={{ color: onTrack ? "#46d18a" : "#f0556e" }}
             >
               {onTrack && <CircleCheck size={16} />}
               {onTrack ? t("On track") : t("Over")}
             </div>
-            <div className="mt-1 text-[12px]" style={{ color: "#8b96a5" }}>
+            <div className="mt-1 text-[12px]" style={{ color: "#8b97a6" }}>
               {t("{amount} left in the lean budget", { amount: money(leftInBudget) })}
             </div>
           </div>
@@ -108,11 +108,11 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
         {/* ── Plan vs actual ── */}
         <div
           className="rounded-[18px] border p-4"
-          style={{ background: "#141a23", borderColor: "#222b38" }}
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
           <div
             className="mb-3 text-[10.5px] font-semibold uppercase"
-            style={{ color: "#8b96a5", letterSpacing: "0.08em" }}
+            style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
           >
             {t("Lean budget · plan vs actual")}
           </div>
@@ -133,16 +133,16 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                     <span className="flex-1 text-[13px] font-medium text-bone">{c.label}</span>
                     <span className="text-[12.5px] font-semibold text-bone">
                       {money(c.spent)}{" "}
-                      <span style={{ color: "#8b96a5" }}>/ {money(c.target)}</span>
+                      <span style={{ color: "#8b97a6" }}>/ {money(c.target)}</span>
                     </span>
                   </div>
                   <div
                     className="mt-1.5 h-1.5 overflow-hidden rounded-full"
-                    style={{ background: "#2e3947" }}
+                    style={{ background: "#222b38" }}
                   >
                     <div
                       className="h-full rounded-full"
-                      style={{ width: `${pct}%`, background: over ? "#f0645c" : color }}
+                      style={{ width: `${pct}%`, background: over ? "#f0556e" : color }}
                     />
                   </div>
                 </button>
@@ -154,11 +154,11 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
         {/* ── Where every dollar goes ── */}
         <div
           className="rounded-[18px] border p-4"
-          style={{ background: "#141a23", borderColor: "#222b38" }}
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
           <div
             className="mb-3 text-[10.5px] font-semibold uppercase"
-            style={{ color: "#8b96a5", letterSpacing: "0.08em" }}
+            style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
           >
             {t("Where every dollar goes")}
           </div>
@@ -176,9 +176,9 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
               different text treatments and the odd one out was the failing one. */}
           {(() => {
             const parts = [
-              { key: "living", label: t("Living"), value: vm.living, bg: "#8b96a5" },
-              { key: "variable", label: t("Variable"), value: vm.variable, bg: "#e9b23c" },
-              { key: "debt", label: t("Debt"), value: vm.atDebt, bg: "#38c6e8" },
+              { key: "living", label: t("Living"), value: vm.living, bg: "#5b82b3" },
+              { key: "variable", label: t("Variable"), value: vm.variable, bg: "#e3b341" },
+              { key: "debt", label: t("Debt"), value: vm.atDebt, bg: "#34c5e8" },
             ].filter((seg) => seg.value > 0);
             const total = parts.reduce((a, seg) => a + seg.value, 0);
             if (total <= 0) return null;
@@ -190,7 +190,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                     <div
                       key={seg.key}
                       className="flex items-center justify-center overflow-hidden text-[10px] font-semibold"
-                      style={{ width: `${pct}%`, background: seg.bg, color: "#080a0e" }}
+                      style={{ width: `${pct}%`, background: seg.bg, color: "#0d1218" }}
                       title={`${seg.label} · ${money(seg.value)} · ${Math.round(pct)}%`}
                     >
                       {pct >= 12 ? seg.label : ""}
@@ -201,17 +201,17 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
             );
           })()}
           <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-            <Stat label={t("Income")} value={money(vm.income)} color="#3fd08a" />
-            <Stat label={t("Living")} value={money(vm.living)} color="#f0f4f8" />
-            <Stat label={t("Variable")} value={money(vm.variable)} color="#f0f4f8" />
-            <Stat label={t("At debt")} value={money(vm.atDebt)} color="#38c6e8" />
+            <Stat label={t("Income")} value={money(vm.income)} color="#46d18a" />
+            <Stat label={t("Living")} value={money(vm.living)} color="#e6edf3" />
+            <Stat label={t("Variable")} value={money(vm.variable)} color="#e6edf3" />
+            <Stat label={t("At debt")} value={money(vm.atDebt)} color="#34c5e8" />
           </div>
         </div>
 
         {/* ── Debt-free ── */}
         <div
           className="flex items-end justify-between rounded-[18px] p-4 text-white"
-          style={{ background: "linear-gradient(135deg,#3c2166,#1f9fc0)" }}
+          style={{ background: "linear-gradient(135deg,#5b21b6,#1d4ed8)" }}
         >
           <div>
             <div className="text-[11.5px] opacity-90">{t("debt-free")}</div>
@@ -227,12 +227,12 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
         {/* ── Attack ladder ── */}
         <div
           className="rounded-[18px] border p-4"
-          style={{ background: "#141a23", borderColor: "#222b38" }}
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
           <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-bone">
-            <Flame size={16} style={{ color: "#c07a1e" }} />
+            <Flame size={16} style={{ color: "#fb923c" }} />
             {t("Attack ladder")}
-            <span className="text-[12px] font-normal" style={{ color: "#8b96a5" }}>
+            <span className="text-[12px] font-normal" style={{ color: "#8b97a6" }}>
               {t("· smallest first")}
             </span>
           </div>
@@ -244,19 +244,19 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                   key={d.rank}
                   className="flex items-center gap-3 rounded-[12px] border p-3"
                   style={{
-                    background: hi ? "#10323f" : "transparent",
-                    borderColor: hi ? "#22566a" : "#222b38",
+                    background: hi ? "#0e2230" : "transparent",
+                    borderColor: hi ? "#1d5066" : "#232d3a",
                   }}
                 >
                   <span
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
                     style={{
-                      background: hi ? "#38c6e826" : "#1c2430",
+                      background: hi ? "#34c5e826" : "#1a212c",
                       // The rank sat at 4.33:1 on its own chip — dimmer than the
                       // dim ink elsewhere, because the chip is LIGHTER than the
                       // card it sits on. It is a number the ladder exists to be
                       // read in order, so it takes the secondary ink.
-                      color: hi ? "#38c6e8" : "#8b96a5",
+                      color: hi ? "#34c5e8" : "#8b97a6",
                     }}
                   >
                     {d.rank}
@@ -266,7 +266,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                     {d.apr != null && (
                       <span
                         className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                        style={{ background: "#f0645c26", color: "#f0645c" }}
+                        style={{ background: "#f0556e26", color: "#f0556e" }}
                       >
                         {d.apr}%
                       </span>
@@ -274,7 +274,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
                     {d.live && (
                       <span
                         className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                        style={{ background: "#3fd08a26", color: "#3fd08a" }}
+                        style={{ background: "#46d18a26", color: "#46d18a" }}
                       >
                         {t("live")}
                       </span>
@@ -298,7 +298,7 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
       <div className="text-[15px] font-bold" style={{ color }}>
         {value}
       </div>
-      <div className="mt-0.5 text-[10.5px]" style={{ color: "#8b96a5" }}>
+      <div className="mt-0.5 text-[10.5px]" style={{ color: "#8b97a6" }}>
         {label}
       </div>
     </div>

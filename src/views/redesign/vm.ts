@@ -23,15 +23,6 @@ export interface HomeVM {
   cash: number;
   cashAccounts: number;
   processing: number; // ~$ still settling at the bank (0 = hide)
-  // ── the home screen's headline ──
-  // cash − everything still due before the next payday − the floor you set.
-  // The envelope remainder it replaced could read "$531 left" the day before
-  // rent; this one cannot. See the derivation in buildVMs.
-  trulyFree: number;
-  committed: number; // bills still to come out of the paycheck already banked
-  cashFloor: number; // the buffer you refuse to count (lib/floor.ts)
-  daysToPayday: number;
-  paydayLabel: string; // "Sep 30"
   debtLeft: number;
   debtProgressPct: number; // 0..100 cleared
   budgetSpent: number;

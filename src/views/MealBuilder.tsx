@@ -682,7 +682,7 @@ function TogetherMode({ owner, library }: { owner: Person; library: Food[] }) {
       )}
 
       {toast && (
-        <div className="pop rounded-[14px] px-4 py-3 text-center text-[13px] font-semibold" style={{ background: "#0f1f1a", border: "1px solid #17443a", color: "#a5e5c6" }}>
+        <div className="pop rounded-[14px] px-4 py-3 text-center text-[13px] font-semibold" style={{ background: "#13211a", border: "1px solid #1f3a2c", color: "#9fe3c0" }}>
           {toast}
         </div>
       )}
@@ -739,9 +739,9 @@ function Ring({
   over,
   size,
   stroke,
-  color = "#f0f4f8",
+  color = "#ffffff",
   track = "rgba(255,255,255,0.25)",
-  overColor = "#f5d3cf",
+  overColor = "#ffd1d1",
   children,
 }: {
   pct: number;
@@ -1103,7 +1103,7 @@ const DAY_STATUS_LABEL: Record<DayStatus, string> = {
 // standing in for it.)
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const weekPctColor = (pct: number | null): string =>
-  pct == null ? "var(--color-edge)" : pct >= 80 ? "var(--h-good)" : pct >= 50 ? "#c9982b" : "var(--h-over)";
+  pct == null ? "var(--color-edge)" : pct >= 80 ? "var(--h-good)" : pct >= 50 ? "#c98500" : "var(--h-over)";
 const BAR_H = 32; // px — the recent-weeks trend bar height
 
 // ── the home 2-up: mock hb-tiles; tap opens the full card ─────────────────────

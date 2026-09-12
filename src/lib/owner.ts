@@ -29,6 +29,6 @@ export const OWNER_NAME: Record<Owner, string> = {
 
 // Same person accents the health side uses, so identity feels consistent.
 export const OWNER_COLOR: Record<Owner, string> = {
-  gino: "#c07a1e",
-  xinyan: "#3fd08a",
+  gino: "#ef8136",
+  xinyan: "#2dd1c0",
 };

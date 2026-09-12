@@ -12,15 +12,12 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "2026.09.12a",
+    version: "2026.09.12b",
     date: "September 12, 2026",
     notes: [
-      "Home leads with a number that can't lie to you. It used to say how much of the budget was left — which would happily read \"$531 left\" the evening before $1,715 of rent went out. It now shows what's TRULY FREE: the cash in the account, minus every bill still due before your next payday, minus a floor you set. The subtraction is printed right under it, so you can check it instead of trusting it.",
-      "You can set that floor. It's in Profile — the amount you refuse to count as spendable. It starts at $300.",
-      "One navigation bar instead of three controls. Finance and Health were a switch at the TOP of the screen, above a bar at the bottom that did the same kind of job. Health is a tab now, in the bar, next to Insights and Activity. Only Mine/Household stays on screen, because that changes what the numbers mean rather than where you are. Health's own Meals/Workouts switch moved up top where sub-navigation belongs.",
-      "The budget bar tells you about PACE now. The fill is what you've spent; the white tick is where you should be by this day of the cycle. Fill past the tick means you're spending faster than the cycle is passing — one glance, no arithmetic. It says \"ahead of pace\" or \"on pace\" underneath.",
-      "Every colour in the app was re-solved and run through the colour-blindness checks. The rule behind it: the accent blue is the only colour that's both a background and a text colour, so it's the only one that has to be unique in both — it means \"you can tap this\" and nothing else. That caught two real problems: Dining was a cyan close enough to the accent that a category looked tappable, and the Payoff label was written in a category colour at 3.9:1. Both fixed.",
-      "Switching tabs now moves in the direction you travelled — a short slide, not a fade — so you can feel which way you went. It's off if your phone is set to reduce motion.",
+      "Back to how it looked before. The new palette, the reworked Home screen, the five-tab bar and the tab animation are all reverted — you said the original was better, so it's the original again rather than a compromise between the two.",
+      "Three things stayed, because they were bugs rather than looks: the Forecast tab is still gone, Pets and Kids no longer share the exact same colour, and the controls that were a few pixels too small to hit reliably still have a full-size touch area.",
+      "Nothing was lost on the way. The mockups and the working prototype are still at /_mockup.html and /_proto.html if you want to pull single pieces out of them later.",
     ],
   },
   {
