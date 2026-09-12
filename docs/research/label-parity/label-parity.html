@@ -1,0 +1,575 @@
+<title>Label Parity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400..750;1,400&display=swap">
+<style>
+/* Dark-first, in Homebase's own original palette. Light is the redefinition. */
+:root{
+  --bg:#0a0d12; --panel:#121822; --raised:#18212d; --edge:#232d3a; --edge2:#2e3a49;
+  --ink:#eef2f7; --ink2:#a6b1bf; --ink3:#8b96a5;
+  --accent:#34c5e8; --accent-soft:rgba(52,197,232,.12);
+  --good:#46d18a; --good-soft:rgba(70,209,138,.13);
+  --warn:#e3b341; --warn-soft:rgba(227,179,65,.13);
+  --bad:#ef6a5f;  --bad-soft:rgba(239,106,95,.14);
+  --display:"Archivo","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f3f5f8; --panel:#ffffff; --raised:#eaeef3; --edge:#d6dce4; --edge2:#c3cbd6;
+    --ink:#0d1218; --ink2:#46505d; --ink3:#5b6674;
+    --accent:#0b7c9e; --accent-soft:rgba(11,124,158,.10);
+    --good:#157a45; --good-soft:rgba(21,122,69,.10);
+    --warn:#946300; --warn-soft:rgba(148,99,0,.11);
+    --bad:#b93a2f;  --bad-soft:rgba(185,58,47,.10);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f3f5f8; --panel:#ffffff; --raised:#eaeef3; --edge:#d6dce4; --edge2:#c3cbd6;
+  --ink:#0d1218; --ink2:#46505d; --ink3:#5b6674;
+  --accent:#0b7c9e; --accent-soft:rgba(11,124,158,.10);
+  --good:#157a45; --good-soft:rgba(21,122,69,.10);
+  --warn:#946300; --warn-soft:rgba(148,99,0,.11);
+  --bad:#b93a2f;  --bad-soft:rgba(185,58,47,.10);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 var(--body);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:2px}
+code,.m{font-family:var(--mono);font-size:.92em;font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+.wrap{max-width:1160px;margin:0 auto;padding:0 22px 80px}
+.col{max-width:690px}
+header.top{padding:54px 0 18px;border-bottom:1px solid var(--edge)}
+.eyebrow{font:600 11.5px/1.2 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+h1{font-family:var(--display);font-stretch:72%;font-weight:900;font-size:clamp(46px,8vw,78px);line-height:.92;letter-spacing:-.01em;margin:12px 0 16px}
+.dek{font-size:20px;line-height:1.5;color:var(--ink2);max-width:640px;margin:0 0 6px;text-wrap:pretty}
+.dek b{color:var(--ink);font-weight:650}
+
+section{padding-top:58px}
+h2{font-family:var(--display);font-stretch:78%;font-weight:850;font-size:34px;line-height:1.05;letter-spacing:-.005em;margin:0 0 14px;text-wrap:balance}
+h2 .n{font-family:var(--mono);font-stretch:normal;font-size:13px;font-weight:500;color:var(--ink3);letter-spacing:.06em;display:block;margin-bottom:8px}
+h3{font:700 17px/1.35 var(--body);margin:26px 0 8px}
+p{margin:0 0 14px;text-wrap:pretty}
+.lede{font-size:17.5px;color:var(--ink2)}
+.lede b,p b{color:var(--ink);font-weight:650}
+.note{font-size:14px;color:var(--ink3)}
+
+/* ── thesis: the specimen and what it secretly carries ───────────────────── */
+.thesis{display:grid;grid-template-columns:minmax(0,350px) minmax(0,1fr);gap:46px;align-items:start;margin-top:26px}
+@media (max-width:820px){.thesis{grid-template-columns:1fr;gap:28px}}
+
+/* The one thing on this page that is not in the app's palette: a printed
+   label is a physical white object, in either theme. */
+.nf-holder{padding-right:38px}
+.nf{position:relative;background:#fff;color:#000;border:1px solid #000;padding:4px 8px 6px;
+  font-family:var(--display);font-stretch:90%;box-shadow:0 0 0 1px var(--edge),0 18px 40px -26px rgba(0,0,0,.6);max-width:312px}
+.nf .t{font-stretch:62%;font-weight:900;font-size:43px;line-height:1;letter-spacing:-.01em;margin:2px 0 1px}
+.nf .srv{display:flex;justify-content:space-between;font-weight:800;font-size:17px;border-top:1px solid #000;padding-top:2px}
+.nf .bar10{height:10px;background:#000;margin:3px 0 2px}
+.nf .bar5{height:5px;background:#000;margin:2px 0 1px}
+.nf .aps{font-weight:800;font-size:11px}
+.nf .cal{display:flex;justify-content:space-between;align-items:flex-end;font-weight:900;font-stretch:70%;line-height:1}
+.nf .cal span:first-child{font-size:31px}
+.nf .cal span:last-child{font-size:40px}
+.nf .dvh{text-align:right;font-weight:800;font-size:11.5px;padding:1px 0}
+.nf .r{position:relative;display:flex;justify-content:space-between;gap:10px;border-top:1px solid #000;font-size:13.5px;line-height:1.55;font-weight:500}
+.nf .r b{font-weight:800}
+.nf .r .v{font-weight:800}
+.nf .i1{padding-left:14px}
+.nf .i2{padding-left:28px}
+.nf .r .v:empty{visibility:hidden}
+.nf .foot{font-size:9.5px;line-height:1.3;border-top:1px solid #000;padding-top:3px;font-weight:500;font-stretch:95%}
+.mk{position:absolute;right:-37px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;
+  display:grid;place-items:center;font:700 11.5px/1 var(--body);color:var(--bg);background:var(--accent)}
+.mk.bad{background:var(--bad)}
+.nf .r.hot{background:var(--bad-soft)}
+.cap{font-size:13px;color:var(--ink3);margin-top:12px;max-width:312px}
+
+.keys{list-style:none;margin:0;padding:0;display:grid;gap:18px}
+.keys li{display:grid;grid-template-columns:22px 1fr;gap:14px;align-items:start}
+.keys .mk{position:static;transform:none;margin-top:3px}
+.keys b{display:block;font-weight:700;margin-bottom:2px}
+.keys p{margin:0;font-size:15.5px;color:var(--ink2)}
+.keys code{color:var(--ink)}
+
+/* ── figures ─────────────────────────────────────────────────────────────── */
+figure{margin:24px 0 0}
+figcaption{font-size:14px;color:var(--ink3);margin-top:12px;max-width:760px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--edge);border-radius:10px;background:var(--panel);padding:14px}
+.scroll svg{display:block;min-width:900px;width:100%;height:auto}
+
+/* network diagram styling — page CSS drives SVG classes so both themes resolve */
+.lane-h{font:700 11px var(--body);letter-spacing:.14em;fill:var(--ink2)}
+.lane-s{font:400 11px var(--body);fill:var(--ink3)}
+.nd rect{fill:var(--raised);stroke:var(--edge2);stroke-width:1}
+.nd .tt{font:650 12.5px var(--body);fill:var(--ink3)}
+.nd .nt{font:400 10.5px var(--body);fill:var(--ink3)}
+.nd.on rect{fill:var(--panel);stroke:var(--accent);stroke-width:1.6}
+.nd.on .tt{fill:var(--ink)}
+.nd.on .nt{fill:var(--ink2)}
+.nd.idea rect{stroke-dasharray:4 3;stroke:var(--ink3)}
+.flow{stroke:var(--accent);stroke-width:1.6;fill:none}
+.brk{stroke:var(--accent);stroke-width:1.3;fill:none}
+.flow-l{font:500 10.5px var(--mono);fill:var(--ink2)}
+.outside{stroke:var(--ink3);stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+.bound{fill:none;stroke:var(--good);stroke-width:1.2;stroke-dasharray:2 4}
+.bound-l{font:600 10.5px var(--body);letter-spacing:.12em;fill:var(--good)}
+.ah{fill:var(--accent)}
+.ah-dim{fill:var(--ink3)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:12px;font-size:13px;color:var(--ink2)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:26px;height:14px;border-radius:3px;background:var(--panel);border:1.6px solid var(--accent)}
+.sw.dim{border:1px solid var(--edge2);background:var(--raised)}
+.sw.idea{border:1.4px dashed var(--ink3);background:transparent}
+.sw.bd{border:1.4px dotted var(--good);background:transparent}
+
+/* ── verdicts ────────────────────────────────────────────────────────────── */
+.claims{margin:22px 0 0;padding:0;list-style:none;border-top:1px solid var(--edge)}
+.claims li{display:grid;grid-template-columns:104px 1fr;gap:18px;padding:16px 0;border-bottom:1px solid var(--edge)}
+@media (max-width:560px){.claims li{grid-template-columns:1fr;gap:6px}}
+.chip{justify-self:start;font:700 10.5px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;padding:6px 8px;border-radius:5px;white-space:nowrap}
+.chip.hold{color:var(--good);background:var(--good-soft)}
+.chip.fail{color:var(--bad);background:var(--bad-soft)}
+.chip.part{color:var(--warn);background:var(--warn-soft)}
+.chip.open{color:var(--ink2);background:var(--raised)}
+.claims b{display:block;font-weight:680;margin-bottom:3px}
+.claims p{margin:0;color:var(--ink2);font-size:15.5px}
+
+/* ── charts ──────────────────────────────────────────────────────────────── */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:34px;margin-top:10px}
+@media (max-width:820px){.pair{grid-template-columns:1fr}}
+.chart h4{font:700 14px var(--body);margin:0 0 12px}
+.brow{display:grid;grid-template-columns:150px minmax(0,1fr) 108px;gap:12px;align-items:center;margin:0 0 9px}
+.brow .lb{font-size:13.5px;color:var(--ink2);line-height:1.25}
+.brow .val{font:500 12.5px var(--mono);color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+.track{display:flex;gap:2px;height:14px}
+.track i{display:block;height:100%}
+.track i:first-child{border-radius:4px 0 0 4px}
+.track i:last-child{border-radius:0 4px 4px 0}
+.track i:only-child{border-radius:4px}
+.c-good{background:var(--good)}
+.c-bad{background:var(--bad)}
+.c-warn{background:var(--warn)}
+.c-wrong{background:repeating-linear-gradient(135deg,var(--bad) 0 3px,var(--bad-soft) 3px 6px)}
+.clegend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--ink2);margin:4px 0 14px}
+.clegend span{display:inline-flex;align-items:center;gap:7px}
+.clegend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+.outcome .track{height:30px}
+.outcome .track i{position:relative}
+.olab{display:grid;grid-template-columns:repeat(5,auto);justify-content:start;gap:6px 22px;margin-top:12px;font-size:13.5px;color:var(--ink2)}
+@media (max-width:720px){.olab{grid-template-columns:1fr 1fr}}
+.olab span{display:inline-flex;align-items:baseline;gap:7px}
+.olab i{width:11px;height:11px;border-radius:3px;display:inline-block;align-self:center}
+.olab b{font:600 13px var(--mono);color:var(--ink)}
+
+/* ── tables ──────────────────────────────────────────────────────────────── */
+.tbl{overflow-x:auto;margin-top:18px;border:1px solid var(--edge);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--edge);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{font:700 11px var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);background:var(--raised);white-space:nowrap}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fld td:first-child{font-weight:600;white-space:nowrap}
+.hl{color:var(--bad);font-weight:600}
+.reg td{color:var(--ink2)}
+.reg td:first-child{color:var(--ink);font-weight:650;white-space:nowrap}
+.reg .ev{font-size:13px;color:var(--ink3)}
+
+/* ── the confirm-screen sketch: deliberately the app's own dark look ──────── */
+.sk-wrap{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:40px;align-items:start;margin-top:22px}
+@media (max-width:820px){.sk-wrap{grid-template-columns:1fr}}
+.phone{background:#0a0d12;color:#eef2f7;border:1px solid #2a3442;border-radius:26px;padding:16px 14px 18px;font:14px/1.45 var(--body);max-width:340px}
+.phone .ph-h{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8b96a5;font-weight:600}
+.phone .ph-t{font-size:17px;font-weight:700;margin:3px 0 12px}
+.srvbox{border:1px solid #6b5520;background:rgba(227,179,65,.09);border-radius:14px;padding:11px 12px;margin-bottom:10px}
+.srvbox .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#e3b341;font-weight:700}
+.srvbox .big{display:flex;justify-content:space-between;align-items:baseline;margin-top:2px}
+.srvbox .big b{font-size:28px;font-weight:750;font-variant-numeric:tabular-nums}
+.srvbox .why{font-size:12.5px;color:#c9b58a}
+.pbtn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 12px;border-radius:10px;font:650 12.5px var(--body);border:0;background:#34c5e8;color:#04212b}
+.pbtn.q{background:transparent;color:#eef2f7;border:1px solid #2e3a49}
+.plist{background:#121822;border:1px solid #232d3a;border-radius:14px;padding:2px 12px}
+.pr{display:flex;align-items:center;gap:10px;min-height:40px;border-bottom:1px solid #232d3a;font-size:14px}
+.pr:last-child{border-bottom:0}
+.pr .nm{flex:1;color:#dfe5ec}
+.pr .vv{font-weight:700;font-variant-numeric:tabular-nums}
+.st{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;flex:none}
+.st.ok{background:rgba(70,209,138,.16);color:#46d18a}
+.st.look{background:rgba(227,179,65,.18);color:#e3b341}
+.st.fix{background:rgba(52,197,232,.16);color:#34c5e8}
+.pr.col{flex-direction:column;align-items:stretch;gap:6px;padding:9px 0}
+.pr .sub{font-size:12px;color:#a6b1bf;line-height:1.35}
+.pr .line{display:flex;align-items:center;gap:10px}
+.ph-save{margin-top:12px;display:flex;gap:8px}
+.ph-save .pbtn{flex:1;min-height:44px}
+.sk-notes{display:grid;gap:16px}
+.sk-notes div{border-left:2px solid var(--edge2);padding-left:14px}
+.sk-notes b{display:block;margin-bottom:2px}
+.sk-notes p{margin:0;color:var(--ink2);font-size:15.5px}
+
+.steps{counter-reset:s;list-style:none;padding:0;margin:14px 0 0;display:grid;gap:12px}
+.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start}
+.steps li::before{content:counter(s);font:600 13px var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:50%;width:26px;height:26px;display:grid;place-items:center}
+.bar-pass{margin-top:18px;padding:14px 16px;border-radius:10px;background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+.bar-pass b{color:var(--ink)}
+
+.method{margin-top:18px;padding:18px 20px;border:1px solid var(--edge);border-radius:10px;background:var(--panel);font-size:14.5px;color:var(--ink2)}
+.method ul{margin:8px 0 0;padding-left:18px;display:grid;gap:7px}
+.src{columns:2 330px;column-gap:34px;font-size:14px;padding-left:18px;margin:12px 0 0}
+.src li{break-inside:avoid;margin-bottom:8px;color:var(--ink3)}
+@media (prefers-reduced-motion:no-preference){ a{transition:color .15s} }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Homebase · health research · 12 September 2026</div>
+  <h1>Label Parity</h1>
+  <p class="dek">Can a photo of a nutrition label go straight into the app with numbers you can trust, <b>without trusting an AI to read it?</b> Mostly yes, because the label already carries its own error-checking. This is the evidence, measured on 192 real products, and the exact places it stops working.</p>
+</header>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">THE IDEA</span>A misread contradicts the rest of the label</h2>
+  <div class="col">
+    <p class="lede">A satellite link doesn't trust every bit it receives. It sends extra bits so the receiver can catch and repair what the channel damaged. <b>A US nutrition label does the same thing by accident of regulation.</b> Most gram amounts are printed a second time as a percentage. Calories are fixed by the macros. Every number has to sit on a legal rounding grid. So when a camera misreads one digit, that digit usually disagrees with the others, and ordinary deterministic code can see the disagreement.</p>
+  </div>
+
+  <div class="thesis">
+    <div>
+      <div class="nf-holder">
+        <div class="nf" role="img" aria-label="Nutrition Facts panel for chocolate chip snack bars, 40 gram serving, with five annotated rows">
+          <div class="t">Nutrition Facts</div>
+          <div class="srv"><span>Serving size</span><span>40g</span></div>
+          <div class="bar10"></div>
+          <div class="aps">Amount per serving</div>
+          <div class="cal" style="position:relative"><span>Calories</span><span>190</span><em class="mk" style="font-style:normal">A</em></div>
+          <div class="bar5"></div>
+          <div class="dvh">% Daily Value*</div>
+          <div class="r"><span><b>Total Fat</b> 9g</span><span class="v">12%</span><em class="mk" style="font-style:normal">B</em></div>
+          <div class="r i1"><span>Saturated Fat 3.5g</span><span class="v">18%</span><em class="mk" style="font-style:normal">C</em></div>
+          <div class="r i1"><span><i>Trans</i> Fat 0g</span><span class="v"></span></div>
+          <div class="r"><span><b>Cholesterol</b> 0mg</span><span class="v">0%</span></div>
+          <div class="r"><span><b>Sodium</b> 65mg</span><span class="v">3%</span></div>
+          <div class="r"><span><b>Total Carbohydrate</b> 22g</span><span class="v">8%</span></div>
+          <div class="r i1"><span>Dietary Fiber 2g</span><span class="v">7%</span></div>
+          <div class="r i1 hot"><span>Total Sugars 9g</span><span class="v"></span><em class="mk bad" style="font-style:normal">D</em></div>
+          <div class="r i2"><span>Includes 5g Added Sugars</span><span class="v">10%</span><em class="mk" style="font-style:normal">E</em></div>
+          <div class="r"><span><b>Protein</b> 6g</span><span class="v"></span></div>
+          <div class="bar10"></div>
+          <div class="foot">* The % Daily Value tells you how much a nutrient in a serving contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.</div>
+        </div>
+      </div>
+      <p class="cap">Chocolate chip snack bars. Values recovered from a real USDA FoodData Central branded record; %DV recomputed from the regulation's Daily Values. Layout simplified.</p>
+    </div>
+
+    <ol class="keys">
+      <li><span class="mk">A</span><div><b>Calories are a function of the macros</b><p>Macros give <code>4×6 + 4×22 + 9×9 = 193</code>. The label says 190. They aren't equal, and they don't need to be: each printed number stands for a rounded range, and 190 falls inside what those ranges allow. So the check needs almost no tolerance: 191 of 192 real labels fit with none at all.</p></div></li>
+      <li><span class="mk">B</span><div><b>The %DV column is a second copy</b><p><code>9 ÷ 78</code> (the fat Daily Value) is 11.5%, printed as 12%. If the camera reads "9g" as <code>99</code>, the percentage would have to be 127%. The misread is caught, and only one repair fits: 9.</p></div></li>
+      <li><span class="mk">C</span><div><b>Numbers live on a legal grid</b><p>Fat under 5 g prints in half grams and above 5 g in whole grams. Calories go in 5s up to 50, then in 10s. A reading of <code>3.7g</code> fat or <code>185</code> calories cannot exist on a US label.</p></div></li>
+      <li><span class="mk bad">D</span><div><b>The weak spot: total sugars</b><p>No percentage is printed for total sugars. Misread 9 g as 8 g and nothing else on the label disagrees. <b>43% of sugar misreads pass every check.</b> This is the field a person has to look at.</p></div></li>
+      <li><span class="mk">E</span><div><b>Parts can't exceed their total</b><p>Saturated plus trans fat can't exceed total fat, sugars can't exceed carbs, and added sugars can't exceed total sugars. Weak on its own, useful as a final net.</p></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">THE NETWORK</span>Every idea considered, and the path through them</h2>
+  <div class="col"><p class="lede">Six stages, from photo to saved food. Cyan boxes are the recommended build; grey boxes were considered and set aside for the reason written on them. The green dotted line marks what runs as plain, repeatable code on the phone: <b>same photo in, same answer out.</b> The AI option sits deliberately outside that line.</p></div>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1120 470" role="img" aria-label="A six-stage network from capture to remember. The recommended path runs guided frame, on-phone OCR, label grammar and column finder, four deterministic checks, four decision rules, then save to barcode. A server vision model sits outside the deterministic boundary and can only propose numbers that the same checks then judge.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ahd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-dim" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- deterministic boundary: READ through DECIDE -->
+        <rect class="bound" x="184" y="54" width="752" height="286" rx="12"/>
+        <text class="bound-l" x="560" y="330" text-anchor="middle">DETERMINISTIC · RUNS ON THE PHONE · SAME PHOTO IN, SAME ANSWER OUT</text>
+
+        <!-- lane headers -->
+        <text class="lane-h" x="70"  y="22" text-anchor="middle">CAPTURE</text>
+        <text class="lane-h" x="266" y="22" text-anchor="middle">READ</text>
+        <text class="lane-h" x="462" y="22" text-anchor="middle">STRUCTURE</text>
+        <text class="lane-h" x="658" y="22" text-anchor="middle">VERIFY</text>
+        <text class="lane-h" x="854" y="22" text-anchor="middle">DECIDE</text>
+        <text class="lane-h" x="1050" y="22" text-anchor="middle">REMEMBER</text>
+        <text class="lane-s" x="70"  y="39" text-anchor="middle">the physical world</text>
+        <text class="lane-s" x="266" y="39" text-anchor="middle">pixels → text</text>
+        <text class="lane-s" x="462" y="39" text-anchor="middle">text → fields</text>
+        <text class="lane-s" x="658" y="39" text-anchor="middle">all four run</text>
+        <text class="lane-s" x="854" y="39" text-anchor="middle">per field</text>
+        <text class="lane-s" x="1050" y="39" text-anchor="middle">server</text>
+
+        <!-- CAPTURE -->
+        <g class="nd on"><rect x="0" y="64" width="140" height="50" rx="8"/><text class="tt" x="70" y="85" text-anchor="middle">Guided frame</text><text class="nt" x="70" y="101" text-anchor="middle">sharpness gate</text></g>
+        <g class="nd idea"><rect x="0" y="128" width="140" height="50" rx="8"/><text class="tt" x="70" y="149" text-anchor="middle">3-frame burst</text><text class="nt" x="70" y="165" text-anchor="middle">idea · untested</text></g>
+        <g class="nd"><rect x="0" y="192" width="140" height="50" rx="8"/><text class="tt" x="70" y="213" text-anchor="middle">Share photo in</text><text class="nt" x="70" y="229" text-anchor="middle">Android only</text></g>
+
+        <!-- READ -->
+        <g class="nd on"><rect x="196" y="64" width="140" height="50" rx="8"/><text class="tt" x="266" y="85" text-anchor="middle">PP-OCRv6 tiny</text><text class="nt" x="266" y="101" text-anchor="middle">on-phone OCR</text></g>
+        <g class="nd"><rect x="196" y="128" width="140" height="50" rx="8"/><text class="tt" x="266" y="149" text-anchor="middle">Tesseract.js</text><text class="nt" x="266" y="165" text-anchor="middle">weak on Chinese</text></g>
+        <g class="nd"><rect x="196" y="192" width="140" height="50" rx="8"/><text class="tt" x="266" y="213" text-anchor="middle">Apple / Google OCR</text><text class="nt" x="266" y="229" text-anchor="middle">apps only, not web</text></g>
+
+        <!-- STRUCTURE -->
+        <g class="nd on"><rect x="392" y="64" width="140" height="50" rx="8"/><text class="tt" x="462" y="85" text-anchor="middle">Label grammar</text><text class="nt" x="462" y="101" text-anchor="middle">rows in legal order</text></g>
+        <g class="nd on"><rect x="392" y="128" width="140" height="50" rx="8"/><text class="tt" x="462" y="149" text-anchor="middle">Column finder</text><text class="nt" x="462" y="165" text-anchor="middle">clusters by position</text></g>
+        <g class="nd"><rect x="392" y="192" width="140" height="50" rx="8"/><text class="tt" x="462" y="213" text-anchor="middle">Layout model</text><text class="nt" x="462" y="229" text-anchor="middle">needs server OCR</text></g>
+
+        <!-- VERIFY -->
+        <g class="nd on"><rect x="588" y="64" width="140" height="50" rx="8"/><text class="tt" x="658" y="85" text-anchor="middle">Energy from ranges</text><text class="nt" x="658" y="101" text-anchor="middle">1% margin, 0 alarms</text></g>
+        <g class="nd on"><rect x="588" y="128" width="140" height="50" rx="8"/><text class="tt" x="658" y="149" text-anchor="middle">Rounding grid</text><text class="nt" x="658" y="165" text-anchor="middle">illegal values</text></g>
+        <g class="nd on"><rect x="588" y="192" width="140" height="50" rx="8"/><text class="tt" x="658" y="213" text-anchor="middle">%DV parity</text><text class="nt" x="658" y="229" text-anchor="middle">biggest single gain</text></g>
+        <g class="nd on"><rect x="588" y="256" width="140" height="50" rx="8"/><text class="tt" x="658" y="277" text-anchor="middle">Parts ≤ totals</text><text class="nt" x="658" y="293" text-anchor="middle">and mass ≤ serving</text></g>
+
+        <!-- DECIDE -->
+        <g class="nd on"><rect x="784" y="64" width="140" height="50" rx="8"/><text class="tt" x="854" y="85" text-anchor="middle">Checked → fill in</text><text class="nt" x="854" y="101" text-anchor="middle">no action needed</text></g>
+        <g class="nd on"><rect x="784" y="128" width="140" height="50" rx="8"/><text class="tt" x="854" y="149" text-anchor="middle">Unchecked → flag</text><text class="nt" x="854" y="165" text-anchor="middle">a person looks</text></g>
+        <g class="nd on"><rect x="784" y="192" width="140" height="50" rx="8"/><text class="tt" x="854" y="213" text-anchor="middle">Suggest a fix</text><text class="nt" x="854" y="229" text-anchor="middle">never applied alone</text></g>
+        <g class="nd on"><rect x="784" y="256" width="140" height="50" rx="8"/><text class="tt" x="854" y="277" text-anchor="middle">Serving size</text><text class="nt" x="854" y="293" text-anchor="middle">always confirmed</text></g>
+
+        <!-- REMEMBER -->
+        <g class="nd on"><rect x="980" y="64" width="140" height="50" rx="8"/><text class="tt" x="1050" y="85" text-anchor="middle">Save to barcode</text><text class="nt" x="1050" y="101" text-anchor="middle">once, for both of you</text></g>
+        <g class="nd idea"><rect x="980" y="128" width="140" height="50" rx="8"/><text class="tt" x="1050" y="149" text-anchor="middle">Servings × size</text><text class="nt" x="1050" y="165" text-anchor="middle">≈ net weight · untested</text></g>
+
+        <!-- brackets grouping the nodes that all run -->
+        <path class="brk" d="M382,89 V153 M382,89 H392 M382,153 H392"/>
+        <path class="brk" d="M542,89 V153 M532,89 H542 M532,153 H542"/>
+        <path class="brk" d="M578,89 V281 M578,89 H588 M578,153 H588 M578,217 H588 M578,281 H588"/>
+        <path class="brk" d="M738,89 V281 M728,89 H738 M728,153 H738 M728,217 H738 M728,281 H738"/>
+        <path class="brk" d="M774,89 V281 M774,89 H784 M774,153 H784 M774,217 H784 M774,281 H784"/>
+        <path class="brk" d="M934,89 V281 M924,89 H934 M924,153 H934 M924,217 H934 M924,281 H934"/>
+
+        <!-- main flow, with what moves along each hop -->
+        <line class="flow" x1="140" y1="89" x2="194" y2="89" marker-end="url(#ah)"/>
+        <line class="flow" x1="336" y1="89" x2="380" y2="89" marker-end="url(#ah)"/>
+        <line class="flow" x1="542" y1="89" x2="576" y2="89" marker-end="url(#ah)"/>
+        <line class="flow" x1="738" y1="89" x2="772" y2="89" marker-end="url(#ah)"/>
+        <line class="flow" x1="934" y1="89" x2="978" y2="89" marker-end="url(#ah)"/>
+        <text class="flow-l" x="168" y="80" text-anchor="middle">pixels</text>
+        <text class="flow-l" x="359" y="68" text-anchor="middle">text +</text>
+        <text class="flow-l" x="359" y="80" text-anchor="middle">boxes</text>
+        <text class="flow-l" x="559" y="80" text-anchor="middle">fields</text>
+        <text class="flow-l" x="755" y="68" text-anchor="middle">pass /</text>
+        <text class="flow-l" x="755" y="80" text-anchor="middle">fail</text>
+        <text class="flow-l" x="956" y="68" text-anchor="middle">you</text>
+        <text class="flow-l" x="956" y="80" text-anchor="middle">confirm</text>
+
+        <!-- the AI option: outside the line, can only propose -->
+        <g class="nd idea"><rect x="196" y="372" width="140" height="50" rx="8"/><text class="tt" x="266" y="393" text-anchor="middle">Vision model</text><text class="nt" x="266" y="409" text-anchor="middle">server · for long tail</text></g>
+        <path class="outside" d="M336,397 H578 V288" marker-end="url(#ahd)"/>
+        <text class="flow-l" x="458" y="374" text-anchor="middle">proposes numbers;</text>
+        <text class="flow-l" x="458" y="388" text-anchor="middle">the same checks decide</text>
+        <text class="lane-s" x="266" y="444" text-anchor="middle">not repeatable: temperature 0</text>
+        <text class="lane-s" x="266" y="459" text-anchor="middle">still varies between runs</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw"></i>recommended</span>
+      <span><i class="sw dim"></i>considered, set aside</span>
+      <span><i class="sw idea"></i>idea not yet tested</span>
+      <span><i class="sw bd"></i>deterministic boundary</span>
+    </div>
+    <figcaption>The AI box can make the reader smarter without making the result less trustworthy, because its output has to pass the same four checks as anything the phone reads. On a phone, scroll the diagram sideways.</figcaption>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">THE THEORIES</span>What was claimed, and what survived</h2>
+  <div class="col"><p class="lede">Each idea started as a claim. These are the verdicts, and what each one rests on: <b>measured</b> means run on the 192 real products; <b>read</b> means taken from the regulation or a source, not measured here.</p></div>
+
+  <ul class="claims">
+    <li><span class="chip hold">Holds</span><div><b>The energy check needs almost no fudge factor</b><p>Measured. Treating each printed number as its rounding range, all 96 calibration labels fit with zero extra allowance. Of the 96 held-out labels, 95 did too; one printed 1.5 kcal below what its ranges allow, 1% of its 150 kcal. With a 1% margin the false-alarm rate is 0%; without it, 1 in 96. Raw gaps between printed calories and <code>4P + 4C + 9F</code> ran from −15 to +9 kcal.</p></div></li>
+    <li><span class="chip hold">Holds</span><div><b>The %DV column is the strongest single source of checking</b><p>Measured. With a single misread, adding the %DV check took detection from 39% to 86%: a 47-point jump, the biggest single step.</p></div></li>
+    <li><span class="chip hold">Holds</span><div><b>Two misreads are easier to catch than one</b><p>Measured. With every check on, two simultaneous misreads were caught 99.7% of the time, against 93.2% for one. More broken numbers contradict each other in more places.</p></div></li>
+    <li><span class="chip fail">Fails</span><div><b>The app can fix misreads on its own</b><p>Measured. When exactly one repair fitted every check, it was the <em>wrong</em> repair 4.0% of the time. For "added sugars %DV" that rose to 15.5%. So it suggests, and a person taps to accept.</p></div></li>
+    <li><span class="chip fail">Fails</span><div><b>The checks catch a wrong serving size</b><p>Measured. A serving read ten times too large was caught 0 times in 96: every number on the label stays consistent with every other. Numbers read from the whole-package column were caught only 32–53% of the time, and only when the gram totals outgrew the serving.</p></div></li>
+    <li><span class="chip fail">Fails</span><div><b>An AI reader can be the dependable core</b><p>Read. Language models give different answers to the same input even at temperature 0, because the server batches requests differently each time. It can propose; it can't be the thing you rely on.</p></div></li>
+    <li><span class="chip part">Partly</span><div><b>Every field checks itself</b><p>Measured. Seven fields went silent under 2% of the time, but total sugars went silent 43% of the time and protein 12%. See the field table below.</p></div></li>
+    <li><span class="chip open">Not tested</span><div><b>On-phone OCR is fast enough on both your phones</b><p>Read. PP-OCRv6 tiny (June 2026) runs fully in a browser, with English and Chinese in about 6 MB. Speed on Xinyan's iPhone is unmeasured.</p></div></li>
+    <li><span class="chip open">Not tested</span><div><b>Agreement across three photos covers the weak fields</b><p>Theory. It only works if the misreads are independent between shots, but glare and a small font cause the <em>same</em> misread every time. Correlated errors are the risk to test first.</p></div></li>
+  </ul>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">THE MEASUREMENTS</span>How much each check buys</h2>
+  <div class="col"><p class="lede">Each bar is the full set of simulated misreads, split into <b>caught</b> and <b>silent</b>. A silent misread passes every check and would be saved as fact, so silent is the one number that matters.</p></div>
+
+  <div class="clegend"><span><i class="c-good"></i>caught</span><span><i class="c-bad"></i>silent (saved as if true)</span></div>
+  <div class="pair">
+    <div class="chart">
+      <h4>One misread per label <span class="note">· 576 trials</span></h4>
+      <div class="brow"><span class="lb">Read it and trust it</span><span class="track"><i class="c-bad" style="width:100%"></i></span><span class="val">100% silent</span></div>
+      <div class="brow"><span class="lb">Energy check</span><span class="track"><i class="c-good" style="width:27.4%"></i><i class="c-bad" style="width:72.6%"></i></span><span class="val">72.6% silent</span></div>
+      <div class="brow"><span class="lb">+ rounding grid</span><span class="track"><i class="c-good" style="width:39.2%"></i><i class="c-bad" style="width:60.8%"></i></span><span class="val">60.8% silent</span></div>
+      <div class="brow"><span class="lb">+ %DV column</span><span class="track"><i class="c-good" style="width:86.1%"></i><i class="c-bad" style="width:13.9%"></i></span><span class="val">13.9% silent</span></div>
+      <div class="brow"><span class="lb">+ parts ≤ totals</span><span class="track"><i class="c-good" style="width:93.2%"></i><i class="c-bad" style="width:6.8%"></i></span><span class="val">6.8% silent</span></div>
+    </div>
+    <div class="chart">
+      <h4>Two misreads per label <span class="note">· 576 trials</span></h4>
+      <div class="brow"><span class="lb">Read it and trust it</span><span class="track"><i class="c-bad" style="width:100%"></i></span><span class="val">100% silent</span></div>
+      <div class="brow"><span class="lb">Energy check</span><span class="track"><i class="c-good" style="width:43.9%"></i><i class="c-bad" style="width:56.1%"></i></span><span class="val">56.1% silent</span></div>
+      <div class="brow"><span class="lb">+ rounding grid</span><span class="track"><i class="c-good" style="width:59.7%"></i><i class="c-bad" style="width:40.3%"></i></span><span class="val">40.3% silent</span></div>
+      <div class="brow"><span class="lb">+ %DV column</span><span class="track"><i class="c-good" style="width:98.4%"></i><i class="c-bad" style="width:1.6%"></i></span><span class="val">1.6% silent</span></div>
+      <div class="brow"><span class="lb">+ parts ≤ totals</span><span class="track"><i class="c-good" style="width:99.7%"></i><i class="c-bad" style="width:0.3%"></i></span><span class="val">0.3% silent</span></div>
+    </div>
+  </div>
+
+  <h3>What happens after a single misread, with every check on</h3>
+  <div class="outcome">
+    <div class="track" role="img" aria-label="Of single misreads with all checks on: 72.7 percent repaired correctly, 4.0 percent a wrong repair would be suggested, 7.8 percent several repairs fit, 8.7 percent caught with no repair found, 6.8 percent silent">
+      <i class="c-good" style="width:72.7%"></i><i class="c-wrong" style="width:4.0%"></i><i class="c-warn" style="width:16.5%"></i><i class="c-bad" style="width:6.8%"></i>
+    </div>
+    <div class="olab">
+      <span><i class="c-good"></i><b>72.7%</b> one repair fits, and it's right</span>
+      <span><i class="c-wrong"></i><b>4.0%</b> one repair fits, and it's wrong</span>
+      <span><i class="c-warn"></i><b>16.5%</b> caught; ask the person</span>
+      <span><i class="c-bad"></i><b>6.8%</b> silent</span>
+    </div>
+    <p class="note" style="margin-top:10px">"Ask the person" combines 7.8% where several repairs fit and 8.7% where the numbers disagree but no single repair explains it. The hatched sliver is why a suggested fix is never applied without a tap.</p>
+  </div>
+
+  <h3>Field by field: which numbers check themselves</h3>
+  <div class="col"><p>This time every possible misread of every field was tried on every held-out label, not a random sample: 6,360 misreads in all, 93.4% caught. Sorted by how often the misread goes silent.</p></div>
+  <div class="tbl">
+    <table class="fld">
+      <thead><tr><th>Field</th><th class="num">Misreads tried</th><th class="num">Caught</th><th class="num">Silent</th><th class="num">Wrong fix</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Total sugars</td><td class="num">444</td><td class="num">57.0%</td><td class="num hl">43.0%</td><td class="num">2.5%</td><td><span class="chip fail">needs eyes</span></td></tr>
+        <tr><td>Protein</td><td class="num">341</td><td class="num">87.7%</td><td class="num">12.3%</td><td class="num">0.0%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Saturated fat %DV</td><td class="num">309</td><td class="num">88.3%</td><td class="num">11.7%</td><td class="num hl">9.1%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Total carbs</td><td class="num">454</td><td class="num">91.0%</td><td class="num">9.0%</td><td class="num">3.1%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Added sugars %DV</td><td class="num">226</td><td class="num">94.7%</td><td class="num">5.3%</td><td class="num hl">15.5%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Trans fat</td><td class="num">224</td><td class="num">95.1%</td><td class="num">4.9%</td><td class="num">0.0%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Sodium</td><td class="num">866</td><td class="num">95.7%</td><td class="num">4.3%</td><td class="num">6.0%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Cholesterol %DV</td><td class="num">188</td><td class="num">96.8%</td><td class="num">3.2%</td><td class="num">3.2%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Calories</td><td class="num">782</td><td class="num">97.7%</td><td class="num">2.3%</td><td class="num">2.6%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Total carbs %DV</td><td class="num">325</td><td class="num">97.8%</td><td class="num">2.2%</td><td class="num">1.2%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Total fat %DV</td><td class="num">376</td><td class="num">97.9%</td><td class="num">2.1%</td><td class="num">0.0%</td><td><span class="chip part">mostly</span></td></tr>
+        <tr><td>Total fat</td><td class="num">394</td><td class="num">98.2%</td><td class="num">1.8%</td><td class="num">7.1%</td><td><span class="chip hold">self-checking</span></td></tr>
+        <tr><td>Fiber %DV</td><td class="num">224</td><td class="num">99.1%</td><td class="num">0.9%</td><td class="num">2.2%</td><td><span class="chip hold">self-checking</span></td></tr>
+        <tr><td>Saturated fat</td><td class="num">248</td><td class="num">99.2%</td><td class="num">0.8%</td><td class="num">4.4%</td><td><span class="chip hold">self-checking</span></td></tr>
+        <tr><td>Cholesterol</td><td class="num">281</td><td class="num">100.0%</td><td class="num">0.0%</td><td class="num">4.3%</td><td><span class="chip hold">self-checking</span></td></tr>
+        <tr><td>Sodium %DV</td><td class="num">377</td><td class="num">100.0%</td><td class="num">0.0%</td><td class="num">8.2%</td><td><span class="chip hold">self-checking</span></td></tr>
+        <tr><td>Fiber</td><td class="num">157</td><td class="num">100.0%</td><td class="num">0.0%</td><td class="num">0.0%</td><td><span class="chip hold">self-checking</span></td></tr>
+        <tr><td>Added sugars</td><td class="num">144</td><td class="num">100.0%</td><td class="num">0.0%</td><td class="num">8.3%</td><td><span class="chip hold">self-checking</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note" style="margin-top:10px">Verdict bands: under 2% silent is self-checking, under 15% is mostly, anything above needs eyes. Wrong fix is the share of all misreads where a single, confident repair would have been the wrong one. Red wrong-fix figures are at or above 8%.</p>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">WHAT YOU'D SEE</span>Three states, and serving size always asks</h2>
+  <div class="col"><p class="lede">This is a sketch of the behaviour, not a proposed look. It uses the app's current style so the only new thing on screen is the logic.</p></div>
+
+  <div class="sk-wrap">
+    <div class="phone" role="img" aria-label="Sketch of a confirm screen: serving size 40 grams asks for confirmation, total fat shows a suggested fix from 99 to 9 grams, total sugars is flagged to look at, the remaining fields are checked">
+      <div class="ph-h">Read from photo</div>
+      <div class="ph-t">Chocolate chip snack bars</div>
+      <div class="srvbox">
+        <div class="k">Serving size · confirm</div>
+        <div class="big"><b>40 g</b><span style="display:flex;gap:6px"><span class="pbtn q">Edit</span><span class="pbtn">That's right</span></span></div>
+        <div class="why">Nothing else on a label can check this one.</div>
+      </div>
+      <div class="plist">
+        <div class="pr"><span class="st ok">✓</span><span class="nm">Calories</span><span class="vv">190</span></div>
+        <div class="pr col">
+          <div class="line"><span class="st fix">!</span><span class="nm">Total fat</span><span class="vv" style="color:#34c5e8">9 g?</span></div>
+          <div class="sub">Read as 99 g, but the 12% printed beside it only fits 9 g.</div>
+          <div class="line" style="gap:6px"><span class="pbtn">Use 9 g</span><span class="pbtn q">Keep 99 g</span></div>
+        </div>
+        <div class="pr"><span class="st ok">✓</span><span class="nm">Saturated fat</span><span class="vv">3.5 g</span></div>
+        <div class="pr"><span class="st ok">✓</span><span class="nm">Sodium</span><span class="vv">65 mg</span></div>
+        <div class="pr"><span class="st ok">✓</span><span class="nm">Total carbs</span><span class="vv">22 g</span></div>
+        <div class="pr col">
+          <div class="line"><span class="st look">?</span><span class="nm">Total sugars</span><span class="vv" style="color:#e3b341">9 g</span></div>
+          <div class="sub">Check against the label. Nothing printed can confirm this number.</div>
+        </div>
+        <div class="pr"><span class="st ok">✓</span><span class="nm">Protein</span><span class="vv">6 g</span></div>
+      </div>
+      <div class="ph-save"><span class="pbtn">Save for both of us</span></div>
+    </div>
+
+    <div class="sk-notes">
+      <div><b>✓ Checked</b><p>Another number on the label confirmed it. It's filled in and needs nothing from you.</p></div>
+      <div><b>! A suggested fix</b><p>The label disagrees with itself, and one repair explains it. The app shows its evidence and waits for a tap. It never applies the fix alone: about one confident repair in twenty is wrong.</p></div>
+      <div><b>? Look at this one</b><p>Nothing printed can confirm it: total sugars always, and protein when it's close. You compare it to the label once.</p></div>
+      <div><b>Serving size, every time</b><p>The measured blind spot. Every other number can be right and the log still wrong. One tap costs less than the bad log it prevents.</p></div>
+      <div><b>Then never again</b><p>The confirmed result is saved against the barcode in the shared food cache, so the next scan by either of you is instant and needs no photo.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">THREE RULEBOOKS</span>US, EU and China labels all carry checks, just different ones</h2>
+  <div class="col"><p class="lede">Each regulation fixes the row order, the rounding and the energy maths, so each gives the reader a grammar to follow. Only the US column was measured. <b>The Chinese standard looks even stronger on paper:</b> its percentage column is computed from the printed value itself, so it's an exact match rather than a range, and it covers protein and energy.</p></div>
+  <div class="tbl">
+    <table class="reg">
+      <thead><tr><th></th><th>United States</th><th>European Union</th><th>China · from 16 Mar 2027</th></tr></thead>
+      <tbody>
+        <tr><td>Printed per</td><td>serving</td><td>100 g or 100 ml</td><td>100 g, 100 ml, or serving</td></tr>
+        <tr><td>Second copy</td><td>%DV for fat, saturated fat, cholesterol, sodium, carbs, fiber, added sugars. Worked from the printed <em>or</em> actual amount, so it's checked as a range.</td><td>Energy printed in both kJ and kcal, each from its own factors. %RI is optional.</td><td>NRV% for energy, protein, fat, saturated fat, carbs, sodium. Worked from the printed value, so it's an exact check.</td></tr>
+        <tr><td>Energy maths</td><td><code>4 / 4 / 9</code> kcal per g applied before rounding; fiber subtraction and other methods allowed</td><td>carbs &amp; protein <code>17 kJ · 4 kcal</code>, fat <code>37 · 9</code>, fibre <code>8 · 2</code>, polyols <code>10 · 2.4</code></td><td>protein &amp; carbs <code>17 kJ</code>, fat <code>37 kJ</code>, fiber <code>8 kJ</code></td></tr>
+        <tr><td>Rounding</td><td>calories in 5s to 50, then 10s; fat to 0.5 g under 5 g; sodium to 5 mg up to 140, then 10</td><td>energy to 1 kJ / 1 kcal; nutrients to 0.1 g under 10 g, whole grams above</td><td>energy to 1 kJ; nutrients to 0.1 g; sodium to 1 mg; "0" at ≤17 kJ or ≤0.5 g</td></tr>
+        <tr><td>Weakest field</td><td>total sugars: no %DV</td><td>sugars, unless the optional %RI is printed</td><td>sugar: no reference value</td></tr>
+        <tr><td>Evidence</td><td class="ev">measured, 192 products</td><td class="ev">read from Regulation 1169/2011 and the 2012 guidance</td><td class="ev">read from GB 28050-2025</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note" style="margin-top:10px">Sugar is the unchecked field under all three rulebooks. That makes "? look at this one" a permanent part of the design, not a gap to engineer away.</p>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">THE NEXT EXPERIMENT</span>What isn't known yet, and how to find out</h2>
+  <div class="col">
+    <p class="lede">Everything above tests whether the label carries enough checking. None of it tests how often a real camera misreads a real label in your kitchen. That's the next number to get, and it takes an afternoon.</p>
+    <ol class="steps">
+      <li><div><b>Photograph at least 30 labels,</b> including some Chinese ones and some awkward ones: curved bottles, glossy wrappers, small print. Type each label's true values once.</div></li>
+      <li><div><b>Run PP-OCRv6 tiny on both phones,</b> through the checks above. Record the raw read, the time taken and the checks' verdicts.</div></li>
+      <li><div><b>Count silent errors after confirmation:</b> fields saved wrong even though serving size and sugar were confirmed. Also count how many fields a person had to touch.</div></li>
+    </ol>
+    <div class="bar-pass"><b>A proposed pass bar:</b> no more than 1 silent error in 200 saved fields, with no more than 3 taps per label. If it clears that on both phones, build it. If it doesn't, the misreads it misses will point at exactly what to fix.</div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────────────── -->
+<section>
+  <h2><span class="n">METHOD &amp; SOURCES</span>How the numbers were made</h2>
+  <div class="method">
+    <b style="color:var(--ink)">What was measured, and its limits</b>
+    <ul>
+      <li><b>The labels:</b> 200 branded products from one USDA FoodData Central search; 192 had usable data. USDA stores per-100 g values worked out from each label, so multiplying back by serving size recovers the printed number. 99.2% of recovered values landed exactly on the legal rounding grid, which confirms the recovery is faithful.</li>
+      <li><b>No peeking:</b> the energy check was set on 96 products and tested on the other 96. Its one adjustable allowance came out at zero on the first half; one label in the second half sat 1% outside, so the check keeps a 1% margin.</li>
+      <li><b>The misreads are simulated</b> from a fixed list of known OCR confusions: 0↔8, 1↔7, 3↔8, 5↔6, 9↔8, a dropped decimal point, the "g" read as a 9, and a clipped digit. Real camera error rates are not measured here.</li>
+      <li><b>%DV values were rebuilt</b> from the printed amounts. The check accepts both ways the regulation permits.</li>
+      <li><b>Not covered:</b> foods with sugar alcohols or a lot of fiber can legitimately print fewer calories than 4/4/9 predicts. None in this sample needed that allowance, but the sample may simply not contain many.</li>
+    </ul>
+  </div>
+  <ul class="src">
+    <li><a href="https://www.ecfr.gov/current/title-21/chapter-I/subchapter-B/part-101/subpart-A/section-101.9">21 CFR 101.9, Nutrition labeling of food (eCFR)</a>: rounding, Daily Values, calorie methods, %DV calculation</li>
+    <li><a href="https://www.legislation.gov.uk/eur/2011/1169/annex/XIV">Regulation (EU) 1169/2011, Annex XIV</a>: energy conversion factors; <a href="https://www.legislation.gov.uk/eur/2011/1169/article/32">Article 32</a>, <a href="https://www.legislation.gov.uk/eur/2011/1169/annex/XV">Annex XV</a></li>
+    <li><a href="https://food.ec.europa.eu/system/files/2016-10/labelling_nutrition-vitamins_minerals-guidance_tolerances_1212_en.pdf">European Commission, guidance on tolerances and rounding (2012)</a></li>
+    <li><a href="https://www.svscr.cz/wp-content/files/obchodovani/GB_28050-2025_Nutritional_Labeling_Standards_for_Prepackaged_Food_1.pdf">GB 28050-2025, English translation</a>: Table 1, energy factors, NRV table A.1</li>
+    <li><a href="https://food.chemlinked.com/news/food-news/china-promulgates-gb-28050-2025-national-food-safety-standard-general-rules-for-nutrition-labeling-of-prepackaged-foods">ChemLinked, GB 28050-2025 promulgated</a></li>
+    <li><a href="https://fdc.nal.usda.gov/">USDA FoodData Central</a>: branded foods used as ground truth</li>
+    <li><a href="https://huggingface.co/blog/PaddlePaddle/pp-ocrv6">PP-OCRv6 on Hugging Face</a> and <a href="https://ppu-paddle-ocr.snowfluke.workers.dev/">ppu-paddle-ocr browser demo</a></li>
+    <li><a href="https://openfoodfacts.github.io/robotoff/references/predictions/nutrient-extraction/">Open Food Facts, nutrient extraction</a>: prior art, a layout model over server OCR</li>
+    <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12387780/">Extracting nutrition from bilingual labels with LLMs (J. Imaging, 2025)</a></li>
+    <li><a href="https://mikulskibartosz.name/why-temperature-0-isnt-deterministic">Why temperature 0 isn't deterministic</a>: summarises Thinking Machines' batch-invariance findings</li>
+  </ul>
+</section>
+
+</div>

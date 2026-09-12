@@ -1,0 +1,2839 @@
+{
+ "_about": "192 real US Nutrition Facts panels. Declared (printed) per-serving values recovered from USDA FoodData Central branded records (public domain) by multiplying USDA's label-derived per-100 g values back by serving size and snapping to the 21 CFR 101.9(c) rounding grid; 99.2% of recovered values were already within storage precision of a legal grid point. %DV is NOT stored: derive it from the declared value and the DRVs. Order is the fixed research shuffle (seed 20260912): the first 96 are the calibration half, the last 96 the held-out half.",
+ "source": "https://fdc.nal.usda.gov/ \u2014 /v1/foods/search dataType=Branded, 2026-09-12",
+ "fields": {
+  "kcal": "Calories",
+  "fat": "Total fat g",
+  "sat": "Saturated fat g",
+  "trans": "Trans fat g",
+  "chol": "Cholesterol mg",
+  "sodium": "Sodium mg",
+  "carb": "Total carbohydrate g",
+  "fiber": "Dietary fiber g",
+  "sugar": "Total sugars g",
+  "added": "Added sugars g",
+  "prot": "Protein g"
+ },
+ "panels": [
+  {
+   "name": "BREAD & BUTTER ORGANIC CHIPS, BREAD & BU",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "SOUP& SNACK OYSTER CRACKERS, SOUP& SNACK",
+   "servingGrams": 15.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 2.0,
+    "carb": 11.0,
+    "kcal": 70,
+    "sugar": 0,
+    "fiber": 0,
+    "sodium": 80,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "ORGANIC BREAD AND BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 100,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 150
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS SNACKING PICKLES, B",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "sodium": 110,
+    "added": 4.0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "PECAN CEREAL FLAVORED YOGURT SMOOTHIE, P",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 5.0,
+    "carb": 28.0,
+    "kcal": 180,
+    "sugar": 24.0,
+    "fiber": 0,
+    "sodium": 85,
+    "chol": 15,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sugar": 0,
+    "sodium": 190
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS, SWEET BREAD",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 30,
+    "sugar": 6.0,
+    "fiber": 0,
+    "sodium": 130,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 6.0,
+    "sodium": 220
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP MUFFIN SNACKS, CHOCOLATE",
+   "servingGrams": 43.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 9.0,
+    "carb": 27.0,
+    "kcal": 190,
+    "sugar": 14.0,
+    "fiber": 1.0,
+    "sodium": 190,
+    "added": 10.0,
+    "chol": 45,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 26.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "fiber": 0,
+    "sodium": 180,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "ZESTY BREAD & BUTTER CHIPS, ZESTY BREAD",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 9.0,
+    "kcal": 35,
+    "sugar": 8.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 8.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "STRAWBERRY BANANA CEREAL FLAVORED YOGURT",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 24.0,
+    "kcal": 130,
+    "sugar": 18.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "added": 11.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "NO SALT BREAD & BUTTER PICKLE CHIPS, BRE",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 35,
+    "sugar": 8.0,
+    "sodium": 0
+   }
+  },
+  {
+   "name": "YOGURT PARFAIT SNACK TRAY",
+   "servingGrams": 269.0,
+   "declared": {
+    "prot": 7.0,
+    "fat": 7.0,
+    "carb": 60.0,
+    "kcal": 330,
+    "sugar": 34.0,
+    "fiber": 5.0,
+    "sodium": 50,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS, SWEET BREAD",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "fiber": 0,
+    "sodium": 170,
+    "added": 4.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD AND BUTTER CHIPS PICKLES",
+   "servingGrams": 28.0,
+   "declared": {
+    "fat": 0,
+    "prot": 0,
+    "carb": 5.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 85
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 170,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE WITH PROBIO",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 22.0,
+    "kcal": 120,
+    "sugar": 16.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "added": 9.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER ORGANIC CHIPS, BREAD & BU",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "SNACK FLATS NAAN BREAD, SNACK FLATS",
+   "servingGrams": 50.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 3.5,
+    "carb": 25.0,
+    "kcal": 150,
+    "sugar": 2.0,
+    "fiber": 2.0,
+    "sodium": 340,
+    "added": 2.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "ORCHARD SNACKS, YOGURT NUT MIX",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 4.0,
+    "carb": 19.0,
+    "kcal": 120,
+    "sugar": 13.0,
+    "fiber": 2.0,
+    "sodium": 15,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 5,
+    "sugar": 0,
+    "sodium": 220
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 0,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP COOKIE DOUGH  CEREAL, CHO",
+   "servingGrams": 41.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 4.0,
+    "carb": 32.0,
+    "kcal": 170,
+    "sugar": 16.0,
+    "fiber": 2.0,
+    "sodium": 135,
+    "added": 15.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 170,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 5.0,
+    "sodium": 85
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS, SWEET BREAD",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180,
+    "trans": 0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "fiber": 0,
+    "sodium": 170,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS REDUCED SODIUM PICK",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 6.0,
+    "sodium": 160
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 3.0,
+    "kcal": 10,
+    "sugar": 3.0,
+    "sodium": 125,
+    "added": 2.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER SWEET CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 4.0,
+    "kcal": 20,
+    "sugar": 5.0,
+    "fiber": 0,
+    "sodium": 150,
+    "added": 4.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "YOGURT SMOOTHIE, PECAN CEREAL",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 5.0,
+    "carb": 28.0,
+    "kcal": 180,
+    "sugar": 24.0,
+    "fiber": 0,
+    "sodium": 85,
+    "chol": 15,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "LALA, YOGURT SMOOTHIE, PECAN CEREAL, PEC",
+   "servingGrams": 240.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 5.0,
+    "carb": 28.0,
+    "kcal": 180,
+    "sugar": 21.0,
+    "fiber": 3.0,
+    "sodium": 100,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.5
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP SNACK BAR, CHOCOLATE CHIP",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 7.0,
+    "fat": 10.0,
+    "carb": 11.0,
+    "kcal": 150,
+    "sugar": 7.0,
+    "fiber": 2.0,
+    "sodium": 30,
+    "added": 5.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 2.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS PICKLES, BREAD & BU",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "VAN'S, SNACK BARS, BANANA BREAD, BANANA",
+   "servingGrams": 35.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 3.0,
+    "carb": 25.0,
+    "kcal": 130,
+    "sugar": 9.0,
+    "fiber": 4.0,
+    "sodium": 150,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 150
+   }
+  },
+  {
+   "name": "BREAD, CHOCOLATEY CHIP",
+   "servingGrams": 26.0,
+   "declared": {
+    "prot": 3.0,
+    "fat": 1.5,
+    "carb": 15.0,
+    "kcal": 80,
+    "sugar": 5.0,
+    "fiber": 1.0,
+    "sodium": 95,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 170,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE, PECAN CERE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 24.0,
+    "kcal": 150,
+    "sugar": 18.0,
+    "fiber": 3.0,
+    "sodium": 85,
+    "chol": 15,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP FROZEN YOGURT, CHOCOLATE",
+   "servingGrams": 65.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 4.0,
+    "carb": 22.0,
+    "kcal": 130,
+    "sugar": 17.0,
+    "fiber": 0,
+    "sodium": 55,
+    "chol": 10,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "STRAWBERRY BANANA CEREAL YOGURT SMOOTHIE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 28.0,
+    "kcal": 170,
+    "sugar": 24.0,
+    "fiber": 0,
+    "sodium": 90,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "CLASSIC LOWFAT YOGURT & HUMMUS WITH MULT",
+   "servingGrams": 64.0,
+   "declared": {
+    "prot": 4.0,
+    "fat": 7.0,
+    "carb": 16.0,
+    "kcal": 140,
+    "sugar": 2.0,
+    "fiber": 2.0,
+    "sodium": 135,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.5
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE WITH PROBIO",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 22.0,
+    "kcal": 120,
+    "sugar": 16.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "added": 9.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "SWEET & SALTY CEREAL  SNACK MIX",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 1.0,
+    "carb": 24.0,
+    "kcal": 110,
+    "sugar": 9.0,
+    "fiber": 1.0,
+    "sodium": 170,
+    "added": 9.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS TRADITIONAL SNACKIN",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "sodium": 110,
+    "added": 4.0
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE, PECAN CERE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 2.5,
+    "carb": 23.0,
+    "kcal": 130,
+    "sugar": 18.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "chol": 10,
+    "trans": 0,
+    "sat": 1.5
+   }
+  },
+  {
+   "name": "YOGURT PRETZELS SNACKS, YOGURT",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 6.0,
+    "carb": 22.0,
+    "kcal": 140,
+    "sugar": 14.0,
+    "fiber": 1.0,
+    "sodium": 200,
+    "added": 13.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 5.0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "fiber": 0,
+    "sodium": 180,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 26.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 25,
+    "sugar": 0,
+    "fiber": 0,
+    "sodium": 180,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "YOGURT RAISINS MINI-SNACKS, VANILLA",
+   "servingGrams": 14.0,
+   "declared": {
+    "prot": 0,
+    "fat": 3.0,
+    "carb": 9.0,
+    "kcal": 60,
+    "sugar": 9.0,
+    "fiber": 0,
+    "sodium": 10,
+    "chol": 0,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "CHOCOLATEY CHIP COOKIE BITES CEREAL, CHO",
+   "servingGrams": 29.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 2.0,
+    "carb": 24.0,
+    "kcal": 120,
+    "sugar": 11.0,
+    "fiber": 1.0,
+    "sodium": 120,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "LALA, YOGURT SMOOTHIE, STRAWBERRY BANANA",
+   "servingGrams": 240.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 5.0,
+    "carb": 32.0,
+    "kcal": 200,
+    "sugar": 27.0,
+    "fiber": 0,
+    "sodium": 100,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 1.0,
+    "sodium": 150,
+    "added": 4.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD BUTTER CHIPS, BREAD BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS OLD-FASHIONED SWEET",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 6.0,
+    "sodium": 220
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 170,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sodium": 220
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 90,
+    "chol": 0
+   }
+  },
+  {
+   "name": "YOGURT & FRUIT SNACK TRAY",
+   "servingGrams": 74.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 11.0,
+    "carb": 12.0,
+    "kcal": 160,
+    "sugar": 1.0,
+    "fiber": 1.0,
+    "sodium": 170,
+    "chol": 10,
+    "trans": 0,
+    "sat": 4.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "SOFT YOGURT FILLED BISCUITS, CEREAL & VA",
+   "servingGrams": 32.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 3.5,
+    "carb": 21.0,
+    "kcal": 120,
+    "sugar": 10.0,
+    "fiber": 2.0,
+    "sodium": 130,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "SOUP & OYSTER SNACK CRACKERS, SOUP & OYS",
+   "servingGrams": 15.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 1.5,
+    "carb": 11.0,
+    "kcal": 70,
+    "sugar": 0,
+    "fiber": 1.0,
+    "sodium": 170,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "PRUNE CEREAL FLAVORED YOGURT SMOOTHIE, P",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 29.0,
+    "kcal": 180,
+    "sugar": 24.0,
+    "fiber": 0,
+    "sodium": 85,
+    "chol": 15,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "sodium": 170,
+    "added": 4.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER NO SUGAR ADDED CHIPS, BRE",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sodium": 190
+   }
+  },
+  {
+   "name": "PICKLE CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sugar": 0,
+    "fiber": 0,
+    "sodium": 120,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "FRUIT & YOGURT CEREAL, FRUIT; YOGURT",
+   "servingGrams": 42.0,
+   "declared": {
+    "prot": 3.0,
+    "fat": 1.0,
+    "carb": 36.0,
+    "kcal": 160,
+    "sugar": 13.0,
+    "fiber": 3.0,
+    "sodium": 190,
+    "added": 13.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "fiber": 0,
+    "sodium": 170,
+    "added": 4.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "MILWAUKEE Bread and Butter Chips",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 6.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "CHOCOLATEY MIX CEREAL SNACKING",
+   "servingGrams": 14.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 1.0,
+    "carb": 11.0,
+    "kcal": 60,
+    "sugar": 6.0,
+    "fiber": 1.0,
+    "sodium": 55,
+    "added": 5.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 9.0,
+    "kcal": 35,
+    "fiber": 0,
+    "sodium": 40,
+    "added": 8.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "PICKLE CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 5,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREADED CHEESE SNACKS, JALAPENO & CHEESE",
+   "servingGrams": 52.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 9.0,
+    "carb": 14.0,
+    "kcal": 160,
+    "sugar": 1.0,
+    "fiber": 3.0,
+    "sodium": 300,
+    "chol": 10,
+    "trans": 0,
+    "sat": 4.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "CHERRY CHOCOLATE CHIP BREAD",
+   "servingGrams": 57.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 12.0,
+    "carb": 24.0,
+    "kcal": 210,
+    "sugar": 14.0,
+    "fiber": 1.0,
+    "sodium": 270,
+    "chol": 20,
+    "trans": 0,
+    "sat": 4.0
+   }
+  },
+  {
+   "name": "STRAWBERRY BANANA CEREAL DRINKABLE LOWFA",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 8.0,
+    "fat": 4.0,
+    "carb": 31.0,
+    "kcal": 190,
+    "sugar": 28.0,
+    "fiber": 2.0,
+    "sodium": 90,
+    "chol": 15,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "YOGURT SMOOTHIE, STRAWBERRY BANANA CEREA",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.0,
+    "carb": 24.0,
+    "kcal": 150,
+    "sugar": 18.0,
+    "fiber": 3.0,
+    "sodium": 85,
+    "chol": 20,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "GARLIC SNACK CHIPS, GARLIC",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 8.0,
+    "carb": 16.0,
+    "kcal": 150,
+    "sugar": 0,
+    "fiber": 1.0,
+    "sodium": 340,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0.5
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP ROLLS BREAD",
+   "servingGrams": 57.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 35.0,
+    "kcal": 200,
+    "sugar": 9.0,
+    "fiber": 2.0,
+    "sodium": 290,
+    "chol": 20,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 100,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "sodium": 170,
+    "added": 4.0
+   }
+  },
+  {
+   "name": "ORGANICS BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 90
+   }
+  },
+  {
+   "name": "BANANA CHIPS SNACKS",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 10.0,
+    "carb": 18.0,
+    "kcal": 160,
+    "sugar": 11.0,
+    "fiber": 2.0,
+    "sodium": 0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 9.0
+   }
+  },
+  {
+   "name": "POPPED CHIP SNACK",
+   "servingGrams": 23.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 4.0,
+    "carb": 15.0,
+    "kcal": 100,
+    "sugar": 0,
+    "fiber": 1.0,
+    "sodium": 160,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD AND BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE, PECAN CERE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 24.0,
+    "kcal": 130,
+    "sugar": 18.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "DRIED YOGURT FRUIT & SNACK MIX, FRUIT &",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 5.0,
+    "carb": 19.0,
+    "kcal": 120,
+    "sugar": 16.0,
+    "fiber": 1.0,
+    "sodium": 30,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.5
+   }
+  },
+  {
+   "name": "FRUIT & YOGURT CEREAL, FRUIT; YOGURT",
+   "servingGrams": 42.0,
+   "declared": {
+    "prot": 3.0,
+    "fat": 1.0,
+    "carb": 36.0,
+    "kcal": 160,
+    "sugar": 13.0,
+    "fiber": 3.0,
+    "sodium": 190,
+    "added": 13.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sodium": 120
+   }
+  },
+  {
+   "name": "JAVA CHIP SNACK MIX, JAVA CHIP",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 3.0,
+    "fat": 9.0,
+    "carb": 15.0,
+    "kcal": 150,
+    "sugar": 10.0,
+    "fiber": 2.0,
+    "sodium": 50,
+    "chol": 0,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "PECAN CEREAL FLAVORED YOGURT SMOOTHIE, P",
+   "servingGrams": 240.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 2.0,
+    "carb": 28.0,
+    "kcal": 150,
+    "sugar": 21.0,
+    "fiber": 2.0,
+    "sodium": 100,
+    "added": 14.0,
+    "chol": 10,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 9.0,
+    "kcal": 35,
+    "sugar": 8.0,
+    "fiber": 1.0,
+    "sodium": 160,
+    "added": 8.0
+   }
+  },
+  {
+   "name": "SOUP & SNACK OYSTER CRACKERS",
+   "servingGrams": 15.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 2.0,
+    "carb": 11.0,
+    "kcal": 70,
+    "sugar": 0,
+    "fiber": 0,
+    "sodium": 80,
+    "added": 0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "fiber": 0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "STRAWBERRY BANANA CEREAL YOGURT SMOOTHIE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 22.0,
+    "kcal": 120,
+    "sugar": 16.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "added": 9.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "LALA, YOGURT SMOOTHIE, PECAN CEREAL, PEC",
+   "servingGrams": 240.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 6.0,
+    "carb": 32.0,
+    "kcal": 200,
+    "sugar": 27.0,
+    "fiber": 0,
+    "sodium": 100,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER SWEET CHIPS, BREAD & BUTT",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "fiber": 1.0,
+    "sodium": 140,
+    "added": 5.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "YOGURT, RASPBERRY CHOCOLATE CHIP",
+   "servingGrams": 150.0,
+   "declared": {
+    "prot": 7.0,
+    "fat": 9.0,
+    "carb": 25.0,
+    "kcal": 210,
+    "sugar": 22.0,
+    "fiber": 0,
+    "sodium": 80,
+    "chol": 5,
+    "trans": 0,
+    "sat": 6.0
+   }
+  },
+  {
+   "name": "CHERRY FRUIT'N YOGURT SNACKS, CHERRY",
+   "servingGrams": 22.7,
+   "declared": {
+    "prot": 0,
+    "fat": 1.5,
+    "carb": 17.0,
+    "kcal": 80,
+    "sugar": 14.0,
+    "sodium": 40,
+    "trans": 0,
+    "sat": 1.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BLUEBERRY FRUIT'N YOGURT SNACKS, BLUEBER",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 0,
+    "fat": 2.0,
+    "carb": 22.0,
+    "kcal": 110,
+    "sugar": 18.0,
+    "sodium": 50,
+    "trans": 0,
+    "sat": 2.0
+   }
+  },
+  {
+   "name": "VANILLA ALMOND CEREAL YOGURT SMOOTHIE, V",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 24.0,
+    "kcal": 150,
+    "sugar": 18.0,
+    "fiber": 3.0,
+    "sodium": 85,
+    "chol": 20,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 10
+   }
+  },
+  {
+   "name": "YOGURT SMOOTHIE, PECAN CEREAL",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 24.0,
+    "kcal": 150,
+    "sugar": 18.0,
+    "fiber": 3.0,
+    "sodium": 85,
+    "chol": 15,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 5.0,
+    "fiber": 1.0,
+    "sodium": 160,
+    "chol": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "VLASIC, BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "BREADED CHEESE SNACK, NACHO CHEESE",
+   "servingGrams": 52.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 9.0,
+    "carb": 15.0,
+    "kcal": 170,
+    "sugar": 1.0,
+    "fiber": 4.0,
+    "sodium": 370,
+    "chol": 10,
+    "trans": 0,
+    "sat": 4.5
+   }
+  },
+  {
+   "name": "STRAWBERRY BANANA CEREAL FLAVORED YOGURT",
+   "servingGrams": 240.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 2.0,
+    "carb": 27.0,
+    "kcal": 150,
+    "sugar": 20.0,
+    "fiber": 2.0,
+    "sodium": 100,
+    "added": 13.0,
+    "chol": 10,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "KOSHER BREAD & BUTTER CHIPS, BREAD & BUT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 4.0,
+    "kcal": 20,
+    "sugar": 4.0,
+    "sodium": 85,
+    "added": 4.0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 5.0,
+    "fiber": 1.0,
+    "sodium": 230,
+    "added": 5.0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "STRAWBERRY BANANA CEREAL YOGURT SMOOTHIE",
+   "servingGrams": 240.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 5.0,
+    "carb": 28.0,
+    "kcal": 180,
+    "sugar": 21.0,
+    "fiber": 3.0,
+    "sodium": 100,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE, PECAN CERE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 2.5,
+    "carb": 23.0,
+    "kcal": 130,
+    "sugar": 18.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "chol": 10,
+    "trans": 0,
+    "sat": 1.5
+   }
+  },
+  {
+   "name": "SMOOTHIE YOGURT WITH PECAN & CEREALS, PE",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 7.0,
+    "fat": 6.0,
+    "carb": 38.0,
+    "kcal": 240,
+    "sugar": 32.0,
+    "fiber": 1.0,
+    "sodium": 85,
+    "added": 28.0,
+    "chol": 25,
+    "trans": 0,
+    "sat": 4.0
+   }
+  },
+  {
+   "name": "VEGGIE CHIPS SNACKS",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 6.0,
+    "carb": 22.0,
+    "kcal": 150,
+    "sugar": 8.0,
+    "fiber": 3.0,
+    "sodium": 75,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 150
+   }
+  },
+  {
+   "name": "BREAD & BUTTER ORGANIC PICKLE CHIPS, BRE",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 6.0,
+    "fiber": 0,
+    "sodium": 100,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "NALLEY, ELITES, PREMIUM PICKLES, BREAD &",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 9.0,
+    "kcal": 35,
+    "sugar": 8.0,
+    "sodium": 150
+   }
+  },
+  {
+   "name": "BREAD &BUTTER CHIPS PICKLES",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 35,
+    "sugar": 8.0,
+    "sodium": 0,
+    "added": 7.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER NO SALT PICKLE CHIPS, BRE",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 35,
+    "sugar": 8.0,
+    "sodium": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 6.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "SOUP, CARROT + PARSNIP WITH GINGER & YOG",
+   "servingGrams": 245.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 6.0,
+    "carb": 22.0,
+    "kcal": 150,
+    "sugar": 12.0,
+    "fiber": 3.0,
+    "sodium": 600,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 20,
+    "sugar": 5.0,
+    "fiber": 0,
+    "sodium": 110,
+    "added": 4.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "TROPICAL, DRINKABLE LOWFAT YOGURT, PECAN",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 9.0,
+    "fat": 4.5,
+    "carb": 39.0,
+    "kcal": 230,
+    "sugar": 36.0,
+    "fiber": 2.0,
+    "sodium": 115,
+    "chol": 15,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "PROTEIN SNACK CHICKEN NOODLE SOUP, PROTE",
+   "servingGrams": 22.0,
+   "declared": {
+    "prot": 12.0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 70,
+    "sugar": 2.0,
+    "fiber": 1.0,
+    "sodium": 690,
+    "added": 1.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "BREADED CHEESE SNACKS, NACHO CHEESE",
+   "servingGrams": 52.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 9.0,
+    "carb": 15.0,
+    "kcal": 170,
+    "sugar": 1.0,
+    "fiber": 4.0,
+    "sodium": 370,
+    "chol": 10,
+    "trans": 0,
+    "sat": 4.5
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP SNACK BARS, CHOCOLATE CHI",
+   "servingGrams": 40.0,
+   "declared": {
+    "prot": 10.0,
+    "fat": 5.0,
+    "carb": 20.0,
+    "kcal": 150,
+    "sugar": 4.0,
+    "fiber": 3.0,
+    "sodium": 170,
+    "chol": 0,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "PRUNE CEREAL YOGURT SMOOTHIE WITH PROBIO",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 22.0,
+    "kcal": 120,
+    "sugar": 16.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "added": 9.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 5,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 100,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & VEGETABLES TUSCAN SOUP",
+   "servingGrams": 150.0,
+   "declared": {
+    "chol": 0,
+    "prot": 3.0,
+    "fat": 10.0,
+    "carb": 19.0,
+    "kcal": 180,
+    "sugar": 3.0,
+    "fiber": 3.0,
+    "sodium": 420,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP PULLAPART BREAD, CHOCOLAT",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 5.0,
+    "carb": 13.0,
+    "kcal": 100,
+    "sugar": 5.0,
+    "fiber": 1.0,
+    "sodium": 310,
+    "chol": 30,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "CHOCOLATEY CHIP COOKIE BITES CEREAL, CHO",
+   "servingGrams": 29.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 2.0,
+    "carb": 24.0,
+    "kcal": 120,
+    "sugar": 11.0,
+    "fiber": 1.0,
+    "sodium": 120,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE WITH PROBIO",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 1.5,
+    "carb": 22.0,
+    "kcal": 120,
+    "sugar": 16.0,
+    "fiber": 2.0,
+    "sodium": 85,
+    "added": 9.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sugar": 0,
+    "sodium": 120
+   }
+  },
+  {
+   "name": "LALA, YOGURT SMOOTHIE, STRAWBERRY BANANA",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 28.0,
+    "kcal": 170,
+    "sugar": 24.0,
+    "fiber": 0,
+    "sodium": 90,
+    "chol": 20,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "PECAN CEREAL YOGURT SMOOTHIE, PECAN CERE",
+   "servingGrams": 311.0,
+   "declared": {
+    "prot": 8.0,
+    "fat": 7.0,
+    "carb": 36.0,
+    "kcal": 230,
+    "sugar": 28.0,
+    "fiber": 4.0,
+    "sodium": 130,
+    "chol": 25,
+    "trans": 0,
+    "sat": 4.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 0
+   }
+  },
+  {
+   "name": "CHIPS, SWEET BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "VANILLA ALMOND CEREAL YOGURT SMOOTHIE, V",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.5,
+    "carb": 28.0,
+    "kcal": 180,
+    "sugar": 24.0,
+    "fiber": 0,
+    "sodium": 85,
+    "chol": 15,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP BANANA BREAD BAKED WHOLE",
+   "servingGrams": 36.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 4.5,
+    "carb": 24.0,
+    "kcal": 140,
+    "sugar": 10.0,
+    "fiber": 2.0,
+    "sodium": 100,
+    "added": 8.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 8.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 190
+   }
+  },
+  {
+   "name": "STRAWBERRY FRUIT'N YOGURT SNACKS, STRAWB",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 0,
+    "fat": 2.0,
+    "carb": 22.0,
+    "kcal": 110,
+    "sugar": 18.0,
+    "sodium": 50,
+    "trans": 0,
+    "sat": 2.0
+   }
+  },
+  {
+   "name": "PRETZEL SNACKS, YOGURT",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 8.0,
+    "carb": 20.0,
+    "kcal": 150,
+    "sugar": 12.0,
+    "fiber": 0,
+    "sodium": 65,
+    "chol": 0,
+    "trans": 0,
+    "sat": 7.0
+   }
+  },
+  {
+   "name": "PICKLE CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "PICKLE CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "sodium": 220,
+    "added": 6.0
+   }
+  },
+  {
+   "name": "ESPRESSO CHIP FROZEN YOGURT, ESPRESSO CH",
+   "servingGrams": 96.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.0,
+    "carb": 23.0,
+    "kcal": 140,
+    "sugar": 18.0,
+    "fiber": 0,
+    "sodium": 110,
+    "added": 12.0,
+    "chol": 10,
+    "trans": 0,
+    "sat": 3.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 7.0,
+    "kcal": 30,
+    "sugar": 7.0,
+    "fiber": 0,
+    "sodium": 220,
+    "added": 6.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER REDUCED CALORIE CHIPS, BR",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sodium": 120
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP MULTIGRAIN CEREAL BARS, C",
+   "servingGrams": 32.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 5.0,
+    "carb": 22.0,
+    "kcal": 130,
+    "sugar": 12.0,
+    "fiber": 2.0,
+    "sodium": 95,
+    "added": 12.0,
+    "chol": 5,
+    "trans": 0,
+    "sat": 2.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 2.0,
+    "kcal": 10,
+    "sugar": 2.0,
+    "sodium": 190,
+    "added": 1.0
+   }
+  },
+  {
+   "name": "YOGURT SMOOTHIE, PRUNE CEREAL",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.0,
+    "carb": 25.0,
+    "kcal": 150,
+    "sugar": 18.0,
+    "fiber": 3.0,
+    "sodium": 85,
+    "chol": 20,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "BREAD & BUTTER PICKLE CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 1.0,
+    "kcal": 0,
+    "sugar": 0,
+    "sodium": 120
+   }
+  },
+  {
+   "name": "SWEET BREAD & BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 170
+   }
+  },
+  {
+   "name": "CHOCOLATE CHIP SNACK BARS, CHOCOLATE CHI",
+   "servingGrams": 40.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 9.0,
+    "carb": 22.0,
+    "kcal": 190,
+    "sugar": 9.0,
+    "fiber": 2.0,
+    "sodium": 65,
+    "added": 5.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 3.5
+   }
+  },
+  {
+   "name": "PICKLES, BREAD AND BUTTER CHIPS",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 5.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 85
+   }
+  },
+  {
+   "name": "CHOCOLATEY CHIP COOKIE BITES CEREAL, CHO",
+   "servingGrams": 29.0,
+   "declared": {
+    "prot": 1.0,
+    "fat": 2.0,
+    "carb": 24.0,
+    "kcal": 120,
+    "sugar": 11.0,
+    "fiber": 1.0,
+    "sodium": 120,
+    "chol": 0,
+    "trans": 0,
+    "sat": 0
+   }
+  },
+  {
+   "name": "BREADED CHEESE SNACKS, COOL RANCH",
+   "servingGrams": 78.0,
+   "declared": {
+    "prot": 8.0,
+    "fat": 16.0,
+    "carb": 23.0,
+    "kcal": 270,
+    "sugar": 2.0,
+    "fiber": 5.0,
+    "sodium": 690,
+    "chol": 30,
+    "trans": 0,
+    "sat": 8.0
+   }
+  },
+  {
+   "name": "PECAN & CEREAL YOGURT SMOOTHIE, PECAN &",
+   "servingGrams": 207.0,
+   "declared": {
+    "prot": 5.0,
+    "fat": 4.0,
+    "carb": 36.0,
+    "kcal": 190,
+    "sugar": 30.0,
+    "fiber": 4.0,
+    "sodium": 74930,
+    "chol": 15,
+    "trans": 0,
+    "sat": 2.5
+   }
+  },
+  {
+   "name": "PINEAPPLE & CEREAL FIBER LOWFAT YOGURT",
+   "servingGrams": 113.0,
+   "declared": {
+    "prot": 4.0,
+    "fat": 1.5,
+    "carb": 19.0,
+    "kcal": 110,
+    "sugar": 13.0,
+    "fiber": 3.0,
+    "sodium": 55,
+    "chol": 5,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "BREAD & BUTTER CHIPS, BREAD & BUTTER",
+   "servingGrams": 28.0,
+   "declared": {
+    "prot": 0,
+    "fat": 0,
+    "carb": 6.0,
+    "kcal": 25,
+    "sugar": 5.0,
+    "sodium": 180
+   }
+  },
+  {
+   "name": "STONYFIELD ORGANIC STRAWBERRY LOWFAT YOG",
+   "servingGrams": 68.0,
+   "declared": {
+    "prot": 3.0,
+    "fat": 3.0,
+    "carb": 24.0,
+    "kcal": 140,
+    "sugar": 10.0,
+    "fiber": 1.0,
+    "sodium": 105,
+    "chol": 5,
+    "trans": 0,
+    "sat": 1.5
+   }
+  },
+  {
+   "name": "CHOCOLATEY CHIP GRAHAM SNACKS, CHOCOLATE",
+   "servingGrams": 30.0,
+   "declared": {
+    "prot": 2.0,
+    "fat": 4.0,
+    "carb": 22.0,
+    "kcal": 130,
+    "sugar": 7.0,
+    "fiber": 1.0,
+    "sodium": 90,
+    "added": 7.0,
+    "chol": 0,
+    "trans": 0,
+    "sat": 1.0
+   }
+  },
+  {
+   "name": "YOGURT SNACK MIX",
+   "servingGrams": 40.0,
+   "declared": {
+    "prot": 6.0,
+    "fat": 11.0,
+    "carb": 20.0,
+    "kcal": 190,
+    "sugar": 13.0,
+    "fiber": 2.0,
+    "sodium": 10,
+    "chol": 0,
+    "trans": 0,
+    "sat": 2.5
+   }
+  }
+ ]
+}
