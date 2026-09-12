@@ -16,11 +16,23 @@ const PAIRS = [
   // function walks the same variant list across every food source. A drift here
   // means the app accepts a code the server will not find.
   ["src/lib/gtin.ts", "supabase/functions/_shared/gtin.ts"],
+  // The label verifier runs TWICE: on the phone to decide what a person must
+  // look at, and again inside food-label-save before a camera read is shared
+  // into the household food cache. The server must never trust the phone's
+  // verdict — but it only means something if it is the SAME verdict code.
+  ["src/lib/labelScan/types.ts", "supabase/functions/_shared/labelScan/types.ts"],
+  ["src/lib/labelScan/rules.ts", "supabase/functions/_shared/labelScan/rules.ts"],
+  ["src/lib/labelScan/verify.ts", "supabase/functions/_shared/labelScan/verify.ts"],
+  ["src/lib/labelScan/food.ts", "supabase/functions/_shared/labelScan/food.ts"],
 ];
 
-// Normalize away the legitimate, runtime-only differences before comparing.
+// Normalize away the legitimate, runtime-only differences before comparing:
+// line endings, and Deno's `.ts` extension on relative imports.
 const norm = (s) =>
-  s.replace(/\r\n/g, "\n").replace(/(\.\/categorizeData)\.ts/g, "$1").trimEnd();
+  s
+    .replace(/\r\n/g, "\n")
+    .replace(/(from\s+"\.\/[A-Za-z0-9_]+)\.ts"/g, '$1"')
+    .trimEnd();
 
 let drift = false;
 for (const [client, edge] of PAIRS) {

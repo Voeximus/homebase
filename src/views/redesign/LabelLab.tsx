@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Check, Copy, Images, Loader2, RotateCcw } from "lucide-react";
 import { LabelScanner } from "../../components/LabelScanner";
+import { LabelConfirmSheet } from "../../components/LabelConfirmSheet";
+import { labelFoodToFood } from "../../lib/labelScanFlow";
 import { parseLabel, suggestRepairs, verify, type OcrPage, type ParsedPanel, type Repair, type Verification } from "../../lib/labelScan";
 import { OCR_ENGINE, ocrLoadInfo, preloadOcr, recognizeDetailed, type OcrLoadInfo, type RecognizeTimings } from "../../lib/labelScan/ocr";
 
@@ -227,8 +229,14 @@ function StageView<T>({ label, s }: { label: string; s?: Stage<T> }) {
 function ItemCard({ item, onRerun }: { item: Item; onRerun: () => void }) {
   const [copied, setCopied] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
+  // The real confirm screen on this read — the same sheet the meal builder
+  // opens — with saving replaced by showing the Food that would be added.
+  const [confirming, setConfirming] = useState(false);
+  const [saved, setSaved] = useState<unknown>(null);
   const p = item.page;
   const tm = item.timings;
+  const panel = item.parsed?.ok ? item.parsed.value : null;
+  const checked = item.verification?.ok ? item.verification.value : null;
 
   const copy = async () => {
     if (!p) return;
@@ -267,8 +275,47 @@ function ItemCard({ item, onRerun }: { item: Item; onRerun: () => void }) {
           >
             {copied ? <Check size={14} /> : <Copy size={14} />} Copy JSON
           </button>
+          <button
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-accent px-3 text-[12px] font-semibold text-bg disabled:opacity-40"
+            disabled={!panel || !checked || item.busy}
+            onClick={() => {
+              setSaved(null);
+              setConfirming(true);
+            }}
+          >
+            Confirm screen
+          </button>
         </div>
       </div>
+
+      {saved !== null && (
+        <pre className="mb-2 max-h-72 overflow-auto rounded-xl bg-raised p-3 font-mono text-[11px] text-bone">
+          {"would add → " + JSON.stringify(saved, null, 2)}
+        </pre>
+      )}
+
+      {confirming && panel && checked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,.55)" }} role="dialog" aria-modal="true">
+          <div
+            className="flex max-h-[88vh] w-full max-w-[420px] flex-col overflow-hidden"
+            style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", borderTop: "2px solid var(--color-accent)", borderRadius: "22px" }}
+          >
+            <LabelConfirmSheet
+              panel={panel}
+              verification={checked}
+              repairs={item.repairs?.ok ? item.repairs.value : []}
+              engine={p?.engine}
+              suggest={suggestRepairs}
+              onSave={(food) => {
+                setSaved(labelFoodToFood(food));
+                setConfirming(false);
+              }}
+              onRetake={() => setConfirming(false)}
+              onClose={() => setConfirming(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {item.error && (
         <p className="mb-2 font-mono text-[12px]" style={{ color: "var(--color-ember)" }}>

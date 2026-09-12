@@ -37,7 +37,8 @@ import {
 import { toLabelFood } from "../src/lib/labelScan/food";
 import type { CheckFailure, FieldKey, FieldVerdict, ParsedPanel, ReadValue, Repair, Verification } from "../src/lib/labelScan/types";
 import { LabelConfirmSheet } from "../src/components/LabelConfirmSheet";
-import { LabelScanFlow, labelFoodToFood, readLabel, type LabelReadDeps } from "../src/components/LabelScanFlow";
+import { LabelScanFlow } from "../src/components/LabelScanFlow";
+import { labelFoodToFood, readLabel, type LabelReadDeps } from "../src/lib/labelScanFlow";
 import { saveLabelFood } from "../src/lib/labelSave";
 
 // The confirm screen holds three measured rules (src/lib/labelScan/types.ts):
@@ -450,7 +451,7 @@ describe("from a confirmed state to the saved food", () => {
     expect(overridesOf(original, original)).toEqual({});
   });
 
-  it("maps to the app's Food with the canonical barcode and a neutral role", () => {
+  it("maps to the app's Food with the canonical barcode and the name-based role guess", () => {
     const food = labelFoodToFood({ name: "Bar", kcal: 475, p: 15, c: 55, f: 22.5, serving: 40, barcode: "049000028911", source: "label" });
     expect(food).toEqual({ id: "label-0049000028911", name: "Bar", role: "other", kcal: 475, p: 15, c: 55, f: 22.5, serving: 40, barcode: "0049000028911" });
     const noCode = labelFoodToFood({ name: "Bar", kcal: 1, p: 0, c: 0, f: 0, source: "label" });
@@ -465,9 +466,16 @@ describe("readLabel — every stage fails into a plain answer", () => {
   const blob = new Blob(["not really a photo"]);
   const page = { width: 1, height: 1, tokens: [], engine: "test@1" };
 
-  it("with the real modules still stubbed, it reports the read stage — it doesn't throw", async () => {
-    const r = await readLabel(blob);
-    expect(r).toEqual({ ok: false, stage: "read", detail: "recognize: not implemented" });
+  it("a reader that fails reports the read stage — it doesn't throw", async () => {
+    const r = await readLabel(blob, {
+      recognize: async () => {
+        throw new Error("no wasm");
+      },
+      parseLabel: () => null,
+      verify: fakeVerify,
+      suggestRepairs: fakeSuggest,
+    });
+    expect(r).toEqual({ ok: false, stage: "read", detail: "no wasm" });
   });
 
   it("no nutrition panel in the photo", async () => {

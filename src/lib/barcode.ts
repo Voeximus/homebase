@@ -18,7 +18,7 @@ export interface BarcodeResult {
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
 /** Rough role guess from the product name so the form lands on something sane. */
-function guessRole(name: string): FoodRole {
+export function guessRole(name: string): FoodRole {
   const n = name.toLowerCase();
   if (/chicken|beef|pork|turkey|fish|salmon|tuna|shrimp|tofu|egg|protein|whey|jerky|yogurt|greek|bean|lentil|edamame/.test(n))
     return "protein";

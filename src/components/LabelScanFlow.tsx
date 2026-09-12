@@ -13,13 +13,11 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, Pencil, X } from "lucide-react";
 import { t } from "../lib/i18n";
 import { canonicalGtin } from "../lib/gtin";
-import { rowId } from "../lib/mealLog";
 import type { Food } from "../lib/nutrition";
-import { preloadOcr, recognize } from "../lib/labelScan/ocr";
-import { parseLabel } from "../lib/labelScan/parse";
-import { verify } from "../lib/labelScan/verify";
+import { preloadOcr } from "../lib/labelScan/ocr";
 import { suggestRepairs } from "../lib/labelScan/repair";
-import type { LabelFood, OcrPage, ParsedPanel, Repair, Verification } from "../lib/labelScan/types";
+import type { LabelFood } from "../lib/labelScan/types";
+import { labelFoodToFood, readLabel, type LabelReadResult } from "../lib/labelScanFlow";
 import { saveLabelFood } from "../lib/labelSave";
 import { LabelScanner } from "./LabelScanner";
 import { LabelConfirmSheet, type LabelSaveDetail } from "./LabelConfirmSheet";
@@ -33,73 +31,6 @@ export interface LabelScanFlowProps {
   onFood: (food: Food) => void;
   /** "Add it by hand" — back to the custom food form. Falls back to onClose. */
   onAddByHand?: () => void;
-}
-
-// ── the read, as a plain async function (tested without a DOM) ───────────────
-
-export interface LabelReadDeps {
-  recognize: (image: Blob) => Promise<OcrPage>;
-  parseLabel: (page: OcrPage) => ParsedPanel | null;
-  verify: (panel: ParsedPanel, columnIndex?: number) => Verification;
-  suggestRepairs: (panel: ParsedPanel, columnIndex?: number) => Repair[];
-}
-
-export type LabelReadResult =
-  | { ok: true; panel: ParsedPanel; verification: Verification; repairs: Repair[]; engine: string }
-  /** read: OCR failed · parse: the parser failed · no-panel: no nutrition panel in the photo · check: the verifier failed */
-  | { ok: false; stage: "read" | "parse" | "no-panel" | "check"; detail?: string };
-
-const REAL_DEPS: LabelReadDeps = { recognize, parseLabel, verify, suggestRepairs };
-
-const detailOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
-export async function readLabel(image: Blob, deps: LabelReadDeps = REAL_DEPS): Promise<LabelReadResult> {
-  let page: OcrPage;
-  try {
-    page = await deps.recognize(image);
-  } catch (e) {
-    return { ok: false, stage: "read", detail: detailOf(e) };
-  }
-  let panel: ParsedPanel | null;
-  try {
-    panel = deps.parseLabel(page);
-  } catch (e) {
-    return { ok: false, stage: "parse", detail: detailOf(e) };
-  }
-  if (!panel || panel.columns.length === 0) return { ok: false, stage: "no-panel" };
-  let verification: Verification;
-  try {
-    verification = deps.verify(panel, 0);
-  } catch (e) {
-    return { ok: false, stage: "check", detail: detailOf(e) };
-  }
-  // Suggestions are a convenience. If the suggester fails, the person still gets
-  // every verdict and can type over a number — so this failure is not a dead end.
-  let repairs: Repair[] = [];
-  if (!verification.consistent) {
-    try {
-      repairs = deps.suggestRepairs(panel, 0);
-    } catch (e) {
-      console.warn("label scan: no suggestions —", detailOf(e));
-    }
-  }
-  return { ok: true, panel, verification, repairs, engine: page.engine };
-}
-
-/** A confirmed LabelFood → the app's Food. Role is left as "other": lib/barcode.ts keeps its name-based guess private. */
-export function labelFoodToFood(food: LabelFood): Food {
-  const barcode = food.barcode ? canonicalGtin(food.barcode) : undefined;
-  return {
-    id: `label-${barcode ?? rowId()}`,
-    name: food.name,
-    role: "other",
-    kcal: food.kcal,
-    p: food.p,
-    c: food.c,
-    f: food.f,
-    ...(food.serving && food.serving > 0 ? { serving: food.serving } : {}),
-    ...(barcode ? { barcode } : {}),
-  };
 }
 
 // ── the flow ──────────────────────────────────────────────────────────────────
