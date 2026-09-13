@@ -1,0 +1,2460 @@
+{
+ "meta": {
+  "title": "Homebase workout mode: verified evidence register",
+  "generated": "2026-09-12",
+  "specFile": "docs/research/workout-mode/SPEC.md",
+  "purpose": "The only list of science claims and training formulas the app may use. Anything not in 'kept' must not appear in the app. 'dropped' is recorded so nobody re-adds it by accident.",
+  "rules": [
+   "Only 'kept' entries may be shown or used. Show 'correctedClaim' word for word; never the original research wording.",
+   "The badge always comes from 'correctGrade'. Never raise it.",
+   "An entry reaches an exercise page only through its 'showOn' list. 'this' = the claim is about this exercise. 'variation' = tested on a similar exercise, never this exact one; the page must say so. 'category' = about a whole group (all band exercises, all core exercises); the page must say so.",
+   "Sources with citeInApp:false are kept here for the record and are never shown in the app.",
+   "Sources with addedFromVerification:true were not in the original research list but were opened by the verifier and support wording in correctedClaim.",
+   "appUse 'not-in-v1' = verified but not built in the first release. 'info:*' = explained on an info sheet using the plain summary written in SPEC.md, with correctedClaim shown under 'Study details'. 'trainingMath.*' / 'rule:*' = drives a calculation.",
+   "Anything the app does that is not backed by a kept entry is an app convention: it is listed in SPEC.md and never gets a badge.",
+   "A build-time test must fail if any dropped id appears anywhere in src/, or if any id used in src/ is not in kept."
+  ],
+  "dropRules": [
+   "Verdict 'wrong' is dropped. The verifier's replacement sentence was not independently re-checked, so it is not used.",
+   "A claim that rests on a retracted paper is dropped.",
+   "A claim the research itself says not to adopt is dropped.",
+   "A duplicate whose numbers conflict with a more carefully checked kept claim is dropped."
+  ],
+  "gradeScheme": {
+   "A": "Measured over weeks: people trained for weeks and the named outcome (usually muscle size by MRI or ultrasound, sometimes strength or fat) was measured before and after. One small study still counts; the claim text says how small. A means the right kind of evidence, not settled science.",
+   "B": "Measured in one session only: muscle activity sensors (EMG), leverage or load measurements, or rating studies. It shows what happens during a lift, not what grows.",
+   "C": "Reasoned, not tested: anatomy, physics, arithmetic, or an app convention. Plausible, but no study measured this exact claim."
+  },
+  "badgeText": {
+   "en": {
+    "A": "Tested over weeks",
+    "B": "Measured in one workout",
+    "C": "Reasoned, not tested",
+    "variation": "Tested on a similar exercise, not this one",
+    "category": "About all {group} exercises",
+    "myth": "Myth check"
+   },
+   "zh": {
+    "A": "多周训练研究",
+    "B": "单次训练测量",
+    "C": "推理得出，未经测试",
+    "variation": "在类似动作上测试，并非此动作",
+    "category": "适用于所有{group}动作",
+    "myth": "辟谣"
+   }
+  },
+  "counts": {
+   "total": 102,
+   "kept": 98,
+   "dropped": 4,
+   "keptByKind": {
+    "exercise": 52,
+    "training": 30,
+    "formula": 16
+   },
+   "keptByGrade": {
+    "A": 41,
+    "B": 27,
+    "C": 30
+   },
+   "keptByVerdict": {
+    "supported": 69,
+    "overstated": 29
+   },
+   "keptNotInV1": 15
+  }
+ },
+ "kept": [
+  {
+   "id": "squat-depth-glutes",
+   "kind": "exercise",
+   "exercise": "Barbell back squat",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Full-depth squats grew the glutes and inner-thigh adductors about two to three times more than half squats, while front-thigh growth was about the same.",
+   "sources": [
+    {
+     "citation": "Kubo K, Ikebukuro T, Yata H. Effects of squat training with different depths on lower limb muscle volumes. Eur J Appl Physiol. 2019;119(9):1933-1942. doi:10.1007/s00421-019-04181-y",
+     "url": "https://europepmc.org/article/MED/31230110"
+    }
+   ],
+   "evidence": "Opened the Europe PMC record (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:31230110%20AND%20SRC:MED&resultType=core&format=json, same paper as https://europepmc.org/article/MED/31230110) and a full-text PDF copy (https://highfit.com.br/wp-content/uploads/2019/06/KEITARO-KUBO-2019.pdf). Kubo, Ikebukuro, Yata, Eur J Appl Physiol 2019;119:1933-1942 exists as cited. MRI muscle volume, 10 weeks, 2 days/week. Knee extensors +4.9% (full) vs +4.6% (half). Adductors +6.2% vs +2.7% (p=0.026). Gluteus maximus +6.7% vs +2.2% (p=0.008). The numbers match. Scope: 17 untrained young men (8 vs 9). 'Full' meant about 140 degrees of knee bend and 'half' about 90 degrees. The half-squat group's glutes and adductors did still grow significantly.",
+   "showOn": [
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "squat-depth-quads",
+   "kind": "exercise",
+   "exercise": "Barbell back squat",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In 17 young men over 12 weeks, deep squats (knee bent to about 120°) grew the front of the thigh at every measured spot (4–7%), while shallow squats (about 60°) grew it only near the hip, so deep squats came out ahead.",
+   "sources": [
+    {
+     "citation": "Bloomquist K, Langberg H, Karlsen S, et al. Effect of range of motion in heavy load squatting on muscle and tendon adaptations. Eur J Appl Physiol. 2013;113(8):2133-2142. doi:10.1007/s00421-013-2642-7",
+     "url": "https://europepmc.org/article/MED/23604798"
+    },
+    {
+     "citation": "Kubo K, Ikebukuro T, Yata H. Eur J Appl Physiol. 2019;119(9):1933-1942. doi:10.1007/s00421-019-04181-y",
+     "url": "https://europepmc.org/article/MED/31230110"
+    }
+   ],
+   "evidence": "Opened the Europe PMC record for PMID 23604798 and a full-text PDF (https://highfit.com.br/wp-content/uploads/2017/03/Squat-BLOOMQUIST-2013.pdf). Bloomquist et al., Eur J Appl Physiol 2013;113:2133-2142, randomized, MRI cross-sectional area. Full text: front-thigh area 'was increased at all measured sites in the DS group (4–7%), while increases at the two most proximal sites were observed in the SS group', and the change was greater for DS at all sites. The gradeWhy misreads this: 4–7% is the deep group's own gain, not how much 'better' it was. The 'front thigh' measure included sartorius, plus the adductors in the top slices. Subjects were sports-science students who were not squatting more than once a week. Sessions were rep-matched, so the shallow group lifted much heavier loads. The idea that the benefit comes 'mainly from avoiding very shallow squats' is the writer's inference from comparing Kubo 2019's 90° vs 140° with this study's 60° vs 120° (grade C). No study tested it directly.",
+   "showOn": [
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "squat-no-hamstrings",
+   "kind": "exercise",
+   "exercise": "Barbell back squat",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: in small 9–12 week MRI studies of young, mostly untrained adults, squats grew the hamstrings little or not at all. One found no change in whole-muscle volume, one found none at a single upper-thigh slice, and a third found a gain at only one of six spots.",
+   "sources": [
+    {
+     "citation": "Kubo K, Ikebukuro T, Yata H. Eur J Appl Physiol. 2019;119(9):1933-1942. doi:10.1007/s00421-019-04181-y",
+     "url": "https://europepmc.org/article/MED/31230110"
+    },
+    {
+     "citation": "Plotkin DL, Rodas MA, Vigotsky AD, et al. Hip thrust and back squat training elicit similar gluteus muscle hypertrophy and transfer similarly to the deadlift. Front Physiol. 2023;14:1279170. doi:10.3389/fphys.2023.1279170",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/"
+    },
+    {
+     "citation": "Bloomquist K, Langberg H, Karlsen S, et al. Eur J Appl Physiol. 2013;113(8):2133-2142. doi:10.1007/s00421-013-2642-7",
+     "url": "https://europepmc.org/article/MED/23604798",
+     "addedFromVerification": true
+    }
+   ],
+   "evidence": "Kubo 2019 (Europe PMC record for PMID 31230110, plus the full-text PDF): hamstring volume 'did not change in either group' (whole-muscle MRI volume, 17 untrained men). Plotkin 2023 (full text via Europe PMC PMC10593473, https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/): hamstrings showed 'little to no growth' and there was 'no meaningful growth in either group'. But Plotkin measured the thigh at only ONE slice just below the glutes, with participants lying prone on the coil. The authors say compression may have affected the thigh and distal measures were not taken, so this is weaker than a whole-muscle test. A third MRI study the claim leaves out, Bloomquist 2013 (full-text PDF above), found that deep squats increased back-thigh area at the second-most-proximal of six sites. So calling it 'no measurable growth' in every MRI study is too strong, but 'little' holds.",
+   "showOn": [
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "squat-rectus-femoris",
+   "kind": "exercise",
+   "exercise": "Barbell back squat",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 10-week MRI study, squats grew the quadriceps overall but not the rectus femoris, the one quad muscle that also crosses the hip; the leg press showed the same pattern in a separate study.",
+   "sources": [
+    {
+     "citation": "Kubo K, Ikebukuro T, Yata H. Eur J Appl Physiol. 2019;119(9):1933-1942. doi:10.1007/s00421-019-04181-y",
+     "url": "https://europepmc.org/article/MED/31230110"
+    },
+    {
+     "citation": "Kinoshita M, Maeo S, Kobayashi Y, et al. Hypertrophic Effects of Single- versus Multi-Joint Exercise: A Direct Comparison between Knee Extension and Leg Press. Med Sci Sports Exerc. 2026;58(7):1566-1580. doi:10.1249/mss.0000000000003957",
+     "url": "https://europepmc.org/article/MED/41630124"
+    }
+   ],
+   "evidence": "Kubo 2019 (Europe PMC record for PMID 31230110 and the full-text PDF): knee-extensor volume +4.9%/+4.6%, 'whereas that of rectus femoris and hamstring muscles did not change in either group' (MRI volume). Kinoshita 2026, Med Sci Sports Exerc 58(7):1566-1580, full text via Europe PMC PMC13215645: rectus femoris +1.1% after leg press, P=0.379, versus +13.2% after leg extension. The direct squat evidence is one study of 17 untrained men, and the leg-press data only support the pattern rather than testing squats. The claim as written is accurate, but the page should say it comes from one study.",
+   "showOn": [
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    },
+    {
+     "exercise": "Leg press",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "hipthrust-vs-squat-glutes",
+   "kind": "exercise",
+   "exercise": "Hip thrust",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Over 9 weeks, hip thrusts and back squats grew the glutes about equally in beginners, but squats also grew the quads and adductors more.",
+   "sources": [
+    {
+     "citation": "Plotkin DL, Rodas MA, Vigotsky AD, et al. Front Physiol. 2023;14:1279170. doi:10.3389/fphys.2023.1279170",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/"
+    },
+    {
+     "citation": "Barbalho M, Coswig V, Souza D, et al. Back Squat vs. Hip Thrust Resistance-training Programs in Well-trained Women. Int J Sports Med. 2020;41(5):306-310. doi:10.1055/a-1082-1126",
+     "url": "https://europepmc.org/article/MED/31975359",
+     "citeInApp": false,
+     "why": "Named among papers flagged in 2020 as having improbable data; same group has four retractions."
+    },
+    {
+     "citation": "Barbalho M, Coswig VS, Steele J, et al. Evidence for an Upper Threshold for Resistance Training Volume in Trained Women. Med Sci Sports Exerc. 2019;51(3):515-522 (RETRACTED 2021)",
+     "url": "https://europepmc.org/article/MED/30779716",
+     "citeInApp": false,
+     "why": "Retracted."
+    }
+   ],
+   "evidence": "Plotkin 2023 full text (https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/, pulled via Europe PMC). 34 untrained adults (18 hip thrust: 5 men, 13 women; 16 squat: 6 men, 10 women), set-equated, 9 weeks. MRI cross-sectional area at single slices, not whole-muscle volume. Glute estimates modestly favored hip thrusts: lower −1.6 cm² (CI −6.1 to 2.0), mid −0.5, upper −0.5, all with CIs crossing zero. Squats grew more quadriceps (3.6 cm², CI 0.7–6.4) and adductors (2.5 cm², CI 1.2–3.9). Barbalho 2020 (Europe PMC record for PMID 31975359): 22 well-trained women, 12 weeks. Ultrasound muscle THICKNESS (not MRI) favored squats for the glutes (9.4% vs 3.7%). It is not marked retracted. Correction to the gradeWhy: Retraction Watch (https://retractionwatch.com/2021/12/17/exercise-researcher-earns-more-retractions-as-investigations-mount/) lists this exact hip thrust paper among the seven that data sleuths asked to have retracted in June 2020 as having improbable data. So the doubt is about this paper itself, not only about its authors' other papers. Europe PMC does index four retracted Barbalho papers (MSSE 2019, IJSPP 2020, EJSS 2020, JSCR 2020), so 'four others retracted' holds. The MSSE 2019 retraction is confirmed (Retraction in MSSE 2021;53(6):1318).",
+   "showOn": [
+    {
+     "exercise": "Barbell hip thrust",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "hipthrust-emg-not-growth",
+   "kind": "exercise",
+   "exercise": "Hip thrust",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: hip thrusts switched on the glutes more than squats, but in the same study of beginners that extra activation did not reliably turn into extra glute growth.",
+   "sources": [
+    {
+     "citation": "Plotkin DL, Rodas MA, Vigotsky AD, et al. Front Physiol. 2023;14:1279170. doi:10.3389/fphys.2023.1279170",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/"
+    },
+    {
+     "citation": "Vigotsky AD, Halperin I, Lehman GJ, Trajano GS, Vieira TM. Interpreting Signal Amplitudes in Surface Electromyography Studies in Sport and Rehabilitation Sciences. Front Physiol. 2017;8:985. doi:10.3389/fphys.2017.00985",
+     "url": "https://europepmc.org/article/MED/29354060"
+    }
+   ],
+   "evidence": "Plotkin 2023 full text (https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/). Average glute EMG was higher for hip thrusts at all sites (p<0.01), but peak EMG was higher only at the upper and middle glute max. EMG was recorded during one 10RM set in the first session. Growth was similar between groups. The authors say sEMG differences 'did not reliably translate to greater hypertrophy, no matter what analytical approach we took'. One nuance: the upper glute site showed a moderate across-person correlation (r=0.50, CI 0.03–0.81), and its indirect-effect CI excluded zero. So 'not consistently' is exact and 'never' would be wrong. The claim avoids saying 'never'. Vigotsky 2017, Front Physiol 8:985 exists (Europe PMC record for PMID 29354060). It is a general review on limits of EMG interpretation, background only. Calling Plotkin 'the clearest direct test' is editorial and should not be shown as a finding. One study, 34 untrained adults.",
+   "showOn": [
+    {
+     "exercise": "Barbell hip thrust",
+     "as": "this"
+    },
+    {
+     "help": "science"
+    }
+   ]
+  },
+  {
+   "id": "hipthrust-emg-numbers",
+   "kind": "exercise",
+   "exercise": "Hip thrust",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "With estimated 10-rep-max weights, the barbell hip thrust produced roughly twice the average glute activity of the back squat, with similar front-thigh activity, in 13 trained women.",
+   "sources": [
+    {
+     "citation": "Contreras B, Vigotsky AD, Schoenfeld BJ, Beardsley C, Cronin J. A Comparison of Gluteus Maximus, Biceps Femoris, and Vastus Lateralis Electromyographic Activity in the Back Squat and Barbell Hip Thrust Exercises. J Appl Biomech. 2015;31(6):452-458. doi:10.1123/jab.2014-0301",
+     "url": "https://europepmc.org/article/MED/26214739"
+    }
+   ],
+   "evidence": "Europe PMC record for PMID 26214739 (https://europepmc.org/article/MED/26214739). Contreras et al., J Appl Biomech 2015;31(6):452-458. Thirteen trained women, estimated 10RM loads. Mean upper glute max 69.5% vs 29.4%, lower glute max 86.8% vs 45.4% (2.4x and 1.9x). Vastus lateralis mean 99.5% vs 110%, not significant. The abstract ends saying longitudinal training studies are needed. EMG only, so B is correct.",
+   "showOn": [
+    {
+     "exercise": "Barbell hip thrust",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "glute-medius-little-growth",
+   "kind": "exercise",
+   "exercise": "Hip thrust",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Neither hip thrusts nor squats grew the side glutes (glute medius and minimus) much in beginners over 9 weeks.",
+   "sources": [
+    {
+     "citation": "Plotkin DL, Rodas MA, Vigotsky AD, et al. Front Physiol. 2023;14:1279170. doi:10.3389/fphys.2023.1279170",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/"
+    }
+   ],
+   "evidence": "Plotkin 2023 full text (https://pmc.ncbi.nlm.nih.gov/articles/PMC10593473/). Abstract: gluteus medius + minimus 'demonstrated little to no growth'. Discussion: 'meaningful growth occurring, except in the gluteus medius and minimus'. The two muscles were measured together at one MRI slice (the upper glute max level), not as whole-muscle volume. Separate support: Kinoshita 2026 (full text, PMC13215645) Table 1 shows no significant glute medius or minimus change after 12 weeks of leg press or leg extension (whole-muscle MRI volume). One study for these two exercises, untrained adults. It does not show which exercise would grow these muscles.",
+   "showOn": [
+    {
+     "exercise": "Barbell hip thrust",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell back squat",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "glute-bridge-anatomy",
+   "kind": "exercise",
+   "exercise": "Glute bridge",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The glute bridge uses the same hip-straightening action as the hip thrust over a shorter range, so the glutes are expected to do most of the work with the hamstrings helping.",
+   "sources": [],
+   "evidence": "No source was cited, and none exists to open for this sentence. It is joint-action reasoning, which is correctly graded C. I made one wording change: 'do most of the work' becomes 'are expected to', because no EMG or growth data for the floor bridge were checked.",
+   "showOn": [
+    {
+     "exercise": "Glute bridge",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "leg-press-glutes",
+   "kind": "exercise",
+   "exercise": "Leg press",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In 17 untrained adults training one leg on each machine for 12 weeks, the leg press grew the gluteus maximus about 15% and the adductor magnus about 6%, but not the glute medius or minimus, and it grew the three vasti (front-thigh muscles) as much as leg extensions did.",
+   "sources": [
+    {
+     "citation": "Kinoshita M, Maeo S, Kobayashi Y, et al. Med Sci Sports Exerc. 2026;58(7):1566-1580. doi:10.1249/mss.0000000000003957",
+     "url": "https://europepmc.org/article/MED/41630124"
+    }
+   ],
+   "evidence": "Full text via Europe PMC PMC13215645 (https://europepmc.org/article/MED/41630124). Kinoshita et al., Med Sci Sports Exerc 2026;58(7):1566-1580. MRI volume of 17 muscles, 11 men and 6 women, untrained, one leg per exercise. Leg-press knee range 90°→0°, hip 90°→60°. Gluteus maximus +15.4% and adductor magnus +6.2% after leg press, but not after leg extension (−0.9% to +0.2%). Vasti: VL 6.4 vs 6.2%, VM 7.2 vs 6.0%, VI 5.0 vs 4.4%, no interaction. The original sentence says 'the glutes', which overstates it. In Table 1, gluteus medius (290.8→305.1 cm³, not significant) and gluteus minimus (83.1→85.0) did not significantly grow. Only the gluteus maximus did.",
+   "showOn": [
+    {
+     "exercise": "Leg press",
+     "as": "this"
+    },
+    {
+     "exercise": "Leg extension",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "leg-extension-rectus-femoris",
+   "kind": "exercise",
+   "exercise": "Leg extension",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In a 12-week MRI study of untrained adults, leg extensions grew the rectus femoris about 13% while leg presses grew it about 1% (not a real change); a smaller ultrasound study whose measurement method was disputed points the same way.",
+   "sources": [
+    {
+     "citation": "Kinoshita M, Maeo S, Kobayashi Y, et al. Med Sci Sports Exerc. 2026;58(7):1566-1580. doi:10.1249/mss.0000000000003957",
+     "url": "https://europepmc.org/article/MED/41630124"
+    },
+    {
+     "citation": "Zabaleta-Korta A, Fernández-Peña E, Torres-Unda J, Garbisu-Hualde A, Santos-Concejero J. The role of exercise selection in regional muscle hypertrophy: A randomized controlled trial. J Sports Sci. 2021;39(20):2298-2304. doi:10.1080/02640414.2021.1929736",
+     "url": "https://europepmc.org/article/MED/34743671"
+    },
+    {
+     "citation": "Leitão BFM, Franchi MV, da Matta TT. Letter to the editor concerning the article by Zabaleta-Korta et al. (2021). J Sports Sci. 2022;40(6):655-657. doi:10.1080/02640414.2021.2013596",
+     "url": "https://europepmc.org/article/MED/34930094"
+    }
+   ],
+   "evidence": "Kinoshita 2026 full text (PMC13215645): rectus femoris +13.2% (KE, P<0.001) vs +1.1% (LP, P=0.379), 17 untrained adults, MRI volume. Zabaleta-Korta 2021 (Europe PMC record for PMID 34743671): abstract says all three RF regions grew in the leg-extension group, and only central VL grew in the Smith-squat group. I could not open the full text, so its sample size and training status are unverified. The Leitão, Franchi, da Matta 2022 letter was opened via its Semantic Scholar record (https://api.semanticscholar.org/graph/v1/paper/DOI:10.1080/02640414.2021.2013596). It argues the study's ultrasound 'CSA' measures 'are not representative of true muscle CSA'. In their reply (DOI 10.1080/02640414.2022.2052596), the authors agree MRI is the gold standard. So the second study is weaker than presented. 'The dependable way' implies more replication and generality than one MRI study in untrained people plus one disputed ultrasound study.",
+   "showOn": [
+    {
+     "exercise": "Leg extension",
+     "as": "this"
+    },
+    {
+     "exercise": "Leg press",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "leg-extension-stretched-half",
+   "kind": "exercise",
+   "exercise": "Leg extension",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Leg extensions done only in the bottom half, where the knee is bent and the quads are stretched, grew parts of the thigh more than full-range or top-half reps in untrained women.",
+   "sources": [
+    {
+     "citation": "Pedrosa GF, Lima FV, Schoenfeld BJ, et al. Partial range of motion training elicits favorable improvements in muscular adaptations when carried out at long muscle lengths. Eur J Sport Sci. 2022;22(8):1250-1260. doi:10.1080/17461391.2021.1927199",
+     "url": "https://europepmc.org/article/MED/33977835"
+    },
+    {
+     "citation": "Plotkin DL, Tiede DR, Gotla T, et al. Acute molecular and chronic vastus lateralis adaptations to lengthened partial versus full range of motion resistance training in previously trained males. Preprint, 2026. doi:10.64898/2026.06.04.730150",
+     "url": "https://doi.org/10.64898/2026.06.04.730150",
+     "citeInApp": false,
+     "why": "Preprint, not peer reviewed; kept only as background in the evidence record."
+    },
+    {
+     "citation": "Varovic D, Wolf M, Schoenfeld BJ, Steele J, Grgic J, Mikulic P. Does Muscle Length Influence Regional Hypertrophy? A Systematic Review and Meta-Analysis. Int J Sports Med. 2025;46(14):1027-1036. doi:10.1055/a-2615-4935",
+     "url": "https://europepmc.org/article/MED/40570881",
+     "addedFromVerification": true
+    }
+   ],
+   "evidence": "Europe PMC record for PMID 33977835. Pedrosa et al., Eur J Sport Sci 2022;22(8):1250-1260, randomized, 45 untrained women. Initial partial range (100–65°) had a greater relative increase than ALL groups at 70% of femur length. At 50% and 60% it beat full-range, top-half and control, but NOT the varied-range group. RF and VL cross-sectional area was measured at 40–70% of femur length. The measurement method was not confirmed from the full text. The 2026 preprint exists (bioRxiv API record https://api.biorxiv.org/details/biorxiv/10.64898/2026.06.04.730150, posted 2026-06-09, not peer reviewed). It had 16 trained men with one leg per condition for 8 weeks, and found no clear VL difference (LP−FULL −1.4 cm², CI −6.1 to 3.8). But the lengthened partials were applied across THREE exercises (leg press, leg extension, lying leg curl), not leg extension alone. The uncited '2025 meta-analysis' is real: Varović et al., Int J Sports Med 2025, doi:10.1055/a-2615-4935 (opened via Semantic Scholar and SportRxiv https://sportrxiv.org/index.php/server/preprint/view/464). It found trivial differences between longer and shorter muscle-length training at proximal, mid and distal sites (SMD 0.05, 0.07, 0.09). Add it as a source.",
+   "showOn": [
+    {
+     "exercise": "Leg extension",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "seated-vs-lying-leg-curl",
+   "kind": "exercise",
+   "exercise": "Seated leg curl",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Seated leg curls grew the hamstrings more than lying leg curls (about 14% vs 9%), likely because the bent hip keeps the hamstrings stretched.",
+   "sources": [
+    {
+     "citation": "Maeo S, Huang M, Wu Y, et al. Greater Hamstrings Muscle Hypertrophy but Similar Damage Protection after Training at Long versus Short Muscle Lengths. Med Sci Sports Exerc. 2021;53(4):825-837. doi:10.1249/MSS.0000000000002523",
+     "url": "https://europepmc.org/article/MED/33009197"
+    }
+   ],
+   "evidence": "Full text via Europe PMC PMC7969179 (https://europepmc.org/article/MED/33009197). Maeo et al., Med Sci Sports Exerc 2021;53(4):825-837. 20 young adults with no systematic resistance training in the past 12 months, one leg per exercise, 12 weeks, MRI volume. Whole hamstrings +14% vs +9%. The two-joint muscles +8–24% vs +4–19%. The one-joint short head +10% vs +9%. An OpenSim model in the paper shows the two-joint hamstrings work at longer lengths when seated, and there is no difference for the short head. That supports the stretch explanation, labeled 'likely'. Untrained, one study.",
+   "showOn": [
+    {
+     "exercise": "Seated leg curl",
+     "as": "this"
+    },
+    {
+     "exercise": "Lying leg curl",
+     "as": "this"
+    }
+   ],
+   "rangePanel": {
+    "exercise": "Seated leg curl",
+    "track": "length",
+    "zone": "long"
+   }
+  },
+  {
+   "id": "hip-extension-bflh",
+   "kind": "exercise",
+   "exercise": "45° back extension (hip hinge)",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "A straight-knee 45° hip-extension exercise grew the outer hamstring (biceps femoris long head) more than Nordic curls, while both grew the inner semitendinosus.",
+   "sources": [
+    {
+     "citation": "Bourne MN, Duhig SJ, Timmins RG, et al. Impact of the Nordic hamstring and hip extension exercises on hamstring architecture and morphology: implications for injury prevention. Br J Sports Med. 2017;51(5):469-477. doi:10.1136/bjsports-2016-096130",
+     "url": "https://europepmc.org/article/MED/27660368"
+    }
+   ],
+   "evidence": "Europe PMC record for PMID 27660368 (https://europepmc.org/article/MED/27660368). Bourne et al., Br J Sports Med 2017;51(5):469-477, randomized, 30 recreationally active men (10 per group), 10 weeks. MRI: BFlh volume increased more with hip extension than Nordic (d=1.03, p=0.037). Semitendinosus rose in both vs control (d=2.16–2.50), not different between exercises (p=0.239). The record lists a 2019 correction (Br J Sports Med 53(6):e2) whose content I could not open. Separate support from Maeo et al. 2024, MSSE, doi:10.1249/mss.0000000000003490 (Europe PMC record for PMID 38857522): in 42 men, hip-flexed eccentric curls grew BFlh +19% vs +5% for Nordics (MRI).",
+   "showOn": [
+    {
+     "exercise": "45° back extension",
+     "as": "this"
+    },
+    {
+     "exercise": "Nordic hamstring curl",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "nordic-curl",
+   "kind": "exercise",
+   "exercise": "Nordic hamstring curl",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Nordic curls grew the semitendinosus and lengthened the fascicles (fibre bundles) of the outer hamstring. Hip extensions and Romanian deadlifts lengthened them just as much, and the lengthening faded within two weeks of stopping.",
+   "sources": [
+    {
+     "citation": "Bourne MN, Duhig SJ, Timmins RG, et al. Br J Sports Med. 2017;51(5):469-477. doi:10.1136/bjsports-2016-096130",
+     "url": "https://europepmc.org/article/MED/27660368"
+    },
+    {
+     "citation": "Arin-Bal G, Comlekci M, Pakoz B, Uysal O, Bayrakci-Tunay V. Effect of Hamstring Exercises on Morphological Parameters of the Hamstring Muscle: A Systematic Review With MRI and USI Findings. Sports Health. 2026. doi:10.1177/19417381261463404",
+     "url": "https://europepmc.org/article/MED/42460513"
+    },
+    {
+     "citation": "Crawford et al. Med Sci Sports Exerc. 2025. doi:10.1249/mss.0000000000003701",
+     "url": "https://europepmc.org/article/MED/40085810",
+     "addedFromVerification": true
+    }
+   ],
+   "evidence": "Bourne 2017 (Europe PMC record for PMID 27660368): Nordic training increased semitendinosus volume vs control (MRI) and lengthened BFlh fascicles (2D ultrasound, d=1.77–2.17). But hip extension lengthened them equally (between-exercise p=0.279–0.976). Arin-Bal 2026 review (Europe PMC record for PMID 42460513, full text PMC13375868): 14 trials. Eccentric protocols, 'particularly NHE-based', were 'most consistently' linked to longer BFlh fascicles, while size changes were 'more heterogeneous'. It is a systematic review without a meta-analysis. Crawford et al. 2025, MSSE, doi:10.1249/mss.0000000000003701 (Europe PMC record for PMID 40085810): 32 young adults, 6 weeks. Eccentric-emphasis Romanian deadlifts and Nordics gave the same fascicle lengthening (~9%) and hamstring area gain (~10%). Fascicle length 'returned to baseline after detraining' (2 weeks). Maeo 2024 (PMID 38857522): Nordics grew the whole hamstrings +11% but BFlh only +5%. So fascicle lengthening is real, but it is not special to Nordics. The sentence implies it is.",
+   "showOn": [
+    {
+     "exercise": "Nordic hamstring curl",
+     "as": "this"
+    },
+    {
+     "exercise": "Romanian deadlift",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "rdl-anatomy",
+   "kind": "exercise",
+   "exercise": "Romanian deadlift",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The Romanian deadlift bends at the hips with nearly straight knees, so it loads the hamstrings and glutes while they are stretched.",
+   "sources": [
+    {
+     "citation": "Bourne MN, Duhig SJ, Timmins RG, et al. Br J Sports Med. 2017;51(5):469-477 (related exercise, not the RDL). doi:10.1136/bjsports-2016-096130",
+     "url": "https://europepmc.org/article/MED/27660368"
+    }
+   ],
+   "evidence": "The sentence itself is anatomy reasoning, correctly graded C. The gradeWhy is out of date: 'the Romanian deadlift itself has not been growth-tested' is refuted. Crawford et al., Med Sci Sports Exerc 2025, doi:10.1249/mss.0000000000003701 (Europe PMC record for PMID 40085810, found via the reference list of the Arin-Bal 2026 review, PMC13375868). It randomized 32 young adults to eccentric-emphasis RDLs or Nordics for 6 weeks. Hamstring cross-sectional area (ultrasound) rose about 10% with no difference between groups. Longer BFlh fascicles also showed no group difference. That supports a separate measured-growth line for the RDL (A, one small ultrasound study), which the app could add instead of pointing to Bourne 2017's related exercise.",
+   "showOn": [
+    {
+     "exercise": "Romanian deadlift",
+     "as": "this"
+    },
+    {
+     "exercise": "Dumbbell Romanian deadlift",
+     "as": "this"
+    }
+   ],
+   "rangePanel": {
+    "exercise": [
+     "Romanian deadlift",
+     "Dumbbell Romanian deadlift"
+    ],
+    "track": "length",
+    "zone": "long"
+   }
+  },
+  {
+   "id": "deadlift-anatomy",
+   "kind": "exercise",
+   "exercise": "Conventional deadlift",
+   "verdict": "overstated",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The conventional deadlift straightens the hips and knees at the same time, so the hip extensors (glutes, adductors, hamstrings) and back muscles carry the load, the quads help mostly as the bar leaves the floor, and the hamstrings change length less than in a Romanian deadlift.",
+   "sources": [],
+   "evidence": "No source was cited and none was opened, so this stays pure joint-action reasoning (C). 'The quads do most of the work' and the implication that the hamstrings contribute little are claims about how the work is split. No EMG or modeling source here supports that. The part that holds is the length logic: hip and knee straighten together, so the two-joint hamstrings change length less. The rewrite keeps only what the reasoning supports.",
+   "showOn": [
+    {
+     "exercise": "Conventional deadlift",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "standing-vs-seated-calf",
+   "kind": "exercise",
+   "exercise": "Standing calf raise",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Standing calf raises grew the gastrocnemius by about 9–12%, while seated calf raises barely grew it (under 2%).",
+   "sources": [
+    {
+     "citation": "Kinoshita M, Maeo S, Kobayashi Y, et al. Triceps surae muscle hypertrophy is greater after standing versus seated calf-raise training. Front Physiol. 2023;14:1272106. doi:10.3389/fphys.2023.1272106",
+     "url": "https://europepmc.org/article/MED/38156065"
+    }
+   ],
+   "evidence": "Full text via Europe PMC PMC10753835 (https://europepmc.org/article/MED/38156065). Kinoshita et al., Front Physiol 2023;14:1272106 (a brief report). 14 untrained adults, one leg standing and one seated (knee 90°), 70% 1RM, 12 weeks, MRI volume. Lateral gastrocnemius 12.4% vs 1.7%, medial 9.2% vs 0.6%. The seated-leg gastrocnemius changes were not significant (p=0.147–0.508). The soleus was similar (2.1% vs 2.9%). The numbers match. Small sample, untrained people.",
+   "showOn": [
+    {
+     "exercise": "Standing calf raise",
+     "as": "this"
+    },
+    {
+     "exercise": "Seated calf raise",
+     "as": "this"
+    },
+    {
+     "exercise": "Dumbbell calf raise",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "seated-calf-soleus-myth",
+   "kind": "exercise",
+   "exercise": "Seated calf raise",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: in one 12-week MRI study of 14 untrained adults, seated calf raises did not grow the soleus any more than standing calf raises did (2.9% vs 2.1%, not a significant difference), so 'seated for the soleus' is unproven.",
+   "sources": [
+    {
+     "citation": "Kinoshita M, Maeo S, Kobayashi Y, et al. Front Physiol. 2023;14:1272106. doi:10.3389/fphys.2023.1272106",
+     "url": "https://europepmc.org/article/MED/38156065"
+    }
+   ],
+   "evidence": "Opened the Europe PMC record (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:38156065%20AND%20SRC:MED&resultType=core&format=json; same as https://europepmc.org/article/MED/38156065). Kinoshita et al., Front Physiol 2023, title 'Triceps surae muscle hypertrophy is greater after standing versus seated calf-raise training'. Fourteen UNTRAINED adults, one leg standing/knee-extended, other leg seated/knee 90°, 70% 1RM, 5x10, 2x/week, 12 weeks, MRI muscle volume. Soleus change 'similar between legs (2.1% vs. 2.1%... )' exactly: standing 2.1% vs seated 2.9%, p = 0.410. Numbers and design match. Caveat to keep: untrained people, within-person design, small sample so a small true difference could be missed.",
+   "showOn": [
+    {
+     "exercise": "Seated calf raise",
+     "as": "this"
+    },
+    {
+     "exercise": "Standing calf raise",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "calf-stretched-half",
+   "kind": "exercise",
+   "exercise": "Standing calf raise",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 8-week ultrasound study of 42 young women doing calf raises on a leg-press machine, bottom-half (stretched) reps grew the inner calf head more than full-range or top-half reps, but for the outer calf head they only beat top-half reps, not full-range reps.",
+   "sources": [
+    {
+     "citation": "Kassiano W, Costa B, Kunevaliki G, et al. Greater Gastrocnemius Muscle Hypertrophy After Partial Range of Motion Training Performed at Long Muscle Lengths. J Strength Cond Res. 2023;37(9):1746-1753. doi:10.1519/jsc.0000000000004460",
+     "url": "https://europepmc.org/article/MED/37015016"
+    },
+    {
+     "citation": "Larsen S, Sandberg NØ, Schoenfeld BJ, et al. Resistance Training Beyond Momentary Failure: The Effects of Past-Failure Partials Versus Initial Partials on Calf Muscle Hypertrophy Among a Resistance-Trained Cohort. Eur J Sport Sci. 2025;25(9):e70030. doi:10.1002/ejsc.70030",
+     "url": "https://europepmc.org/article/MED/40850937"
+    }
+   ],
+   "evidence": "Kassiano et al. 2023, JSCR 37(9):1746-1753 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:37015016%20AND%20SRC:MED&resultType=core&format=json). 42 young women, 8 weeks, 3x/week, calf raise on a pin-loaded horizontal leg-press, B-mode ultrasound muscle thickness. Medial gastrocnemius: initial ROM +15.2% vs full +6.7% vs final +3.4% (p <= 0.009). Lateral gastrocnemius: initial +14.9% beat final +6.2% (p < 0.024) but did NOT differ significantly from full ROM +7.3% (p = 0.060). So 'grew the gastrocnemius more than full-range' holds only for the medial head. Larsen et al. 2025, Eur J Sport Sci 25(9):e70030 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:40850937%20AND%20SRC:MED&resultType=core&format=json): 23 resistance-trained (16 men, 7 women), Smith-machine calf raises, initial partials vs full ROM plus past-failure partials; difference 0.40 mm (95% CrI -0.06 to 0.85), Bayes factor 1.2 'anecdotal'. The gradeWhy description of Larsen is accurate.",
+   "showOn": [
+    {
+     "exercise": "Leg press calf raise",
+     "as": "this",
+     "ifPresent": true
+    },
+    {
+     "exercise": "Standing calf raise",
+     "as": "variation"
+    },
+    {
+     "exercise": "Dumbbell calf raise",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "calf-toe-direction",
+   "kind": "exercise",
+   "exercise": "Standing calf raise",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 9-week ultrasound study of 22 young men doing calf raises on a leg-press machine, pointing the toes out grew the inner calf head more than pointing them in, and pointing them in grew the outer calf head more than pointing them out; toes-forward was not clearly different from either.",
+   "sources": [
+    {
+     "citation": "Nunes JP, Costa BDV, Kassiano W, et al. Different Foot Positioning During Calf Training to Induce Portion-Specific Gastrocnemius Muscle Hypertrophy. J Strength Cond Res. 2020;34(8):2347-2351. doi:10.1519/jsc.0000000000003674",
+     "url": "https://europepmc.org/article/MED/32735428"
+    }
+   ],
+   "evidence": "Nunes et al. 2020, JSCR 34(8):2347-2351 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:32735428%20AND%20SRC:MED&resultType=core&format=json). 22 young men, whole-body program 3x/week for 9 weeks, unilateral calf raise on a pin-loaded SEATED HORIZONTAL LEG-PRESS machine (not a standing calf raise), B-mode ultrasound. Medial: out 8.4%, in 3.8%, forward 5.8%; lateral: out 5.5%, in 9.1%, forward 6.4%; significant differences only between out and in (p < 0.05). Numbers match; the original sentence omits what 'more' is compared against (only toes-in vs toes-out), and the exercise was on a leg press, not standing.",
+   "showOn": [
+    {
+     "exercise": "Leg press calf raise",
+     "as": "this",
+     "ifPresent": true
+    },
+    {
+     "exercise": "Standing calf raise",
+     "as": "variation"
+    },
+    {
+     "exercise": "Dumbbell calf raise",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "incline-bench-upper-chest",
+   "kind": "exercise",
+   "exercise": "Incline bench press",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 8-week ultrasound study of untrained young men training once a week, a 44° incline bench press grew the upper chest more than the flat bench press; at the middle and lower chest the incline group's gains were numerically larger but not significantly different.",
+   "sources": [
+    {
+     "citation": "Chaves SFN, Rocha-Júnior VA, Encarnação IGA, et al. Effects of Horizontal and Incline Bench Press on Neuromuscular Adaptations in Untrained Young Men. Int J Exerc Sci. 2020;13(6):859-872.",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7449336/"
+    }
+   ],
+   "evidence": "Chaves et al. 2020, Int J Exerc Sci 13(6):859-872 (https://pmc.ncbi.nlm.nih.gov/articles/PMC7449336/). 47 untrained men (three groups: flat, 44° incline, combination), 1 session/week, 8 weeks, ultrasound at 2nd, 3rd and 5th intercostal sites. Change in mm: 2nd intercostal flat +3.8 (11.9 to 15.7), incline +9.4 (15.1 to 24.5), p = 0.005; 3rd flat +6.1 vs incline +8.4, p = 0.095; 5th flat +5.4 vs incline +8.4, p = 0.227. 'Grew similarly' overstates equality: incline was larger at every site, just not significantly at two. Other cautions: the groups started at different thicknesses (11.9 vs 15.1 mm at the upper site) and the reported gains (about +60% in 8 weeks at once a week) are unusually large. The gradeWhy's '2025 meta-analysis' on regional differences has no citation and was not verified; remove it or cite it.",
+   "showOn": [
+    {
+     "exercise": "Incline barbell bench press",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell bench press",
+     "as": "this"
+    },
+    {
+     "exercise": "Incline dumbbell bench press",
+     "as": "variation"
+    },
+    {
+     "exercise": "Incline machine chest press",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "incline-angle-emg",
+   "kind": "exercise",
+   "exercise": "Incline bench press",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In one EMG study of 30 trained adults at 60% of max, upper-chest activity was numerically highest at a 30° incline but not significantly different from flat, 15° or 45°; it dropped at 60°, and front-shoulder activity was significantly higher at 45° and 60°.",
+   "sources": [
+    {
+     "citation": "Rodríguez-Ridao D, Antequera-Vique JA, Martín-Fuentes I, Muyor JM. Effect of Five Bench Inclinations on the Electromyographic Activity of the Pectoralis Major, Anterior Deltoid, and Triceps Brachii during the Bench Press Exercise. Int J Environ Res Public Health. 2020;17(19):7339. doi:10.3390/ijerph17197339",
+     "url": "https://europepmc.org/article/MED/33049982"
+    }
+   ],
+   "evidence": "Rodríguez-Ridao et al. 2020, IJERPH 17(19):7339; abstract at https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:33049982%20AND%20SRC:MED&resultType=core&format=json and full text https://pmc.ncbi.nlm.nih.gov/articles/PMC7579505/. Abstract says 'maximal EMG activity for PMUP occurred at a bench inclination of 30°' and 'Inclinations greater than 45° produce significantly higher activation of the anterior deltoid'. But Table 2 pairwise p-values for upper pectoralis: 30 vs 15 p = 1.000, 30 vs 0 p = 0.688, 30 vs 45 p = 0.214; only 60° was significantly lower. Results text: PMUP ~28% MVIC at 15° and ~30% at 30° '(p > 0.05)'. Anterior deltoid significantly higher at 45° and 60°. So the 30° 'peak' is a non-significant numerical peak.",
+   "showOn": [
+    {
+     "exercise": "Incline barbell bench press",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell bench press",
+     "as": "this"
+    },
+    {
+     "exercise": "Incline dumbbell bench press",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "flat-bench-emg",
+   "kind": "exercise",
+   "exercise": "Bench press",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Of five bench angles tested in one EMG study of 30 trained adults at 60% of max, the flat bench gave the highest middle- and lower-chest activity.",
+   "sources": [
+    {
+     "citation": "Rodríguez-Ridao D, Antequera-Vique JA, Martín-Fuentes I, Muyor JM. Int J Environ Res Public Health. 2020;17(19):7339. doi:10.3390/ijerph17197339",
+     "url": "https://europepmc.org/article/MED/33049982"
+    }
+   ],
+   "evidence": "Rodríguez-Ridao et al. 2020, IJERPH 17(19):7339 (https://pmc.ncbi.nlm.nih.gov/articles/PMC7579505/). Abstract: 'PMMP and PMLP showed higher EMG activity at a 0° bench inclination.' Table 2: flat vs 15° significant for middle (p = 0.004) and lower (p = 0.005) pectoralis, and activity fell further as incline rose (p <= 0.01). 30 trained adults of both sexes, 60% 1RM, 8 reps. EMG only.",
+   "showOn": [
+    {
+     "exercise": "Barbell bench press",
+     "as": "this"
+    },
+    {
+     "exercise": "Dumbbell bench press",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "machine-chest-press-emg",
+   "kind": "exercise",
+   "exercise": "Machine chest press",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In one EMG study of 20 experienced lifters doing 8 reps at 60% of max, a seated chest-press machine and the bench press produced broadly similar chest, front-shoulder and triceps activity, with slightly higher upper-chest activity on the machine with a neutral grip.",
+   "sources": [
+    {
+     "citation": "Muyor JM, Rodríguez-Ridao D, Oliva-Lozano JM. Comparison of Muscle Activity between the Horizontal Bench Press and the Seated Chest Press Exercises Using Several Grips. J Hum Kinet. 2023;87:23-34. doi:10.5114/jhk/161468",
+     "url": "https://europepmc.org/article/MED/37229415"
+    }
+   ],
+   "evidence": "Muyor, Rodríguez-Ridao, Oliva-Lozano 2023, J Hum Kinet 87:23-34 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:37229415%20AND%20SRC:MED&resultType=core&format=json; full text https://pmc.ncbi.nlm.nih.gov/articles/PMC10203828/). 20 physically active adults, 8 reps at 60% 1RM; clavicular pectoralis ~30% MVIC on neutral-grip seated chest press vs ~25% on bench press at 150% biacromial width (significant); anterior deltoid not different (~24%); triceps higher on narrow bench (~16% vs ~12%). Conclusion: 'all exercises and grips showed similar muscle activity'. Full text says participants had at least 4 years of strength training, so 'active adults' undersells their experience. I could not confirm whether the bench press used a free barbell, so 'barbell' is dropped from the corrected claim.",
+   "showOn": [
+    {
+     "exercise": "Machine chest press",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell bench press",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "pushup-vs-bench-growth",
+   "kind": "exercise",
+   "exercise": "Push-up",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 8-week study of 18 recreationally trained young men, push-ups adjusted to match a 40%-of-max bench press, with every set taken to failure, grew the chest and triceps about as much as that bench press did.",
+   "sources": [
+    {
+     "citation": "Kikuchi N, Nakazato K. Low-load bench press and push-up induce similar muscle hypertrophy and strength gain. J Exerc Sci Fit. 2017;15(1):37-42. doi:10.1016/j.jesf.2017.06.003",
+     "url": "https://europepmc.org/article/MED/29541130"
+    }
+   ],
+   "evidence": "Kikuchi & Nakazato 2017, J Exerc Sci Fit 15(1):37-42 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:29541130%20AND%20SRC:MED&resultType=core&format=json; full text https://pmc.ncbi.nlm.nih.gov/articles/PMC5812864/). 18 men, at least 1 year of training, 3 sets to failure, twice weekly, 8 weeks, ultrasound. The abstract does print identical pectoralis values for both groups (copy error confirmed), but the results table resolves it: push-up 17.0 to 20.8 mm, bench 17.8 to 22.5 mm; triceps push-up 27.5 to 30.4, bench 26.3 to 27.8. 'There was no significant difference between the groups.' Biceps grew only in the bench group. So the gradeWhy line 'exact chest figures are uncertain' can be replaced with the table values. Only about 9 per group.",
+   "showOn": [
+    {
+     "exercise": "Push-up",
+     "as": "this"
+    },
+    {
+     "exercise": "Barbell bench press",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "band-pushup-strength",
+   "kind": "exercise",
+   "exercise": "Push-up",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 5-week randomized study of 30 experienced university lifters, band-resisted push-ups set to a 6-rep max produced strength gains similar to a 6-rep-max bench press; muscle size was not measured.",
+   "sources": [
+    {
+     "citation": "Calatayud J, Borreani S, Colado JC, et al. Bench press and push-up at comparable levels of muscle activity results in similar strength gains. J Strength Cond Res. 2015;29(1):246-253. doi:10.1519/jsc.0000000000000589",
+     "url": "https://europepmc.org/article/MED/24983847"
+    }
+   ],
+   "evidence": "Calatayud et al. 2015, JSCR 29(1):246-253 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:24983847%20AND%20SRC:MED&resultType=core&format=json). 30 students with 'advanced resistance training experience', three groups (6RM bench, 6RM elastic-band push-up, control), 5 weeks; EMG matched at baseline. Both training groups improved 1RM and 6RM 'significantly with similar gains' (changes ranging 13.65 to 22.21%), control unchanged. The paper says 'similar', not 'the same'. Grade: strength is a directly measured outcome in a randomized trial, so A is kept for a strength claim, but it is one small, short study (about 10 per group) and says nothing about growth; if the A rule is applied strictly to growth only, this would be B.",
+   "showOn": [
+    {
+     "exercise": "Band push-up",
+     "as": "this",
+     "ifPresent": true
+    },
+    {
+     "exercise": "Push-up",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "bodyweight-squat-older-adults",
+   "kind": "exercise",
+   "exercise": "Bodyweight squat",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In one 12-week study of 16 active adults around 70, home chair squats (4 sets of 35 reps, 3 days a week) improved sit-to-stand and leg-press strength, but thigh muscle thickness did not change measurably; the study was too small to rule out a modest gain.",
+   "sources": [
+    {
+     "citation": "Yoshiko A, Watanabe K. Impact of home-based squat training with two-depths on lower limb muscle parameters and physical functional tests in older adults. Sci Rep. 2021;11(1):6855. doi:10.1038/s41598-021-86030-7",
+     "url": "https://europepmc.org/article/MED/33767255"
+    }
+   ],
+   "evidence": "Yoshiko & Watanabe 2021, Sci Rep 11:6855 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:33767255%20AND%20SRC:MED&resultType=core&format=json; full text https://pmc.ncbi.nlm.nih.gov/articles/PMC7994411/). 16 older adults randomized to shallow (60 cm) or deep (40 cm) chair squats, 4x35, 3 days/week, 12 weeks. Knee extension torque, quadriceps thickness and walking speed did not change (P > 0.05); 30-s sit-to-stand and 1RM leg press improved. The authors did NOT measure effort (no RPE or proximity to failure), so 'easy' and 'low-effort' are the authors' speculation ('intensity... may have been too low'), not data. They report statistical power of only 0.06-0.13 with 8 per group, and note participants were already highly active. The author correction (PMID 34326445) fixed the y-axis of the walking-speed graph in Figure 4 and does not affect this claim.",
+   "showOn": [
+    {
+     "exercise": "Bodyweight squat",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "light-load-to-failure",
+   "kind": "exercise",
+   "exercise": "Bodyweight and band exercises (general)",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "A meta-analysis found that loads of 60% of max or less built about as much muscle as heavier loads when every set was taken to failure (10 studies measured muscle size, with a small non-significant edge for heavy loads), while heavy loads built more 1-rep-max strength.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ, Grgic J, Ogborn D, Krieger JW. Strength and Hypertrophy Adaptations Between Low- vs. High-Load Resistance Training: A Systematic Review and Meta-analysis. J Strength Cond Res. 2017;31(12):3508-3523. doi:10.1519/jsc.0000000000002200",
+     "url": "https://europepmc.org/article/MED/28834797"
+    }
+   ],
+   "evidence": "Schoenfeld, Grgic, Ogborn, Krieger 2017, JSCR 31(12):3508-3523. Record https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:28834797%20AND%20SRC:MED&resultType=core&format=json; full-text PDF opened at https://elementssystem.com/wp-content/uploads/2018/04/Schoenfeld-17-altas-bajas.pdf. Inclusion required low load <=60% 1RM vs high >60% 1RM, all sets to momentary failure, >=6 weeks. 21 studies were included overall, but the muscle hypertrophy analysis 'comprised 41 ESs from 10 studies'; ES-level difference trended toward high loads (-0.11, p = 0.10), study-level no effect (p = 0.56). 1RM: 14 studies, significantly favored high loads. So 'across 21 studies ... built as much muscle' misstates the count; 'light' here means anything up to 60% 1RM, not only very light loads.",
+   "showOn": [
+    {
+     "help": "science"
+    }
+   ],
+   "note": "Not attached to bodyweight or band exercise cards: the studies used loads up to 60% of max, not bodyweight or bands, so attaching it would apply the finding to untested exercises."
+  },
+  {
+   "id": "bands-vs-weights-strength",
+   "kind": "exercise",
+   "exercise": "Band row",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "A meta-analysis of 8 trials (later corrected by the authors) found that training with elastic bands or tubes produced strength gains similar to training with weight machines and dumbbells; it did not measure muscle size.",
+   "sources": [
+    {
+     "citation": "Lopes JSS, Machado AF, Micheletti JK, et al. Effects of training with elastic resistance versus conventional resistance on muscular strength: A systematic review and meta-analysis. SAGE Open Med. 2019;7:2050312119831116 (corrigendum 2020). doi:10.1177/2050312119831116",
+     "url": "https://europepmc.org/article/MED/30815258"
+    }
+   ],
+   "evidence": "Lopes et al. 2019, SAGE Open Med 7:2050312119831116 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:30815258%20AND%20SRC:MED&resultType=core&format=json). Eight studies; no superiority for lower limb (SMD -0.11, 95% CI -0.40 to 0.19) or upper limb strength (SMD 0.09, 95% CI -0.18 to 0.35) [corrected]; conclusion 'similar strength gains ... in different population profiles'. Erratum published 9 Sep 2020 (PMID 32953119). Outcome was strength only.",
+   "showOn": [
+    {
+     "category": "equipment:band",
+     "as": "category"
+    }
+   ]
+  },
+  {
+   "id": "band-colour-not-weight",
+   "kind": "exercise",
+   "exercise": "Band row",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Band colours are not a reliable stand-in for dumbbell weights: in one study of 30 active adults, colour-coded elastic tubes matched the muscle activity of 2-6 kg dumbbells in only 2 of 4 upper-body exercises, and only for men.",
+   "sources": [
+    {
+     "citation": "Martín-Ruiz J, Ruiz-Sanchis L, Tamarit Grancha I, et al. Comparison of Upper-Limb Muscle Activation Levels in Different Physical Fitness Exercises Using Dumbbells and Elastic Tubes. Sports Health. 2026;18(4):796-803. doi:10.1177/19417381251353769",
+     "url": "https://europepmc.org/article/MED/40734261"
+    }
+   ],
+   "evidence": "Martín-Ruiz et al. 2026, Sports Health 18(4):796-803 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:40734261%20AND%20SRC:MED&resultType=core&format=json; full text https://pmc.ncbi.nlm.nih.gov/articles/PMC12310615/). 30 active adults (15 men, 15 women); Thera-Band tubing in five colours vs dumbbells of 2-6 kg; equivalence judged by surface EMG; 'only elbow flexion and shoulder abduction exercises showed load equivalence in men but not in women'; tubes and dumbbells 'cannot be used interchangeably'. Small correction to gradeWhy: it was a cross-sectional study over two sessions a week apart, not a single session, and 'matched loads' means matched muscle activity, not measured force.",
+   "showOn": [
+    {
+     "category": "equipment:band",
+     "as": "category"
+    },
+    {
+     "help": "band-logging"
+    }
+   ]
+  },
+  {
+   "id": "band-row-anatomy",
+   "kind": "exercise",
+   "exercise": "Band row",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "A band row trains the lats, mid-back and rear shoulders with the biceps helping, and because a band's tension rises as it stretches, the band pulls hardest near the end of the pull where it is most stretched.",
+   "sources": [
+    {
+     "citation": "Uchida MC, et al. Thera-band elastic band tension: reference values for physical activity. J Phys Ther Sci. 2016.",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4868225/",
+     "addedFromVerification": true
+    }
+   ],
+   "evidence": "No exercise study was cited or found for the band row, so the muscle list stays reasoning (C). The physics part has a primary source: Uchida et al. 2016, J Phys Ther Sci, 'Thera-band elastic band tension: reference values for physical activity' (https://pmc.ncbi.nlm.nih.gov/articles/PMC4868225/) measured eight band colours and found tension rises linearly with elongation (all r² > 0.95), and that manufacturer tension values overestimated measured force by up to 51%. Wording tightened: how hard it feels at the joint also depends on anchor distance and angle of pull, so 'band tension is highest' is safer than 'hardest'.",
+   "showOn": [
+    {
+     "exercise": "Band row",
+     "as": "this"
+    }
+   ],
+   "rangePanel": {
+    "exercise": "Band row",
+    "track": "tension",
+    "zone": "end"
+   }
+  },
+  {
+   "id": "plank-long-lever",
+   "kind": "exercise",
+   "exercise": "Plank",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In one EMG study of 19 people doing 30-second holds, moving the elbows further forward and tucking the pelvis under raised abdominal activity compared with a standard plank, with the elbows-forward change contributing more.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ, Contreras B, Tiryaki-Sonmez G, Willardson JM, Fontana F. An electromyographic comparison of a modified version of the plank with a long lever and posterior tilt versus the traditional plank exercise. Sports Biomech. 2014;13(3):296-306. doi:10.1080/14763141.2014.942355",
+     "url": "https://europepmc.org/article/MED/25325773"
+    }
+   ],
+   "evidence": "Schoenfeld, Contreras et al. 2014, Sports Biomech 13(3):296-306 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:25325773%20AND%20SRC:MED&resultType=core&format=json). 19 participants, four plank variations, 30 s each. Long-lever posterior-tilt plank significantly increased upper rectus abdominis, lower abdominal stabilizers and external oblique (all p < 0.001). Long lever alone raised upper rectus (p = 0.015) and lower stabilizers (p < 0.001); posterior tilt alone raised external oblique (p = 0.028); authors say the long-lever component 'tends to contribute more'. EMG only.",
+   "showOn": [
+    {
+     "exercise": "Plank",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "plank-anatomy",
+   "kind": "exercise",
+   "exercise": "Plank",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The plank trains the abs and obliques by holding the lower back from sagging, rather than by bending the spine like a crunch.",
+   "sources": [],
+   "evidence": "No source was cited and none was opened; this is joint-action reasoning (a front plank is a hold against gravity pulling the hips and lower back down, whereas a crunch bends the spine). It is consistent with the plank EMG study above, which shows the abs and external oblique are active during the hold (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:25325773%20AND%20SRC:MED&resultType=core&format=json), but that study does not test the 'rather than bending' comparison. C is the correct grade.",
+   "showOn": [
+    {
+     "exercise": "Plank",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "ab-spot-reduction-myth",
+   "kind": "exercise",
+   "exercise": "Crunch / ab exercises",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: in one 6-week randomized trial of 24 sedentary adults eating a steady-calorie diet, ab exercises five days a week did not reduce belly fat, skinfolds or waist size compared with doing nothing, though ab endurance improved.",
+   "sources": [
+    {
+     "citation": "Vispute SS, Smith JD, LeCheminant JD, Hurley KS. The effect of abdominal exercise on abdominal fat. J Strength Cond Res. 2011;25(9):2559-2564. doi:10.1519/jsc.0b013e3181fb4a46",
+     "url": "https://europepmc.org/article/MED/21804427"
+    }
+   ],
+   "evidence": "Vispute, Smith, LeCheminant, Hurley 2011, JSCR 25(9):2559-2564 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:21804427%20AND%20SRC:MED&resultType=core&format=json). 24 healthy sedentary adults (14 men, 10 women), randomized to control or 7 ab exercises, 2x10, 5 days/week, 6 weeks; all kept an isocaloric diet. No significant effect on body weight, body fat %, android fat %, android fat, abdominal circumference, abdominal or suprailiac skinfold. Curl-ups post-test 47 ± 13 vs 32 ± 9. Small and short, as the gradeWhy says.",
+   "showOn": [
+    {
+     "category": "muscle:core",
+     "as": "category"
+    }
+   ]
+  },
+  {
+   "id": "pulldown-grip-width-myth",
+   "kind": "exercise",
+   "exercise": "Lat pulldown",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Myth check: in EMG studies, wide-grip pulldowns did not switch on the lats more than medium or narrow grips over the whole rep (one study found slightly more lat activity with a wide grip only on the way back up); no study we found has tested whether grip width changes how the back grows.",
+   "sources": [
+    {
+     "citation": "Andersen V, Fimland MS, Wiik E, Skoglund A, Saeterbakken AH. Effects of grip width on muscle strength and activation in the lat pull-down. J Strength Cond Res. 2014;28(4):1135-1142. doi:10.1097/jsc.0000000000000232",
+     "url": "https://europepmc.org/article/MED/24662157"
+    },
+    {
+     "citation": "Buonsenso A, Di Fonza D, Di Claudio G, et al. Electromyographic Analysis of Back Muscle Activation During Lat Pulldown Exercise: Effects of Grip Variations and Forearm Orientation. J Funct Morphol Kinesiol. 2025;10(3):345. doi:10.3390/jfmk10030345",
+     "url": "https://europepmc.org/article/MED/40981044"
+    },
+    {
+     "citation": "Lusk SJ, Hale BD, Russell DM. Grip width and forearm orientation effects on muscle activity during the lat pull-down. J Strength Cond Res. 2010;24(7):1895-1900. doi:10.1519/jsc.0b013e3181ddb0ab",
+     "url": "https://europepmc.org/article/MED/20543740"
+    }
+   ],
+   "evidence": "Andersen et al. 2014, JSCR 28(4):1135-1142 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:24662157%20AND%20SRC:MED&resultType=core&format=json): 15 men, grips 1, 1.5, 2x biacromial width; 'similar EMG activation between grip widths for latissimus' over the whole movement; in the eccentric (lowering) phase wide > narrow for latissimus (p <= 0.04); 6RM lower with wide grip (77.3 vs ~80 kg). Buonsenso et al. 2025, JFMK 10(3):345 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:40981044%20AND%20SRC:MED&resultType=core&format=json): 40 men with >=5 years training, 7 variants at 70% RM, no significant lat differences (all p > 0.05); only posterior deltoid differed. Lusk et al. 2010, JSCR 24(7):1895-1900 (https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:20543740%20AND%20SRC:MED&resultType=core&format=json): 12 men, pronated grip gave more lat EMG than supinated 'irrespective of the grip width'. Problems: the flat 'did not switch on the lats more' ignores Andersen's eccentric-phase finding; the '2026 review' in gradeWhy has no citation and was not verified, so it should be removed; the 'no growth study' statement is an absence claim (my own search also found none, but absence cannot be confirmed).",
+   "showOn": [
+    {
+     "exercise": "Lat pulldown",
+     "as": "this"
+    },
+    {
+     "exercise": "Wide-grip lat pulldown",
+     "as": "this"
+    },
+    {
+     "exercise": "Close-grip lat pulldown",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "pulldown-front",
+   "kind": "exercise",
+   "exercise": "Lat pulldown",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In two small EMG studies of trained men, pulling the bar down in front of the head gave more lat activity than behind the neck while pulling down, though one found behind-the-neck higher on the way back up; a 2026 review calls the front pulldown only tentatively the best-supported setup.",
+   "sources": [
+    {
+     "citation": "Di Fonza D, Di Claudio G, Colantuono G, et al. Electromyographic Analysis of Latissimus Dorsi Activation During Common Resistance Training Exercises: A Narrative Review. J Funct Morphol Kinesiol. 2026;11(3):315. doi:10.3390/jfmk11030315",
+     "url": "https://europepmc.org/article/MED/42647355"
+    }
+   ],
+   "evidence": "Opened the Di Fonza 2026 record via Europe PMC REST (PMID 42647355, doi:10.3390/jfmk11030315, PMC13510307) and the full text. Abstract: anterior bar path was 'the configuration most consistently associated with greater LD EMG amplitude', but the conclusion says evidence 'tentatively supports' it and reflects 'acute EMG amplitude rather than longitudinal training outcomes'. Full text shows only two front-vs-back studies: Sperandei 2009 (JSCR, n=24 trained men, front better) and Padovan 2024 (J Hum Kinet, n=14 trained men, front higher lat excitation in the pulling phase, behind-neck higher in the return phase). I also opened both abstracts via Europe PMC. The citation checks out, but 'most consistently' rests on two small studies, one of them split by phase.",
+   "showOn": [
+    {
+     "exercise": "Lat pulldown",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "pulling-grows-biceps",
+   "kind": "exercise",
+   "exercise": "Lat pulldown",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Pulling exercises grow the biceps too, but studies disagree on whether curls add more: pulldowns matched curls in one study, while curls grew the arm about twice as much as rows in another.",
+   "sources": [
+    {
+     "citation": "Gentil P, Soares S, Bottaro M. Single vs. Multi-Joint Resistance Exercises: Effects on Muscle Strength and Hypertrophy. Asian J Sports Med. 2015;6(2):e24057. doi:10.5812/asjsm.24057",
+     "url": "https://europepmc.org/article/MED/26446291"
+    },
+    {
+     "citation": "Mannarino P, Matta T, Lima J, Simão R, Freitas de Salles B. Single-Joint Exercise Results in Higher Hypertrophy of Elbow Flexors Than Multijoint Exercise. J Strength Cond Res. 2021;35(10):2677-2681. doi:10.1519/jsc.0000000000003234",
+     "url": "https://europepmc.org/article/MED/31268995"
+    },
+    {
+     "citation": "Barbalho M, Coswig V, Raiol R, et al. Single joint exercises do not provide benefits in performance and anthropometric changes in recreational bodybuilders. Eur J Sport Sci. 2020;20(1):72-79 (RETRACTED 2022)",
+     "url": "https://europepmc.org/article/MED/31072272",
+     "citeInApp": false,
+     "why": "Retracted; listed only to record why part of the older literature is not used."
+    }
+   ],
+   "evidence": "Gentil 2015 (Europe PMC REST, PMID 26446291, PMC4592763): 29 untrained young men, pulldown group n=14 vs curl group n=15, 10 weeks, ultrasound. Muscle thickness rose 6.10% vs 5.83%, no group difference. Mannarino 2021 (PMID 31268995, JSCR 35:2677-81): 10 untrained men, one arm did dumbbell rows and the other curls, 8 weeks, ultrasound. Curls 11.06% vs rows 5.16% (p=0.009), about 2.1 times. Barbalho EJSS 2020 (PMID 31072272) is tagged 'Retracted Publication' (notice Eur J Sport Sci 2022;22(11):1795). A Europe PMC search for retracted Barbalho papers also lists 'Influence of Adding Single-Joint Exercise to a Multijoint Resistance Training Program in Untrained Young Women' (JSCR 2020, PMID 29781936), so 'two retracted Barbalho papers' holds. Both growth studies are small and in untrained men, as the grade note says.",
+   "showOn": [
+    {
+     "exercise": "Lat pulldown",
+     "as": "this"
+    },
+    {
+     "exercise": "One-arm dumbbell row",
+     "as": "this"
+    },
+    {
+     "exercise": "Dumbbell curl",
+     "as": "variation"
+    },
+    {
+     "exercise": "Barbell curl",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "seated-row-elbows",
+   "kind": "exercise",
+   "exercise": "Seated cable row",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In seated rows, a narrower grip and keeping the elbows closer to the body were each linked to higher lat activity, though they were tested separately.",
+   "sources": [
+    {
+     "citation": "Di Fonza D, Di Claudio G, Colantuono G, et al. J Funct Morphol Kinesiol. 2026;11(3):315. doi:10.3390/jfmk11030315",
+     "url": "https://europepmc.org/article/MED/42647355"
+    }
+   ],
+   "evidence": "Di Fonza 2026 abstract (Europe PMC REST, PMID 42647355): 'a narrower grip and a lower shoulder-abduction angle were each associated with greater LD amplitude in separate studies; these two variables have not been tested in combination and should not be read as a single validated configuration.' Full text (PMC13510307): the grip finding is Padovan 2025 (n=14 resistance-trained men, HD-sEMG) and the shoulder-angle finding is de Abreu Vasconcelos 2023 (n=21, 11 men and 10 women). 'Elbows closer to the body' is a fair plain reading of a lower shoulder-abduction angle. Each result comes from one small EMG study.",
+   "showOn": [
+    {
+     "exercise": "Seated cable row",
+     "as": "this"
+    },
+    {
+     "exercise": "Wide-grip seated cable row",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "pullup-grip",
+   "kind": "exercise",
+   "exercise": "Pull-up / chin-up",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In small EMG studies, changing pull-up grip made little difference to lat activity (an underhand grip mainly added biceps activity), so grip can reasonably be chosen for comfort, though that last part is advice, not a tested finding.",
+   "sources": [
+    {
+     "citation": "Di Fonza D, Di Claudio G, Colantuono G, et al. J Funct Morphol Kinesiol. 2026;11(3):315. doi:10.3390/jfmk11030315",
+     "url": "https://europepmc.org/article/MED/42647355"
+    }
+   ],
+   "evidence": "Di Fonza 2026 abstract (PMID 42647355): 'Pull-up variations showed broadly similar LD activation across grip configurations.' Full text (PMC13510307) lists 4 studies, about 84 people: Youdas 2010 (n=25, underhand grip gave more biceps, overhand more lower trapezius), Raizada and Bagchi 2019 (n=10, slight lat reduction with wider overhand grips), Dickie 2017 (n=19, broadly comparable), and Escalante 2015 (n=30). The review says grip changes timing and share of work 'more than it alters total neuromuscular demand'. The EMG part holds. The sentence overstates by writing the comfort advice as if it followed from the data, when nobody tested it.",
+   "showOn": [
+    {
+     "exercise": "Pull-up",
+     "as": "this"
+    },
+    {
+     "exercise": "Chin-up",
+     "as": "this"
+    },
+    {
+     "exercise": "Wide-grip pull-up",
+     "as": "this"
+    },
+    {
+     "exercise": "Neutral-grip pull-up",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "overhead-press-anatomy",
+   "kind": "exercise",
+   "exercise": "Overhead press",
+   "verdict": "overstated",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The overhead press works the front delts, side delts and triceps, with the upper chest helping more when pressing in front and the side and rear delts more when pressing behind the neck; the upper traps help rotate the shoulder blades.",
+   "sources": [
+    {
+     "citation": "Coratella G, et al. Front Physiol. 2022. doi:10.3389/fphys.2022.825880",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9354811/",
+     "addedFromVerification": true
+    }
+   ],
+   "evidence": "No source was given (reasoning only). I opened Coratella 2022, Front Physiol, doi:10.3389/fphys.2022.825880 (PMC9354811, full text via Europe PMC): 8 competitive bodybuilders, EMG. Medial and posterior delts were more active in behind-the-neck presses, and pectoralis major in front presses. I also opened Saeterbakken and Fimland 2013 (JSCR, PMID 23096062, 15 men), which measured anterior, medial and posterior delts, biceps and triceps across press variations. Neither study ranks the side delt as a minor helper. I could not pull absolute EMG levels from the figures, so the 'mainly front delts, side delts assisting' ranking is unconfirmed. Joint-action reasoning (shoulder flexion plus abduction) makes the side delt a major contributor, not an assistant, and the claim leaves out the upper chest.",
+   "showOn": [
+    {
+     "exercise": "Barbell overhead press",
+     "as": "this"
+    },
+    {
+     "exercise": "Seated barbell military press",
+     "as": "this"
+    },
+    {
+     "exercise": "Dumbbell shoulder press",
+     "as": "variation"
+    },
+    {
+     "exercise": "Machine shoulder press",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "lateral-raise-cable-vs-dumbbell",
+   "kind": "exercise",
+   "exercise": "Lateral raise",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: cable and dumbbell lateral raises grew the side delts by similar amounts in trained lifters, even though cables keep more tension at the bottom.",
+   "sources": [
+    {
+     "citation": "Larsen S, Wolf M, Schoenfeld BJ, et al. Dumbbell versus cable lateral raises for lateral deltoid hypertrophy: an experimental study. Front Physiol. 2025;16:1611468. doi:10.3389/fphys.2025.1611468",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12277279/"
+    }
+   ],
+   "evidence": "Opened PMC12277279 (Larsen et al., Front Physiol 2025, doi:10.3389/fphys.2025.1611468). 26 randomized, 24 completed (16 men, 8 women), resistance-trained (about 7.1 years), one arm per method, 8 weeks, 16 sessions, B-mode ultrasound at 2 sites. Cable +3.3–4.6%, dumbbell +3.4–3.9%. Bayes factors were 0.22 and 0.27 (moderate support for no difference), and the multivariate BF was below 0.01. The authors list as limitations the short duration and ultrasound error (about 0.4 mm) that is large next to the 0.5–1 mm changes. 'Similar' is slightly more exact than 'equally', but the grade note already covers this.",
+   "showOn": [
+    {
+     "exercise": "Dumbbell lateral raise",
+     "as": "this"
+    },
+    {
+     "exercise": "Cable lateral raise",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "curl-stretched-range",
+   "kind": "exercise",
+   "exercise": "Biceps curl",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Preacher curls done only in the straight-arm part of the movement (0–50°) grew the upper-arm flexors about 2.6 times more than curls done only in the bent-arm part (80–130°), in untrained adults over 5 weeks.",
+   "sources": [
+    {
+     "citation": "Sato S, Yoshida R, Kiyono R, et al. Elbow Joint Angles in Elbow Flexor Unilateral Resistance Exercise Training Determine Its Effects on Muscle Strength and Thickness of Trained and Non-trained Arms. Front Physiol. 2021;12:734509. doi:10.3389/fphys.2021.734509",
+     "url": "https://europepmc.org/article/MED/34616309"
+    },
+    {
+     "citation": "Zabaleta-Korta A, Fernández-Peña E, Torres-Unda J, et al. Regional Hypertrophy: The Effect of Exercises at Long and Short Muscle Lengths in Recreationally Trained Women. J Hum Kinet. 2023;87:259-270. doi:10.5114/jhk/163561",
+     "url": "https://europepmc.org/article/MED/37559762"
+    }
+   ],
+   "evidence": "Sato 2021 (Europe PMC REST, PMID 34616309, PMC8489980; full text opened): 32 untrained adults (19 men, 13 women), EXT n=12, FLE n=12, control n=8. Dumbbell on a preacher bench, 3x10, 5 weeks, ultrasound. Averaged biceps plus brachialis thickness grew 8.9% vs 3.4% (p<0.05); load normalized to strength did not differ. The numbers are right. 'Loaded near the straight-arm end' hides that both groups did partial-range reps, and 'curls' in general stretches one preacher-bench protocol. Zabaleta-Korta 2023 (PMID 37559762, J Hum Kinet 87:259-70): 38 recreationally trained women, 9 weeks, incline vs preacher curls. Only the preacher group's 70% site grew, with no group, region or group-by-region difference (p=0.274, 0.571, 0.367), as the grade note says.",
+   "showOn": [
+    {
+     "exercise": "Preacher curl",
+     "as": "this"
+    },
+    {
+     "exercise": "Machine preacher curl",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "preacher-curl-partials-trained",
+   "kind": "exercise",
+   "exercise": "Preacher curl",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "In trained lifters, preacher curls done only in the bottom, stretched half grew the arm about as much as full-range preacher curls, with at most a small edge near the elbow.",
+   "sources": [
+    {
+     "citation": "Havers T, Wagner N, Held S, Geisler S, Wiewelhove T. Partial Range, Full Gains? The Effect of 8 Weeks of Partial Range of Motion Training at Long Muscle Lengths on Elbow Flexor Hypertrophy and Strength in Trained Individuals. Eur J Sport Sci. 2025;25(12):e70087. doi:10.1002/ejsc.70087",
+     "url": "https://europepmc.org/article/MED/41247250"
+    }
+   ],
+   "evidence": "Havers 2025, Eur J Sport Sci 25(12):e70087 (Europe PMC REST, PMID 41247250, PMC12621570): 13 resistance-trained people (11 men, 2 women), one arm per method, unilateral preacher curls, 0–70° partial vs 0–140° full range, 8 weeks. Thickness at 50% was similar. At 70%, the partial reps had a 'trivial to small superiority' (SMD 0.10, BF 4.87). Strength and 1RM leaned slightly toward full range. Very small sample, as the grade note says.",
+   "showOn": [
+    {
+     "exercise": "Preacher curl",
+     "as": "this"
+    },
+    {
+     "exercise": "Machine preacher curl",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "behind-body-curl-myth",
+   "kind": "exercise",
+   "exercise": "Cable curl",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: curling with the arm pulled back behind the body did not grow the biceps more than a normal cable curl when range and resistance were matched.",
+   "sources": [
+    {
+     "citation": "Larsen S, Sandvik Kristiansen B, Østerås Sandberg N, et al. The effects of shoulder extension angle on elbow flexor hypertrophy in the cable curl exercise. Front Physiol. 2026;17:1750722. doi:10.3389/fphys.2026.1750722",
+     "url": "https://europepmc.org/article/MED/41988507"
+    }
+   ],
+   "evidence": "Larsen 2026, Front Physiol 17:1750722 (Europe PMC REST, PMID 41988507, PMC13076143): 30 untrained men enrolled, 24 completed, one arm at peak shoulder extension and one neutral, resistance profile and elbow range matched, 6–8 weekly sets to failure, 10 weeks, ultrasound at 50% and 70%. Both grew about 7–9%. The average treatment effect sat near zero with credible intervals crossing zero, and Bayes factors showed 'anecdotal to moderate evidence in favor of the null'. Untrained men only.",
+   "showOn": [
+    {
+     "exercise": "Cable curl",
+     "as": "this"
+    }
+   ]
+  },
+  {
+   "id": "curl-mind-muscle",
+   "kind": "exercise",
+   "exercise": "Biceps curl",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Focusing on squeezing the biceps grew the arm more (12.4% vs 6.9%) than focusing on just lifting the weight, but the same trick made no difference for the thighs.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ, Vigotsky A, Contreras B, et al. Differential effects of attentional focus strategies during long-term resistance training. Eur J Sport Sci. 2018;18(5):705-712. doi:10.1080/17461391.2018.1447020",
+     "url": "https://europepmc.org/article/MED/29533715"
+    }
+   ],
+   "evidence": "Schoenfeld 2018, Eur J Sport Sci 18(5):705-12 (Europe PMC REST, PMID 29533715): 30 untrained college-aged men randomized to an internal focus (contracting the target muscle, n=15) or an external focus (lift outcome, n=15), 3 sessions a week for 8 weeks, ultrasound. Elbow flexor thickness rose significantly more with internal focus (12.4% vs 6.9%); 'similar changes were noted in quadriceps thickness.' One small study in untrained men.",
+   "showOn": [
+    {
+     "exercise": "Barbell curl",
+     "as": "variation"
+    },
+    {
+     "exercise": "Dumbbell curl",
+     "as": "variation"
+    }
+   ],
+   "note": "The exact curl variety used in the study was not checked, so it attaches as 'tested on a similar exercise'."
+  },
+  {
+   "id": "overhead-triceps-growth",
+   "kind": "exercise",
+   "exercise": "Overhead triceps extension",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Overhead cable triceps extensions grew the whole triceps about 1.4 times more than pushdowns (about 20% vs 14%), even though lighter weights were used.",
+   "sources": [
+    {
+     "citation": "Maeo S, Wu Y, Huang M, et al. Triceps brachii hypertrophy is substantially greater after elbow extension training performed in the overhead versus neutral arm position. Eur J Sport Sci. 2023;23(7):1240-1250. doi:10.1080/17461391.2022.2100279",
+     "url": "https://europepmc.org/article/MED/35819335"
+    }
+   ],
+   "evidence": "Maeo 2023, Eur J Sport Sci 23(7):1240-50 (Europe PMC REST, PMID 35819335): 21 adults, cable elbow extension (90–0°), one arm overhead and one neutral, 70% 1RM, 5x10, twice a week for 12 weeks, MRI muscle volume. Whole triceps +19.9% vs +13.9% (1.4-fold, d=0.54); long head +28.5% vs +19.6%; loads were 34–39% lower overhead. A secondary search (Stronger by Science, BarBend) describes the neutral-arm condition as cable pushdowns in 14 men and 7 women. I did not open the full text for that detail. One study.",
+   "showOn": [
+    {
+     "exercise": "Cable overhead triceps extension",
+     "as": "this"
+    },
+    {
+     "exercise": "Triceps pushdown",
+     "as": "this"
+    },
+    {
+     "exercise": "Overhead triceps extension",
+     "as": "variation"
+    },
+    {
+     "exercise": "Rope triceps pushdown",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "pushdown-lateral-head-myth",
+   "kind": "exercise",
+   "exercise": "Triceps pushdown",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Myth check: overhead extensions did not just grow the long head, because the lateral and medial heads that pushdowns supposedly target also grew more with overhead work.",
+   "sources": [
+    {
+     "citation": "Maeo S, Wu Y, Huang M, et al. Eur J Sport Sci. 2023;23(7):1240-1250. doi:10.1080/17461391.2022.2100279",
+     "url": "https://europepmc.org/article/MED/35819335"
+    }
+   ],
+   "evidence": "Same Maeo 2023 abstract (PMID 35819335): the one-joint lateral plus medial heads grew 1.4-fold more with overhead work (+14.6% vs +10.5%, d=0.39, P=0.002). The abstract says only the two-joint long head is lengthened more overhead, so the one-joint heads' extra growth is not explained by stretch. One study.",
+   "showOn": [
+    {
+     "exercise": "Triceps pushdown",
+     "as": "this"
+    },
+    {
+     "exercise": "Cable overhead triceps extension",
+     "as": "this"
+    },
+    {
+     "exercise": "Rope triceps pushdown",
+     "as": "variation"
+    },
+    {
+     "exercise": "Overhead triceps extension",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "skull-crusher-anatomy",
+   "kind": "exercise",
+   "exercise": "Lying triceps extension (skull crusher)",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Lying triceps extensions put the upper arm partway overhead, which stretches the triceps long head more than a pushdown but less than a full overhead extension.",
+   "sources": [
+    {
+     "citation": "Maeo S, Wu Y, Huang M, et al. Eur J Sport Sci. 2023;23(7):1240-1250 (mechanism only). doi:10.1080/17461391.2022.2100279",
+     "url": "https://europepmc.org/article/MED/35819335"
+    }
+   ],
+   "evidence": "The Maeo 2023 abstract (PMID 35819335) confirms the mechanism: 'The biarticular triceps brachii long head (TBLong) is lengthened more in the overhead than neutral arm position.' The long head crosses the shoulder, so its length rises with shoulder flexion: about 0° in a pushdown, about 90° or more in a lying extension, near full flexion overhead. The in-between placement follows from anatomy, but no study of the skull crusher itself was found or opened, so C is correct and it should not be presented as tested.",
+   "showOn": [
+    {
+     "exercise": "Skullcrusher",
+     "as": "this"
+    }
+   ],
+   "rangePanel": {
+    "exercise": "Skullcrusher",
+    "track": "length",
+    "zone": "middle"
+   }
+  },
+  {
+   "id": "lunge-emg",
+   "kind": "exercise",
+   "exercise": "Lunge / split squat",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In barbell-loaded single-leg squats, forward lunges and lateral step-ups, two of the front-thigh muscles (vastus lateralis and medialis) showed the most activity, followed by the side and main glutes, while the rectus femoris front-thigh muscle ranked below the glutes.",
+   "sources": [
+    {
+     "citation": "Muyor JM, Martín-Fuentes I, Rodríguez-Ridao D, Antequera-Vique JA. Electromyographic activity in the gluteus medius, gluteus maximus, biceps femoris, vastus lateralis, vastus medialis and rectus femoris during the Monopodal Squat, Forward Lunge and Lateral Step-Up exercises. PLoS One. 2020;15(4):e0230841. doi:10.1371/journal.pone.0230841",
+     "url": "https://europepmc.org/article/MED/32236133"
+    }
+   ],
+   "evidence": "Muyor 2020, PLoS One 15(4):e0230841 (Europe PMC REST, PMID 32236133; full text PMC7112217 opened): 20 physically active adults (10 men, 10 women), 5 reps at 60% of 5RM. The load was a barbell on the shoulders (20 kg bar plus plates), not bodyweight, so the grade note's 'bodyweight-style loads' is wrong. The step-up was lateral. Abstract: 'vastus lateralis and vastus medialis showed the highest EMG activity, followed by gluteus medius and gluteus maximus'; full text adds 'and, finally, for the rectus femoris'. 'Front-thigh muscles' overstates, since one front-thigh muscle ranked last. The single-leg squat was higher in all muscles except rectus femoris. EMG only.",
+   "showOn": [
+    {
+     "exercise": "Barbell lunge",
+     "as": "this"
+    },
+    {
+     "exercise": "Dumbbell lunge",
+     "as": "variation"
+    },
+    {
+     "exercise": "Walking lunge",
+     "as": "variation"
+    },
+    {
+     "exercise": "Reverse lunge",
+     "as": "variation"
+    },
+    {
+     "exercise": "Step-up",
+     "as": "variation"
+    }
+   ]
+  },
+  {
+   "id": "lengthened-partials-general",
+   "kind": "exercise",
+   "exercise": "All exercises (range of motion)",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Half reps done in the stretched part of a lift grew muscle about as well as full reps, not clearly better, so full range that includes the stretch is a safe default.",
+   "sources": [
+    {
+     "citation": "Wolf M, Androulakis-Korakakis P, Fisher J, Schoenfeld B, Steele J. Partial vs full range of motion resistance training: A systematic review and meta-analysis. Int J Strength Cond. 2023;3(1). doi:10.47206/ijsc.v3i1.182",
+     "url": "https://journal.iusca.org/index.php/Journal/article/view/182"
+    },
+    {
+     "citation": "Wolf M, Androulakis Korakakis P, Piñero A, et al. Lengthened partial repetitions elicit similar muscular adaptations as full range of motion repetitions during resistance training in trained individuals. PeerJ. 2025;13:e18904. doi:10.7717/peerj.18904",
+     "url": "https://europepmc.org/article/MED/39959841"
+    }
+   ],
+   "evidence": "Wolf 2023, Int J Strength Cond 3(1), doi:10.47206/ijsc.v3i1.182 (journal page opened): overall 'a trivial SMD (0.12; 95% CI: -0.02, 0.26) in favour of full ROM'. Lengthened partials vs full range for hypertrophy: -0.28 (95% CI -0.81, 0.16), so the interval crosses zero. Wolf 2025, PeerJ 13:e18904 (Europe PMC REST, PMID 39959841, PMC11829627): 30 resistance-trained people, one limb per method, 8-week upper-body program, ultrasound of elbow flexors and extensors only. Results were similar, with Bayes factors 0.16–0.3 (moderate support for no difference). 'Safe default' is interpretation, as the grade note says. Direct growth evidence for stretched partials in trained lifters covers only the upper arm.",
+   "showOn": [
+    {
+     "help": "science"
+    }
+   ],
+   "caveat": "The closing words 'so full range that includes the stretch is a safe default' are interpretation, not a tested finding (the verifier says so). The help sheet must print the line 'The last part is advice, not a test result.' directly under this claim."
+  },
+  {
+   "id": "regional-growth-general",
+   "kind": "exercise",
+   "exercise": "All exercises (which part of a muscle grows)",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Choosing stretched-position versus shortened-position training made only trivial differences to how much the top, middle or bottom of a muscle grew.",
+   "sources": [
+    {
+     "citation": "Varovic D, Wolf M, Schoenfeld BJ, Steele J, Grgic J, Mikulic P. Does Muscle Length Influence Regional Hypertrophy? A Systematic Review and Meta-Analysis. Int J Sports Med. 2025;46(14):1027-1036. doi:10.1055/a-2615-4935",
+     "url": "https://europepmc.org/article/MED/40570881"
+    }
+   ],
+   "evidence": "Varovic 2025, Int J Sports Med 46(14):1027-36 (Europe PMC REST, PMID 40570881): Bayesian meta-analysis of 12 studies in young adults. Trivial effects of longer vs shorter muscle-length training at the proximal (SMD 0.05), mid (0.07) and distal (0.09) sites, with 'an increasing trend from proximal to distal' and a high share within practical equivalence. The authors caution that the conditions differed by only about 21.8% mean muscle length. The wording is a small clarification: the analysis compared growth at each site, not a change in which part grows.",
+   "showOn": [
+    {
+     "help": "science"
+    }
+   ]
+  },
+  {
+   "id": "E1",
+   "kind": "training",
+   "topic": "e1RM formulas",
+   "verdict": "overstated",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Mayhew 2008 reviewed 14 published 1RM equations and said most of them give no evidence of who they were built from or how they were fitted; it does not say this about Epley or Brzycki by name, and it credits the w*(1+0.0333*r) form to Welday 1988, not Epley. Treat both as working conventions whose origin I have not checked.",
+   "sources": [
+    {
+     "citation": "Mayhew JL et al. J Strength Cond Res 2008;22(5):1570-1577",
+     "url": "https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf"
+    }
+   ],
+   "evidence": "Opened full PDF (https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf), Mayhew JL, Johnson BD, LaMonte MJ, Lauber D, Kemmler W. JSCR 2008;22(5):1570-1577. Methods: 'Most of the prediction equations gave no evidence of the population used to develop the equations or how they were derived statistically.' Table 2 lists Brzycki (7) = RepWt/(1.0278-0.0278 RTF) and 'Welday (35)' = (RTF x 0.0333) RepWt + RepWt; Epley is not cited anywhere. The sentence does not single out which equations lack a sample, so applying it to Epley and Brzycki specifically is an inference. Epley 1985 and Brzycki 1993 originals not opened.",
+   "appUse": "info:estimated-max"
+  },
+  {
+   "id": "E2",
+   "kind": "training",
+   "topic": "e1RM accuracy by rep count",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "1RM estimates are more accurate from lower rep counts. In 70 adults (34 men, 36 women, aged 18-69), the fit was R^2 = 0.974 (leg press) and 0.993 (chest press) from a 5RM, dropping at 10RM and 20RM, and the authors advise no more than 10 reps. In 103 mostly untrained college women benching, Mayhew 2008 found predictions were more accurate below 10 reps to fatigue. A 2025 study in about 40 recreationally active men, tested only at 80% 1RM, recommended its two chosen equations for loads giving 4-10 reps to failure; it did not compare rep ranges.",
+   "sources": [
+    {
+     "citation": "Reynolds JM et al. J Strength Cond Res 2006;20(3):584-592",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Prediction%20of%20one%20repetition%20maximum%20strength%20from%20multiple%20repetition%20maximum%20testing%20and%20anthropometry%22&resultType=core&format=json"
+    },
+    {
+     "citation": "Mayhew JL et al. J Strength Cond Res 2008;22(5):1570-1577",
+     "url": "https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf"
+    },
+    {
+     "citation": "Cross-validation of equations for estimating 1RM from repetitions to failure for the bench press and leg extension. J Strength Cond Res 2025;39(2):e96-e105",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Cross-Validation%20of%20Equations%20for%20Estimating%201%20Repetition%20Maximum%20From%20Repetitions%20to%20Failure%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Reynolds JM, Gordon TJ, Robergs RA. JSCR 2006;20(3):584-592, PMID 16937972 (Europe PMC abstract, URL as cited): 70 subjects (34 men, 36 women, 18-69 y); LP R^2 0.974/0.933/0.915 and CP 0.993/0.976/0.955 for 5/10/20RM; 'no more than 10 repetitions should be used in linear equations'. Mayhew 2008 PDF (https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf): n=103 college women, limited training history; 'The accuracy of these predictions appears to be enhanced if fewer than 10 RTF are used.' Roberts TD et al. JSCR 2025;39(2):e96-e105, PMID 39495260 (Europe PMC): 43 (LE) and 39 (BP) recreationally active men, RTF at 80% 1RM only, 18 equations; recommends 'BP 1RM = (RTF^0.1 x weight) + 1.49 ... using weights that result in 4-10 RTF'. The 4-10 range is a condition on their recommended equations, not a tested comparison.",
+   "appUse": "info:estimated-max"
+  },
+  {
+   "id": "E3",
+   "kind": "training",
+   "topic": "Reps at %1RM vary by exercise and person",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Nuzzo's meta-regression (269 studies, 7,289 people, 952 tests) found more reps in the leg press than the bench press at every load. At 70% 1RM the general model gives about 15 reps against 11 in the textbook table; bench about 14, leg press about 19. The spread between people is about 2.51 reps at 80% and 4.36 at 60%, so it grows as the load gets lighter.",
+   "sources": [
+    {
+     "citation": "Nuzzo JL et al. Maximal number of repetitions at percentages of the one repetition maximum: a meta-regression and moderator analysis. Sports Med 2024;54(2):303-321",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10933212/"
+    }
+   ],
+   "evidence": "Nuzzo JL, Pinto MD, Nosaka K, Steele J. Sports Med 2024;54(2):303-321 (https://pmc.ncbi.nlm.nih.gov/articles/PMC10933212/, full text opened): '952 repetitions-to-failure tests, completed by 7289 individuals in 452 groups from 269 studies'; 'greater mean repetitions completed in the leg press than bench press across the spectrum of relative loads'; LP 70% = 19.0 [14.2-25.5], BP 70% = 14.1 [12.4-16.1]; 'in Table 1, estimates at 90% and 70% 1RM are 4 and 11 ... In Fig. 2 ... ~5 and ~15'; 'at 80% 1RM ... SD ... is 2.51 repetitions, whereas at 60% 1RM ... 4.36'. Groups were 66% male, 60% resistance trained.",
+   "appUse": "info:estimated-max"
+  },
+  {
+   "id": "E4",
+   "kind": "training",
+   "topic": "Generic equations overestimate high-rep and leg-press sets",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Putting Nuzzo's average reps into the equations: bench at 80% with about 9 reps gives Epley 1.04x and Brzycki 1.03x the true 1RM; leg press at 70% with about 19 reps gives 1.14x and 1.40x. So a generic equation with no rep cap or exercise correction will inflate leg-press and high-rep estimates for the average person. The multipliers are approximate, and the leg-press rep estimate itself has a wide range (14-26 reps at 70%).",
+   "sources": [
+    {
+     "citation": "Nuzzo JL et al. Sports Med 2024;54(2):303-321",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10933212/"
+    }
+   ],
+   "evidence": "Arithmetic checked in a scratch script: 0.8*(1+9/30)=1.040, 0.8*36/28=1.029 (with the exact 8.8 reps: 1.035 and 1.021); 0.7*(1+19/30)=1.143, 0.7*36/18=1.400. Inputs from Nuzzo 2024 (https://pmc.ncbi.nlm.nih.gov/articles/PMC10933212/): BP 80% = 8.8 reps, LP 70% = 19.0 reps [95% CI 14.2-25.5]. The CI means the leg-press multiplier could be anywhere from about 1.03 to 1.30 for Epley.",
+   "appUse": "info:estimated-max"
+  },
+  {
+   "id": "R1",
+   "kind": "training",
+   "topic": "RIR-based RPE scale",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "On the RIR-based RPE scale, RPE 10 = 0 reps in reserve, 9 = 1, 8 = 2, 7 = 3, 5-6 = 4-6, and RIR ratings are recommended mainly for sets at RPE 7-10. In one study experienced squatters rated true 1RMs closer to 10 than novices (9.80 vs 8.96), and ratings tracked bar speed more closely in experienced lifters (r = -0.88 vs -0.77). In 15 powerlifters, RPE at 1RM was 9.6-9.7 and %1RM correlated with RPE at r = 0.88-0.91.",
+   "sources": [
+    {
+     "citation": "Helms ER et al. Application of the RIR-based RPE scale for resistance training. Strength Cond J 2016",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/"
+    },
+    {
+     "citation": "Helms ER et al. RPE and velocity relationships for the back squat, bench press, and deadlift in powerlifters. J Strength Cond Res 2017;31(2):292-297",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22RPE%20and%20Velocity%20Relationships%20for%20the%20Back%20Squat,%20Bench%20Press,%20and%20Deadlift%20in%20Powerlifters%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Helms ER, Cronin J, Storey A, Zourdos MC. Strength Cond J 2016 (https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/, full text): scale mapping as stated; 'RIR scores should primarily be used for training goals that require sets to be completed near, or a few repetitions short of volitional failure (RPE 7-10)'; reporting Zourdos et al.: '9.80 +/- 0.18 versus 8.96 +/- 0.43, p = 0.023' and 'r = -0.88 versus r = -0.77'. Helms ER et al. JSCR 2017;31(2):292-297, PMID 27243918 (Europe PMC): 15 powerlifters (12 men, 3 women); RPE at 1RM 9.6 +/- 0.5 squat, 9.7 +/- 0.4 bench, 9.6 +/- 0.5 deadlift; %1RM-RPE r = 0.88-0.91.",
+   "appUse": "info:effort"
+  },
+  {
+   "id": "R2",
+   "kind": "training",
+   "topic": "How self-reported RIR accuracy degrades",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "On average people think they have fewer reps left than they really do, by about 0.95 reps (95% CI 0.17-1.73), but results vary hugely between studies. Accuracy was clearly worse in sets longer than 12 reps. Being closer to failure and being in a later set helped only slightly (the closer-to-failure effect was not clearly different from zero). Training status made no difference.",
+   "sources": [
+    {
+     "citation": "Halperin I et al. Sports Med 2022;52(2):377-390",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Accuracy%20in%20Predicting%20Repetitions%20to%20Task%20Failure%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Halperin I et al. Sports Med 2022;52(2):377-390, PMID 34542869 (Europe PMC abstract): 12 studies, 414 participants; underprediction 0.95 (95% CI 0.17-1.73), I^2 = 97.9%; 'prediction accuracy slightly improved when the predictions were made closer to set failure (beta = -0.025, 95% CI -0.05 to 0.0014)' (CI crosses zero); <=12 reps beta 0.06 vs >12 reps beta 0.47; 'Set number trivially influenced prediction accuracy'; training status beta -0.006 (CI -0.02 to 0.007). The original said predictions were 'more accurate' closer to failure and in later sets without saying how small and uncertain those effects were.",
+   "appUse": "info:effort"
+  },
+  {
+   "id": "R4",
+   "kind": "training",
+   "topic": "RPE-based loading works",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Over 8 weeks in 21 trained men, RPE-based and %1RM-based loading with matched sets and reps both increased strength and muscle thickness, with no significant differences. A magnitude-based analysis (a method since criticised) gave 79% (squat), 57% (bench) and 72% (total) chances of a small advantage for RPE loading. Load was adjusted 2% per 0.5 RPE outside the target range.",
+   "sources": [
+    {
+     "citation": "Helms ER et al. Front Physiol 2018;9:247",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5877330/"
+    }
+   ],
+   "evidence": "Helms ER et al. Front Physiol 2018;9:247 (https://pmc.ncbi.nlm.nih.gov/articles/PMC5877330/, full text): 1RMG n=11, RPEG n=10; 'Between-group differences were non-significant (p > 0.05). Magnitude-based inferences revealed 79, 57, and 72% chances of mean small effect size (ES) advantages'; bench had a 14% chance of the opposite effect; 'For every 0.5 RPE above or below the upper or lower RPE threshold, respectively, load was decreased or increased by 2%'. 'Probable' overstates the bench result (57%).",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "V1",
+   "kind": "training",
+   "topic": "Fractional set counting fits best",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Counting indirect (helper-muscle) sets as 0.5 predicted muscle growth and strength better than counting them as 1 or 0. Across 67 studies and 2,058 people, every Bayes factor favoured the half-set count, e.g. 2 x log(BF) = 9.48 against counting them fully and 10.29 against ignoring them, for volume and growth.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, section 4.4",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    },
+    {
+     "citation": "Pelland JC et al. Sports Med 2026;56(2):481-505 (abstract)",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=DOI:10.1007/s40279-025-02344-w&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Pelland JC et al. SportRxiv preprint Sept 2024 (https://sportrxiv.org/index.php/server/preprint/download/460/967, full PDF extracted), section 4.4: 'Regarding weekly set volume for muscle hypertrophy, there was strong evidence that fractional outperforms total (2 x Log(BF) = 9.48) and very strong evidence that fractional outperforms direct (2 x Log(BF) = 10.29)'; section 5.1: 'All Bayes Factors ... favored the models for the fractional quantification method.' Published abstract (Sports Med 2026;56(2):481-505, PMID 41343037, Europe PMC): 67 studies, 2058 participants; 'The relative evidence for the fractional quantification method was strongest'.",
+   "appUse": "info:weekly-sets"
+  },
+  {
+   "id": "V2",
+   "kind": "training",
+   "topic": "The 0.5 weight itself is an assumption",
+   "verdict": "overstated",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The 0.5 weight was picked, not estimated; the authors say the method assumes every indirect set is worth half a set, and only 0, 0.5 and 1 were compared. Sorting sets into direct and indirect was 'not wholly objective'. In their table, rows and pulldowns were indirect for biceps; bench and overhead presses were indirect for triceps; bench and chest press were indirect for front delts (shoulder press was direct); squats and leg press were indirect for rectus femoris; pulldowns and rows were the only (indirect) sets for traps; hamstrings had only leg curls (direct) and nothing indirect.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, section 2.4, Table 1A, section 5.1",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967): section 2.4 'This process was not wholly objective'; section 5.1 'the fractional quantification method suffers from the assumption that all indirect training should be quantified as half a set'. Table 1A: Anterior Deltoid direct = 'Barbell Shoulder Press, Barbell Shoulder Front Raise', indirect = 'Bench Press, Chest Press, Barbell Close Grip Press On Bench'. So 'presses were indirect for front delts' is wrong for the shoulder press. Other rows (biceps, triceps, rectus femoris, trapezius, hamstrings) match the claim.",
+   "appUse": "info:weekly-sets"
+  },
+  {
+   "id": "V3",
+   "kind": "training",
+   "topic": "Weekly volume and hypertrophy",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "More weekly sets gave more muscle growth, with diminishing returns and no clear plateau. A square-root curve fit best; the slope was 0.24% per set (CrI 0.15-0.33) at about 12 sets. Efficiency bands (preprint): 4 minimum; 5-10 higher; 11-18 intermediate; 19-29 lower; 30-42 lowest; 43+ unclear. Few studies went past about 25 sets, and at high volumes the data also fit a plateau. Schoenfeld 2017 found 0.37% per extra set, and ACSM 2026 says growth is better with at least 10 sets a week.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, section 4.6.1, Table 2A",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    },
+    {
+     "citation": "Schoenfeld BJ, Ogborn D, Krieger JW. Dose-response relationship between weekly resistance training volume and increases in muscle mass. J Sports Sci 2017;35(11):1073-1082",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Dose-response%20relationship%20between%20weekly%20resistance%20training%20volume%20and%20increases%20in%20muscle%20mass%22&resultType=core&format=json"
+    },
+    {
+     "citation": "Currier BS et al. ACSM Position Stand. Med Sci Sports Exerc 2026;58(4):851-872",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:41843416%20AND%20SRC:MED&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 4.6.1: 35 studies, 220 effects, 1,032 participants; 'square root model was the best fit'; beta = 0.24% [0.15, 0.33]; 5.4: 'at the average fractional weekly volume of 12.25 sets'; 'no clear plateau'; 'few studies have explored ~25+ fractional weekly sets'; 'still compatible with multiple functional forms (e.g., functional plateau, inverted-U)'. Table 2A tiers as stated. Schoenfeld BJ, Ogborn D, Krieger JW. J Sports Sci 2017;35(11):1073-1082, PMID 27433992: 'increase in the percentage gain by 0.37%' (15 studies). Currier BS et al. MSSE 2026;58(4):851-872, PMID 41843416: 'Muscle hypertrophy was enhanced by higher volumes (>=10 sets/wk)'.",
+   "appUse": "info:weekly-sets"
+  },
+  {
+   "id": "V4",
+   "kind": "training",
+   "topic": "Weekly volume and strength",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "For strength on the tested lift, returns fall off sharply with more sets. One fractional set a week already gave a detectable gain, extra detectable gains continued up to about 4 sets, and beyond that extra sets did not reliably add another 3.96% (the smallest gain the analysis could detect); smaller extra gains may still occur. Many participants were new to the strength test, so the learning effect may inflate the benefit of the first set.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, sections 4.6.2, 5.5, Table 2B",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 4.6.2: 66 studies, 490 effects, 2,020 participants; 'strong diminishing returns and a functional plateau'. 5.5: 'the estimated effect of one fractional weekly set exceeded the SDES'; 'Additional increments in the SDES were observed up to approximately 4 fractional weekly sets, but not beyond this point. However, the SDES of 3.96% may be greater than what some deem practically relevant; additional sets beyond this point may produce additional strength gains, albeit less than the SDES'; 'many participants ... were presumably performing a novel strength assessment'. Table 2B as stated.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "F1",
+   "kind": "training",
+   "topic": "Frequency and hypertrophy",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "With weekly volume kept equal, training a muscle more often does not meaningfully change growth. Schoenfeld 2019 (25 studies) found no significant difference. Pelland found a 91.3% probability of a positive slope, but the credible interval included zero (0.32% per session, CrI -0.14 to 0.82).",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ, Grgic J, Krieger J. How many times per week should a muscle be trained to maximize muscle hypertrophy? J Sports Sci 2019;37(11):1286-1295",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22How%20many%20times%20per%20week%20should%20a%20muscle%20be%20trained%20to%20maximize%20muscle%20hypertrophy%22&resultType=core&format=json"
+    },
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, section 4.5.1",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    }
+   ],
+   "evidence": "Schoenfeld BJ, Grgic J, Krieger J. J Sports Sci 2019;37(11):1286-1295, PMID 30558493 (Europe PMC abstract): 25 studies; 'no significant difference between higher and lower frequency on a volume-equated basis'. Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 4.5.1: 35 studies, 1,032 participants; '91.3% probability the linear slope is greater than 0 ... (beta = 0.32% [95% CrI: -0.14%, 0.82%])'.",
+   "appUse": "not-in-v1 (it is the reason v1 shows no 'train this muscle more often' nudge)"
+  },
+  {
+   "id": "F2",
+   "kind": "training",
+   "topic": "Frequency and strength",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Pelland found strength gains rise with how often a lift is trained, with diminishing returns: 12.72% at 1 fractional session a week and 17.32% at 2, then flattening. Grgic 2018 found no significant effect of frequency on its own when volume was equal (p = 0.421). ACSM 2026 says strength is better with at least 2 sessions a week.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, sections 4.5.2, 5.3",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    },
+    {
+     "citation": "Grgic J et al. Effect of resistance training frequency on gains in muscular strength. Sports Med 2018;48(5):1207-1220",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Effect%20of%20Resistance%20Training%20Frequency%20on%20Gains%20in%20Muscular%20Strength%22&resultType=core&format=json"
+    },
+    {
+     "citation": "Currier BS et al. ACSM Position Stand 2026",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:41843416%20AND%20SRC:MED&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 5.3: 'fractional frequency of 1 (ES = 12.72% [95% CrI: 10.57%, 15.05%]) to 2 (ES = 17.32% [14.34%, 20.56%]). Beyond this point, accelerating diminishing returns occur'; the authors note this contradicts earlier meta-analyses. Grgic J et al. Sports Med 2018;48(5):1207-1220, PMID 29470825 (Europe PMC abstract): 'A subgroup analysis of volume-equated studies showed no significant effect (p = 0.421)'; 'it remains unclear whether RT frequency on its own has significant effects'. Currier 2026, PMID 41843416: 'voluntary strength was enhanced by ... >=2 sessions/wk'.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "P1",
+   "kind": "training",
+   "topic": "Proximity to failure (continuous)",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Muscle growth rose roughly in a straight line as sets ended closer to failure. Preprint slope: -0.48% muscle-size change per extra rep in reserve (CI -0.78 to -0.18). Strength gains were similar across a wide range of reps in reserve. The reps in reserve were estimated by the authors from study descriptions (e.g. 8 reps with a 10RM load = 2 in reserve), the analysis had no systematic search, and the authors call it exploratory.",
+   "sources": [
+    {
+     "citation": "Robinson ZP et al. Exploring the dose-response relationship between estimated resistance training proximity to failure, strength gain, and muscle hypertrophy. SportRxiv preprint (updated Nov 2023)",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/295/699"
+    },
+    {
+     "citation": "Robinson ZP et al. Sports Med 2024;54(9):2209-2231 (abstract)",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=DOI:10.1007/s40279-024-02069-2&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Robinson ZP et al. SportRxiv preprint, last modified Nov 2023 (https://sportrxiv.org/index.php/server/preprint/download/295/699, full PDF): hypertrophy 26 studies, 140 effects; linear best fit as response ratio, 'beta = -0.48 [95% CI: -0.78, -0.179]'; 'if a group performed sets of 8 repetitions with a 10RM load, then the estimated RIR was 2'; 'This exploratory meta-analysis was performed without a systematic search'; 'the accuracy of these estimations is unknown'; 'Strength gains were similar across a wide range of RIR'. Published: Sports Med 2024;54(9):2209-2231, PMID 38970765 (Europe PMC); abstract keeps the same conclusions.",
+   "appUse": "info:effort"
+  },
+  {
+   "id": "P2",
+   "kind": "training",
+   "topic": "Failure is not required",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Training to momentary failure was not better than stopping short for muscle growth (ES 0.12, p = 0.343). Using any definition of failure there was only a trivial edge (ES 0.19, CI 0.00-0.37). ACSM 2026 says training to momentary fatigue did not consistently change outcomes for healthy adults.",
+   "sources": [
+    {
+     "citation": "Refalo MC et al. Influence of resistance training proximity-to-failure on skeletal muscle hypertrophy. Sports Med 2023;53(3):649-665",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Influence%20of%20Resistance%20Training%20Proximity-to-Failure%20on%20Skeletal%20Muscle%20Hypertrophy%22&resultType=core&format=json"
+    },
+    {
+     "citation": "ACSM 2026 resistance training guidelines update",
+     "url": "https://acsm.org/resistance-training-guidelines-update-2026/"
+    }
+   ],
+   "evidence": "Refalo MC et al. Sports Med 2023;53(3):649-665, PMID 36334240 (Europe PMC abstract, verbatim): 15 studies; 'trivial advantage for resistance training performed to set failure versus non-failure ... [effect size=0.19 (95% CI 0.00, 0.37), p=0.045]'; 'no advantage for ... momentary muscular failure versus non-failure ... [effect size=0.12 (95% CI -0.13, 0.37), p=0.343]'. ACSM page (https://acsm.org/resistance-training-guidelines-update-2026/): 'Training to fatigue or momentary muscle failure...did not consistently impact outcomes for the average healthy adult.' Same in Currier 2026 abstract, PMID 41843416.",
+   "appUse": "info:effort"
+  },
+  {
+   "id": "P3",
+   "kind": "training",
+   "topic": "Hard-set cutoff RIR <= 3",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Counting a set as 'hard' only at 3 or fewer reps in reserve (RPE 7+) is an app convention. It matches the range where RIR ratings are recommended. The volume meta-analyses counted every set regardless of effort, and about 78% of their effects came from protocols with some failure definition (only about 30% clearly meant momentary failure).",
+   "sources": [
+    {
+     "citation": "Helms ER et al. Strength Cond J 2016",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/"
+    },
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, section 4.3",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    }
+   ],
+   "evidence": "Helms 2016 (https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/): RIR scores for 'RPE 7-10'. Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 4.3: '78.47% of effects were categorized as failure training for hypertrophy and 78.12% for strength'; 5.6: 'only ~30% had a clear definition of momentary failure'. No source tests an RIR <= 3 cutoff.",
+   "appUse": "info:weekly-sets"
+  },
+  {
+   "id": "L2",
+   "kind": "training",
+   "topic": "Light loads need high effort (relevant to band and bodyweight work)",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "Similar muscle growth is seen across loads of about 30% 1RM and up; in the one condition at 20% 1RM, gains were about half. High effort matters most with light loads, which also feel more uncomfortable. Moderate loads are the most time-efficient because light loads need many more reps.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ et al. Loading recommendations for muscle strength, hypertrophy, and local endurance: a re-examination of the repetition continuum. Sports 2021;9(2):32",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7927075/"
+    }
+   ],
+   "evidence": "Schoenfeld BJ, Grgic J, Van Every DW, Plotkin DL. Sports 2021;9(2):32 (https://pmc.ncbi.nlm.nih.gov/articles/PMC7927075/), narrative review: 'similar whole muscle growth ... across a wide spectrum of loading ranges >= ~30% 1RM'; 'gains in the 20% 1RM condition were approximately half'; 'high level of effort is particularly critical ... in low-load training'; 'low-loads tends to produce more discomfort'; 'moderate loads provides the most efficient means'.",
+   "appUse": "help:science"
+  },
+  {
+   "id": "T1",
+   "kind": "training",
+   "topic": "Rest intervals",
+   "verdict": "overstated",
+   "originalGrade": "A",
+   "correctGrade": "A",
+   "correctedClaim": "Resting more than 60 s may give a small, uncertain growth benefit over 60 s or less (arm SMD 0.13, 74% probability above zero; thigh 0.17, 88%). The analysis found no clear extra benefit from resting beyond 90 s. The evidence is 9 small studies with 185 participants, 6 of the 9 in untrained people.",
+   "sources": [
+    {
+     "citation": "Singer A et al. Front Sports Act Living 2024;6:1429789",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11349676/"
+    }
+   ],
+   "evidence": "Singer A et al. Front Sports Act Living 2024;6:1429789 (https://pmc.ncbi.nlm.nih.gov/articles/PMC11349676/, full text): arm 0.13 (95% CrI -0.27 to 0.51), thigh 0.17 (-0.13 to 0.43); 'our analysis did not detect appreciable differences in hypertrophy when resting >90 s'; 'Six studies employed untrained participants ... and 3 studies employed resistance-trained'. Table 1 sample sizes 12+20+21+18+28+21+21+22+22 = 185, not 213. Probabilities 74%/88% from the article body.",
+   "appUse": "info:rest"
+  },
+  {
+   "id": "T2",
+   "kind": "training",
+   "topic": "Longer rest in trained men",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In 21 trained young men over 8 weeks (3 sets of 8-12RM, 7 exercises, 3 times a week), 3-minute rest gave larger squat and bench 1RM gains and more front-thigh growth than 1-minute rest.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ et al. J Strength Cond Res 2016;30(7):1805-1812",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Longer%20Interset%20Rest%20Periods%20Enhance%20Muscle%20Strength%20and%20Hypertrophy%20in%20Resistance-Trained%20Men%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Schoenfeld BJ et al. JSCR 2016;30(7):1805-1812, PMID 26605807 (Europe PMC abstract): 'Twenty-one young resistance-trained men'; 3 sets of 8-12RM of 7 exercises; 'Maximal strength was significantly greater for both 1RM squat and bench press for LONG'; 'Muscle thickness was significantly greater for LONG ... in the anterior thigh'.",
+   "appUse": "info:rest"
+  },
+  {
+   "id": "G1",
+   "kind": "training",
+   "topic": "Progression rule",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "ACSM 2009 advised adding 2-10% load when the lifter can do the current load for 1-2 reps more than the target. For muscle growth it emphasised 6-12RM with 1-2 min rest; for heavy strength work, 1-6RM with 3-5 min rest. Double progression (add reps inside a range, then add load at the top) is the same idea as a coaching habit. The 2026 position stand replaces the 2009 one and its abstract does not restate this rule; it was never tested against other rules.",
+   "sources": [
+    {
+     "citation": "ACSM Position Stand. Med Sci Sports Exerc 2009;41(3):687-708",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Progression%20models%20in%20resistance%20training%20for%20healthy%20adults%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "ACSM Position Stand. MSSE 2009;41(3):687-708 (Europe PMC abstract, URL as cited): 'it is recommended that 2-10% increase in load be applied when the individual can perform the current workload for one to two repetitions over the desired number'; hypertrophy 'emphasis on the 6-12 RM zone using 1- to 2-min rest periods'; strength 'eventual emphasis on heavy loading (1-6 RM) using 3- to 5-min rest periods'. Currier 2026 abstract (PMID 41843416): 'It updates the American College of Sports Medicine 2009 Position Stand'.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "W1",
+   "kind": "training",
+   "topic": "Sets as the volume unit",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "A systematic review of 14 randomised trials in people with at least a year of training concluded that counting sets taken to or near failure 'seems to be' an adequate way to measure training volume for muscle growth across 6-20+ reps, if everything else is kept the same.",
+   "sources": [
+    {
+     "citation": "Baz-Valle E et al. Total number of sets as a training volume quantification method for muscle hypertrophy: a systematic review. J Strength Cond Res 2021;35(3):870-878",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Total%20number%20of%20sets%20as%20a%20training%20volume%20quantification%20method%20for%20muscle%20hypertrophy%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Baz-Valle E, Fontes-Villalba M, Santos-Concejero J. JSCR 2021;35(3):870-878, PMID 30063555 (Europe PMC abstract, verbatim): inclusion 'minimum of 1 year of resistance training experience'; 'Fourteen studies'; 'the total number of sets to failure, or near to, seems to be an adequate method to quantify training volume when the repetition range lies between 6 and 20+ if all the other variables are kept constant.'",
+   "appUse": "info:weekly-sets"
+  },
+  {
+   "id": "W2",
+   "kind": "training",
+   "topic": "Warm-up sets do not count",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Leave warm-up sets out of hard sets, volume load and PRs. They are deliberately far from failure, and the volume evidence counts sets taken to or near failure. No study tests this directly; it is reasoning.",
+   "sources": [
+    {
+     "citation": "Baz-Valle E et al. J Strength Cond Res 2021;35(3):870-878",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Total%20number%20of%20sets%20as%20a%20training%20volume%20quantification%20method%20for%20muscle%20hypertrophy%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Baz-Valle 2021, PMID 30063555 (Europe PMC abstract) supports counting 'sets to failure, or near to'. No source opened tests counting warm-ups. Reasoning only.",
+   "appUse": "rule:trainingMath (warm-ups excluded everywhere)"
+  },
+  {
+   "id": "W3",
+   "kind": "training",
+   "topic": "Tonnage is a poor hypertrophy proxy",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In 18 trained men, sets of 25-35 reps (light load) and 8-12 reps (heavy load), all to failure, gave similar growth (quads 9.5% vs 9.3%), even though the light-load group did roughly three times the reps per set. Strength favoured heavy loads (squat 19.6% vs 8.8%). The abstract does not report tonnage, so 'tonnage is a poor proxy for growth' is an inference from reps and load, not a measured result.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ et al. J Strength Cond Res 2015;29(10):2954-2963",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Effects%20of%20Low-%20vs.%20High-Load%20Resistance%20Training%20on%20Muscle%20Strength%20and%20Hypertrophy%20in%20Well-Trained%20Men%22&resultType=core&format=json"
+    },
+    {
+     "citation": "Schoenfeld BJ et al. J Strength Cond Res 2017;31(12):3508-3523",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Strength%20and%20Hypertrophy%20Adaptations%20Between%20Low-%20vs.%20High-Load%20Resistance%20Training%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Schoenfeld BJ, Peterson MD, Ogborn D, Contreras B, Sonmez GT. JSCR 2015;29(10):2954-2963, PMID 25853914 (Europe PMC abstract, verbatim): 'Eighteen young men experienced in RT'; LL 25-35 reps vs HL 8-12 reps; 'quadriceps femoris (9.3 vs. 9.5%, respectively)' for HL vs LL; 'back squat strength ... (19.6 vs. 8.8%)'. Total volume load is not in the abstract; the full text (journals.lww.com) was paywalled (HTTP 402), so 'tonnage differed widely' could not be confirmed.",
+   "appUse": "rule:trainingMath (no cross-exercise tonnage score; the session 'vol' number is removed)"
+  },
+  {
+   "id": "D1",
+   "kind": "training",
+   "topic": "Scheduled deload outcome",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "correctedClaim": "In 39 trained young adults (29 men, 10 women), stopping training for 1 week halfway through a 9-week high-volume program made no clear difference to lower-body muscle growth, power or endurance, but gave smaller lower-body strength gains than training straight through. Only lower-body outcomes were measured, and the break was a full stop, not lighter training.",
+   "sources": [
+    {
+     "citation": "Coleman M et al. PeerJ 2024;12:e16777",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Gaining%20more%20from%20doing%20less%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Coleman M et al. PeerJ 2024;12:e16777, PMID 38274324 (Europe PMC abstract, verbatim): 'Thirty-nine young men (n = 29) and women (n = 10)'; DELOAD 'abstained from RT for 1 week at the midpoint of a 9-week, high-volume RT program'; outcomes were quadriceps and triceps surae thickness, lower-body strength, endurance and power; 'no appreciable differences in increases of lower body muscle size, local endurance, and power'; 'TRAD showed greater improvements in both isometric and dynamic lower body strength'. Upper-body training was unsupervised and upper-body size was not reported.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "D2",
+   "kind": "training",
+   "topic": "Deload practice and triggers",
+   "verdict": "overstated",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Expert coaches agreed that a deload is a period of reduced training stress to shed physical and mental fatigue. It can happen whenever the lifter feels physically and mentally fatigued, whatever the planned week. Volume can be cut by dropping days, sets or reps, and training intensity could stay the same while volume drops (reducing intensity was also agreed as an option). The paper's background notes deloads are generally done every 4-6 weeks for about 7 days. The consensus statements set no numbers for how big a performance drop should trigger a deload.",
+   "sources": [
+    {
+     "citation": "Bell L et al. Sports Med Open 2023;9:87",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10511399/"
+    }
+   ],
+   "evidence": "Bell L et al. Sports Med Open 2023;9:87 (https://pmc.ncbi.nlm.nih.gov/articles/PMC10511399/, full text): 34/29/21 coaches over rounds; definition as stated; 'Deloading could occur when athletes feel physically and mentally fatigued regardless of training week in the mesocycle' (89.7%/100% agree); 'reduce training volume by cutting days training' 93.1/100, 'lowering sets' 100/100, 'lowering reps' 96.6/100; 'Training intensity could remain the same during the deload, but the volume may drop' 86.2/95.2; 'Deloading could be a reduction in training intensity' 96.6/100. The '4-6 weeks for ~7 days' line is in the introduction, citing ref 22, not a panel result. No statement about numeric performance-drop thresholds appears, so 'no consensus' should read 'not addressed'.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "D3",
+   "kind": "training",
+   "topic": "Deload signal thresholds",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "The app's fatigue flag (RIR-adjusted e1RM down 5% or more for 2 sessions on at least 2 lifts) is an untested convention. It sits above the effect of one misjudged rep (2.5-3.3% of Epley e1RM for 0-10 reps to failure) and should only suggest a deload, never schedule one.",
+   "sources": [],
+   "evidence": "No source; the claim is openly a convention. Arithmetic checked: Epley relative sensitivity 1/(30+RTF) = 3.33% at RTF 0 and 2.50% at RTF 10. Bell 2023 (https://pmc.ncbi.nlm.nih.gov/articles/PMC10511399/) supports fatigue-triggered deloads but gives no numeric thresholds.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "PR1",
+   "kind": "training",
+   "topic": "Fair PR detection",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "Only rep-max PRs (heaviest weight done for at least r reps) are measured records at any rep count. e1RM PRs are estimates and only fair when reps to failure are 10 or fewer and effort is known, because accuracy falls as reps rise and one misjudged rep moves e1RM by about 2.5-3.7% (Epley or Brzycki, 1-10 reps).",
+   "sources": [
+    {
+     "citation": "Reynolds JM et al. J Strength Cond Res 2006;20(3):584-592",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Prediction%20of%20one%20repetition%20maximum%20strength%20from%20multiple%20repetition%20maximum%20testing%20and%20anthropometry%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Reynolds 2006, PMID 16937972 (Europe PMC): 'no more than 10 repetitions should be used'. Arithmetic checked: Epley 1/(30+RTF) is 3.2% to 2.5% for RTF 1-10; Brzycki 1/(37-RTF) is 2.8% to 3.7% for RTF 1-10. The PR definitions are conventions.",
+   "appUse": "info:records"
+  },
+  {
+   "id": "PL1",
+   "kind": "training",
+   "topic": "Plate and bar standards",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "IPF: bar plus collars must weigh 25 kg, and collars must weigh 2.5 kg each (so the bar is 20 kg). Competition discs are 1.25-25 kg, and lighter discs may be used for record attempts. Heavier discs go innermost. The 45 lb bar and US plates of 45/35/25/10/5/2.5 lb are gym convention with no standard opened.",
+   "sources": [
+    {
+     "citation": "IPF Technical Rulebook 2026, section 2.3",
+     "url": "https://www.powerlifting.sport/fileadmin/ipf/data/rules/technical-rules/english/2026_IPF_Technical_Rulebook__effective_01_March_2026__v3.pdf"
+    }
+   ],
+   "evidence": "IPF Technical Rulebook effective 1 March 2026 (https://www.powerlifting.sport/fileadmin/ipf/data/rules/technical-rules/english/2026_IPF_Technical_Rulebook__effective_01_March_2026__v3.pdf, PDF extracted): 2.3 'Weight of the bar and collars are to be 25 kg'; 'Discs must be within the following range: 1.25 kg, 2.5 kg, 5 kg, 10 kg, 15 kg, 20 kg, and 25 kg'; 'For record purposes, lighter discs may be used' (tolerance table lists 1, 0.5, 0.25 kg discs); 'loaded in the sequence of heavier discs innermost'. The collar weight ('Must weigh 2.5 kg each') is in section 2.4 Collars, not 2.3.",
+   "appUse": "info:plates"
+  },
+  {
+   "id": "PL2",
+   "kind": "training",
+   "topic": "Greedy plate loading is not always minimal",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "With lb plates [45,35,25,10,5,2.5], heaviest-plate-first does not always use the fewest plates: 60 per side gives 45+10+5 (3 plates) where 35+25 (2) works. Up to 300 lb per side this happens at 60, 62.5, 105, 107.5, 150, 152.5, 195, 197.5, 240, 242.5, 285 and 287.5. With IPF kg plates [25,20,15,10,5,2.5,1.25], heaviest-first was optimal for every load up to 200 kg per side (unlimited plates). With a limited plate inventory, heaviest-first can also miss a load that is possible (reasoning, not tested).",
+   "sources": [],
+   "evidence": "Re-ran an exhaustive check (dynamic programming vs greedy, unlimited plates) in a scratch Python script: lb failures = [60, 62.5, 105, 107.5, 150, 152.5, 195, 197.5, 240, 242.5, 285, 287.5] (12 loads up to 300); kg failures = none up to 200. Pure arithmetic.",
+   "appUse": "rule:trainingMath.plates (test cases)"
+  },
+  {
+   "id": "PL3",
+   "kind": "training",
+   "topic": "lb/kg conversion",
+   "verdict": "supported",
+   "originalGrade": "C",
+   "correctGrade": "C",
+   "correctedClaim": "1 avoirdupois pound = 0.45359237 kg exactly, so a 45 lb bar is 20.41 kg and a 20 kg bar is 44.09 lb. Store the unit the weight was entered in and don't convert back and forth.",
+   "sources": [
+    {
+     "citation": "NIST Handbook 44 (2026), Appendix B, p. B-12",
+     "url": "https://www.nist.gov/system/files/documents/2025/12/30/appb-26-HB44-20251210.pdf"
+    }
+   ],
+   "evidence": "NIST Handbook 44 (2026) Appendix B (https://www.nist.gov/system/files/documents/2025/12/30/appb-26-HB44-20251210.pdf, PDF extracted), p. B-12: '1 avoirdupois pound = 0.453 592 37 kilogram.' Checked: 45 x 0.45359237 = 20.4117; 20 / 0.45359237 = 44.0925.",
+   "appUse": "info:units"
+  },
+  {
+   "id": "formula-1",
+   "kind": "formula",
+   "topic": "Epley estimated 1RM",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "formulaAsResearched": "Epley estimated 1RM: e1RM = w * (1 + r/30);  if r == 1 then e1RM = w (defaults: w = load of a working set in its stored unit; r = completed reps. The r == 1 rule is a convention (raw Epley gives 1.0333*w for a single).; valid: Trust r in 1..10. Show as 'rough' for 11..15. Do not compute for r > 15 or w <= 0 (bodyweight/band sets).)",
+   "correctedClaim": "Epley estimated 1RM: e1RM = w*(1 + r/30), with e1RM = w at r = 1 by convention (raw Epley gives 1.033w for a single). Mayhew 2008 lists this same form but credits it to Welday 1988; the Epley original was not opened and its derivation is undocumented. Trust it for 1-10 reps (Reynolds 2006); showing 11-15 as 'rough' and refusing above 15 or for w <= 0 are app conventions.",
+   "sources": [
+    {
+     "citation": "Mayhew JL et al. Accuracy of prediction equations for determining 1RM bench press in women before and after resistance training. J Strength Cond Res 2008;22(5):1570-1577. Table 2 lists this exact form, 1RM = (RTF x 0.0333) RepWt + RepWt, under 'Welday'.",
+     "url": "https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf"
+    },
+    {
+     "citation": "Reynolds JM, Gordon TJ, Robergs RA. Prediction of 1RM strength from multiple RM testing and anthropometry. J Strength Cond Res 2006;20(3):584-592.",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Prediction%20of%20one%20repetition%20maximum%20strength%20from%20multiple%20repetition%20maximum%20testing%20and%20anthropometry%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Mayhew 2008 Table 2 (https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf): 'Welday (35) 1RM (kg) = (RTF x 0.0333) RepWt + RepWt'. The same paper's Table 3 (full 2-30 rep range) shows this form overestimating by +5.3 +/- 11.0% before training. Reynolds 2006 (PMID 16937972): 'no more than 10 repetitions'. The 1..10 trust range is B; the r==1 rule and the 11-15 band are conventions.",
+   "appUse": "trainingMath.e1rmPlain"
+  },
+  {
+   "id": "formula-2",
+   "kind": "formula",
+   "topic": "Brzycki estimated 1RM",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "formulaAsResearched": "Brzycki estimated 1RM: e1RM = w * 36 / (37 - r)   (identical to w / (1.0278 - 0.0278*r)) (defaults: Returns exactly w at r = 1. Equals Epley only at r = 10 (both 1.3333*w). Lower than Epley for 1<r<10, higher for r>10.; valid: r in 1..10. Blows up as r -> 37. Relative error per misjudged rep is 1/(37 - r), which grows fast above 12.)",
+   "correctedClaim": "Brzycki estimated 1RM: e1RM = w*36/(37 - r), which is w/(1.0278 - 0.0278r) with rounded constants. It gives exactly w at r = 1, equals Epley only at r = 10 (both 1.333w), is lower than Epley for 1<r<10 and higher above 10. Use for 1-10 reps; it blows up as r nears 37, and the relative error per misjudged rep is 1/(37 - r).",
+   "sources": [
+    {
+     "citation": "Mayhew JL et al. J Strength Cond Res 2008;22(5):1570-1577, Table 2 (Brzycki: 1RM = RepWt/(1.0278 - 0.0278 RTF)).",
+     "url": "https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf"
+    }
+   ],
+   "evidence": "Mayhew 2008 Table 2 (https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf): 'Brzycki (7) 1RM (kg) = RepWt/(1.0278 - 0.0278 RTF)'. Its Table 3 (reps up to 30): Brzycki ICC 0.24, error 26.7 +/- 101.7% (the blow-up); Table 4 (<=10 RTF): -2.0 +/- 10.5%, ICC 0.91. Algebra checked: (30+r)(37-r)=1080 gives r^2-7r-30=0, so r=10 is the only positive crossing; 36/(37-r) = 1/((37/36)-(r/36)) = 1/(1.02778-0.02778r).",
+   "appUse": "not-in-v1 (Epley is kept for continuity with numbers already shown in the app)"
+  },
+  {
+   "id": "formula-3",
+   "kind": "formula",
+   "topic": "RIR-adjusted e1RM",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "RIR/RPE-adjusted e1RM: RIR = 10 - RPE;  RTF = r + RIR;  e1RM_adj = w * (1 + RTF/30)   (if RTF == 1 then e1RM_adj = w) (defaults: RIR comes from the user (0 = failure). If RIR is missing, compute plain Epley and tag it 'assumes near failure'. Optional bias note: self-reported RIR runs about 1 rep low on average, so e1RM_adj is expected about 3% low.; valid: RIR 0..3 (RPE 7..10) and RTF <= 10. Do not compute when RIR >= 4, because RIR ratings are recommended for RPE 7-10 and accuracy drops further from failure.)",
+   "correctedClaim": "RIR-adjusted e1RM: RIR = 10 - RPE; reps to failure RTF = r + RIR; e1RM_adj = w*(1 + RTF/30), with e1RM_adj = w if RTF = 1. Adding the estimated reps left into Epley is an app convention; no study validates it. If RIR is missing, compute plain Epley and tag it 'assumes near failure'. People tend to underestimate reps left by about 1 on average (with large study-to-study variation), which would make e1RM_adj about 2.5-3% low. Use only for RIR 0-3 and RTF <= 10; the RPE 7-10 range comes from Helms 2016, and closer to failure is only slightly more accurate.",
+   "sources": [
+    {
+     "citation": "Helms ER et al. Application of the RIR-based RPE scale for resistance training. Strength Cond J 2016.",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/"
+    },
+    {
+     "citation": "Halperin I et al. Accuracy in predicting repetitions to task failure in resistance exercise: scoping review and exploratory meta-analysis. Sports Med 2022;52(2):377-390.",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Accuracy%20in%20Predicting%20Repetitions%20to%20Task%20Failure%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Helms 2016 (https://pmc.ncbi.nlm.nih.gov/articles/PMC4961270/): RIR = 10 - RPE mapping; use at 'RPE 7-10'. Halperin 2022, PMID 34542869 (Europe PMC): underprediction 0.95 reps (CI 0.17-1.73), I^2 97.9%; closer-to-failure effect beta -0.025 (CI -0.05 to 0.0014, crosses zero). Refalo 2024 (PMID 37967832) found only -0.17 raw error in trained lifters at 75%. Arithmetic: 0.95/(30+RTF) = 2.4-3.1% for RTF 1-10. The combined formula is untested, so C, not B.",
+   "appUse": "trainingMath.e1rmAdjusted"
+  },
+  {
+   "id": "formula-4",
+   "kind": "formula",
+   "topic": "e1RM sensitivity to one rep of error",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "e1RM sensitivity to one rep of error: Epley: (d e1RM / d r) / e1RM = 1 / (30 + RTF);   Brzycki: (d e1RM / d r) / e1RM = 1 / (37 - RTF) (defaults: Epley: RTF 5 -> 2.86% per rep; RTF 10 -> 2.50%. Brzycki: RTF 10 -> 3.70%; RTF 20 -> 5.88%; RTF 30 -> 14.3%.; valid: Pure calculus of the two formulas; applies wherever the formulas are used. Use it to show an error band, e.g. +/- 1 rep.)",
+   "correctedClaim": "e1RM sensitivity to one rep of error: Epley relative change per rep = 1/(30 + RTF); Brzycki = 1/(37 - RTF). Epley: RTF 5 gives 2.86% per rep, RTF 10 gives 2.50%. Brzycki: RTF 10 gives 3.70%, RTF 20 gives 5.88%, RTF 30 gives 14.3%. Pure calculus on the two formulas; use it to show an error band such as +/- 1 rep.",
+   "sources": [],
+   "evidence": "Derivatives checked analytically and numerically in a scratch script: Epley d/dr ln(1+r/30) = 1/(30+r); Brzycki d/dr ln(36/(37-r)) = 1/(37-r); values 0.02857, 0.02500, 0.03704, 0.05882, 0.14286 match. No source needed; math, so C rather than B.",
+   "appUse": "trainingMath.e1rmErrorBand"
+  },
+  {
+   "id": "formula-5",
+   "kind": "formula",
+   "topic": "Target load from e1RM (inverse Epley)",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Target load from e1RM (inverse Epley): w_target = floorToLoadable( e1RM_ref / (1 + (r_target + RIR_target)/30) );   pct1RM = w / e1RM_ref (defaults: e1RM_ref = best RIR-adjusted e1RM from the last 3 sessions of the same exerciseId. Round DOWN to a loadable weight.; valid: r_target + RIR_target <= 10. For higher-rep targets, fall back to double progression instead of a % prescription.)",
+   "correctedClaim": "Target load from e1RM (inverse Epley): w_target = floorToLoadable(e1RM_ref / (1 + (r_target + RIR_target)/30)); pct1RM = w/e1RM_ref. Use only when r_target + RIR_target <= 10; for higher-rep targets use double progression. This is algebra on Epley plus app conventions (best of last 3 sessions, round down). Nuzzo 2024 shows reps at a given %1RM differ by exercise (leg press allows more), so prescribed loads will be less accurate for leg press.",
+   "sources": [
+    {
+     "citation": "Mayhew JL et al. J Strength Cond Res 2008 (equation forms).",
+     "url": "https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf"
+    }
+   ],
+   "evidence": "Algebra is exact inversion of the Epley form in Mayhew 2008 Table 2 (https://www.unm.edu/~rrobergs/478PredictionAccuracy.pdf). Exercise dependence: Nuzzo 2024 (https://pmc.ncbi.nlm.nih.gov/articles/PMC10933212/): LP 13.1 vs BP 8.8 reps at 80%. The e1RM_ref choice and rounding are conventions; no source validates prescription accuracy.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "formula-6",
+   "kind": "formula",
+   "topic": "Weekly fractional hard sets per muscle",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "formulaAsResearched": "Weekly fractional hard sets per muscle: S_m = SUM over sets s in window [ hard(s) * role(exercise(s), m) ];  role = 1.0 if m is a primary mover (direct), 0.5 if a meaningful synergist (indirect), 0 otherwise;  hard(s) = (s.kind == 'working') AND s.completed AND (s.rir is null OR s.rir <= T) (defaults: T = 3 (RPE >= 7), user-adjustable 0..5. Window = rolling 7 days including today, matching thisWeekCount. Sets with RIR unknown are counted but flagged 'effort not logged'. The 1 / 0.5 / 0 weights follow Pelland et al.; valid: Any number of sets. Show hypertrophy tiers (fractional sets/week, Pelland Table 2A): <4 below detectable minimum; 4 minimum effective dose; 5-10 higher efficiency; 11-18 intermediate; 19-29 lower; 30-42 lowest; 43+ unclear (little data above ~25).)",
+   "correctedClaim": "Weekly fractional hard sets per muscle: S_m = sum over sets of hard(s)*role(exercise, m); role = 1 for the main mover, 0.5 for a meaningful helper muscle, 0 otherwise (Pelland's 1/0.5/0 weights). hard(s) = working, completed, and RIR unknown or <= T (T = 3 by default; an app convention). Window = rolling 7 days. Show Pelland's growth bands as context: <4 below detectable; 4 minimum; 5-10 higher efficiency; 11-18 intermediate; 19-29 lower; 30-42 lowest; 43+ unclear. Caveats: Pelland counted all sets regardless of effort, and which exercises count as direct or indirect for each muscle is a judgement call.",
+   "sources": [
+    {
+     "citation": "Pelland JC, Remmert JF, Robinson ZP, Hinson S, Zourdos MC. The resistance training dose-response: meta-regressions exploring the effects of weekly volume and frequency on muscle hypertrophy and strength gain. SportRxiv preprint (Sept 2024), sections 2.4, 4.4, Table 2A.",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    },
+    {
+     "citation": "Pelland JC et al. Sports Med 2026;56(2):481-505, doi:10.1007/s40279-025-02344-w (published abstract).",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=DOI:10.1007/s40279-025-02344-w&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967): 2.4 'Fractional counted indirect sets as half a set (indirect x 0.5 + direct)'; direct = 'primary force generator', indirect = 'meaningfully trained but not the primary force generator'; Table 2A tiers match; 'not wholly objective'. Published abstract, Sports Med 2026;56(2):481-505, PMID 41343037, confirms the method. The RIR <= 3 filter is not in Pelland (78% of effects were failure-based).",
+   "appUse": "trainingMath.weeklyHardSets"
+  },
+  {
+   "id": "formula-7",
+   "kind": "formula",
+   "topic": "Weekly fractional frequency per muscle",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Weekly fractional frequency per muscle: F_m = SUM over sessions d in window [ max over sets s in d of ( hard(s) * role(exercise(s), m) ) ] (defaults: A session with any direct set counts 1; a session with only indirect sets counts 0.5. Pelland's example: curls one day plus rows another gives total 2, fractional 1.5, direct 1.; valid: 0..7 for a 7-day window. Flag F_m < 2 for major muscles (ACSM 2026: at least 2 sessions/week).)",
+   "correctedClaim": "Weekly fractional frequency per muscle: F_m = sum over sessions of the largest hard(s)*role in that session. A session with any direct set counts 1; a session with only indirect sets counts 0.5 (Pelland's example: curls one day plus rows another gives total 2, fractional 1.5, direct 1). Flagging F_m < 2 for major muscles follows ACSM 2026's public advice to train all major muscle groups at least twice a week; the position stand ties 2+ sessions a week to strength, and with volume equal, frequency does not clearly change muscle growth.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, section 2.4.",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    },
+    {
+     "citation": "ACSM 2026 resistance training guidelines update page.",
+     "url": "https://acsm.org/resistance-training-guidelines-update-2026/"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 2.4: '5 sets of biceps curls in one session and 5 sets of rows in another ... frequency quantified as total, fractional, and direct of 2, 1.5, and 1'. ACSM page (https://acsm.org/resistance-training-guidelines-update-2026/): 'Training all major muscle groups at least twice a week matters far more than chasing the idea of a perfect ... plan'. Currier 2026 abstract (PMID 41843416): '>=2 sessions/wk' listed under voluntary strength. Schoenfeld 2019 (PMID 30558493): no volume-equated frequency effect on growth. The < 2 cutoff applied to fractional frequency is an app convention, so C.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "formula-8",
+   "kind": "formula",
+   "topic": "Strength volume band for one lift",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "formulaAsResearched": "Strength volume tier for a specific lift: S_lift = SUM over hard sets [ 1.0 if exercise == tested lift, 0.5 if exercise trains the lift's muscles, else 0 ] (defaults: Tiers (Pelland Table 2B, fractional sets/week): 1 minimum effective dose; 2 higher efficiency; 3-4 intermediate; 5+ gains no longer consistently exceed the smallest detectable effect (3.96%).; valid: Group-average model; lifters were mostly doing a new strength test. Show the tier for context only, never as a goal.)",
+   "correctedClaim": "Strength volume band for one lift: S_lift = sum over hard sets of 1.0 if it is the tested lift, 0.5 if it trains that lift's muscles, else 0. Pelland's strength bands (fractional sets per week): 1 minimum; 2 higher efficiency; 3-4 intermediate; 5+ extra sets no longer reliably add another detectable gain (3.96%). This is a group-average model in lifters who were mostly new to the strength test; show it for context, never as a goal.",
+   "sources": [
+    {
+     "citation": "Pelland JC et al. SportRxiv preprint 2024, Table 2B and section 5.5.",
+     "url": "https://sportrxiv.org/index.php/server/preprint/download/460/967"
+    }
+   ],
+   "evidence": "Pelland preprint (https://sportrxiv.org/index.php/server/preprint/download/460/967) 2.4: strength direct = 'the exact exercise used for the strength assessment', indirect = 'likely to meaningfully train the muscle(s) involved'; Table 2B: Minimum Effective Dose 1; Higher Efficiency 2; Intermediate 3-4; Lower 5-? 'Additional weekly sets do not consistently enhance strength gains > SDES'; 5.5 novel-test learning effect.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "formula-9",
+   "kind": "formula",
+   "topic": "Volume load (tonnage) per exercise",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Volume load (tonnage), per exercise: VL_exercise = SUM over working sets (w * r)   [same unit only; exclude sets where w <= 0] (defaults: Warm-ups excluded. Bodyweight and band sets are left out and reported as a rep count instead, which fixes the current unit mixing in workoutVolume().; valid: Only compare within the same exercise and rep range over time. Never add up across exercises as a growth or hypertrophy score.)",
+   "correctedClaim": "Volume load (tonnage) per exercise: sum over working sets of w*r, same unit only, excluding sets with w <= 0; warm-ups excluded; bodyweight and band sets reported as rep counts. Compare only within the same exercise and rep range over time, and never add it up across exercises as a growth score, because light and heavy loads to failure gave similar growth despite very different reps (Schoenfeld 2015). App convention built on that inference.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ et al. Effects of low- vs high-load resistance training on muscle strength and hypertrophy in well-trained men. J Strength Cond Res 2015;29(10):2954-2963.",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Effects%20of%20Low-%20vs.%20High-Load%20Resistance%20Training%20on%20Muscle%20Strength%20and%20Hypertrophy%20in%20Well-Trained%20Men%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Schoenfeld 2015, PMID 25853914 (Europe PMC abstract): 25-35 vs 8-12 reps to failure gave similar quad growth (9.5% vs 9.3%). The abstract does not report tonnage, so the rule rests on inference (see W3). The formula is a bookkeeping convention, so C.",
+   "appUse": "trainingMath.volumeLoad"
+  },
+  {
+   "id": "formula-10",
+   "kind": "formula",
+   "topic": "Double progression load step",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Double progression (load step rule): if min(r over working sets) >= hi AND all RIR >= RIR_floor: w_next = ceilToLoadable( w * (1 + p) ), with w_next >= w + minIncrement;  elif r < lo on any working set in 2 consecutive sessions: w_next = floorToLoadable( w * 0.95 );  else: w_next = w (aim for +1 rep) (defaults: Rep range [lo, hi] from the routine (e.g. 6-8). RIR_floor = 1. p = 0.025. minIncrement = 5 lb / 2.5 kg for barbell lifts, or the next dumbbell or pin step. ACSM 2009 variant: trigger at r >= hi + 1 with p in 0.02..0.10.; valid: p in 0.02..0.10. lo < hi. Not for bodyweight or band work; for those, progress reps or band level instead.)",
+   "correctedClaim": "Double progression load step: if every working set reaches the top of the rep range with RIR >= 1, raise load by about 2.5% rounded up to a loadable step (at least 5 lb / 2.5 kg for barbells); if any working set falls below the bottom of the range in 2 sessions in a row, drop about 5%; otherwise keep the load and aim for +1 rep. ACSM 2009 variant: add 2-10% once the lifter beats the target by 1-2 reps. All specific numbers here (2.5%, RIR 1, 5% drop, 2 sessions) are app conventions; not for bodyweight or band work.",
+   "sources": [
+    {
+     "citation": "ACSM Position Stand. Progression models in resistance training for healthy adults. Med Sci Sports Exerc 2009;41(3):687-708 (abstract).",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Progression%20models%20in%20resistance%20training%20for%20healthy%20adults%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "ACSM 2009, MSSE 41(3):687-708 (Europe PMC abstract, URL as cited): '2-10% increase in load be applied when the individual can perform the current workload for one to two repetitions over the desired number'. Expert recommendation, never tested against alternatives; the app's thresholds are not in any source, so C, not B.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "formula-11",
+   "kind": "formula",
+   "topic": "RPE autoregulation load adjustment",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "B",
+   "formulaAsResearched": "RPE autoregulation load adjustment: if RPE > RPE_hi: adj = -0.02 * (RPE - RPE_hi)/0.5;  if RPE < RPE_lo: adj = +0.02 * (RPE_lo - RPE)/0.5;  else adj = 0;  w_next_set = roundToLoadable( w * (1 + adj) ) (defaults: 2% load change per 0.5 RPE outside the target band. This was the protocol used in Helms 2018; it was not tested against other step sizes.; valid: RPE 6..10. Cap |adj| at 0.10 per set.)",
+   "correctedClaim": "RPE autoregulation: for each 0.5 RPE above the target band lower the next set's load 2%; for each 0.5 below, raise it 2%; round to a loadable weight. This is the protocol from Helms 2018 (21 trained men, 8 weeks), where RPE loading worked about as well as %1RM loading; the 2% step was not tested against other steps, and the 10% per-set cap is an app convention.",
+   "sources": [
+    {
+     "citation": "Helms ER et al. RPE vs. percentage 1RM loading in periodized programs matched for sets and repetitions. Front Physiol 2018;9:247.",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5877330/"
+    }
+   ],
+   "evidence": "Helms 2018 (https://pmc.ncbi.nlm.nih.gov/articles/PMC5877330/): 'For every 0.5 RPE above or below the upper or lower RPE threshold, respectively, load was decreased or increased by 2%'; both groups improved, no significant between-group differences.",
+   "appUse": "not-in-v1"
+  },
+  {
+   "id": "formula-12",
+   "kind": "formula",
+   "topic": "Rest timer default",
+   "verdict": "overstated",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Rest timer default: rest_s = 120 if exercise.isCompound else 90;  warn if logged rest_s < 60 on a hypertrophy-goal exercise (defaults: 120 s compound, 90 s isolation, user-editable. Option of 180 s for heavy (<= 5 reps) strength sets.; valid: 30..300 s. There is evidence of a small hypertrophy cost at <= 60 s and little evidence of extra benefit beyond 90 s.)",
+   "correctedClaim": "Default rest timer: 120 s for compound lifts, 90 s for isolation, editable, with an option of 180 s for heavy sets of 5 or fewer reps; warn if rest under 60 s on a growth-goal exercise. These defaults are app conventions. The evidence suggests a small, uncertain growth benefit from resting over 60 s, no clear extra benefit beyond 90 s, and one trial in trained men found 3 min beat 1 min for strength and thigh growth.",
+   "sources": [
+    {
+     "citation": "Singer A et al. Give it a rest: systematic review with Bayesian meta-analysis on inter-set rest interval duration and hypertrophy. Front Sports Act Living 2024;6:1429789.",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11349676/"
+    },
+    {
+     "citation": "Schoenfeld BJ et al. Longer interset rest periods enhance muscle strength and hypertrophy in resistance-trained men. J Strength Cond Res 2016;30(7):1805-1812.",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Longer%20Interset%20Rest%20Periods%20Enhance%20Muscle%20Strength%20and%20Hypertrophy%20in%20Resistance-Trained%20Men%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Singer 2024 (https://pmc.ncbi.nlm.nih.gov/articles/PMC11349676/): '>60 s' benefit arm 0.13 (CrI -0.27 to 0.51), thigh 0.17 (-0.13 to 0.43); 'did not detect appreciable differences in hypertrophy when resting >90 s'. Schoenfeld 2016 (PMID 26605807): 3 min > 1 min in 21 trained men. 'Evidence of a small hypertrophy cost at <= 60 s' overstates CrIs that include zero. The 120/90 split is not from any source.",
+   "appUse": "trainingMath.defaultRest (the under-60-s warning is NOT built in v1)"
+  },
+  {
+   "id": "formula-13",
+   "kind": "formula",
+   "topic": "Plate loading",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Plate loading (per side + loadable rounding): fixed = bar + 2*collar;  step = 2 * minPlate;  loadable(target) = fixed + step * round((target - fixed)/step);  perSide = (loadable - fixed)/2;  plates = minCountDP(perSide, inventoryPairs) listed heaviest first (innermost) (defaults: lb: bar 45, collar 0, plates [45,35,25,10,5,2.5], step 5. kg: bar 20, collar 0 in a gym (2.5 each in IPF competition), plates [25,20,15,10,5,2.5,1.25], step 2.5. Dynamic programming over units of minPlate, with pair counts as bounds. Do not use greedy for lb (60 per side: greedy 45+10+5, best 35+25).; valid: target >= fixed. If the exact load isn't possible with the inventory, show the nearest loadable weight below and above.)",
+   "correctedClaim": "Plate loading: fixed = bar + 2 x collar; step = 2 x smallest plate; round the target to the nearest loadable weight, halve the remainder per side, and choose plates by a minimum-count search with inventory limits (heaviest innermost). lb defaults: bar 45, plates [45,35,25,10,5,2.5], step 5. kg defaults: bar 20, collars 0 in a gym (2.5 kg each in IPF competition), plates [25,20,15,10,5,2.5,1.25], step 2.5. Don't use heaviest-first for lb (60 per side: 45+10+5 vs 35+25). If the exact load is impossible, show the nearest loadable weights below and above.",
+   "sources": [
+    {
+     "citation": "IPF Technical Rulebook, effective 1 March 2026, section 2.3 Bars and Discs (bar + collars 25 kg; collars 2.5 kg each; discs 1.25-25 kg; heavier discs innermost).",
+     "url": "https://www.powerlifting.sport/fileadmin/ipf/data/rules/technical-rules/english/2026_IPF_Technical_Rulebook__effective_01_March_2026__v3.pdf"
+    }
+   ],
+   "evidence": "IPF Technical Rulebook 2026 (https://www.powerlifting.sport/fileadmin/ipf/data/rules/technical-rules/english/2026_IPF_Technical_Rulebook__effective_01_March_2026__v3.pdf): 2.3 'Weight of the bar and collars are to be 25 kg'; discs 1.25-25 kg; 'heavier discs innermost'; 2.4 Collars '(b) Must weigh 2.5 kg each' (section 2.4, not 2.3). Greedy failure verified by exhaustive script (see PL2). Equipment facts plus an algorithm, so C.",
+   "appUse": "trainingMath.plates"
+  },
+  {
+   "id": "formula-14",
+   "kind": "formula",
+   "topic": "Unit conversion",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Unit conversion: kg = lb * 0.45359237;  lb = kg / 0.45359237 (defaults: Store the canonical value in the unit it was entered in, together with the unit. Round only for display, to the loadable step of the display unit. 45 lb = 20.41 kg; 20 kg = 44.09 lb (not the same bar).; valid: Exact by definition.)",
+   "correctedClaim": "Unit conversion: kg = lb x 0.45359237; lb = kg / 0.45359237 (exact by definition). Store the value in the unit it was entered in, together with the unit, and round only for display. 45 lb = 20.41 kg; 20 kg = 44.09 lb (different bars).",
+   "sources": [
+    {
+     "citation": "NIST Handbook 44 (2026), Appendix B, p. B-12: 1 avoirdupois pound = 0.453 592 37 kilogram.",
+     "url": "https://www.nist.gov/system/files/documents/2025/12/30/appb-26-HB44-20251210.pdf"
+    }
+   ],
+   "evidence": "NIST Handbook 44 (2026) Appendix B p. B-12 (https://www.nist.gov/system/files/documents/2025/12/30/appb-26-HB44-20251210.pdf): '1 avoirdupois pound = 0.453 592 37 kilogram.' Arithmetic checked: 20.4117 kg, 44.0925 lb. A definition, so C for consistency with PL3.",
+   "appUse": "trainingMath.convert"
+  },
+  {
+   "id": "formula-15",
+   "kind": "formula",
+   "topic": "Fair PR detection",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Fair PR detection: RM_best(e, r) = max over prior working sets s of exerciseId e with s.r >= r of s.w;  rep-max PR if w > RM_best(e, r).  Estimated PR if RTF <= 10 AND (rir known OR failure) AND e1RM_adj > max prior e1RM_adj(e) + minIncrement.  Weight PR if w > max prior w(e) with r >= 1. (defaults: Key by exerciseId, not name. Warm-ups excluded. Rep-max PRs (measured) rank above estimated PRs. minIncrement = 5 lb / 2.5 kg, so a rounding wobble can't count as a PR. Check r in 1..20 for rep-max PRs.; valid: Estimated PRs only for RTF <= 10. Rep-max PRs are valid at any rep count because they are observed, not modelled.)",
+   "correctedClaim": "Fair PR detection, keyed by exerciseId with warm-ups excluded. Rep-max PR: a set beats the heaviest prior weight done for at least that many reps (valid at any rep count because it is observed). Estimated PR: only when reps to failure <= 10, effort is known, and the new e1RM beats the old one by at least 5 lb / 2.5 kg. Rep-max PRs rank above estimated ones. The 10-rep limit follows Reynolds 2006; the rest are app definitions.",
+   "sources": [
+    {
+     "citation": "Reynolds JM et al. J Strength Cond Res 2006;20(3):584-592 (no more than 10 reps in 1RM prediction).",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Prediction%20of%20one%20repetition%20maximum%20strength%20from%20multiple%20repetition%20maximum%20testing%20and%20anthropometry%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Reynolds 2006, PMID 16937972 (Europe PMC): 'no more than 10 repetitions should be used in linear equations to estimate 1RM'. The PR definitions, the minIncrement buffer and the 1..20 rep check are conventions, so C.",
+   "appUse": "trainingMath.records"
+  },
+  {
+   "id": "formula-16",
+   "kind": "formula",
+   "topic": "Fatigue / deload signal",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "correctGrade": "C",
+   "formulaAsResearched": "Fatigue / deload signal (unvalidated convention): perf_i = best e1RM_adj of session i for lift L;  drop_i = perf_i / median(perf_{i-1}, perf_{i-2}, perf_{i-3}) - 1;  flag(L) if drop_i <= -0.05 AND drop_{i-1} <= -0.05;  suggest deload if flag on >= 2 lifts within 14 days OR user logs 'wiped out' on >= 2 sessions in 7 days (defaults: -5% threshold, 2 consecutive sessions, 2 lifts. None of these numbers were tested; they were chosen to sit above a 1-rep misjudgement (about 2.5-3.3% of e1RM). The suggested deload is 1 week of about half the sets at the same load (volume drops, load stays).; valid: Needs >= 4 logged sessions of the lift. Suggest only, never schedule automatically.)",
+   "correctedClaim": "Fatigue/deload signal (untested convention): per lift, compare the session's best RIR-adjusted e1RM with the median of the previous 3; flag if it is down 5% or more two sessions running; suggest a deload if 2+ lifts flag within 14 days or the user logs 'wiped out' in 2+ sessions within 7 days. None of these numbers were tested; the 5% sits above a one-rep misjudgement (about 2.5-3.3%). The suggested deload (1 week, about half the sets, same load) is one option coaches agree on, not a tested prescription. Needs 4+ logged sessions; suggest only, never schedule.",
+   "sources": [
+    {
+     "citation": "Bell L et al. Integrating deloading into strength and physique sports training programmes: an international Delphi consensus approach. Sports Med Open 2023;9:87.",
+     "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10511399/"
+    },
+    {
+     "citation": "Coleman M et al. Gaining more from doing less? The effects of a one-week deload period during supervised resistance training on muscular adaptations. PeerJ 2024;12:e16777.",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Gaining%20more%20from%20doing%20less%22&resultType=core&format=json"
+    }
+   ],
+   "evidence": "Bell 2023 (https://pmc.ncbi.nlm.nih.gov/articles/PMC10511399/): coaches agreed deloads could be triggered by fatigue, volume could drop by lowering sets, and 'Training intensity could remain the same during the deload, but the volume may drop'; no numeric thresholds. Coleman 2024 (PMID 38274324) tested a full 1-week stop, not half sets, and found smaller lower-body strength gains. No source validates -5%, 2 sessions, 2 lifts or 'half the sets', so C.",
+   "appUse": "not-in-v1"
+  }
+ ],
+ "dropped": [
+  {
+   "id": "lateral-raise-thumbs-down-myth",
+   "kind": "exercise",
+   "exercise": "Lateral raise",
+   "verdict": "wrong",
+   "originalGrade": "B",
+   "originalClaim": "Myth check: 'pouring the jug' (thumb down) shifted activity toward the rear delt, upper traps and triceps, while a neutral grip gave the highest side-delt activity.",
+   "reason": "Verdict 'wrong': the full text shows thumb-down was not lower than neutral for the side delt while lifting and was highest while lowering, so the myth-check conclusion is reversed. The verifier wrote a replacement sentence, but it was not put through a second independent check, so it is not used in the app.",
+   "sources": [
+    {
+     "citation": "Coratella G, Tornatore G, Longo S, Esposito F, Cè E. An Electromyographic Analysis of Lateral Raise Variations and Frontal Raise in Competitive Bodybuilders. Int J Environ Res Public Health. 2020;17(17):6015. doi:10.3390/ijerph17176015",
+     "url": "https://europepmc.org/article/MED/32824894"
+    }
+   ]
+  },
+  {
+   "id": "E5",
+   "kind": "training",
+   "topic": "Newer weight-dependent 1RM equation",
+   "verdict": "supported",
+   "originalGrade": "B",
+   "originalClaim": "A March 2026 arXiv preprint fits 1RM = w*(1+(r-1)^0.85/(-2.55+4.58*ln(w))) to 303,494 near-failure sets from a consumer app. It reports 17-22% less inconsistency than classical equations. It is not peer reviewed; do not adopt it yet.",
+   "reason": "Not peer reviewed, measures self-consistency rather than error against a measured 1RM, and both the research and the verifier say do not adopt it. Keeping it in the app would only invite someone to switch formulas.",
+   "sources": [
+    {
+     "citation": "Marzagao T. A weight-dependent 1RM prediction equation optimized on 303,494 near-failure sets across 388 exercises. arXiv:2603.17495 (2026)",
+     "url": "https://arxiv.org/abs/2603.17495"
+    }
+   ]
+  },
+  {
+   "id": "R3",
+   "kind": "training",
+   "topic": "RIR accuracy depends on load",
+   "verdict": "wrong",
+   "originalGrade": "B",
+   "originalClaim": "Trained men often underestimated RIR by more than 1 rep at 65% and 75% 1RM; 2 RIR estimates were accurate at 85%. Trained men and women benching at 75% were accurate on average (error -0.17 +/- 1.00 at a 1-RIR target, 0.65 +/- 0.78 at a 3-RIR target).",
+   "reason": "Verdict 'wrong': the load findings come from Hughes 2020, which was retracted for data errors, and the Refalo numbers were misassigned (0.65 +/- 0.78 is the pooled absolute error, not the 3-RIR result). The load-accuracy point that survives is already covered by R2 (sets over 12 reps were much less accurate).",
+   "sources": [
+    {
+     "citation": "Hughes LJ, Peiffer JJ, Scott BR. Estimating repetitions in reserve in four commonly used resistance exercises. J Strength Cond Res 2020 (RETRACTED 2021)",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:33470601%20AND%20SRC:MED&resultType=core&format=json"
+    },
+    {
+     "citation": "Refalo MC et al. J Strength Cond Res 2024;38(3):e78-e85",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=AUTH:%22Refalo%20MC%22%20AND%20TITLE:accuracy&resultType=core&format=json"
+    }
+   ]
+  },
+  {
+   "id": "L1",
+   "kind": "training",
+   "topic": "Load range and hypertrophy vs strength",
+   "verdict": "supported",
+   "originalGrade": "A",
+   "originalClaim": "When sets go to failure, low loads (<= 60% 1RM) and high loads give similar muscle growth, but 1RM strength gains are larger with high loads (21 studies). ACSM 2026: strength benefits from >= 80% 1RM for 2-3 sets.",
+   "reason": "Duplicate of 'light-load-to-failure' (same 2017 meta-analysis), and its '(21 studies)' count conflicts with the full-text check made for that claim: only 10 studies measured muscle size and 14 measured 1RM. The more carefully checked version is kept instead. The ACSM 80% sentence is not needed by v1.",
+   "sources": [
+    {
+     "citation": "Schoenfeld BJ et al. Strength and hypertrophy adaptations between low- vs. high-load resistance training. J Strength Cond Res 2017;31(12):3508-3523",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=TITLE:%22Strength%20and%20Hypertrophy%20Adaptations%20Between%20Low-%20vs.%20High-Load%20Resistance%20Training%22&resultType=core&format=json"
+    },
+    {
+     "citation": "Currier BS et al. ACSM Position Stand 2026",
+     "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:41843416%20AND%20SRC:MED&resultType=core&format=json"
+    }
+   ]
+  }
+ ]
+}
