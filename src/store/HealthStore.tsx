@@ -574,6 +574,12 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** Mount a ready-made store value — for dev harnesses (?workoutlab) that must
+ *  never touch Supabase. The real app always uses HealthProvider. */
+export function HealthValueProvider({ value, children }: { value: HealthStore; children: ReactNode }) {
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function useHealth(): HealthStore {
   const s = useContext(Ctx);
