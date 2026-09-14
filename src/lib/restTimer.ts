@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { restOverAlert } from "./restAlert";
+import { isWarmup } from "./trainingMath";
 import type { Exercise, Person, SetEntry } from "./workoutLog";
 
 // ── defaults ───────────────────────────────────────────────────────────────────
@@ -24,11 +25,11 @@ import type { Exercise, Person, SetEntry } from "./workoutLog";
  * moves several joints 120 s, everything else 90 s.
  */
 export function restDefault(ex: Exercise | undefined, set: SetEntry): number {
-  // `mode` and `kind` are optional fields added for workout mode v1; read them
-  // structurally so older stored sets and exercises without them still work.
-  const mode = ex ? ((ex as { mode?: string }).mode ?? (ex.type === "cardio" ? "cardio" : "weighted")) : undefined;
+  // `mode` and `kind` are optional (workout mode v1); older stored sets and
+  // exercises without them fall back to the exercise type and "working".
+  const mode = ex ? (ex.mode ?? (ex.type === "cardio" ? "cardio" : "weighted")) : undefined;
   if (mode === "cardio") return 0;
-  if ((set as { kind?: string }).kind === "warmup") return 60;
+  if (isWarmup(set)) return 60;
   if (mode === "bodyweight" || mode === "band" || mode === "timed") return 60;
   if (ex?.type === "compound") return 120;
   return 90;

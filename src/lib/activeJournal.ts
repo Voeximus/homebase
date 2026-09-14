@@ -12,6 +12,7 @@
 
 import type { ExerciseEntry, Workout } from "./workoutLog";
 import { repairDuplicateSetIds, type SetIdMaker, type SyncSet, type Tombstones } from "./syncMerge";
+import { isDone } from "./trainingMath";
 
 export interface ActiveJournal {
   workout: Workout;
@@ -114,8 +115,6 @@ export type JournalResolution =
   | { action: "keep" }
   | { action: "clear" };
 
-// Same rule as trainingMath's isDone: an old set with no `done` counts when it has reps.
-const isDone = (s: SyncSet) => (s.done !== undefined ? s.done : s.reps > 0);
 const hasIds = (sets: SyncSet[]) => sets.every((s) => typeof s.id === "string" && s.id !== "");
 
 /**

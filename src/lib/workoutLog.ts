@@ -141,6 +141,7 @@ export function searchExercises(query: string, library: Exercise[], limit = 40):
   const tokens = q.split(/\s+/).filter(Boolean);
   const scored: { e: Exercise; s: number }[] = [];
   for (const e of library) {
+    if (e.hidden) continue; // a near-duplicate folded into another entry (e.g. Burpees → Burpee)
     const n = e.name.toLowerCase();
     if (!tokens.every((tk) => n.includes(tk) || e.muscle.includes(tk) || e.equipment.includes(tk))) continue;
     let s: number;
