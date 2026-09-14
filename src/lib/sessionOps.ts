@@ -228,10 +228,14 @@ export function sessionCounts(w: Workout): { done: number; planned: number; warm
   return { done, planned, warmups };
 }
 
+/** Longer than this from start to last tick is two sittings, not one session (a workout that runs past midnight still fits). */
+const MAX_SESSION_MIN = 12 * 60;
+
 /**
  * The numbers the finish sheet shows, from the session as it is now (before
  * the drop). `minutes` = last tick − session start (the first tick when the
- * start isn't known); null when no tick has a time.
+ * start isn't known); null when no tick has a time, or when that span is too
+ * long to be one sitting ("Finish it" on a session from an earlier day).
  */
 export function finishSummary(
   w: Workout,
@@ -269,6 +273,9 @@ export function finishSummary(
   if (lastAt > 0) {
     const start = startedAt !== null && Number.isFinite(startedAt) && startedAt <= lastAt ? startedAt : firstAt;
     minutes = Math.round((lastAt - start) / 60000);
+    // An old session finished days later has ticks from both sittings; the gap
+    // between them is not a workout length, so there is no time to show.
+    if (minutes > MAX_SESSION_MIN) minutes = null;
   }
   return { minutes, sets, warmups, exercises, empty, unticked };
 }

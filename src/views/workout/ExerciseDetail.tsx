@@ -13,8 +13,8 @@ import { REP_COLUMNS, dayLabel, fmtWeight, regionName, regionsOf, sessionsWith, 
 // what studies found, and your own numbers.
 //
 // An exercise the person typed in themselves is not in the library, so there is
-// no muscle map and no study notes to show — only their numbers, which come from
-// their logs and need neither.
+// no muscle map, and study notes show the fixed no-notes line (V1.md §2) — then
+// their numbers, which come from their logs and need neither.
 
 const EDGE = { borderColor: "var(--color-edge)" } as const;
 
@@ -78,7 +78,7 @@ export function ExerciseDetail({
         </section>
       )}
 
-      {ex && <StudyNotes exercise={ex} />}
+      {!loading && <StudyNotes exercise={ex} />}
 
       <YourNumbers name={ex?.name ?? name} person={person} library={library} workouts={workouts} />
     </div>

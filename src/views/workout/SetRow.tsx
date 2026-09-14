@@ -98,7 +98,7 @@ export function SetRow({
           ghost={ghost.weight}
           decimal
           max={2000}
-          suffix="lb"
+          suffix={t("lb")}
           done={done}
           error={weightError}
           label={t("Weight for {set}", { set: setName })}

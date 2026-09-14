@@ -240,11 +240,12 @@ describe("ExerciseDetail", () => {
     expect(html).toContain("You haven&#x27;t logged this yet.");
   });
 
-  it("for an exercise the person added: no map, no notes, still their numbers", () => {
+  it("for an exercise the person added: no map, the fixed no-notes line, still their numbers", () => {
     const html = detail("Grandma's sandbag carry", [workout("2026-09-10", [entry("Grandma's sandbag carry", [set(80, 5), set(80, 5)])])]);
     expect(html).toContain("You added this exercise, so there is no muscle map for it.");
     expect(html).not.toContain("data-region=");
-    expect(html).not.toContain("What studies found");
+    expect(html).toContain("What studies found");
+    expect(html).toContain("No study notes for this exercise yet. The muscles shown come from anatomy, not from a study of this exercise.");
     expect(html).toContain("Your numbers");
     expect(html).toContain("80×5 · 80×5");
     expect(html).toContain("Thu 10 Sep");

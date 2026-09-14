@@ -63,8 +63,13 @@ export function workoutVolume(w: Workout): number {
   for (const ex of w.exercises) for (const s of ex.sets) v += s.weight > 0 ? s.reps * s.weight : s.reps;
   return v;
 }
+/**
+ * Done working sets — the "N sets" a history row shows. Warm-ups, sets typed in
+ * but never ticked, and an old routine's empty rows are kept but not counted,
+ * as the finish sheet promises.
+ */
 export function totalSets(w: Workout): number {
-  return w.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+  return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => isDone(s) && !isWarmup(s)).length, 0);
 }
 /** Total minutes of time-based (cardio / quick) work in a session. */
 export function workoutDuration(w: Workout): number {

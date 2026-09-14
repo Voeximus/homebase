@@ -383,6 +383,13 @@ describe("finishSummary", () => {
   it("has no time when no tick carries one", () => {
     expect(finishSummary(workout([entry([set(185, 5)])]), 0).minutes).toBeNull();
   });
+
+  it("has no time when an old session gets a tick days later (two sittings, not a 2807-minute workout)", () => {
+    const later = workout([entry([set(185, 5, { done: true, doneAt: 10 * min }), set(185, 5, { done: true, doneAt: 10 * min + 2 * 24 * 60 * min })])]);
+    expect(finishSummary(later, null).minutes).toBeNull();
+    const long = workout([entry([set(185, 5, { done: true, doneAt: 10 * min }), set(185, 5, { done: true, doneAt: 190 * min })])]);
+    expect(finishSummary(long, null).minutes).toBe(180);
+  });
 });
 
 describe("sessionRecords", () => {

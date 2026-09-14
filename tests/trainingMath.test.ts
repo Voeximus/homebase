@@ -11,7 +11,7 @@ import {
   recentRecords,
   lastTime,
 } from "../src/lib/trainingMath";
-import { bestSet, e1RM, personalRecords } from "../src/lib/workoutLog";
+import { bestSet, e1RM, personalRecords, totalSets } from "../src/lib/workoutLog";
 import type { Exercise, SetEntry, Workout } from "../src/lib/workoutLog";
 
 // ── builders ──────────────────────────────────────────────────────────────────
@@ -309,5 +309,12 @@ describe("workoutLog records skip warm-ups and un-ticked sets", () => {
     const prs = personalRecords(ws);
     expect(prs).toHaveLength(1);
     expect(prs[0]).toMatchObject({ name: "Triceps pushdown", weight: 60, reps: 10, date: "2026-09-08" });
+  });
+  it("totalSets (the history row's 'N sets') counts done working sets only", () => {
+    const w = workout("2026-09-08", [
+      ["Bench press", [warm(95, 10), set(185, 5, { done: true }), set(185, 5, { done: false })]],
+      ["Leg press", [set(270, 8), set(0, 0)]], // legacy: a done row and a planned row never done
+    ]);
+    expect(totalSets(w)).toBe(2);
   });
 });

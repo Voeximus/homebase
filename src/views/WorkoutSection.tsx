@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { getLang, t, tc } from "../lib/i18n";
+import { REST_IDLE, saveRest } from "../lib/restTimer";
 import { clearSessionStart, shortDay } from "../lib/sessionOps";
 import { isDone } from "../lib/trainingMath";
 import {
@@ -288,6 +289,9 @@ function SoloWorkout({
   const canStart = !active && !loading;
   const start = (w: Workout) => {
     if (!canStart) return;
+    // The rest is kept per person, not per session: one left over from a session
+    // that was abandoned or discarded from the banner must not greet a new one.
+    saveRest(person, REST_IDLE);
     upsertWorkout(w);
     onOpenSession(w.id);
   };
@@ -329,6 +333,7 @@ function SoloWorkout({
   const discardStale = () => {
     if (stale) {
       clearSessionStart(stale.id);
+      saveRest(person, REST_IDLE);
       deleteWorkout(stale.id);
     }
     setConfirmStale(false);

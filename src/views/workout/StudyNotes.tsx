@@ -17,11 +17,16 @@ import { GRADE_GLYPH, GRADE_LABEL, categoryLabel, loadEvidence } from "./viewHel
 const NO_NOTES = "No study notes for this exercise yet. The muscles shown come from anatomy, not from a study of this exercise.";
 const FIRST = 2; // notes shown before "Show more"
 
-/** Loads the notes for one exercise (lazily — see loadEvidence) and shows them. */
-export function StudyNotes({ exercise }: { exercise: Exercise }) {
+/**
+ * Loads the notes for one exercise (lazily — see loadEvidence) and shows them.
+ * An exercise the person added themselves (`undefined`) has none to load, and
+ * gets the same fixed no-notes line as a library exercise without any.
+ */
+export function StudyNotes({ exercise }: { exercise: Exercise | undefined }) {
   // Keyed by exercise id, so moving to another exercise shows nothing stale while it loads.
   const [loaded, setLoaded] = useState<{ id: string; notes: StudyNote[] } | { id: string; failed: true } | null>(null);
   useEffect(() => {
+    if (!exercise) return;
     let on = true;
     loadEvidence().then(
       (m) => on && setLoaded({ id: exercise.id, notes: m.notesFor(exercise) }),
@@ -32,14 +37,16 @@ export function StudyNotes({ exercise }: { exercise: Exercise }) {
     };
   }, [exercise]);
 
-  const mine = loaded && loaded.id === exercise.id ? loaded : null;
+  const mine = exercise && loaded && loaded.id === exercise.id ? loaded : null;
   return (
     <section className="h-panel">
       <div className="h-cardhead">
         <span className="ic"><BookOpen size={14} /></span>
         <div className="t" style={{ flex: 1 }}>{t("What studies found")}</div>
       </div>
-      {!mine ? (
+      {!exercise ? (
+        <p className="text-[13px] leading-normal text-bone">{t(NO_NOTES)}</p>
+      ) : !mine ? (
         <p className="h-sub">{t("Loading study notes…")}</p>
       ) : "failed" in mine ? (
         <p className="h-sub">{t("Couldn't load the study notes. Check your connection and open this page again.")}</p>
