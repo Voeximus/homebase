@@ -25,6 +25,11 @@ const DesignLab = import.meta.env.DEV
 const MealLab = import.meta.env.DEV
   ? lazy(() => import("./views/redesign/MealLab").then((m) => ({ default: m.MealLab })))
   : null;
+// ?workoutlab — workout mode over an in-memory store and example history. Same
+// DEV-only gating: the harness, its fake store and its fixtures never ship.
+const WorkoutLab = import.meta.env.DEV
+  ? lazy(() => import("./dev/WorkoutLab").then((m) => ({ default: m.WorkoutLab })))
+  : null;
 // ?labellab — the nutrition-label reader harness (photos/camera → OCR → parse →
 // verify). Same DEV-only gating, so neither it nor the fixtures it loads ship.
 const LabelLab = import.meta.env.DEV
@@ -53,6 +58,18 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <MealLab />
+      </Suspense>
+    );
+  }
+  if (
+    import.meta.env.DEV &&
+    WorkoutLab &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("workoutlab")
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <WorkoutLab />
       </Suspense>
     );
   }
