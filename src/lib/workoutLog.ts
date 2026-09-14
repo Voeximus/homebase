@@ -6,6 +6,7 @@
 
 import type { Exercise } from "./exerciseData";
 import { rowId, todayStr } from "./mealLog";
+import { e1rm, isDone, isWarmup, normName } from "./trainingMath";
 
 export type { Exercise };
 export type Person = "gino" | "xinyan";
@@ -13,6 +14,13 @@ export type Person = "gino" | "xinyan";
 export interface SetEntry {
   reps: number;
   weight: number; // lb; 0 = bodyweight / cardio
+  // ── optional, added for workout mode v1. Old rows have none of these, and
+  // old app versions copy them blindly when adding a set, so every reader must
+  // treat them as hints (see isDone / isWarmup in trainingMath.ts).
+  id?: string; // per-set id, so two phones can merge set by set
+  done?: boolean; // ticked; missing → legacy rule: reps > 0
+  doneAt?: number; // ms since epoch, when ticked
+  kind?: "warmup" | "working"; // missing → working
 }
 export interface ExerciseEntry {
   id: string;
@@ -62,14 +70,19 @@ export function totalSets(w: Workout): number {
 export function workoutDuration(w: Workout): number {
   return w.exercises.reduce((n, ex) => n + (ex.duration ?? 0), 0);
 }
-/** Epley estimated 1-rep max — the fair way to compare sets at different reps. */
+/**
+ * Epley estimated 1-rep max — the fair way to compare sets at different reps.
+ * 0 when there is no estimate (see e1rm in trainingMath.ts: a single is the
+ * weight itself, and nothing above 15 reps).
+ */
 export function e1RM(weight: number, reps: number): number {
-  if (weight <= 0 || reps <= 0) return 0;
-  return weight * (1 + reps / 30);
+  return e1rm(weight, reps) ?? 0;
 }
+/** The best done working set (warm-ups and un-ticked sets never count). */
 export function bestSet(sets: SetEntry[]): { weight: number; reps: number; e1rm: number } {
   let best = { weight: 0, reps: 0, e1rm: 0 };
   for (const s of sets) {
+    if (!isDone(s) || isWarmup(s)) continue;
     const e = e1RM(s.weight, s.reps);
     if (e > best.e1rm || (e === 0 && s.reps > best.reps && best.e1rm === 0)) {
       best = { weight: s.weight, reps: s.reps, e1rm: e };
@@ -77,8 +90,6 @@ export function bestSet(sets: SetEntry[]): { weight: number; reps: number; e1rm:
   }
   return best;
 }
-
-const nameKey = (s: string) => s.trim().toLowerCase();
 
 export interface PR {
   name: string;
@@ -88,14 +99,17 @@ export interface PR {
   e1rm: number;
   date: string;
 }
-/** Best estimated-1RM set per exercise across all finished workouts. */
+/**
+ * Best estimated-1RM set per exercise across all finished workouts. Keyed by
+ * normalised name, so "Tricep pushdowns" and "Triceps pushdown" are one record.
+ */
 export function personalRecords(workouts: Workout[]): PR[] {
   const by = new Map<string, PR>();
   for (const w of workouts) {
     for (const ex of w.exercises) {
       const b = bestSet(ex.sets);
       if (b.e1rm <= 0) continue;
-      const k = nameKey(ex.name);
+      const k = normName(ex.name);
       const cur = by.get(k);
       if (!cur || b.e1rm > cur.e1rm) {
         by.set(k, { name: ex.name, muscle: ex.muscle, weight: b.weight, reps: b.reps, e1rm: b.e1rm, date: w.date });
