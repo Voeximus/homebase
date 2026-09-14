@@ -1,0 +1,18 @@
+{
+  "_about": "Hand fixes applied after raw/ and homebase.json are merged. Library entries only: stored log entries keep their own muscle text.",
+  "muscle": {
+    "ex-romanian-deadlift": "legs",
+    "ex-face-pull": "shoulders"
+  },
+  "mergedInto": {
+    "ex-burpees": "ex-burpee"
+  },
+  "aliases": {
+    "ex-incline-dumbbell-bench-press": ["Incline dumbbell press"],
+    "ex-chest-supported-dumbbell-row": ["Chest-supported row"],
+    "ex-dumbbell-bench-press": ["Flat dumbbell press"],
+    "ex-hammer-curl": ["Dumbbell hammer curl"],
+    "ex-bulgarian-split-squat": ["Dumbbell split squat"],
+    "ex-walking": ["Walk"]
+  }
+}
