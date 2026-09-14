@@ -13,6 +13,13 @@ export type Person = "gino" | "xinyan";
 export interface SetEntry {
   reps: number;
   weight: number; // lb; 0 = bodyweight / cardio
+  // ── optional, added for workout mode v1. Old rows have none of these, and
+  // old app versions copy them blindly when adding a set, so every reader must
+  // treat them as hints (see isDone / isWarmup in trainingMath.ts).
+  id?: string; // per-set id, so two phones can merge set by set
+  done?: boolean; // ticked; missing → legacy rule: reps > 0
+  doneAt?: number; // ms since epoch, when ticked
+  kind?: "warmup" | "working"; // missing → working
 }
 export interface ExerciseEntry {
   id: string;

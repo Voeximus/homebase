@@ -12,6 +12,12 @@ export interface Exercise {
   muscle: Muscle;
   equipment: string;
   type: "compound" | "isolation" | "cardio";
+  // ── optional, workout mode v1 (regions are RegionId strings from muscleRegions.ts;
+  // typed as string here so this generated file needs no import) ──
+  primary?: string[]; // main muscles
+  secondary?: string[]; // helpers
+  mode?: "weighted" | "bodyweight" | "band" | "timed" | "cardio";
+  aliases?: string[]; // other names old logs and routines used
 }
 
 export const BUNDLED_EXERCISES: Exercise[] = [
