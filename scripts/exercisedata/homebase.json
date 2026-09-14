@@ -1,0 +1,5 @@
+[
+  { "id": "ex-band-row", "name": "Band row", "muscle": "back", "equipment": "band", "type": "compound" },
+  { "id": "ex-nordic-hamstring-curl", "name": "Nordic hamstring curl", "muscle": "legs", "equipment": "bodyweight", "type": "isolation" },
+  { "id": "ex-45-back-extension", "name": "45° back extension", "muscle": "legs", "equipment": "bodyweight", "type": "compound" }
+]
