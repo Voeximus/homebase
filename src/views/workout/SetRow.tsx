@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 import { Check } from "lucide-react";
-import { t } from "../../lib/i18n";
+import { t, tc } from "../../lib/i18n";
 import { fmtWeight, type Ghost } from "../../lib/sessionOps";
 import type { SetEntry } from "../../lib/workoutLog";
 
@@ -26,7 +26,7 @@ export function SetColumns({ showWeight }: { showWeight: boolean }) {
       className="grid items-center gap-1.5 py-0.5 text-center text-[10.5px] tracking-[0.05em] uppercase"
       style={{ gridTemplateColumns: showWeight ? COLS_WEIGHT : COLS_REPS, color: "var(--color-faint)" }}
     >
-      <span>{t("Set")}</span>
+      <span>{tc("Set", "gym")}</span>
       {showWeight && <span>{t("Weight")}</span>}
       <span>{t("Reps")}</span>
       <span />

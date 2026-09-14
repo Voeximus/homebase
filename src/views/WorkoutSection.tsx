@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Check,
   ChevronDown,
+  Clock,
   Dumbbell,
   Flame,
   Minus,
@@ -11,12 +12,12 @@ import {
   Search,
   Trash2,
   Trophy,
-  User,
-  Users,
   X,
   Zap,
 } from "lucide-react";
-import { t } from "../lib/i18n";
+import { getLang, t, tc } from "../lib/i18n";
+import { clearSessionStart, shortDay } from "../lib/sessionOps";
+import { isDone } from "../lib/trainingMath";
 import {
   bestSet,
   personalRecords,
@@ -27,16 +28,24 @@ import {
   todayStr,
   totalSets,
   workoutDuration,
-  workoutVolume,
   type Exercise,
   type ExerciseEntry,
   type Person,
   type Routine,
+  type SetEntry,
   type Workout,
 } from "../lib/workoutLog";
 import { useHealth } from "../store/HealthStore";
+import { ActiveSession } from "./workout/ActiveSession";
+import { ExerciseDetail } from "./workout/ExerciseDetail";
+import { ExercisesTab } from "./workout/ExercisesTab";
+import { ConfirmSheet } from "./workout/FinishSheet";
+import { ProgressTab } from "./workout/ProgressTab";
 
 const newId = () => crypto.randomUUID();
+// A fresh empty working set. `done: false` is written out so a number typed into
+// it doesn't count until it is ticked (old rows count by the reps > 0 rule).
+const emptySet = (): SetEntry => ({ id: newId(), reps: 0, weight: 0, kind: "working", done: false });
 // "30 min" for a time-based quick log, else "N sets"
 const sessionStat = (w: Workout) =>
   workoutDuration(w) > 0 && totalSets(w) === 0
@@ -53,12 +62,58 @@ const r0 = (n: number) => Math.round(n);
 const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
 const WEEK_GOAL = 4; // a friendly weekly target the ring fills toward
 
+// ── the views inside Workouts ─────────────────────────────────────────────────
+// Today · Progress · Exercises · Together (V1.md Ships §5). The pick is kept on
+// the phone. The old two-way "Just me / Together" switch saved "together" under
+// hb-workout-mode; that still opens Together the first time.
+type View = "today" | "progress" | "exercises" | "together";
+const VIEWS: { id: View; label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "progress", label: "Progress" },
+  { id: "exercises", label: "Exercises" },
+  { id: "together", label: "Together" },
+];
+const VIEW_KEY = "hb-workout-view";
+
+function loadView(): View {
+  try {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (VIEWS.some((v) => v.id === saved)) return saved as View;
+    return localStorage.getItem("hb-workout-mode") === "together" ? "together" : "today";
+  } catch {
+    return "today"; // storage blocked: start on Today every time
+  }
+}
+
+/**
+ * Which unfinished session is the one being logged, and which is left over.
+ *
+ * Running = the session opened on this screen (started here, or "Finish it" on
+ * an old one), else an unfinished one dated today. Its date is not re-checked
+ * once it is open, so a workout that runs past midnight stays on screen.
+ * Stale = the newest unfinished session from an earlier day, shown as a banner
+ * instead of pretending to be today's workout — only while nothing is running,
+ * so there is never more than one session open at a time.
+ */
+function pickSessions(workouts: Workout[], person: Person, today: string, openId: string | null) {
+  const open = workouts.filter((w) => w.person === person && !w.done);
+  const running = open.find((w) => w.id === openId) ?? open.find((w) => w.date >= today) ?? null;
+  const stale = running
+    ? null
+    : open.filter((w) => w.date < today).sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+  return { running, stale };
+}
+
 // ── entry point ────────────────────────────────────────────────────────────────
 export function WorkoutSection({ owner, person }: { owner: Person; person: Person }) {
-  const [mode, setMode] = useState<"solo" | "together">(
-    () => (localStorage.getItem("hb-workout-mode") as "solo" | "together") || "solo",
-  );
-  useEffect(() => localStorage.setItem("hb-workout-mode", mode), [mode]);
+  const [view, setView] = useState<View>(loadView);
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      /* storage blocked — the view just isn't remembered */
+    }
+  }, [view]);
 
   const [library, setLibrary] = useState<Exercise[]>([]);
   useEffect(() => {
@@ -69,99 +124,196 @@ export function WorkoutSection({ owner, person }: { owner: Person; person: Perso
     };
   }, []);
 
+  const { workouts } = useHealth();
+  // The session opened on this screen, per person (a different phone owner is a different screen).
+  const [opened, setOpened] = useState<{ person: Person; id: string } | null>(null);
+  const openId = opened?.person === person ? opened.id : null;
+  const today = todayStr();
+  const { running, stale } = useMemo(() => pickSessions(workouts, person, today, openId), [workouts, person, today, openId]);
+
+  // The exercise page sits over whichever view opened it. That view stays
+  // mounted underneath (hidden), so Back lands on the same search, the same
+  // expanded list and the same scroll position.
+  const [detail, setDetail] = useState<{ name: string; scrollY: number } | null>(null);
+  const openExercise = (name: string) => {
+    setDetail({ name, scrollY: window.scrollY });
+    requestAnimationFrame(() => window.scrollTo(0, 0));
+  };
+  const back = () => {
+    const y = detail?.scrollY ?? 0;
+    setDetail(null);
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  };
+  const go = (v: View) => {
+    setDetail(null);
+    setView(v);
+    requestAnimationFrame(() => window.scrollTo(0, 0));
+  };
+  const resume = () => (view === "today" && detail ? back() : go("today"));
+
+  const nav = (
+    <div className="h-seg" role="tablist" aria-label={t("Workout views")} style={{ display: "flex", width: "100%" }}>
+      {VIEWS.map((v) => (
+        <button
+          key={v.id}
+          role="tab"
+          aria-selected={view === v.id}
+          className={view === v.id ? "on" : ""}
+          style={{ flex: 1, padding: "0 4px" }}
+          onClick={() => go(v.id)}
+        >
+          {tc(v.label, "workouts")}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-3 pb-8">
-      <div className="hb-ctl">
-        <div className="h-seg" role="tablist" aria-label={t("Who this is for")}>
-          <button role="tab" aria-selected={mode === "solo"} className={mode === "solo" ? "on" : ""} onClick={() => setMode("solo")}>
-            <User size={14} /> {t("Just me")}
-          </button>
-          <button role="tab" aria-selected={mode === "together"} className={mode === "together" ? "on" : ""} onClick={() => setMode("together")}>
-            <Users size={14} /> {t("Together")}
+      {running && (view !== "today" || detail) && (
+        <div
+          className="flex min-h-11 items-center gap-2 rounded-[12px] pl-3 pr-1.5 text-[12.5px]"
+          style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", color: "var(--color-taupe)" }}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {t("Workout in progress")}
+            {running.date !== today && (
+              <>
+                {" · "}
+                <b className="font-semibold text-bone">{shortDay(running.date, getLang())}</b>
+              </>
+            )}
+          </span>
+          <button onClick={resume} className="h-btn" style={{ width: "auto", minHeight: 36, padding: "0 12px", fontSize: 12.5 }}>
+            <Play size={13} /> {t("Resume")}
           </button>
         </div>
+      )}
+
+      {detail && (
+        <ExerciseDetail name={detail.name} person={person} library={library} workouts={workouts} onBack={back} />
+      )}
+
+      {/* Today stays mounted on every view, so a running rest keeps counting and
+          still beeps at zero while Progress or an exercise page is open. */}
+      <div hidden={!!detail || view !== "today"} className="flex flex-col gap-3">
+        <SoloWorkout
+          key={person}
+          person={person}
+          library={library}
+          running={running}
+          stale={stale}
+          nav={nav}
+          onOpenSession={(id) => {
+            setOpened({ person, id });
+            requestAnimationFrame(() => window.scrollTo(0, 0));
+          }}
+          onCloseSession={() => setOpened(null)}
+          onOpenExercise={openExercise}
+        />
       </div>
 
-      {mode === "solo" ? (
-        <SoloWorkout key={person} person={person} library={library} />
-      ) : (
-        <TogetherWorkout key={owner} owner={owner} />
+      {view === "progress" && (
+        <div hidden={!!detail} className="flex flex-col gap-3">
+          {nav}
+          <ProgressTab person={person} workouts={workouts} library={library} onOpenExercise={openExercise} />
+        </div>
+      )}
+      {view === "exercises" && (
+        <div hidden={!!detail} className="flex flex-col gap-3">
+          {nav}
+          <ExercisesTab library={library} onOpen={openExercise} />
+        </div>
+      )}
+      {view === "together" && (
+        <div hidden={!!detail} className="flex flex-col gap-3">
+          {nav}
+          <TogetherWorkout key={owner} owner={owner} />
+        </div>
       )}
     </div>
   );
 }
 
-// ── SOLO — log a session, routines, PRs, history ────────────────────────────────
-function SoloWorkout({ person, library }: { person: Person; library: Exercise[] }) {
+// ── TODAY — log a session, routines, PRs, history ───────────────────────────────
+function SoloWorkout({
+  person,
+  library,
+  running: active,
+  stale,
+  nav,
+  onOpenSession,
+  onCloseSession,
+  onOpenExercise,
+}: {
+  person: Person;
+  library: Exercise[];
+  running: Workout | null;
+  stale: Workout | null;
+  nav: ReactNode;
+  onOpenSession: (id: string) => void;
+  onCloseSession: () => void;
+  onOpenExercise: (name: string) => void;
+}) {
   const today = todayStr();
-  const { workouts: allWorkouts, routines: allRoutines, upsertWorkout, deleteWorkout, addRoutine, deleteRoutine: storeDeleteRoutine } = useHealth();
+  const {
+    loading,
+    workouts: allWorkouts,
+    routines: allRoutines,
+    upsertWorkout,
+    deleteWorkout,
+    addRoutine,
+    deleteRoutine: storeDeleteRoutine,
+  } = useHealth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  const [confirmStale, setConfirmStale] = useState(false);
 
   const mine = useMemo(() => allWorkouts.filter((w) => w.person === person), [allWorkouts, person]);
   const routines = useMemo(
     () => [...SEED_ROUTINES[person], ...allRoutines.filter((r) => r.person === person)],
     [allRoutines, person],
   );
-  const active = mine.find((w) => !w.done) ?? null;
   const done = useMemo(() => mine.filter((w) => w.done).sort((a, b) => b.date.localeCompare(a.date)), [mine]);
   const prs = useMemo(() => personalRecords(done), [done]);
   const weekCount = thisWeekCount(done, today);
   // a past workout opened for editing (history is fully manageable, not rigid)
   const editingWorkout = useMemo(() => done.find((w) => w.id === editId) ?? null, [done, editId]);
 
-  const setActive = (fn: (w: Workout) => Workout) => {
-    if (active) upsertWorkout(fn(active));
+  // Starting waits for the first load: until it lands, an unfinished session
+  // already on the server is invisible, and a second one would be started beside it.
+  const canStart = !active && !loading;
+  const start = (w: Workout) => {
+    if (!canStart) return;
+    upsertWorkout(w);
+    onOpenSession(w.id);
   };
-
-  const startBlank = () => {
-    if (active) return;
-    upsertWorkout({ id: newId(), date: today, person, name: t("Workout"), notes: "", exercises: [], done: false });
-  };
-  const startFromRoutine = (r: Routine) => {
-    if (active) return;
-    const exercises: ExerciseEntry[] = r.exercises.map((re) => ({
-      id: rowId(),
-      exerciseId: "",
-      name: re.name,
-      muscle: re.muscle,
-      sets: Array.from({ length: Math.max(1, re.sets) }, () => ({ reps: 0, weight: 0 })),
-    }));
-    upsertWorkout({ id: newId(), date: today, person, name: r.name, notes: "", exercises, done: false });
-  };
-  const addExercise = (ex: { name: string; muscle: string; exerciseId: string }) =>
-    setActive((w) => ({ ...w, exercises: [...w.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [{ reps: 0, weight: 0 }] }] }));
-  const addSet = (exId: string) =>
-    setActive((w) => ({
-      ...w,
-      exercises: w.exercises.map((e) =>
-        e.id === exId ? { ...e, sets: [...e.sets, e.sets.length ? { ...e.sets[e.sets.length - 1] } : { reps: 0, weight: 0 }] } : e,
-      ),
-    }));
-  const setSet = (exId: string, i: number, patch: { reps?: number; weight?: number }) =>
-    setActive((w) => ({
-      ...w,
-      exercises: w.exercises.map((e) =>
-        e.id === exId ? { ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) } : e,
-      ),
-    }));
-  const removeSet = (exId: string, i: number) =>
-    setActive((w) => ({ ...w, exercises: w.exercises.map((e) => (e.id === exId ? { ...e, sets: e.sets.filter((_, j) => j !== i) } : e)) }));
-  const removeExercise = (exId: string) =>
-    setActive((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== exId) }));
-  const finish = () => {
+  const startBlank = () => start({ id: newId(), date: today, person, name: t("Workout"), notes: "", exercises: [], done: false });
+  const startFromRoutine = (r: Routine) =>
+    start({
+      id: newId(),
+      date: today,
+      person,
+      name: r.name,
+      notes: "",
+      exercises: r.exercises.map((re) => ({
+        id: rowId(),
+        exerciseId: "",
+        name: re.name,
+        muscle: re.muscle,
+        sets: Array.from({ length: Math.max(1, re.sets) }, emptySet),
+      })),
+      done: false,
+    });
+  const addExercise = (ex: { name: string; muscle: string; exerciseId: string }) => {
     if (!active) return;
-    if (!active.exercises.length) {
-      deleteWorkout(active.id); // nothing logged → discard the empty session
-      return;
-    }
-    upsertWorkout({ ...active, done: true });
-  };
-  const discard = () => {
-    if (active) deleteWorkout(active.id);
+    upsertWorkout({
+      ...active,
+      exercises: [...active.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [emptySet()] }],
+    });
   };
   const saveAsRoutine = () => {
     if (!active || !active.exercises.length) return;
@@ -174,6 +326,13 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
     });
   };
   const deleteRoutine = (id: string) => storeDeleteRoutine(id);
+  const discardStale = () => {
+    if (stale) {
+      clearSessionStart(stale.id);
+      deleteWorkout(stale.id);
+    }
+    setConfirmStale(false);
+  };
   // Quick log → a one-exercise session, marked done immediately. Counts toward
   // the week + history, never asks you to build a routine.
   const quickLog = (
@@ -195,76 +354,122 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
 
   return (
     <div className="flex flex-col gap-3">
-      {/* sticky summary — this week + today's session */}
-      <div className="sticky z-30" style={{ top: STICKY_TOP }}>
-        <WorkoutSummary name={PERSON_NAME[person]} weekCount={weekCount} active={active} />
-      </div>
-
       {active ? (
-        <ActiveWorkout
-          w={active}
-          onAddExercise={() => setSearchOpen(true)}
-          onAddSet={addSet}
-          onSetChange={setSet}
-          onRemoveSet={removeSet}
-          onRemoveExercise={removeExercise}
-          onFinish={finish}
-          onDiscard={discard}
-          onSaveRoutine={saveAsRoutine}
-        />
+        <>
+          {/* The logger brings its own sticky session bar, so the week hero steps
+              aside while a session is open instead of stacking two sticky headers. */}
+          <ActiveSession
+            key={active.id}
+            workout={active}
+            person={person}
+            library={library}
+            workouts={allWorkouts}
+            onChange={upsertWorkout}
+            onFinish={(w) => {
+              upsertWorkout(w);
+              onCloseSession();
+            }}
+            onDiscard={() => {
+              deleteWorkout(active.id);
+              onCloseSession();
+            }}
+            onOpenExercise={onOpenExercise}
+            onAddExercise={() => setSearchOpen(true)}
+          />
+          {active.exercises.length > 0 && (
+            <button onClick={saveAsRoutine} className="h-link" style={{ justifyContent: "center", width: "100%" }}>
+              {t("Save as routine")}
+            </button>
+          )}
+          {nav}
+        </>
       ) : (
         <>
+          {nav}
+
+          {stale && (
+            <section className="h-panel" style={{ borderColor: "var(--h-hl)" }}>
+              <p className="h-eyebrow">
+                <Clock size={13} /> {t("Unfinished workout from {date}", { date: shortDay(stale.date, getLang()) })}
+              </p>
+              <p className="text-[13.5px] font-semibold text-bone" style={{ marginTop: 4 }}>{t(stale.name)}</p>
+              <p className="h-sub">
+                {(() => {
+                  const n = stale.exercises.reduce((k, e) => k + e.sets.filter(isDone).length, 0);
+                  return t(n === 1 ? "{n} set ticked, never finished" : "{n} sets ticked, never finished", { n });
+                })()}
+              </p>
+              <div className="flex gap-2" style={{ marginTop: "var(--h-2)" }}>
+                <button onClick={() => onOpenSession(stale.id)} className="h-btn" style={{ flex: 1 }}>
+                  {t("Finish it")}
+                </button>
+                <button onClick={() => setConfirmStale(true)} className="h-btn quiet" style={{ width: "auto", padding: "0 16px" }}>
+                  {t("Discard")}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* sticky summary — this week */}
+          <div className="sticky z-30" style={{ top: STICKY_TOP }}>
+            <WorkoutSummary name={PERSON_NAME[person]} weekCount={weekCount} />
+          </div>
+
           {/* ONE primary. The second button was a tinted-accent slab of the same
               width directly under the first, which makes two primaries and no
               answer to "what do I press?". Starting a session is the main act;
               logging a walk afterwards is the aside, so it now reads as one. */}
-          <button onClick={startBlank} className="h-btn" style={{ minHeight: 52, fontSize: 15 }}>
+          <button
+            onClick={startBlank}
+            disabled={!canStart}
+            className="h-btn"
+            style={{ minHeight: 52, fontSize: 15, opacity: canStart ? 1 : 0.5 }}
+          >
             <Play size={17} /> {t("Start a workout")}
           </button>
           <button onClick={() => setQuickOpen(true)} className="h-link" style={{ justifyContent: "center", width: "100%" }}>
             <Zap size={14} /> {t("Or just log an activity")}
           </button>
-        </>
-      )}
 
-      {/* routines */}
-      {!active && (
-        <section className="h-panel">
-          <p className="h-eyebrow" style={{ marginBottom: "var(--h-2)" }}>{t("Routines")}</p>
-          <div className="flex flex-col gap-2">
-            {/* The whole row starts the routine, so the accent is spent once on
-                the real primary above instead of four times on identical Start
-                pills that out-shouted the names you are actually reading. */}
-            {routines.map((r) => (
-              <div key={r.id} className="flex items-center gap-1">
-                <button
-                  onClick={() => startFromRoutine(r)}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded-[12px] px-3 text-left"
-                  style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", minHeight: 52 }}
-                >
-                  <Play size={14} style={{ color: "var(--color-accent)", flex: "none" }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold" style={{ color: "var(--color-bone)" }}>{t(r.name)}</span>
-                    <span className="block truncate text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
-                      {r.meta ? t(r.meta) + " · " : ""}
-                      {t(r.exercises.length === 1 ? "{n} exercise" : "{n} exercises", { n: r.exercises.length })}
-                    </span>
-                  </span>
-                </button>
-                {!r.seed && (
+          {/* routines */}
+          <section className="h-panel">
+            <p className="h-eyebrow" style={{ marginBottom: "var(--h-2)" }}>{t("Routines")}</p>
+            <div className="flex flex-col gap-2">
+              {/* The whole row starts the routine, so the accent is spent once on
+                  the real primary above instead of four times on identical Start
+                  pills that out-shouted the names you are actually reading. */}
+              {routines.map((r) => (
+                <div key={r.id} className="flex items-center gap-1">
                   <button
-                    onClick={() => deleteRoutine(r.id)}
-                    className="grid h-11 w-10 place-items-center rounded-[10px]"
-                    style={{ color: "var(--color-faint)" }}
-                    aria-label={t("Delete routine")}
+                    onClick={() => startFromRoutine(r)}
+                    disabled={!canStart}
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-[12px] px-3 text-left"
+                    style={{ background: "var(--color-raised)", border: "1px solid var(--color-edge)", minHeight: 52, opacity: canStart ? 1 : 0.5 }}
                   >
-                    <Trash2 size={15} />
+                    <Play size={14} style={{ color: "var(--color-accent)", flex: "none" }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-semibold" style={{ color: "var(--color-bone)" }}>{t(r.name)}</span>
+                      <span className="block truncate text-[10.5px]" style={{ color: "var(--color-taupe)" }}>
+                        {r.meta ? t(r.meta) + " · " : ""}
+                        {t(r.exercises.length === 1 ? "{n} exercise" : "{n} exercises", { n: r.exercises.length })}
+                      </span>
+                    </span>
                   </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+                  {!r.seed && (
+                    <button
+                      onClick={() => deleteRoutine(r.id)}
+                      className="grid h-11 w-10 place-items-center rounded-[10px]"
+                      style={{ color: "var(--color-faint)" }}
+                      aria-label={t("Delete routine")}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
       )}
 
       {/* PRs */}
@@ -310,9 +515,9 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                       <div className="truncate text-[13px] text-bone">{t(w.name)}</div>
                       <div className="text-[10.5px]" style={{ color: "var(--color-taupe)" }}>{w.date}</div>
                     </div>
+                    {/* No "vol" here any more: it added pounds × reps to bare reps (V1.md §5). */}
                     <div className="num shrink-0 text-right text-[11px]" style={{ color: "var(--color-taupe)" }}>
                       {sessionStat(w)}
-                      {workoutVolume(w) > 0 ? ` · ${r0(workoutVolume(w)).toLocaleString()} ${t("vol")}` : ""}
                     </div>
                   </button>
                   {confirmDelId === w.id ? (
@@ -330,10 +535,10 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
                     </span>
                   ) : (
                     <span className="flex shrink-0 items-center gap-2">
-                      <button onClick={() => setEditId(w.id)} style={{ color: "var(--color-faint)" }} aria-label="Edit workout">
+                      <button onClick={() => setEditId(w.id)} style={{ color: "var(--color-faint)" }} aria-label={t("Edit workout")}>
                         <Pencil size={13} />
                       </button>
-                      <button onClick={() => setConfirmDelId(w.id)} style={{ color: "var(--color-faint)" }} aria-label="Delete workout">
+                      <button onClick={() => setConfirmDelId(w.id)} style={{ color: "var(--color-faint)" }} aria-label={t("Delete workout")}>
                         <Trash2 size={13} />
                       </button>
                     </span>
@@ -356,101 +561,22 @@ function SoloWorkout({ person, library }: { person: Person; library: Exercise[] 
           onDelete={() => { deleteWorkout(editingWorkout.id); setEditId(null); }}
         />
       )}
+      {confirmStale && stale && (
+        <ConfirmSheet
+          title={t("Discard this workout?")}
+          text={t("{name} from {date}. Sets you logged will be deleted.", { name: t(stale.name), date: shortDay(stale.date, getLang()) })}
+          yes={t("Discard")}
+          no={t("Keep")}
+          danger
+          onYes={discardStale}
+          onNo={() => setConfirmStale(false)}
+        />
+      )}
     </div>
   );
 }
 
-// ── the active session ──────────────────────────────────────────────────────────
-function ActiveWorkout({
-  w,
-  onAddExercise,
-  onAddSet,
-  onSetChange,
-  onRemoveSet,
-  onRemoveExercise,
-  onFinish,
-  onDiscard,
-  onSaveRoutine,
-}: {
-  w: Workout;
-  onAddExercise: () => void;
-  onAddSet: (exId: string) => void;
-  onSetChange: (exId: string, i: number, patch: { reps?: number; weight?: number }) => void;
-  onRemoveSet: (exId: string, i: number) => void;
-  onRemoveExercise: (exId: string) => void;
-  onFinish: () => void;
-  onDiscard: () => void;
-  onSaveRoutine: () => void;
-}) {
-  const empty = w.exercises.length === 0;
-  return (
-    <section className="h-panel">
-      <div className="h-cardhead">
-        <span className="ic"><Dumbbell size={14} /></span>
-        <div style={{ flex: 1 }}>
-          <div className="t">{t("Today's workout")}</div>
-          {!empty && (
-            <div className="s">
-              {t(w.exercises.length === 1 ? "{n} exercise" : "{n} exercises", { n: w.exercises.length })}
-              {" · "}
-              {t(totalSets(w) === 1 ? "{n} set" : "{n} sets", { n: totalSets(w) })}
-            </div>
-          )}
-        </div>
-        <button onClick={onDiscard} className="h-hit text-[11px]" style={{ color: "var(--color-faint)" }}>
-          {t("Discard")}
-        </button>
-      </div>
-
-      {w.exercises.length === 0 ? (
-        <p className="py-3 text-center text-[12.5px]" style={{ color: "var(--color-taupe)" }}>
-          {t("Add an exercise to get started.")}
-        </p>
-      ) : (
-        w.exercises.map((ex) => (
-          <ExerciseBlock
-            key={ex.id}
-            ex={ex}
-            onAddSet={() => onAddSet(ex.id)}
-            onSetChange={(i, patch) => onSetChange(ex.id, i, patch)}
-            onRemoveSet={(i) => onRemoveSet(ex.id, i)}
-            onRemove={() => onRemoveExercise(ex.id)}
-          />
-        ))
-      )}
-
-      {/* WHICH button is the primary depends on where you are in the session.
-          An empty workout had "Finish workout" filled in the accent and "Add
-          exercise" as the quiet one — offering to end a session before anything
-          had been logged in it, and styling that as the recommended move. The
-          emphasis follows the state now: add first, finish once there is
-          something to finish. */}
-      <button
-        onClick={onAddExercise}
-        className={empty ? "h-btn" : "h-btn ghost"}
-        style={{ marginTop: "var(--h-2)" }}
-      >
-        <Plus size={15} /> {t("Add exercise")}
-      </button>
-
-      {/* No Finish button at all while the session is empty. There is nothing to
-          finish, "Discard" in the header already covers backing out, and a
-          second way to abandon — wearing a checkmark, which means the opposite —
-          is worse than none. */}
-      {!empty && (
-        <div className="flex gap-2" style={{ marginTop: "var(--h-3)" }}>
-          <button onClick={onSaveRoutine} className="h-btn quiet" style={{ width: "auto", padding: "0 14px", fontSize: 12.5 }}>
-            {t("Save as routine")}
-          </button>
-          <button onClick={onFinish} className="h-btn" style={{ flex: 1 }}>
-            <Check size={16} /> {t("Finish workout")}
-          </button>
-        </div>
-      )}
-    </section>
-  );
-}
-
+// ── one exercise in the edit sheet (the logger has its own, ActiveSession) ──────
 function ExerciseBlock({
   ex,
   onAddSet,
@@ -482,7 +608,7 @@ function ExerciseBlock({
       </div>
 
       <div className="flex items-center gap-2 pb-1 text-[9.5px] uppercase tracking-wider" style={{ color: "var(--color-faint)" }}>
-        <span className="w-6 text-center">{t("Set")}</span>
+        <span className="w-6 text-center">{tc("Set", "gym")}</span>
         <span className="flex-1 text-center">{t("Weight")}</span>
         <span className="flex-1 text-center">{t("Reps")}</span>
         <span className="w-5" />
@@ -524,10 +650,14 @@ function EditWorkoutSheet({
   const [draft, setDraft] = useState<Workout>(workout);
   const [searchOpen, setSearchOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  useEffect(() => {
+  // A different workout opened → start its draft over (adjusted during render,
+  // so there is never a frame showing the previous workout's draft).
+  const [draftOf, setDraftOf] = useState(workout);
+  if (draftOf !== workout) {
+    setDraftOf(workout);
     setDraft(workout);
     setConfirmDel(false);
-  }, [workout]);
+  }
 
   const upd = (exId: string, fn: (e: ExerciseEntry) => ExerciseEntry) =>
     setDraft((w) => ({ ...w, exercises: w.exercises.map((e) => (e.id === exId ? fn(e) : e)) }));
@@ -650,15 +780,16 @@ function DurationBlock({ ex, onChange, onRemove }: { ex: ExerciseEntry; onChange
 }
 
 // ── sticky summary ────────────────────────────────────────────────────────────
-function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: number; active: Workout | null }) {
-  const vol = active ? workoutVolume(active) : 0;
-  const sets = active ? totalSets(active) : 0;
+function WorkoutSummary({ name, weekCount }: { name: string; weekCount: number }) {
   // Same grammar as the meal day's hero, so the two halves of Health read as one
   // app: eyebrow, one big number, one supporting line, progress underneath.
   //
   // The old card stacked a 30px "0" over a 9px "DAYS" and put the week bars to
   // its RIGHT on the same baseline as a sentence — three unrelated things in one
   // row, with the bars running off the edge at 375px.
+  //
+  // It is only shown while no session is open; the logger's own bar takes its
+  // place (and the "vol" number it used to show there is gone, V1.md §5).
   const left = Math.max(0, WEEK_GOAL - weekCount);
   return (
     <div className="h-hero">
@@ -680,14 +811,7 @@ function WorkoutSummary({ name, weekCount, active }: { name: string; weekCount: 
         ))}
       </div>
       <div className="h-sub" style={{ marginTop: "var(--h-2)" }}>
-        {active
-          ? t(sets === 1 ? "In progress · {sets} set{vol}" : "In progress · {sets} sets{vol}", {
-              sets,
-              vol: vol > 0 ? ` · ${r0(vol).toLocaleString()} ${t("vol")}` : "",
-            })
-          : weekCount >= WEEK_GOAL
-            ? t("Goal hit — nice work")
-            : t("{n} more to hit your goal", { n: left })}
+        {weekCount >= WEEK_GOAL ? t("Goal hit — nice work") : t("{n} more to hit your goal", { n: left })}
       </div>
     </div>
   );
@@ -744,7 +868,7 @@ function TogetherWorkout({ owner }: { owner: Person }) {
         </p>
         {feed.length === 0 ? (
           <p className="py-4 text-center text-[12.5px]" style={{ color: "var(--color-taupe)" }}>
-            {t("No workouts logged yet. Switch to Just me to start one.")}
+            {t("No workouts logged yet. Start one from Today.")}
           </p>
         ) : (
           <div className="flex flex-col">
@@ -776,11 +900,13 @@ function TogetherWorkout({ owner }: { owner: Person }) {
 // ── numeric input (string-buffered + clamped, like the meal builder's) ──────────
 function NumIn({ value, onChange, max, suffix }: { value: number; onChange: (n: number) => void; max: number; suffix?: string }) {
   const [buf, setBuf] = useState(value ? String(value) : "");
-  useEffect(() => {
+  // The value changed from outside (not by typing here) → show it.
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
     const cur = buf === "" ? 0 : parseInt(buf, 10);
     if (cur !== value) setBuf(value ? String(value) : "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }
   return (
     <span className="flex flex-1 items-center justify-center gap-1 rounded-lg py-1.5" style={{ background: "var(--color-tile)", border: "1px solid var(--color-edge)" }}>
       <input
@@ -817,7 +943,7 @@ function NumIn({ value, onChange, max, suffix }: { value: number; onChange: (n: 
 // underneath the name — the bar was a second, worse copy of a label that was
 // right there. So the bar is a neutral rule now, doing the one job it was
 // actually good at, which is giving the row a left edge to align on.
-const muscleColor = (_m: string) => "var(--color-edge)";
+const MUSCLE_RULE = "var(--color-edge)";
 const MUSCLES = ["chest", "back", "legs", "shoulders", "arms", "core", "fullbody", "cardio"];
 
 function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean; onClose: () => void; library: Exercise[]; onPick: (ex: { name: string; muscle: string; exerciseId: string }) => void }) {
@@ -825,12 +951,15 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
   const [customMuscle, setCustomMuscle] = useState<string | null>(null);
   const results = useMemo(() => searchExercises(q, library, 40), [q, library]);
 
-  useEffect(() => {
+  // Each opening starts empty (adjusted during render, not in an effect).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (open) {
       setQ("");
       setCustomMuscle(null);
     }
-  }, [open]);
+  }
 
   if (!open) return null;
   const add = (ex: { name: string; muscle: string; exerciseId: string }) => {
@@ -876,7 +1005,7 @@ function ExerciseSearchSheet({ open, onClose, library, onPick }: { open: boolean
                 onClick={() => add({ name: e.name, muscle: e.muscle, exerciseId: e.id })}
                 className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-[var(--color-tile)]"
               >
-                <span className="h-7 w-1.5 shrink-0 rounded-full" style={{ background: muscleColor(e.muscle) }} />
+                <span className="h-7 w-1.5 shrink-0 rounded-full" style={{ background: MUSCLE_RULE }} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] text-bone">{e.name}</div>
                   <div className="text-[10.5px] capitalize" style={{ color: "var(--color-taupe)" }}>{t(e.muscle)} · {t(e.equipment)}</div>
@@ -957,7 +1086,10 @@ function QuickLogSheet({
   const [weight, setWeight] = useState(0);
   const results = useMemo(() => searchExercises(q, library, 24), [q, library]);
 
-  useEffect(() => {
+  // Each opening starts from the defaults (adjusted during render, not in an effect).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (open) {
       setQ("");
       setPicked(null);
@@ -967,7 +1099,7 @@ function QuickLogSheet({
       setReps(10);
       setWeight(0);
     }
-  }, [open]);
+  }
 
   if (!open) return null;
   const pick = (a: { name: string; muscle: string; exerciseId: string }) => {
@@ -1026,7 +1158,7 @@ function QuickLogSheet({
                   onClick={() => pick({ name: e.name, muscle: e.muscle, exerciseId: e.id })}
                   className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition active:bg-[var(--color-tile)]"
                 >
-                  <span className="h-6 w-1.5 shrink-0 rounded-full" style={{ background: muscleColor(e.muscle) }} />
+                  <span className="h-6 w-1.5 shrink-0 rounded-full" style={{ background: MUSCLE_RULE }} />
                   <span className="flex-1 truncate text-[13.5px] text-bone">{e.name}</span>
                   <Plus size={15} style={{ color: "var(--color-accent)" }} />
                 </button>

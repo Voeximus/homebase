@@ -1,5 +1,5 @@
 import { useId, type CSSProperties } from "react";
-import { t } from "../../lib/i18n";
+import { t, tc } from "../../lib/i18n";
 import type { RegionId } from "../../lib/muscleRegions";
 import {
   BODY_BASE,
@@ -61,8 +61,8 @@ export function BodyMap({ primary, secondary }: { primary: RegionId[]; secondary
       </svg>
 
       <div className="grid grid-cols-2 gap-1.5">
-        <Figure view="front" caption={t("Front")} fillOf={fillOf} hatch={hatch} />
-        <Figure view="back" caption={t("Back")} fillOf={fillOf} hatch={hatch} />
+        <Figure view="front" caption={tc("Front", "body side")} fillOf={fillOf} hatch={hatch} />
+        <Figure view="back" caption={tc("Back", "body side")} fillOf={fillOf} hatch={hatch} />
       </div>
 
       <div className="mt-2 flex flex-wrap justify-center gap-3.5 text-[11px] text-taupe">

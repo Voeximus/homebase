@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { Exercise } from "../../lib/exerciseData";
-import { t } from "../../lib/i18n";
+import { t, tc } from "../../lib/i18n";
 import { AREAS, filterLibrary, groupByArea, libraryLine, loadEvidence, ownNoteCount, type Area } from "./viewHelpers";
 
 // ── The Exercises tab ─────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ export function ExercisesTab({ library, onOpen }: { library: Exercise[]; onOpen(
                 : { background: "var(--color-raised)", color: "var(--color-taupe)", boxShadow: "inset 0 0 0 1px var(--color-edge)" }
             }
           >
-            {t(a)}
+            {tc(a, "body area")}
           </button>
         ))}
       </div>
@@ -99,10 +99,10 @@ export function ExercisesTab({ library, onOpen }: { library: Exercise[]; onOpen(
         </div>
       ) : browsing ? (
         groupByArea(list).map((g) => (
-          <Group key={g.label} title={t(g.label)} items={g.items} counts={counts} onOpen={onOpen} />
+          <Group key={g.label} title={tc(g.label, "body area")} items={g.items} counts={counts} onOpen={onOpen} />
         ))
       ) : (
-        <Group title={query.trim() ? t("Results") : t(area)} items={list} counts={counts} onOpen={onOpen} />
+        <Group title={query.trim() ? t("Results") : tc(area, "body area")} items={list} counts={counts} onOpen={onOpen} />
       )}
     </div>
   );

@@ -31,3 +31,14 @@ export function t(s: string, vars?: Record<string, string | number>): string {
   }
   return out;
 }
+
+/**
+ * t() for an English word that means different things in different places —
+ * "Back" the button, the back of the body, the body area; "Set" the finance
+ * button (设置) and a set in the gym (组). The Chinese entry is keyed
+ * "English|context"; English, and any context without an entry, is t(s).
+ */
+export function tc(s: string, context: string, vars?: Record<string, string | number>): string {
+  const key = `${s}|${context}`;
+  return current === "zh" && key in ZH ? t(key, vars) : t(s, vars);
+}

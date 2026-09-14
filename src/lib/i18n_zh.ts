@@ -3,6 +3,7 @@
 // Templates use {placeholders} resolved by t(s, vars).
 
 import { AUTO_ZH } from "./i18n_zh_auto";
+import { REGIONS } from "./muscleRegions";
 
 const SEED: Record<string, string> = {
   // ── modes / nav ──
@@ -671,7 +672,168 @@ const SEED: Record<string, string> = {
   "Couldn't copy": "无法复制",
   "Copy this meal as text — every food, weight and macro — to paste into a chat": "把这一餐复制为文字——每样食物、重量和宏量营养素——粘贴到聊天里",
   Remove: "移除",
+
+  // ── workout mode v1 (2026-09-14) ──
+  // A set in the gym is 组, never 设置 (that is the finance "Set" button), and
+  // Together in workouts is 一起, not the meal builder's 一起吃. Words like that
+  // are translated with tc() under an "English|context" key.
+  // "Hard set" is 有效组 throughout; a study "band" is 区间.
+  // views inside Workouts
+  "Workout views": "训练视图",
+  Progress: "进度",
+  Exercises: "动作库",
+  "Together|workouts": "一起",
+  "Workout in progress": "训练进行中",
+  Resume: "继续",
+  "Unfinished workout from {date}": "{date} 的训练没有完成",
+  "{n} set ticked, never finished": "已勾选 {n} 组，没有点完成",
+  "{n} sets ticked, never finished": "已勾选 {n} 组，没有点完成",
+  "Finish it": "去完成",
+  "{name} from {date}. Sets you logged will be deleted.": "{date} 的「{name}」。已记录的组会被删除。",
+  "Or just log an activity": "或者只记一项运动",
+  "Delete routine": "删除计划",
+  "of {n} days this week": "本周目标 {n} 天",
+  "Goal hit — nice work": "目标达成 — 干得好",
+  "{n} more to hit your goal": "再练 {n} 天达成目标",
+  "No workouts logged yet. Start one from Today.": "还没有训练记录。在「今天」里开始一次。",
+  "Home strength": "居家力量",
+  "2×/week · ~15 min": "每周 2 次 · 约 15 分钟",
+  Steps: "步数",
+  "your main exercise": "你的主要运动",
+  // the logger
+  "{h} h {m} min": "{h} 小时 {m} 分钟",
+  "{name} warm-up": "{name} 热身",
+  Finish: "完成",
+  "{done} / {planned} work sets": "正式组 {done} / {planned}",
+  "{n} warm-up done": "已完成 {n} 组热身",
+  "{n} warm-ups done": "已完成 {n} 组热身",
+  "No exercises yet. Add your first one.": "还没有动作。添加第一个吧。",
+  "Discard this workout?": "放弃这次训练？",
+  "Sets you logged will be deleted.": "已记录的组会被删除。",
+  Keep: "保留",
+  "Nothing was logged": "什么都没有记录",
+  "Nothing was logged. Discard this workout?": "什么都没有记录。放弃这次训练？",
+  "Last time ({date}): {sets}": "上次（{date}）：{sets}",
+  "First time logging this": "第一次记录这个动作",
+  "Remove {name}": "移除{name}",
+  "W = warm-up": "W = 热身组",
+  "Remove last set": "删除最后一组",
+  "Rest {time}": "休息 {time}",
+  "No rest timer": "不计休息",
+  "Set|gym": "组",
+  "warm-up": "热身组",
+  "set {n}": "第 {n} 组",
+  "Warm-up set. Tap to make it a working set": "热身组。点一下改为正式组",
+  "Set {n}. Tap to make it a warm-up": "第 {n} 组。点一下改为热身组",
+  "Weight for {set}": "{set}的重量",
+  "Reps for {set}": "{set}的次数",
+  "Undo {set}": "取消勾选{set}",
+  "Mark {set} done": "把{set}标为完成",
+  "Enter a weight": "请输入重量",
+  // the rest dock
+  "Rest over": "休息结束",
+  "Rest · {name}": "休息 · {name}",
+  Rest: "休息",
+  "Next set": "下一组",
+  "Rest left": "剩余休息时间",
+  "15 seconds less": "减少 15 秒",
+  "15 seconds more": "增加 15 秒",
+  OK: "好",
+  Skip: "跳过",
+  // the finish sheet
+  "{n} set": "{n} 组",
+  "{n} warm-up": "{n} 组热身",
+  "{n} warm-ups": "{n} 组热身",
+  "{n} exercise": "{n} 个动作",
+  "Save workout": "保存训练",
+  "Back to workout": "返回训练",
+  "{n} empty set will be removed.": "{n} 个空组会被删除。",
+  "{n} empty sets will be removed.": "{n} 个空组会被删除。",
+  "{n} set has numbers but no tick. It is kept, but not counted.": "{n} 组填了数字但没有勾选。会保留，但不计入。",
+  "{n} sets have numbers but no tick. They are kept, but not counted.": "{n} 组填了数字但没有勾选。会保留，但不计入。",
+  "Records this session": "本次纪录",
+  Record: "纪录",
+  "No records this time.": "这次没有新纪录。",
+  "Hard sets by muscle": "各肌肉的有效组",
+  "None yet.": "还没有。",
+  "Session note": "训练备注",
+  "How did it feel?": "感觉怎么样？",
+  // the exercise page
+  Back: "返回",
+  "You added this exercise, so there is no muscle map for it.": "这是你自己添加的动作，所以没有肌肉图。",
+  "Muscles used": "用到的肌肉",
+  "Main:": "主要：",
+  none: "无",
+  "Helps:": "辅助：",
+  Main: "主要",
+  Helps: "辅助",
+  Front: "正面",
+  "Back|body side": "背面",
+  "Your numbers": "你的数据",
+  "You haven't logged this yet.": "你还没有记录过这个动作。",
+  "{n} rep": "{n} 次",
+  "{n} reps": "{n} 次",
+  "Heaviest weight (lb) for at least that many reps.": "至少做到这么多次时的最大重量（磅）。",
+  "Last session": "上一次",
+  "Last {n} sessions": "最近 {n} 次",
+  "Warm-ups only": "只有热身组",
+  "What studies found": "研究发现",
+  "Loading study notes…": "正在加载研究笔记…",
+  "Couldn't load the study notes. Check your connection and open this page again.": "无法加载研究笔记。请检查网络后重新打开这一页。",
+  "No study notes for this exercise yet. The muscles shown come from anatomy, not from a study of this exercise.":
+    "这个动作还没有研究笔记。图中的肌肉来自解剖学，不是来自对这个动作的研究。",
+  "Show more": "显示更多",
+  "Tested on a similar exercise, not this one.": "是在类似的动作上测试的，不是这个动作。",
+  "Sources ({n})": "来源（{n}）",
+  "Tested over weeks": "经过数周测试",
+  "Measured in one workout": "在一次训练中测得",
+  "Reasoned, not tested": "推理得出，没有测试",
+  "About all band exercises": "适用于所有弹力带动作",
+  "About all core exercises": "适用于所有核心动作",
+  // the Exercises tab
+  "Search exercises": "搜索动作",
+  "Clear search": "清除搜索",
+  "Body area": "身体部位",
+  "Loading exercises…": "正在加载动作…",
+  "No exercise matches that.": "没有匹配的动作。",
+  Results: "结果",
+  "{n} study note": "{n} 条研究笔记",
+  "{n} study notes": "{n} 条研究笔记",
+  "Main: {muscles} · {equipment}": "主要：{muscles} · {equipment}",
+  Chest: "胸部",
+  "Back|body area": "背部",
+  Shoulders: "肩部",
+  Arms: "手臂",
+  Core: "核心",
+  Legs: "腿部",
+  Cardio: "有氧",
+  "Full body": "全身",
+  // the Progress tab
+  "Hard sets per muscle · last 7 days": "各肌肉的有效组 · 最近 7 天",
+  "A hard set is a ticked working set, not a warm-up. A muscle that only helps gets half a set.":
+    "有效组是勾选完成的正式组，不含热身组。只起辅助作用的肌肉算半组。",
+  "No hard sets in the last 7 days.": "最近 7 天没有有效组。",
+  "Hide muscles with no sets": "隐藏没有练到的肌肉",
+  "Show all muscles": "显示所有肌肉",
+  "The marks at 4, 10 and 18 are where the bands in the studies change. They are not targets.":
+    "4、10 和 18 处的刻度是研究中区间变化的位置，不是目标。",
+  "Sets with no muscle detail: {n}": "没有肌肉信息的组：{n}",
+  "Recent records": "最近纪录",
+  "No records yet.": "还没有纪录。",
+  // hard-set bands (bandLabel in trainingMath.ts)
+  None: "无",
+  "Below the lowest band in the studies": "低于研究中的最低区间",
+  "Minimum band": "最低区间",
+  "Most growth for each set": "每组带来的增长最多",
+  "More in total, less for each extra set": "总量更多，每多一组的收益变少",
+  "Less for each extra set": "每多一组的收益更少",
+  "Least for each extra set": "每多一组的收益最少",
+  "Not enough studies to say": "研究不够，无法判断",
 };
 
+// Muscle region names come from muscleRegions.ts, so the body map, the Progress
+// tab and the finish sheet all read the one list (SEED can still override one).
+const REGION_ZH: Record<string, string> = Object.fromEntries(REGIONS.map((r) => [r.en, r.zh]));
+
 // Auto-generated translations first; hand-curated SEED wins on conflict.
-export const ZH: Record<string, string> = { ...AUTO_ZH, ...SEED };
+export const ZH: Record<string, string> = { ...AUTO_ZH, ...REGION_ZH, ...SEED };
