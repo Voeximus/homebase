@@ -48,6 +48,10 @@ function diffUs(p: Panel, servings: number, got: ParsedPanel | null): string[] {
   return out;
 }
 
+// 192 panels per seed takes ~4.5 s on its own — past vitest's 5 s default once
+// the whole suite shares the CPU. A slow parse is not a wrong one.
+const ROUND_TRIP_TIMEOUT = 60_000;
+
 describe("round trip — the 192 real US panels", () => {
   it("recovers every declared value and %DV exactly from a clean layout", () => {
     const failures: string[] = [];
@@ -70,7 +74,7 @@ describe("round trip — the 192 real US panels", () => {
     const rate = ((PANELS.length - failures.length) / PANELS.length) * 100;
     // The rate is in the message so a regression reports how bad, not just that.
     expect(failures, `seed ${seed}: ${rate.toFixed(1)}% of panels fully recovered`).toEqual([]);
-  });
+  }, ROUND_TRIP_TIMEOUT);
 
   // A phone held off level ROTATES the panel (rows slope and columns lean), which
   // is not the shear above. At 3° the FDA sample label's whole %DV column once
@@ -85,7 +89,7 @@ describe("round trip — the 192 real US panels", () => {
     });
     const rate = ((PANELS.length - failures.length) / PANELS.length) * 100;
     expect(failures, `tilt seed ${seed}: ${rate.toFixed(1)}% of panels fully recovered`).toEqual([]);
-  });
+  }, ROUND_TRIP_TIMEOUT);
 
   it("keeps raw as the printed text and points at the source token", () => {
     const p = PANELS[0];
