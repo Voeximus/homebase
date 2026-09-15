@@ -12,6 +12,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.14a",
+    date: "September 14, 2026",
+    notes: [
+      "Workouts has four tabs now: Today, Progress, Exercises and Together.",
+      "Logging a set is one tap. Last time's weight and reps are already in each row — tap the tick to log them, or type over them first. Tap the set number to mark a warm-up. A rest timer starts on its own and keeps the right time if the screen sleeps; it beeps when rest is over, and the screen stays on while you train.",
+      "Tap any exercise to see which muscles it works (solid = main, striped = helps), what studies actually found about it — each note marked as tested over weeks, measured in one workout, or reasoned only — and your best weights for it.",
+      "Progress shows hard sets per muscle for the last 7 days, next to the ranges studies found, plus your recent records. Warm-ups never count.",
+      "The \"vol\" number is gone — it was adding pounds to plain rep counts, so it meant nothing. And a workout left unfinished on an earlier day now says so, instead of pretending to be today's.",
+      "Sets are much harder to lose: the running workout is kept on the phone as you log, and saves keep retrying with no signal. This is new code — if a set ever goes missing or shows up twice, tell me right away.",
+    ],
+  },
+  {
     version: "2026.09.12c",
     date: "September 12, 2026",
     notes: [
