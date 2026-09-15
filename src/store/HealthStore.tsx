@@ -52,6 +52,15 @@ const mdDirty = (p: string, d: string) => `md|${p}|${d}`;
 const wDirty = (id: string) => `w|${id}`;
 const wtDirty = (p: string, d: string) => `wt|${p}|${d}`;
 const PEOPLE = ["gino", "xinyan"] as const;
+// Writes for one key run strictly one after another. Two saves of the same
+// session in the air at once can land out of order — the older document last
+// — and the newer save's success would then mark state clean over a server
+// copy that is missing its edit. One queue for the whole app, not one per mount
+// of the provider: HealthView unmounts on each Finance/Health toggle, and a
+// queue per mount let the reopened screen's save or delete run beside the
+// closed screen's save still in the air — which then landed last and undid a
+// tick, or brought back a discarded session.
+const chains = { current: new Map<string, Promise<void>>() };
 // Sessions whose newest edits exist only on this phone.
 const unsavedCopies = () => PEOPLE.flatMap((p) => readJournals(p)).filter((j) => j.edits > j.confirmed);
 
@@ -205,11 +214,6 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   // The same record for SET ids inside a workout, per workout key, consulted by
   // the set-by-set merge.
   const removedSets = useRef<Map<string, Set<string>>>(new Map());
-  // Writes for one key run strictly one after another. Two saves of the same
-  // session in the air at once can land out of order — the older document last
-  // — and the newer save's success would then mark state clean over a server
-  // copy that is missing its edit.
-  const chains = useRef<Map<string, Promise<void>>>(new Map());
   // The first workouts fetch that SUCCEEDED, whenever it happens: the phone
   // copies are only merged against a real server copy (see the journal effect
   // below). State, not a ref — a load that fails offline must leave the merge
@@ -576,7 +580,9 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       // missed this stamp later read a delete on another phone as "never saved".
       onServer.current.add(id);
       if (!settled) {
-        markJournalOnServer(w.person, id);
+        // and what the server holds now becomes the copy's base, so an edit that
+        // puts a set back to its earlier value isn't read as "untouched here"
+        markJournalOnServer(w.person, id, undefined, { ...w, exercises });
         return;
       }
       // The server now holds everything the phone copy has, and nothing newer

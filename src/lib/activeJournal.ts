@@ -208,14 +208,23 @@ export function confirmJournal(saved: Workout, storage: JournalStorage | null = 
  * A save of this session landed while a newer edit was waiting, so nothing is
  * confirmed — but the session is on the server now, and missing there later
  * means deleted on purpose, not never saved.
+ *
+ * `saved` = what that save wrote. It becomes the copy's base (nothing is
+ * confirmed): a base left at an older save read a set the newer edit put back
+ * to that older value as untouched, and the server's value won on the next load.
  */
-export function markJournalOnServer(person: string, workoutId: string, storage: JournalStorage | null = defaultStorage()): void {
+export function markJournalOnServer(
+  person: string,
+  workoutId: string,
+  storage: JournalStorage | null = defaultStorage(),
+  saved?: Workout,
+): void {
   if (!storage) return;
   const key = journalKey(person, workoutId);
   try {
     const raw = readRaw(key, storage);
-    if (!asJournal(raw, person) || raw?.onServer === true) return;
-    storage.setItem(key, JSON.stringify({ ...raw, onServer: true }));
+    if (!asJournal(raw, person) || (raw?.onServer === true && !saved)) return;
+    storage.setItem(key, JSON.stringify({ ...raw, onServer: true, ...(saved ? { base: saved } : {}) }));
   } catch {
     /* best effort: the next save that lands stamps it */
   }

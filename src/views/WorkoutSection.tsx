@@ -356,7 +356,8 @@ function SoloWorkout({
             exerciseId: a.exerciseId,
             name: a.name,
             muscle: a.muscle,
-            sets: Array.from({ length: Math.max(1, payload.sets ?? 1) }, () => ({ reps: payload.reps ?? 0, weight: payload.weight ?? 0 })),
+            // ids, so a later history edit merges set by set with the other phone's
+            sets: Array.from({ length: Math.max(1, payload.sets ?? 1) }, () => ({ id: newId(), reps: payload.reps ?? 0, weight: payload.weight ?? 0 })),
           };
     upsertWorkout({ id: newId(), date: today, person, name: a.name, notes: "", exercises: [ex], done: true });
   };
@@ -684,8 +685,10 @@ function EditWorkoutSheet({
     setDraft((w) => ({ ...w, exercises: w.exercises.map((e) => (e.id === exId ? fn(e) : e)) }));
   // the last row's numbers only — never its id, tick or warm-up mark (copyLastSet)
   const addSet = (exId: string) => upd(exId, (e) => copyLastSet(e, newId));
+  // An edited row counts by the editor's rule (reps > 0), like a copied one: a
+  // row Finish kept unticked would otherwise never count, whatever is typed.
   const setSet = (exId: string, i: number, patch: { reps?: number; weight?: number }) =>
-    upd(exId, (e) => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
+    upd(exId, (e) => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch, done: undefined } : s)) }));
   const removeSet = (exId: string, i: number) => upd(exId, (e) => ({ ...e, sets: e.sets.filter((_, j) => j !== i) }));
   const setDur = (exId: string, d: number) => upd(exId, (e) => ({ ...e, duration: d }));
   const removeExercise = (exId: string) => setDraft((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== exId) }));

@@ -128,6 +128,68 @@ describe("leaving Health with a save in the air", () => {
   });
 });
 
+describe("reopening Health while the closed screen's save is still in the air", () => {
+  /** Advance the debounce and answer every open request matching `pred`, in the order sent, until none are left. */
+  async function drain(pred: (r: H.Req) => boolean = () => true) {
+    for (let i = 0; i < 20; i++) {
+      await H.settle(() => vi.advanceTimersByTimeAsync(800));
+      const o = H.open(pred);
+      if (!o.length) return;
+      for (const r of o) H.deliver(r);
+      await H.settle();
+    }
+  }
+
+  it("that save landing late can't undo a tick made on the reopened screen", async () => {
+    const first = await boot();
+    await H.settle(() => first.value.upsertWorkout(S([{ id: "a", reps: 0, weight: 0 }])));
+    await saveNow();
+    await H.settle(() => first.value.upsertWorkout(S([{ id: "a", reps: 5, weight: 100, done: false }])));
+    await H.settle(() => vi.advanceTimersByTimeAsync(700));
+    H.deliver(H.one(W("select")));
+    await H.settle();
+    const slow = H.one(W("upsert")); // weak signal: stuck
+    await first.unmount();
+
+    const second = await H.mountStore(HealthProvider, useHealth);
+    const notSlow = (r: H.Req) => r.id !== slow.id;
+    await drain(notSlow);
+    const a = stateS(second)!.exercises[0].sets[0];
+    expect(a).toMatchObject({ reps: 5, weight: 100 });
+    await H.settle(() => second.value.upsertWorkout(S([{ ...a, done: true, doneAt: Date.now() }])));
+    await drain(notSlow);
+    H.deliver(slow);
+    await drain();
+    expect(serverS()?.exercises[0].sets[0]).toMatchObject({ reps: 5, weight: 100, done: true });
+
+    kill();
+    const third = await boot();
+    expect(stateS(third)?.exercises[0].sets[0].done).toBe(true);
+  });
+
+  it("a session discarded on the reopened screen stays gone when the closed screen's saves land after", async () => {
+    const first = await boot();
+    await H.settle(() => first.value.upsertWorkout(S([tk("a")])));
+    await H.settle(() => vi.advanceTimersByTimeAsync(700));
+    H.deliver(H.one(W("select")));
+    await H.settle();
+    const slow = H.one(W("upsert"));
+    await H.settle(() => first.value.upsertWorkout(S([tk("a"), tk("b"), tk("c")])));
+    await first.unmount(); // the flush of [a, b, c] waits behind the stuck save
+
+    const second = await H.mountStore(HealthProvider, useHealth);
+    await drain((r) => r.id !== slow.id);
+    expect(setIds(stateS(second))).toEqual(["a", "b", "c"]);
+    await H.settle(() => second.value.deleteWorkout("S"));
+    await drain(); // every request answers in the order it was sent
+    expect(serverS()).toBeUndefined();
+
+    kill();
+    const third = await boot();
+    expect(stateS(third)).toBeUndefined();
+  });
+});
+
 describe("opening the app offline", () => {
   // Server: S with a (open) and z (ticked). Offline: z deleted, a b c ticked,
   // every save failed, then the app was killed (or Health was left and reopened).
@@ -285,6 +347,22 @@ describe("the phone copy's counts", () => {
     kill(); // before the save of c lands
     const third = await boot();
     expect(setIds(stateS(third))).toEqual(["a", "b", "c"]);
+  });
+
+  it("a save that lands while a newer edit waits becomes the copy's base, so a weight typed back (185 → 18 → 185) survives a kill", async () => {
+    const app = await boot();
+    await H.settle(() => app.value.upsertWorkout(S([{ ...tk("a"), weight: 185 }])));
+    await saveNow(); // confirmed at 185
+    await H.settle(() => app.value.upsertWorkout(S([{ ...tk("a"), weight: 18 }])));
+    await H.settle(() => vi.advanceTimersByTimeAsync(700));
+    H.deliver(H.one(W("select")));
+    await H.settle();
+    await H.settle(() => app.value.upsertWorkout(S([{ ...tk("a"), weight: 185 }]))); // typed back while 18 is in the air
+    H.deliver(H.one(W("upsert"))); // 18 lands, unsettled
+    await H.settle();
+    kill(); // before the save of 185 goes out
+    const again = await boot();
+    expect(stateS(again)?.exercises[0].sets[0].weight).toBe(185);
   });
 
   it("a save that lands while a newer edit waits marks the copy on the server, so a delete elsewhere stays a delete", async () => {
