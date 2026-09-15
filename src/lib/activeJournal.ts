@@ -22,6 +22,7 @@
 import type { ExerciseEntry, Workout } from "./workoutLog";
 import { repairDuplicateSetIds, type SetIdMaker, type SyncSet, type Tombstones } from "./syncMerge";
 import { isDone } from "./trainingMath";
+import { finishWorkout } from "./sessionOps";
 
 export interface ActiveJournal {
   workout: Workout;
@@ -181,21 +182,42 @@ export function writeJournal(
  * edit on the copy is now on the server, as `saved`. If the stamp can't be
  * written, the copy is removed instead — it holds nothing the server lacks, and
  * a copy left looking unconfirmed would overwrite newer edits on the next load.
+ *
+ * `upTo` = the copy's edit count when that save STARTED. The store's own check
+ * only sees its own edits, and a save started by a provider that has since
+ * unmounted can land after a remounted one wrote more: those stay unconfirmed.
  */
-export function confirmJournal(saved: Workout, storage: JournalStorage | null = defaultStorage()): void {
+export function confirmJournal(saved: Workout, storage: JournalStorage | null = defaultStorage(), upTo = Infinity): void {
   if (!storage) return;
   const key = journalKey(saved.person, saved.id);
   try {
     const raw = readRaw(key, storage);
     const prev = asJournal(raw, saved.person);
     if (!prev) return;
-    storage.setItem(key, JSON.stringify({ ...raw, confirmed: prev.edits, onServer: true, base: saved }));
+    storage.setItem(key, JSON.stringify({ ...raw, confirmed: Math.min(prev.edits, upTo), onServer: true, base: saved }));
   } catch {
     try {
       storage.removeItem(key);
     } catch {
       /* nothing more to try */
     }
+  }
+}
+
+/**
+ * A save of this session landed while a newer edit was waiting, so nothing is
+ * confirmed — but the session is on the server now, and missing there later
+ * means deleted on purpose, not never saved.
+ */
+export function markJournalOnServer(person: string, workoutId: string, storage: JournalStorage | null = defaultStorage()): void {
+  if (!storage) return;
+  const key = journalKey(person, workoutId);
+  try {
+    const raw = readRaw(key, storage);
+    if (!asJournal(raw, person) || raw?.onServer === true) return;
+    storage.setItem(key, JSON.stringify({ ...raw, onServer: true }));
+  } catch {
+    /* best effort: the next save that lands stamps it */
   }
 }
 
@@ -215,7 +237,7 @@ export function clearJournal(person: string, workoutId: string, storage: Journal
 // Result for the store:
 //   restore — this merged session differs from the server's; put it in state and save it
 //   keep    — the server copy already holds everything; the copy can go
-//   clear   — the copy is confirmed, stale (finished or deleted elsewhere) or holds nothing worth keeping
+//   clear   — the copy is confirmed, stale (deleted elsewhere) or holds nothing worth keeping
 export type JournalResolution =
   | { action: "restore"; workout: Workout; tombstones: { exercises: string[]; sets: string[] } }
   | { action: "keep" }
@@ -324,20 +346,21 @@ export function resolveJournal(server: Workout | undefined, journal: ActiveJourn
     if (journal.onServer) return { action: "clear" };
     return logsSomething(mine) ? { action: "restore", workout: mine, tombstones } : { action: "clear" };
   }
-  // Finished on another phone while this one had unsaved edits: re-opening a
-  // session someone finished is the worse surprise. (A finish made HERE is kept
-  // below: the copy is done, and the server copy just hasn't heard yet.)
-  if (server.done && !mine.done) return { action: "clear" };
   const base = journal.base;
   const tomb: Tombstones = { exercises: new Set(tombstones.exercises), sets: new Set(tombstones.sets) };
   // untouched on this phone since the confirmed save → the server's value
   const pick = <T>(m: T, b: T | undefined, s: T) => (base && m === b ? s : m);
-  const merged: Workout = {
+  const mergedRaw: Workout = {
     ...mine,
     name: pick(mine.name, base?.name, server.name),
     notes: pick(mine.notes, base?.notes, server.notes),
     exercises: mergeJournalExercises(mine.exercises, server.exercises, tomb, journal.savedAt, base?.exercises),
   };
+  // Finished on another device while this one had unsaved sets: keep the finish
+  // (never re-open it) AND the sets (never lose one). Clearing the copy here
+  // threw those sets away. Finish's cleanup drops the empty rows this copy still
+  // had open. (A finish made HERE is kept as is: the server just hasn't heard.)
+  const merged = server.done && !mine.done ? finishWorkout(mergedRaw).workout : mergedRaw;
   const unchanged =
     same(merged.exercises, server.exercises) &&
     merged.name === server.name &&

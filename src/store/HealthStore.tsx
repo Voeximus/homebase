@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "../lib/supabase";
 import type { DayLog, LoggedItem, Person, SavedMeal } from "../lib/mealLog";
 import type { Routine, Workout } from "../lib/workoutLog";
@@ -16,7 +16,15 @@ import {
   unionById,
   type Tombstones,
 } from "../lib/syncMerge";
-import { clearJournal, confirmJournal, readJournals, resolveJournal, writeJournal } from "../lib/activeJournal";
+import {
+  clearJournal,
+  confirmJournal,
+  markJournalOnServer,
+  readJournal,
+  readJournals,
+  resolveJournal,
+  writeJournal,
+} from "../lib/activeJournal";
 
 // ── The Health store ─────────────────────────────────────────────────────────
 // One shared source of truth for the meal + workout logs, synced to Supabase so
@@ -44,6 +52,24 @@ const mdDirty = (p: string, d: string) => `md|${p}|${d}`;
 const wDirty = (id: string) => `w|${id}`;
 const wtDirty = (p: string, d: string) => `wt|${p}|${d}`;
 const PEOPLE = ["gino", "xinyan"] as const;
+// Sessions whose newest edits exist only on this phone.
+const unsavedCopies = () => PEOPLE.flatMap((p) => readJournals(p)).filter((j) => j.edits > j.confirmed);
+
+// Sessions deleted here whose delete hasn't reached the server yet, one key
+// each, so a kill before it lands can't bring them back on the next open.
+const DEL_PREFIX = "hb-del-";
+function pendingDeletes(): string[] {
+  try {
+    const out: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(DEL_PREFIX)) out.push(k.slice(DEL_PREFIX.length));
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
 
 // Record ids an edit deleted on purpose under a dirty key (see `removed` below).
 function addTombstones(map: Map<string, Set<string>>, key: string, ids: Iterable<string>) {
@@ -130,15 +156,29 @@ export interface HealthStore {
 const Ctx = createContext<HealthStore | null>(null);
 
 export function HealthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<HealthState>({ mealDays: {}, workouts: [], routines: [], weights: [], savedMeals: [], macroTargets: {} });
+  // Shown from the first render: an offline open (a cold start, or a Finance/
+  // Health toggle) must still show the running session, and never offer Start
+  // beside it. Not marked touched or unsaved: the first load that reaches the
+  // server swaps each for the server's row, and the merge-back below then puts
+  // back what only this phone has.
+  const [copies] = useState(unsavedCopies);
+  const [state, setState] = useState<HealthState>(() => ({
+    mealDays: {},
+    workouts: copies.map((j) => repairDuplicateSetIds(j.workout)),
+    routines: [],
+    weights: [],
+    savedMeals: [],
+    macroTargets: {},
+  }));
   const [loading, setLoading] = useState(true);
 
   const dataRef = useRef(state);
-  // Mirrored after each commit (not assigned during render, which the hooks
-  // lint forbids); every reader runs in a handler, timer or effect, all later.
-  useLayoutEffect(() => {
-    dataRef.current = state;
-  });
+  // Assigned DURING render, before the children render — not in a layout effect
+  // after the commit, as the hooks lint would prefer. MealBuilder calls getDay
+  // while rendering, and a copy made after the commit drew the previous version
+  // of the day: an added meal looked like it hadn't been added, inviting a
+  // second tap. Handlers, timers and effects all run later and see the same.
+  dataRef.current = state;
   // The unsaved flag per key, with a generation: a save clears it only if no
   // edit arrived after that save started (see createSyncTracker).
   const dirty = useRef(createSyncTracker());
@@ -184,10 +224,21 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   // them landed). Stamped on the phone copy, so a copy of a session deleted on
   // another phone is recognised as deleted rather than as never saved.
   const onServer = useRef<Set<string>>(new Set());
+  // Sessions deleted on this device. A fetch never brings one back: not one
+  // whose delete failed offline, nor one answered from before the delete landed.
+  // Never cleared, like the tombstones: ids are never reused.
+  const deleted = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let active = true;
     alive.current = true; // re-arm on remount (StrictMode mounts the effect twice)
+    for (const id of pendingDeletes()) deleted.current.add(id);
+    // What the shown phone copies had deleted, so neither a save nor a refetch
+    // adopts those back from the server before the merge-back runs.
+    for (const j of copies) {
+      addTombstones(removed.current, wDirty(j.workout.id), j.removedExercises ?? []);
+      addTombstones(removedSets.current, wDirty(j.workout.id), j.removedSets ?? []);
+    }
 
     async function reloadMealDays() {
       // Taken BEFORE the request: a key whose save lands while this fetch is in
@@ -223,7 +274,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       const fetchNo = dirty.current.beginFetch(); // see reloadMealDays
       const { data: rows, error } = await supabase.from("workouts").select("*").order("date", { ascending: false });
       if (error || !active) return;
-      const remote = (rows ?? []).map(mapWorkout);
+      const remote = (rows ?? []).map(mapWorkout).filter((w) => !deleted.current.has(w.id));
       for (const w of remote) onServer.current.add(w.id);
       firstServerCopy.current ??= remote;
       setWorkoutsLoaded(true); // committed together with the merge below
@@ -366,9 +417,10 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       // Latch AFTER the flush, not before: the flush is a deliberate last-second
       // save and must still write. What must NOT survive is what the flush might
       // schedule later — its failure retry lands in a later task, by which time
-      // this line has run and scheduleWrite/writeDay refuse it.
+      // this line has run and scheduleWrite refuses it.
       alive.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount; `copies` is fixed at the first render
   }, []);
 
   type Actions = Omit<HealthStore, "loading" | "mealDays" | "workouts" | "routines" | "weights" | "savedMeals" | "macroTargets">;
@@ -385,7 +437,9 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       return next;
     };
     // Debounce a write by key; remember the write fn so unmount can flush it.
-    const scheduleWrite = (key: string, doWrite: () => Promise<void>, delay = 700) => {
+    // `doWrite(flush)`: true only for the unmount flush, which may still write
+    // once the provider is gone (see writeWorkout).
+    const scheduleWrite = (key: string, doWrite: (flush: boolean) => Promise<void>, delay = 700) => {
       // The provider is gone: its timer map has already been cleared and will
       // never be cleared again, so a timer armed here would fire into a dead
       // closure (frozen dataRef, orphaned dirty Set) minutes later and overwrite
@@ -393,13 +447,16 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       if (!alive.current) return;
       const prev = timers.current.get(key);
       if (prev) clearTimeout(prev);
-      pending.current.set(key, doWrite);
+      // The flush queues too. Called straight, it ran beside a save of the same
+      // key still in the air; if that older save landed last, the server kept
+      // the older document while the flush had already confirmed the phone copy.
+      pending.current.set(key, () => void runInOrder(key, () => doWrite(true)));
       timers.current.set(
         key,
         setTimeout(() => {
           timers.current.delete(key);
           pending.current.delete(key);
-          void runInOrder(key, doWrite);
+          void runInOrder(key, () => doWrite(false));
         }, delay),
       );
     };
@@ -414,20 +471,29 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     // unconditionally was the bug: an edit made while the save was in the air
     // was then marked saved, and the next refetch (often triggered by this very
     // write) replaced it with the older server copy. Returns whether it cleared.
-    const onWriteResult = (key: string, error: unknown, attempt: number, retry: (n: number) => Promise<void>, gen: number): boolean => {
+    const onWriteResult = (
+      key: string,
+      error: unknown,
+      attempt: number,
+      retry: (n: number, flush: boolean) => Promise<void>,
+      gen: number,
+    ): boolean => {
       if (!error) return dirty.current.settle(key, gen);
       console.error("health write failed", key, error);
       const delay = retryDelay(key, attempt);
-      // the retry returns its promise so the queue waits for the whole attempt
-      if (delay !== null) scheduleWrite(key, () => retry(attempt + 1), delay);
+      // the retry returns its promise so the queue waits for the whole attempt;
+      // one still waiting at unmount is flushed like any pending write
+      if (delay !== null) scheduleWrite(key, (flush) => retry(attempt + 1, flush), delay);
       else return dirty.current.settle(key, gen); // gave up — next refetch re-syncs from remote
       return false;
     };
 
+    // No unmount latch in here. Every job in the queue was admitted by a timer
+    // that fired while the provider was alive, or by the unmount flush, and a
+    // retry can only be armed through scheduleWrite, which refuses once it is
+    // gone. A latch here dropped a save left waiting in the queue at unmount,
+    // and a meal day has no phone copy to bring it back.
     const writeDay = async (person: string, date: string, attempt = 0): Promise<void> => {
-      // Second gate for the unmount latch: a retry chain scheduled by the old
-      // provider must never reach the network with that provider's stale state.
-      if (!alive.current) return;
       const key = mdDirty(person, date);
       // read with the document, before any await: this is the edit being saved
       const gen = dirty.current.generation(key);
@@ -473,8 +539,12 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         );
       onWriteResult(key, error, attempt, (n) => writeDay(person, date, n), gen);
     };
-    const writeWorkout = async (id: string, attempt = 0): Promise<void> => {
-      if (!alive.current) return; // see writeDay
+    const writeWorkout = async (id: string, attempt = 0, flush = false): Promise<void> => {
+      // The unmount latch, except for the flush. A save left waiting in the
+      // queue at unmount is dropped: the phone copy brings its edit back on the
+      // next load, and a late save of the old provider could otherwise confirm
+      // edits a remounted one has made since.
+      if (!alive.current && !flush) return;
       const key = wDirty(id);
       const gen = dirty.current.generation(key); // see writeDay
       const w = dataRef.current.workouts.find((x) => x.id === id);
@@ -482,11 +552,14 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         dirty.current.settle(key, gen);
         return;
       }
+      // The copy's edit count as this save starts: a late landing may confirm
+      // these, never edits written to the copy after it (by a remounted provider).
+      const editsAtStart = readJournal(w.person, id)?.edits ?? 0;
       // Read-before-write for the same reason as writeDay: a session row is one
       // document, so a blind upsert drops any set the other device added.
       const { data: row, error: readErr } = await supabase.from("workouts").select("*").eq("id", id).maybeSingle();
       if (readErr) {
-        onWriteResult(key, readErr, attempt, (n) => writeWorkout(id, n), gen);
+        onWriteResult(key, readErr, attempt, (n, fl) => writeWorkout(id, n, fl), gen);
         return;
       }
       const remote = row ? mapWorkout(row) : null;
@@ -497,23 +570,29 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         { id: w.id, person: w.person, date: w.date, name: w.name, notes: w.notes, exercises, done: w.done, updated_at: new Date().toISOString() },
         { onConflict: "id" },
       );
-      const settled = onWriteResult(key, error, attempt, (n) => writeWorkout(id, n), gen);
-      if (!settled || error) return;
+      const settled = onWriteResult(key, error, attempt, (n, fl) => writeWorkout(id, n, fl), gen);
+      if (error) return;
+      // The row exists now, even when a newer edit is waiting. A copy that
+      // missed this stamp later read a delete on another phone as "never saved".
+      onServer.current.add(id);
+      if (!settled) {
+        markJournalOnServer(w.person, id);
+        return;
+      }
       // The server now holds everything the phone copy has, and nothing newer
       // was edited meanwhile. A finish is done with its copy; an unfinished
       // session's copy is stamped confirmed, so a later load trusts the server
       // for it. Clearing or confirming at the tap would lose the session's last
       // sets if this save never landed.
-      onServer.current.add(id);
       if (w.done) clearJournal(w.person, w.id);
-      else confirmJournal({ ...w, exercises });
+      else confirmJournal({ ...w, exercises }, undefined, editsAtStart);
     };
     // Record what this device deliberately deleted, so the merge doesn't adopt it
     // straight back from a remote copy that hasn't caught up yet.
     const noteRemovals = (key: string, prev: { id: string }[] | undefined, next: { id: string }[]) =>
       addTombstones(removed.current, key, removedIds(prev, next));
     const flushDay = (person: string, date: string) => scheduleWrite(mdDirty(person, date), () => writeDay(person, date));
-    const flushWorkout = (id: string) => scheduleWrite(wDirty(id), () => writeWorkout(id));
+    const flushWorkout = (id: string) => scheduleWrite(wDirty(id), (fl) => writeWorkout(id, 0, fl));
 
     return {
       getDay(person, date) {
@@ -560,12 +639,32 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         touched.current.add(id);
         for (const p of PEOPLE) clearJournal(p, id);
         setState((s) => ({ ...s, workouts: s.workouts.filter((x) => x.id !== id) }));
+        // A delete is owed until it lands, like a save: marked on the phone,
+        // hidden from every fetch, and retried. Sent once and only logged, a
+        // delete that failed offline came back with the next fetch.
+        deleted.current.add(id);
+        try {
+          localStorage.setItem(DEL_PREFIX + id, "1");
+        } catch {
+          /* best effort: this provider still hides it and retries */
+        }
+        const del = async (attempt = 0): Promise<void> => {
+          if (!alive.current) return; // the next mount sends it again from the mark
+          const { error } = await supabase.from("workouts").delete().eq("id", id);
+          if (!error) {
+            try {
+              localStorage.removeItem(DEL_PREFIX + id);
+            } catch {
+              /* a stale mark only re-sends the delete of a row that is gone */
+            }
+            return;
+          }
+          console.error("workout delete failed", id, error);
+          scheduleWrite(key, () => del(attempt + 1), retryDelay(key, attempt) ?? 30000);
+        };
         // Behind any save of this session still in the air, so that save can't
         // land after the delete and bring the row back.
-        void runInOrder(key, async () => {
-          const { error } = await supabase.from("workouts").delete().eq("id", id);
-          if (error) console.error(error);
-        });
+        void runInOrder(key, () => del());
       },
       addRoutine(r) {
         setState((s) => ({ ...s, routines: [...s.routines, r] }));
@@ -678,10 +777,12 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   // read an offline start as "this session never saved". Compared with what
   // that fetch returned, not with state, which may already hold sessions
   // started on this phone while offline.
-  const { upsertWorkout } = store;
+  const { upsertWorkout, deleteWorkout } = store;
   useEffect(() => {
     if (!workoutsLoaded || journalChecked.current) return;
     journalChecked.current = true;
+    // deletes the app was closed before it could send
+    for (const id of pendingDeletes()) deleteWorkout(id);
     const serverCopy = firstServerCopy.current ?? [];
     for (const person of PEOPLE) {
       for (const journal of readJournals(person)) {
@@ -701,7 +802,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         upsertWorkout(r.workout); // unsaved again → saved like any edit
       }
     }
-  }, [workoutsLoaded, upsertWorkout]);
+  }, [workoutsLoaded, upsertWorkout, deleteWorkout]);
 
   const value: HealthStore = {
     ...store,

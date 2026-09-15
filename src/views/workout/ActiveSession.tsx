@@ -24,7 +24,7 @@ import {
   toggleWarmup,
   untick,
 } from "../../lib/sessionOps";
-import { findExercise, isDone, isWarmup, lastTime } from "../../lib/trainingMath";
+import { findExercise, isLogged, isWarmup, lastTime } from "../../lib/trainingMath";
 import { useWakeLock } from "../../lib/wakeLock";
 import { todayStr, type Exercise, type ExerciseEntry, type Person, type SetEntry, type Workout } from "../../lib/workoutLog";
 import { ConfirmSheet, FinishSheet } from "./FinishSheet";
@@ -98,6 +98,10 @@ export function ActiveSession({
   }, []);
   const startedAt = readSessionStart(workout.id);
   const isToday = workout.date === todayStr();
+  // The bar counts from the earlier of the stored start and the first tick: the
+  // start is kept per device, and a session begun on another one ticked before it.
+  let since = startedAt ?? nowMs;
+  for (const e of workout.exercises) for (const s of e.sets) if (typeof s.doneAt === "number" && s.doneAt < since) since = s.doneAt;
 
   const counts = sessionCounts(workout);
   const rowKey = (entry: ExerciseEntry, i: number) => `${entry.id}:${i}`;
@@ -109,7 +113,9 @@ export function ActiveSession({
     // suspended the audio since the last one.
     unlockAudio();
     const s = entry.sets[i];
-    if (isDone(s)) {
+    // isLogged, not isDone: a tick whose reps were cleared logs nothing, and the
+    // tap fills the reps back in (tickSet) instead of un-ticking it
+    if (isLogged(s)) {
       update(untick(entry, i));
       if (s.id && restSetId.current === s.id) rest.skip(); // the rest it started goes with it
       return;
@@ -165,7 +171,7 @@ export function ActiveSession({
             </button>
           </div>
           <div className="h-sub">
-            {isToday ? elapsedText(nowMs - (startedAt ?? nowMs)) : shortDay(workout.date, getLang())}
+            {isToday ? elapsedText(nowMs - since) : shortDay(workout.date, getLang())}
             {" · "}
             <span className="num">{t("{done} / {planned} work sets", { done: counts.done, planned: counts.planned })}</span>
             {counts.warmups > 0 &&
@@ -329,7 +335,7 @@ function ExerciseCard({
             label={labels[i]}
             ghost={ghosts[i]}
             showWeight={withWeight}
-            done={isDone(s)}
+            done={isLogged(s)}
             missing={err ? refused.missing : null}
             shake={err ? refused.n : 0}
             onWeight={(n) => onEntry(editSet(entry, i, { weight: n }))}

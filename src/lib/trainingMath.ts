@@ -210,7 +210,8 @@ export function repRecords(
  * anything lifted in an earlier workout for at least as many reps. The first
  * workout with an exercise is only a baseline — its ramp from 95 to 185 is not
  * a string of records. At most one record per exercise and rep count per
- * workout (the heaviest). Newest first.
+ * workout (the heaviest), and none that a heavier-or-equal set with more reps
+ * in the same workout already covers. Newest first.
  */
 export function recentRecords(
   workouts: Workout[],
@@ -239,6 +240,11 @@ export function recentRecords(
       if (prior) {
         for (const [reps, weight] of byReps) {
           if (!(weight > 0)) continue;
+          // a set in this workout with more reps at the same or a heavier weight
+          // already holds this record (185x7 after 185x8 is not a second one)
+          let covered = false;
+          for (const [r2, w2] of byReps) if (r2 > reps && w2 >= weight) covered = true;
+          if (covered) continue;
           let best = 0;
           for (const [r, wt] of prior) if (r >= reps && wt > best) best = wt;
           if (weight > best) found.push({ name, weight, reps, date: w.date });
@@ -254,8 +260,9 @@ export function recentRecords(
 
 // ── last time ─────────────────────────────────────────────────────────────────
 /**
- * The person's most recent finished workout that did this exercise, and the
- * sets they did in it (done sets with reps — warm-ups included, in logged order).
+ * The person's most recent finished workout that did working sets of this
+ * exercise, and the sets they did in it (done sets with reps — warm-ups
+ * included, in logged order).
  * `excludeWorkoutId` keeps the session being logged from answering itself.
  */
 export function lastTime(
@@ -273,7 +280,9 @@ export function lastTime(
     const sets = w.exercises
       .filter((entry) => exKey(library, entry.name, entry.exerciseId) === key)
       .flatMap((entry) => entry.sets.filter(isLogged));
-    if (sets.length > 0) return { date: w.date, sets };
+    // A session with only a warm-up done (the machine was taken) shows no working
+    // sets, so it doesn't answer: the one before it has the numbers to follow.
+    if (sets.some((s) => !isWarmup(s))) return { date: w.date, sets };
   }
   return null;
 }

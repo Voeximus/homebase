@@ -270,6 +270,15 @@ describe("recentRecords", () => {
     expect(recentRecords(ws, "gino", LIB)).toEqual([{ name: "Bench press", weight: 195, reps: 5, date: "2026-09-08" }]);
   });
 
+  // Straight sets after a weight jump turned one achievement into three records.
+  it("a set another set in the same workout covers (more reps, same or heavier weight) is not a second record", () => {
+    const prior = workout("2026-09-01", [["Exercise X", [set(180, 8), set(180, 8)]]]);
+    const straight = workout("2026-09-08", [["Exercise X", [set(185, 8), set(185, 7), set(185, 6)]]]);
+    expect(recentRecords([prior, straight], "gino", LIB)).toEqual([{ name: "Exercise X", weight: 185, reps: 8, date: "2026-09-08" }]);
+    const backOff = workout("2026-09-08", [["Exercise X", [set(190, 8), set(185, 8), set(185, 7)]]]);
+    expect(recentRecords([prior, backOff], "gino", LIB)).toEqual([{ name: "Exercise X", weight: 190, reps: 8, date: "2026-09-08" }]);
+  });
+
   it("bodyweight sets set a baseline but are never records", () => {
     const ws = [
       workout("2026-09-01", [["Pull-up", [set(0, 8), set(0, 10)]]]),
@@ -313,6 +322,14 @@ describe("lastTime", () => {
     const b = workout("2026-09-05", [["Bench press", [set(0, 0)]]]);
     expect(lastTime([a, b], "gino", "Bench press", LIB)?.date).toBe("2026-09-01");
     expect(lastTime([b], "gino", "Bench press", LIB)).toBeNull();
+  });
+
+  it("a session with only a warm-up done does not answer; the one before it does", () => {
+    const mon = workout("2026-09-07", [["Bench press", [set(200, 8), set(200, 8)]]]);
+    const wed = workout("2026-09-09", [["Bench press", [warm(90, 10)]]]);
+    const r = lastTime([mon, wed], "gino", "Bench press", LIB);
+    expect(r?.date).toBe("2026-09-07");
+    expect(r?.sets.map((s) => `${s.weight}×${s.reps}`)).toEqual(["200×8", "200×8"]);
   });
 });
 

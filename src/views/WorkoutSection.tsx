@@ -18,7 +18,8 @@ import {
 import { getLang, t, tc } from "../lib/i18n";
 import { REST_IDLE, saveRest } from "../lib/restTimer";
 import { clearSessionStart, copyLastSet, discardTarget, newSet, shortDay } from "../lib/sessionOps";
-import { isDone } from "../lib/trainingMath";
+import { mergeWorkout, removedIds, removedSetIds } from "../lib/syncMerge";
+import { isLogged } from "../lib/trainingMath";
 import {
   bestSet,
   personalRecords,
@@ -403,7 +404,7 @@ function SoloWorkout({
               <p className="text-[13.5px] font-semibold text-bone" style={{ marginTop: 4 }}>{t(stale.name)}</p>
               <p className="h-sub">
                 {(() => {
-                  const n = stale.exercises.reduce((k, e) => k + e.sets.filter(isDone).length, 0);
+                  const n = stale.exercises.reduce((k, e) => k + e.sets.filter(isLogged).length, 0);
                   return t(n === 1 ? "{n} set ticked, never finished" : "{n} sets ticked, never finished", { n });
                 })()}
               </p>
@@ -659,13 +660,25 @@ function EditWorkoutSheet({
   const [searchOpen, setSearchOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   // A different workout opened → start its draft over (adjusted during render,
-  // so there is never a frame showing the previous workout's draft).
-  const [draftOf, setDraftOf] = useState(workout);
-  if (draftOf !== workout) {
-    setDraftOf(workout);
+  // so there is never a frame showing the previous workout's draft). By id, not
+  // by object: every refetch (any save on the other phone) hands back a new
+  // object for the same workout, and that used to throw the edits away.
+  const [opened, setOpened] = useState(workout);
+  if (opened.id !== workout.id) {
+    setOpened(workout);
     setDraft(workout);
     setConfirmDel(false);
   }
+  // Save the draft over the workout as it is NOW: what changed elsewhere since
+  // this sheet opened is kept, except what the draft itself deleted — the
+  // store's removal diff would otherwise read the other phone's new sets as deleted.
+  const save = () =>
+    onSave(
+      mergeWorkout(draft, workout, {
+        exercises: new Set(removedIds(opened.exercises, draft.exercises)),
+        sets: new Set(removedSetIds(opened, draft)),
+      }),
+    );
 
   const upd = (exId: string, fn: (e: ExerciseEntry) => ExerciseEntry) =>
     setDraft((w) => ({ ...w, exercises: w.exercises.map((e) => (e.id === exId ? fn(e) : e)) }));
@@ -757,7 +770,7 @@ function EditWorkoutSheet({
                   <Trash2 size={16} />
                 </button>
                 <button
-                  onClick={() => onSave(draft)}
+                  onClick={save}
                   className="flex flex-1 items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white transition active:scale-[0.98]"
                   style={{ background: "var(--color-accent)", color: "var(--h-on-accent)" }}
                 >

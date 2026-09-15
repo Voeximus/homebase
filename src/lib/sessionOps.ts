@@ -125,7 +125,8 @@ export type TickResult =
  * with no weight typed or suggested is refused, and so is any set with no reps
  * typed or suggested (the first time an exercise is logged has no ghost) — a
  * 0-rep set would count as a hard set. Refused = nothing changes. A set that is
- * already ticked is left as it is — un-ticking is `untick`.
+ * already ticked is left as it is — un-ticking is `untick` — unless its reps box
+ * was cleared since: that tick logs nothing, so tapping it fills the reps again.
  *
  * The weight ghost is only used where the weight box is shown, so a hidden box
  * never saves a weight nobody could see.
@@ -139,7 +140,7 @@ export function tickSet(
   makeId: () => string,
 ): TickResult {
   const s = entry.sets[index];
-  if (!s || s.done === true) return { entry };
+  if (!s || (s.done === true && s.reps > 0)) return { entry };
   const g = ghosts[index] ?? NO_GHOST;
   const weight = pos(s.weight) || (showsWeight(exercise) ? g.weight : 0);
   const reps = pos(s.reps) || g.reps;
@@ -310,7 +311,9 @@ export function finishSummary(
   }
   let minutes: number | null = null;
   if (lastAt > 0) {
-    const start = startedAt !== null && Number.isFinite(startedAt) && startedAt <= lastAt ? startedAt : firstAt;
+    // The earlier of the two: the start is stored when the session first opens on
+    // THIS device, and a session begun on another one has ticks from before it.
+    const start = startedAt !== null && Number.isFinite(startedAt) ? Math.min(startedAt, firstAt) : firstAt;
     minutes = Math.round((lastAt - start) / 60000);
     // An old session finished days later has ticks from both sittings; the gap
     // between them is not a workout length, so there is no time to show.

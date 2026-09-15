@@ -3,6 +3,7 @@ import {
   clearJournal,
   confirmJournal,
   journalKey,
+  markJournalOnServer,
   readJournal,
   readJournals,
   resolveJournal,
@@ -269,6 +270,25 @@ describe("a copy whose saves all landed never overrides the server", () => {
     if (r.action === "restore") expect([r.workout.name, r.workout.notes]).toEqual(["Lower A", "knee ok"]);
   });
 
+  it("a save confirms only the edits the copy had when it started; later ones stay unconfirmed", () => {
+    const st = memoryStorage();
+    writeJournal(logged(), { storage: st }); // edit 1
+    const startedAt = readJournal("gino", "w1", st)!.edits;
+    writeJournal(logged(), { storage: st }); // edit 2, written while that save was in the air
+    confirmJournal(logged(), st, startedAt);
+    expect(readJournal("gino", "w1", st)).toMatchObject({ edits: 2, confirmed: 1, onServer: true });
+  });
+
+  it("a save that lands with a newer edit waiting marks the copy on the server, confirming nothing", () => {
+    const st = memoryStorage();
+    writeJournal(logged(), { storage: st });
+    markJournalOnServer("gino", "w1", st);
+    expect(readJournal("gino", "w1", st)).toMatchObject({ edits: 1, confirmed: 0, onServer: true });
+    markJournalOnServer("gino", "nope", st); // no copy: nothing written
+    expect([...st.data.keys()]).toEqual(["hb-active-gino:w1"]);
+    expect(() => markJournalOnServer("gino", "w1", throwing)).not.toThrow();
+  });
+
   it("a copy left stale by a failed copy write is confirmed by the next save that lands", () => {
     const st = memoryStorage({ failWritesAfter: 1 });
     writeJournal(wk([ex("e1", [ticked("a", 1000)])]), { storage: st });
@@ -421,9 +441,35 @@ describe("merging the phone copy with the server copy on load", () => {
     expect(resolveJournal(undefined, journal(wk([])))).toEqual({ action: "clear" });
   });
 
-  it("a session finished on another phone clears this phone's unfinished copy", () => {
+  it("a session finished on another device keeps its finish AND this phone's unsaved sets", () => {
     const phone = wk([ex("e1", [ticked("a", 1000), ticked("b", 2000)])]);
-    expect(resolveJournal(wk([ex("e1", [ticked("a", 1000)])], { done: true }), journal(phone))).toEqual({ action: "clear" });
+    const r = resolveJournal(wk([ex("e1", [ticked("a", 1000)])], { done: true }), journal(phone));
+    expect(r.action).toBe("restore");
+    if (r.action !== "restore") return;
+    expect(r.workout.done).toBe(true);
+    expect(setIds(r.workout)).toEqual(["a", "b"]);
+  });
+
+  // Sets 4-6 logged offline (every save failed), then the session was finished
+  // on another device. Clearing the copy here deleted those sets for good.
+  it("finished elsewhere: unsaved ticked sets are restored into the finished session, open empty rows dropped as Finish does", () => {
+    const st = memoryStorage();
+    const saved = wk([ex("e1", [ticked("s1", 1000), ticked("s2", 1100), ticked("s3", 1200)])]);
+    writeJournal(saved, { storage: st });
+    confirmJournal(saved, st);
+    const offline = wk([
+      ex("e1", [ticked("s1", 1000), ticked("s2", 1100), ticked("s3", 1200), ticked("s4", 2000), ticked("s5", 2100), ticked("s6", 2200), open("s8")]),
+    ]);
+    writeJournal(offline, { storage: st });
+    const server = wk([ex("e1", [ticked("s1", 1000), ticked("s2", 1100), ticked("s3", 1200), ticked("s7", 3000)])], { done: true });
+    const r = resolveJournal(server, readJournal("gino", "w1", st)!);
+    expect(r.action).toBe("restore");
+    if (r.action !== "restore") return;
+    expect(r.workout.done).toBe(true);
+    expect(setIds(r.workout)).toEqual(["s1", "s2", "s3", "s4", "s5", "s6", "s7"]);
+    // nothing unsaved on this phone → nothing to write back
+    const same = { ...server, done: false };
+    expect(resolveJournal(server, journal(same, 5000, { edits: 2, confirmed: 1, onServer: true, base: same }))).toEqual({ action: "keep" });
   });
 
   it("the phone copy's name and notes are its newest edit", () => {

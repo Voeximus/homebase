@@ -236,6 +236,15 @@ describe("tickSet", () => {
     expect(tickSet(e, 3, [], BENCH, 99, ids()).entry).toBe(e);
   });
 
+  // Ticked 200×8, then the reps box cleared to retype: the tick logged nothing
+  // any more, and tapping it un-ticked instead of logging.
+  it("a tick whose reps were cleared since is ticked again: reps from the ghost, or refused without one", () => {
+    const e = entry([set(200, 0, { id: "s1", done: true, doneAt: 7 })]);
+    const r = tickSet(e, 0, [g(200, 8)], BENCH, 99, ids());
+    expect(r.entry!.sets[0]).toMatchObject({ id: "s1", weight: 200, reps: 8, done: true, doneAt: 99 });
+    expect(tickSet(e, 0, [NO_GHOST], BENCH, 99, ids())).toEqual({ error: "needs-reps" });
+  });
+
   it("does not change the entry it was given", () => {
     const e = entry([set(0, 0)]);
     const before = JSON.stringify(e);
@@ -452,6 +461,15 @@ describe("finishSummary", () => {
     expect(finishSummary(w, 60 * min).minutes).toBe(42);
   });
 
+  // Begun in Safari, finished in the home-screen app (separate storage): the
+  // start this device stored is long after the first tick.
+  it("times from the first tick when this device's stored start came after it", () => {
+    const tick = (at: number) => set(185, 5, { done: true, doneAt: at });
+    const split = workout([entry([tick(65 * min), tick(140 * min), tick(155 * min)])]); // 10:05, 11:20, 11:35
+    expect(finishSummary(split, 150 * min).minutes).toBe(90); // opened here at 11:30
+    expect(finishSummary(split, 60 * min).minutes).toBe(95);
+  });
+
   it("has no time when no tick carries one", () => {
     expect(finishSummary(workout([entry([set(185, 5)])]), 0).minutes).toBeNull();
   });
@@ -612,6 +630,12 @@ describe("ActiveSession (static render)", () => {
     expect(out.match(/aria-pressed="true"/g)).toHaveLength(2);
     expect(out).toContain("1 / 2 work sets");
     expect(out).toContain("1 warm-up done");
+  });
+
+  it("a tick whose reps were cleared shows no tick, matching the count", () => {
+    const out = html(workout([entry([set(185, 5, { done: true }), set(200, 0, { done: true })], { name: "Bench press" })]));
+    expect(out.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(out).toContain("1 / 2 work sets");
   });
 
   it("says so for a first-time exercise and for an empty session", () => {
