@@ -7,15 +7,16 @@ import type { BodyWeight } from "../lib/weightLog";
 import type { MacroTarget } from "../lib/nutrition";
 import {
   createSyncTracker,
+  localEdit,
   mergeExercises,
   mergeWorkoutLists,
   removedIds,
-  removedSetIds,
   repairDuplicateSetIds,
+  retryDelay,
   unionById,
   type Tombstones,
 } from "../lib/syncMerge";
-import { clearJournal, readJournal, resolveJournal, writeJournal } from "../lib/activeJournal";
+import { clearJournal, confirmJournal, readJournals, resolveJournal, writeJournal } from "../lib/activeJournal";
 
 // ── The Health store ─────────────────────────────────────────────────────────
 // One shared source of truth for the meal + workout logs, synced to Supabase so
@@ -31,11 +32,12 @@ import { clearJournal, readJournal, resolveJournal, writeJournal } from "../lib/
 // and the whole-document upsert that followed then wrote them out of existence.
 // Both phones are in this app at the same time, so that is the normal case.
 //
-// Workouts get three more guards ("never lose a set"; the deciding logic is pure,
-// in lib/syncMerge.ts and lib/activeJournal.ts): the unsaved flag carries a
+// Workouts get more guards ("never lose a set"; the deciding logic is pure, in
+// lib/syncMerge.ts and lib/activeJournal.ts): the unsaved flag carries a
 // generation so a save can't mark a NEWER edit as saved; a session merges set by
-// set, not exercise by exercise; and the running session is copied to the phone
-// on every change, then merged back on the next load.
+// set, not exercise by exercise; a failed save never stops retrying; and every
+// change to a session is copied to the phone, confirmed once its save lands, and
+// merged back after the first load that reaches the server.
 
 const dayKey = (p: string, d: string) => `${p}|${d}`;
 const mdDirty = (p: string, d: string) => `md|${p}|${d}`;
@@ -168,10 +170,20 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   // — and the newer save's success would then mark state clean over a server
   // copy that is missing its edit.
   const chains = useRef<Map<string, Promise<void>>>(new Map());
-  // Set once a workouts fetch has succeeded: the phone copy is only merged
-  // against a real server copy (see the journal effect below).
-  const workoutsLoaded = useRef(false);
+  // The first workouts fetch that SUCCEEDED, whenever it happens: the phone
+  // copies are only merged against a real server copy (see the journal effect
+  // below). State, not a ref — a load that fails offline must leave the merge
+  // waiting for a later fetch, not skip it for the life of the app.
+  const [workoutsLoaded, setWorkoutsLoaded] = useState(false);
+  const firstServerCopy = useRef<Workout[] | null>(null); // what that fetch returned, before any merge
   const journalChecked = useRef(false);
+  // Sessions this provider has edited or deleted. The merge-back leaves their
+  // copies alone: state already holds their newest edit.
+  const touched = useRef<Set<string>>(new Set());
+  // Session ids known to exist on the server (seen in a fetch, or a save of
+  // them landed). Stamped on the phone copy, so a copy of a session deleted on
+  // another phone is recognised as deleted rather than as never saved.
+  const onServer = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -211,8 +223,10 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       const fetchNo = dirty.current.beginFetch(); // see reloadMealDays
       const { data: rows, error } = await supabase.from("workouts").select("*").order("date", { ascending: false });
       if (error || !active) return;
-      workoutsLoaded.current = true;
       const remote = (rows ?? []).map(mapWorkout);
+      for (const w of remote) onServer.current.add(w.id);
+      firstServerCopy.current ??= remote;
+      setWorkoutsLoaded(true); // committed together with the merge below
       // Same document-merge as meal days: for a session with a pending local
       // write, keeping the local copy WHOLE (the old behaviour) dropped any
       // exercise the other device had already added to that session, and the
@@ -325,11 +339,17 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "saved_meals" }, () => reloadSavedMeals())
       .on("postgres_changes", { event: "*", schema: "public", table: "macro_targets" }, () => reloadMacroTargets())
       .subscribe();
+    // Back online → fetch the sessions again. Realtime doesn't replay what it
+    // missed, and a load that failed offline would otherwise leave the phone
+    // copies waiting for the other phone's next change.
+    const onOnline = () => void reloadWorkouts();
+    window.addEventListener("online", onOnline);
 
     const timersMap = timers.current;
     const pendingMap = pending.current;
     return () => {
       active = false;
+      window.removeEventListener("online", onOnline);
       supabase.removeChannel(channel);
       for (const id of timersMap.values()) clearTimeout(id);
       timersMap.clear();
@@ -386,8 +406,9 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     // On a failed write, RE-SCHEDULE with backoff so a dirty key always has a
     // live timer and self-heals when connectivity / RLS recovers — never stuck
     // local-only with no retry (which would also wedge the Realtime refetch).
-    // After a few attempts give up and clear dirty so the row can re-sync from
-    // the authoritative remote copy.
+    // A meal day gives up after a few attempts and clears dirty so the row can
+    // re-sync from the authoritative remote copy. A workout never gives up (see
+    // retryDelay): giving up let the next refetch replace unsaved sets.
     //
     // `gen` is the key's generation when this write STARTED. Clearing the flag
     // unconditionally was the bug: an edit made while the save was in the air
@@ -396,8 +417,9 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     const onWriteResult = (key: string, error: unknown, attempt: number, retry: (n: number) => Promise<void>, gen: number): boolean => {
       if (!error) return dirty.current.settle(key, gen);
       console.error("health write failed", key, error);
+      const delay = retryDelay(key, attempt);
       // the retry returns its promise so the queue waits for the whole attempt
-      if (attempt < 6) scheduleWrite(key, () => retry(attempt + 1), Math.min(30000, 1000 * 2 ** attempt));
+      if (delay !== null) scheduleWrite(key, () => retry(attempt + 1), delay);
       else return dirty.current.settle(key, gen); // gave up — next refetch re-syncs from remote
       return false;
     };
@@ -476,10 +498,15 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         { onConflict: "id" },
       );
       const settled = onWriteResult(key, error, attempt, (n) => writeWorkout(id, n), gen);
-      // A finish is only done with the phone copy once the server HAS it, and
-      // nothing newer was edited meanwhile. Clearing at the tap would lose the
-      // session's last sets if this save never landed.
-      if (settled && !error && w.done) clearJournal(w.person, w.id);
+      if (!settled || error) return;
+      // The server now holds everything the phone copy has, and nothing newer
+      // was edited meanwhile. A finish is done with its copy; an unfinished
+      // session's copy is stamped confirmed, so a later load trusts the server
+      // for it. Clearing or confirming at the tap would lose the session's last
+      // sets if this save never landed.
+      onServer.current.add(id);
+      if (w.done) clearJournal(w.person, w.id);
+      else confirmJournal({ ...w, exercises });
     };
     // Record what this device deliberately deleted, so the merge doesn't adopt it
     // straight back from a remote copy that hasn't caught up yet.
@@ -499,15 +526,24 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         setState((s) => ({ ...s, mealDays: { ...s.mealDays, [dayKey(day.person, day.date)]: day } }));
         flushDay(day.person, day.date);
       },
-      upsertWorkout(w) {
-        const key = wDirty(w.id);
-        const prev = dataRef.current.workouts.find((x) => x.id === w.id);
-        noteRemovals(key, prev?.exercises, w.exercises);
-        addTombstones(removedSets.current, key, removedSetIds(prev, w));
+      upsertWorkout(edit) {
+        const key = wDirty(edit.id);
+        const prev = dataRef.current.workouts.find((x) => x.id === edit.id);
+        // Duplicate set ids repaired before the edit enters state (localEdit).
+        const { workout: w, removedExercises, removedSets: goneSets } = localEdit(prev, edit);
+        addTombstones(removed.current, key, removedExercises);
+        addTombstones(removedSets.current, key, goneSets);
+        touched.current.add(w.id);
         dirty.current.edit(key);
         // The phone copy is written NOW, not after the debounce: a set ticked
-        // and then the app killed within the next ~700 ms must still exist.
-        if (!w.done) writeJournal(w, { removedExercises: removed.current.get(key), removedSets: removedSets.current.get(key) });
+        // and then the app killed within the next ~700 ms must still exist. A
+        // finish too — otherwise a finish whose save never landed came back on
+        // the next load as the running session, or as a banner offering Discard.
+        writeJournal(w, {
+          removedExercises: removed.current.get(key),
+          removedSets: removedSets.current.get(key),
+          onServer: onServer.current.has(w.id),
+        });
         setState((s) => {
           const exists = s.workouts.some((x) => x.id === w.id);
           return { ...s, workouts: exists ? s.workouts.map((x) => (x.id === w.id ? w : x)) : [w, ...s.workouts] };
@@ -521,6 +557,7 @@ export function HealthProvider({ children }: { children: ReactNode }) {
         timers.current.delete(key);
         pending.current.delete(key);
         dirty.current.forget(key);
+        touched.current.add(id);
         for (const p of PEOPLE) clearJournal(p, id);
         setState((s) => ({ ...s, workouts: s.workouts.filter((x) => x.id !== id) }));
         // Behind any save of this session still in the air, so that save can't
@@ -634,29 +671,37 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // ── the phone copy, merged back once per mount ──────────────────────────────
-  // After the first load that reached the server. If that load failed, the
-  // copy stays on the phone untouched for the next time: merging against "no
-  // server copy" would read an offline start as "this session never saved".
+  // ── the phone copies, merged back once per mount ────────────────────────────
+  // After the first workouts load that reached the server, however late it
+  // comes (an offline start waits for the phone to reconnect). Until then the
+  // copies stay on the phone untouched: merging against "no server copy" would
+  // read an offline start as "this session never saved". Compared with what
+  // that fetch returned, not with state, which may already hold sessions
+  // started on this phone while offline.
   const { upsertWorkout } = store;
   useEffect(() => {
-    if (loading || journalChecked.current || !workoutsLoaded.current) return;
+    if (!workoutsLoaded || journalChecked.current) return;
     journalChecked.current = true;
+    const serverCopy = firstServerCopy.current ?? [];
     for (const person of PEOPLE) {
-      const journal = readJournal(person);
-      if (!journal) continue;
-      const server = dataRef.current.workouts.find((w) => w.id === journal.workout.id);
-      const r = resolveJournal(server, journal);
-      if (r.action === "clear") clearJournal(person, journal.workout.id);
-      if (r.action !== "restore") continue;
-      // Seed what the phone had deleted BEFORE the upsert, so neither its
-      // removal diff nor the save's merge adopts those back from the server.
-      const key = wDirty(r.workout.id);
-      addTombstones(removed.current, key, r.tombstones.exercises);
-      addTombstones(removedSets.current, key, r.tombstones.sets);
-      upsertWorkout(r.workout); // unsaved again → saved like any edit
+      for (const journal of readJournals(person)) {
+        // edited here already: state holds its newest edit, and the copy is live
+        if (touched.current.has(journal.workout.id)) continue;
+        const server = serverCopy.find((w) => w.id === journal.workout.id);
+        const r = resolveJournal(server, journal);
+        if (r.action !== "restore") {
+          clearJournal(person, journal.workout.id); // the server holds it, or it is stale
+          continue;
+        }
+        // Seed what the phone had deleted BEFORE the upsert, so neither its
+        // removal diff nor the save's merge adopts those back from the server.
+        const key = wDirty(r.workout.id);
+        addTombstones(removed.current, key, r.tombstones.exercises);
+        addTombstones(removedSets.current, key, r.tombstones.sets);
+        upsertWorkout(r.workout); // unsaved again → saved like any edit
+      }
     }
-  }, [loading, upsertWorkout]);
+  }, [workoutsLoaded, upsertWorkout]);
 
   const value: HealthStore = {
     ...store,

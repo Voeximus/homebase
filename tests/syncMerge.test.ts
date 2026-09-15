@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createSyncTracker,
   derivedSetId,
+  localEdit,
   mergeExercises,
   mergeSets,
   mergeWorkout,
@@ -9,6 +10,7 @@ import {
   removedIds,
   removedSetIds,
   repairDuplicateSetIds,
+  retryDelay,
   unionById,
   type SyncSet,
 } from "../src/lib/syncMerge";
@@ -268,12 +270,60 @@ describe("duplicate set ids from old app versions are repaired on load", () => {
     expect(repairDuplicateSetIds(w)).toBe(w);
   });
 
+  // Scratch test S3: the repaired id used to come from the set's POSITION, so
+  // removing an earlier set with a different id renamed the copy on the server
+  // side and the merge adopted it as a set this phone didn't have.
+  it("a removed set with another id doesn't rename a repaired copy (no set shown twice)", () => {
+    const b = s("b", 185, 5, { done: true, doneAt: 1000 });
+    // this phone loaded [a, b, b] and has an unsaved edit
+    const local = repairDuplicateSetIds(wk("w", [ex("e1", [s("a"), b, { ...b }])]));
+    // the old phone removed "a" and saved [b, b]
+    const remote = repairDuplicateSetIds(wk("w", [ex("e1", [b, { ...b }])]));
+    expect(ids(setsOf(remote))).toEqual(["b", "b~1"]);
+    expect(ids(setsOf(mergeWorkout(local, remote)))).toEqual(["a", "b", "b~1"]);
+  });
+
   it("repaired copies merge without showing a set twice (old phone added a third copy meanwhile)", () => {
     // this phone loaded [a, a] earlier, repaired to [a, a~1], and has an unsaved edit
     const local = repairDuplicateSetIds(wk("w", [ex("e1", [copied, { ...copied }])]));
     // the old phone copied again: [a, a, a]
     const remote = repairDuplicateSetIds(wk("w", [ex("e1", [copied, { ...copied }, { ...copied }])]));
     expect(ids(setsOf(mergeWorkout(local, remote)))).toEqual(["a", "a~1", "a~2"]);
+  });
+});
+
+describe("an edit entering local state carries no duplicate set ids", () => {
+  // Scratch test probe2: the history editor added a set by copying the last one,
+  // id included, and nothing repaired it before it entered state. A refetch of
+  // the saved row (repaired on the way in) then looked like it had a set this
+  // phone didn't, and the next save stored four sets for three.
+  it("[a, b, b] enters as [a, b, b~1], and a protected refetch of the saved row adds nothing", () => {
+    const b = s("b", 135, 6);
+    const edit = localEdit(undefined, wk("w", [ex("e1", [s("a"), b, { ...b }])], { done: true }));
+    expect(ids(setsOf(edit.workout))).toEqual(["a", "b", "b~1"]);
+    const server = repairDuplicateSetIds(wk("w", [ex("e1", [s("a"), b, { ...b }])], { done: true }));
+    const after = mergeWorkoutLists([edit.workout], [server], () => true, () => undefined);
+    expect(ids(setsOf(after[0]))).toEqual(["a", "b", "b~1"]);
+  });
+
+  it("reports what the edit deleted", () => {
+    const prev = wk("w", [ex("e1", [s("a"), s("b")]), ex("e2", [s("x")])]);
+    const edit = localEdit(prev, wk("w", [ex("e1", [s("a")])]));
+    expect(edit).toMatchObject({ removedExercises: ["e2"], removedSets: ["b", "x"] });
+  });
+});
+
+describe("a failed save keeps retrying", () => {
+  it("backs off 1 s, 2 s, 4 s … and caps at 30 s", () => {
+    expect([0, 1, 2, 3, 4, 5].map((n) => retryDelay("md|gino|2026-09-14", n))).toEqual([1000, 2000, 4000, 8000, 16000, 30000]);
+  });
+
+  // Scratch test S5: a workout gave up after ~61 s offline, giving up cleared the
+  // unsaved flag, and the next refetch replaced the session with the older server
+  // copy — a 90 s rest with no signal was enough to lose a set.
+  it("a workout never gives up, however long the phone stays offline; a meal day gives up after 6", () => {
+    for (const n of [6, 7, 20, 500]) expect(retryDelay("w|session-1", n)).toBe(30000);
+    expect(retryDelay("md|gino|2026-09-14", 6)).toBeNull();
   });
 });
 

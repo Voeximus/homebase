@@ -12,7 +12,7 @@ import type { Exercise, Muscle } from "../../lib/exerciseData";
 import type { Grade, StudyNote } from "../../lib/evidence";
 import { getLang, t } from "../../lib/i18n";
 import { REGIONS, REGION_BY_ID, isRegionId, type RegionId } from "../../lib/muscleRegions";
-import { bandLabel, findExercise, isDone, isWarmup, normName } from "../../lib/trainingMath";
+import { bandLabel, findExercise, isLogged, isWarmup, normName } from "../../lib/trainingMath";
 import type { Person, SetEntry, Workout } from "../../lib/workoutLog";
 
 // ── study notes (lazy) ────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ export function sessionsWith(
   for (const { w } of ordered) {
     const entries = w.exercises.filter((e) => keyOf(e.name, e.exerciseId) === key);
     if (!entries.length) continue;
-    const done = entries.flatMap((e) => e.sets.filter(isDone));
+    const done = entries.flatMap((e) => e.sets.filter(isLogged)); // a tick with no reps logged nothing
     const minutes = entries.reduce((n, e) => n + (e.sets.length ? 0 : e.duration ?? 0), 0);
     if (!done.length && !minutes) continue;
     out.push({

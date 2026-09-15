@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   clearJournal,
+  confirmJournal,
   journalKey,
   readJournal,
+  readJournals,
   resolveJournal,
   writeJournal,
   type ActiveJournal,
@@ -14,15 +16,24 @@ import type { ExerciseEntry, Workout } from "../src/lib/workoutLog";
 // The phone copy exists for one moment: the app died between a tick and the save
 // reaching the server. So the tests are about that moment — what the next load
 // does with a phone copy and a server copy that disagree — plus the promise that
-// storage failing never breaks logging.
+// storage failing never breaks logging, and that a copy whose saves all landed
+// never overrides what happened on the server since.
 
-function memoryStorage(): JournalStorage & { data: Map<string, string> } {
+function memoryStorage(opts: { failWritesAfter?: number } = {}): JournalStorage & { data: Map<string, string> } {
   const data = new Map<string, string>();
+  let writes = 0;
   return {
     data,
     getItem: (k) => data.get(k) ?? null,
-    setItem: (k, v) => void data.set(k, v),
+    setItem: (k, v) => {
+      if (opts.failWritesAfter !== undefined && ++writes > opts.failWritesAfter) throw new Error("quota");
+      data.set(k, v);
+    },
     removeItem: (k) => void data.delete(k),
+    key: (i) => [...data.keys()][i] ?? null,
+    get length() {
+      return data.size;
+    },
   };
 }
 const throwing: JournalStorage = {
@@ -33,6 +44,12 @@ const throwing: JournalStorage = {
     throw new Error("quota");
   },
   removeItem: () => {
+    throw new Error("blocked");
+  },
+  key: () => {
+    throw new Error("blocked");
+  },
+  get length(): number {
     throw new Error("blocked");
   },
 };
@@ -56,34 +73,78 @@ const wk = (exercises: ExerciseEntry[], over: Partial<Workout> = {}): Workout =>
   done: false,
   ...over,
 });
-const journal = (workout: Workout, savedAt = 5000, over: Partial<ActiveJournal> = {}): ActiveJournal => ({ workout, savedAt, ...over });
+// an unconfirmed copy: one edit written, no save of it confirmed yet
+const journal = (workout: Workout, savedAt = 5000, over: Partial<ActiveJournal> = {}): ActiveJournal => ({
+  workout,
+  savedAt,
+  edits: 1,
+  confirmed: 0,
+  onServer: false,
+  ...over,
+});
 const setIds = (w: Workout, exId = "e1") => (w.exercises.find((e) => e.id === exId)!.sets as SyncSet[]).map((x) => x.id);
 
 describe("writing and reading the phone copy", () => {
-  it("round-trips under hb-active-<person> with savedAt and what was deleted", () => {
+  it("round-trips under hb-active-<person>:<id> with savedAt, what was deleted, and one more edit", () => {
     const st = memoryStorage();
     const w = wk([ex("e1", [ticked("a", 1000)])]);
     writeJournal(w, { now: 4242, storage: st, removedSets: new Set(["b"]), removedExercises: ["e9"] });
-    expect(journalKey("gino")).toBe("hb-active-gino");
-    expect([...st.data.keys()]).toEqual(["hb-active-gino"]);
-    expect(readJournal("gino", st)).toEqual({ workout: w, savedAt: 4242, removedSets: ["b"], removedExercises: ["e9"] });
-    expect(readJournal("xinyan", st)).toBeNull();
+    expect(journalKey("gino", "w1")).toBe("hb-active-gino:w1");
+    expect([...st.data.keys()]).toEqual(["hb-active-gino:w1"]);
+    expect(readJournal("gino", "w1", st)).toEqual({
+      workout: w,
+      savedAt: 4242,
+      removedSets: ["b"],
+      removedExercises: ["e9"],
+      edits: 1,
+      confirmed: 0,
+      onServer: false,
+    });
+    writeJournal(w, { storage: st, onServer: true });
+    expect(readJournal("gino", "w1", st)).toMatchObject({ edits: 2, confirmed: 0, onServer: true });
+    writeJournal(w, { storage: st }); // once known to be on the server, it stays known
+    expect(readJournal("gino", "w1", st)?.onServer).toBe(true);
+    expect(readJournal("xinyan", "w1", st)).toBeNull();
+    expect(readJournals("xinyan", st)).toEqual([]);
   });
 
-  it("keeps fields another piece stored for the SAME session, drops them for a different one", () => {
+  it("keeps fields another piece stored in the session's slot", () => {
     const st = memoryStorage();
-    st.setItem("hb-active-gino", JSON.stringify({ workout: wk([]), savedAt: 1, startedAt: 777, rest: { endsAt: 9 } }));
+    st.setItem("hb-active-gino:w1", JSON.stringify({ workout: wk([]), savedAt: 1, startedAt: 777, rest: { endsAt: 9 } }));
     writeJournal(wk([ex("e1", [])]), { now: 2, storage: st });
-    expect(JSON.parse(st.getItem("hb-active-gino")!)).toMatchObject({ startedAt: 777, rest: { endsAt: 9 }, savedAt: 2 });
-    writeJournal(wk([], { id: "w2" }), { now: 3, storage: st });
-    const raw = JSON.parse(st.getItem("hb-active-gino")!);
-    expect(raw.startedAt).toBeUndefined();
-    expect(raw.workout.id).toBe("w2");
+    expect(JSON.parse(st.getItem("hb-active-gino:w1")!)).toMatchObject({ startedAt: 777, rest: { endsAt: 9 }, savedAt: 2 });
+  });
+
+  // Scratch test S12: offline at load, the old session can't show, so a new one
+  // is started — and writing it used to replace the one slot holding the old
+  // session's sets, which had never reached the server.
+  it("starting another session keeps the first session's unsaved copy (one slot per session)", () => {
+    const st = memoryStorage();
+    const first = wk([ex("e1", [ticked("a", 1000), ticked("b", 2000), ticked("c", 3000)])], { id: "w-gym" });
+    writeJournal(first, { storage: st });
+    writeJournal(wk([], { id: "w-new" }), { storage: st });
+    writeJournal(wk([ex("e1", [open("x")])], { id: "w-new" }), { storage: st });
+    const all = readJournals("gino", st);
+    expect(all.map((j) => j.workout.id).sort()).toEqual(["w-gym", "w-new"]);
+    const gym = all.find((j) => j.workout.id === "w-gym")!;
+    expect(setIds(gym.workout)).toEqual(["a", "b", "c"]);
+    expect(resolveJournal(undefined, gym).action).toBe("restore");
+  });
+
+  it("a copy in the first version's one-per-person slot is read, and moved to its own slot", () => {
+    const st = memoryStorage();
+    const w = wk([ex("e1", [ticked("a", 1000)])]);
+    st.setItem("hb-active-gino", JSON.stringify({ workout: w, savedAt: 7, removedSets: ["z"] }));
+    const [j] = readJournals("gino", st);
+    // no counts in that version: one edit, never confirmed — how it treated every copy
+    expect(j).toEqual({ workout: w, savedAt: 7, removedSets: ["z"], removedExercises: undefined, edits: 1, confirmed: 0, onServer: false });
+    expect([...st.data.keys()]).toEqual(["hb-active-gino:w1"]);
+    expect(readJournals("gino", st)).toHaveLength(1);
   });
 
   it("anything that doesn't look like a session reads as none", () => {
     const st = memoryStorage();
-    const put = (v: string) => st.setItem("hb-active-gino", v);
+    const put = (v: string) => st.setItem("hb-active-gino:w1", v);
     for (const bad of [
       "{not json",
       "null",
@@ -91,49 +152,164 @@ describe("writing and reading the phone copy", () => {
       JSON.stringify({ savedAt: 1 }),
       JSON.stringify({ workout: { id: "w1", date: "2026-09-14", person: "xinyan", exercises: [] } }), // wrong person's slot
       JSON.stringify({ workout: { id: 5, date: "2026-09-14", person: "gino", exercises: [] } }),
+      JSON.stringify({ workout: { id: "w2", date: "2026-09-14", person: "gino", exercises: [] } }), // another session's id
       JSON.stringify({ workout: { id: "w1", date: "2026-09-14", person: "gino", exercises: [{ id: "e1" }] } }), // no sets array
     ]) {
       put(bad);
-      expect(readJournal("gino", st)).toBeNull();
+      expect(readJournal("gino", "w1", st)).toBeNull();
+      expect(readJournals("gino", st)).toEqual([]);
     }
-    expect(readJournal("gino", memoryStorage())).toBeNull();
+    expect(readJournal("gino", "w1", memoryStorage())).toBeNull();
   });
 
-  it("fills missing plain fields and ignores malformed tombstone lists", () => {
+  it("fills missing plain fields and ignores malformed tombstone lists and counts", () => {
     const st = memoryStorage();
     st.setItem(
-      "hb-active-gino",
-      JSON.stringify({ workout: { id: "w1", date: "2026-09-14", person: "gino", exercises: [] }, removedSets: [1, 2] }),
+      "hb-active-gino:w1",
+      JSON.stringify({
+        workout: { id: "w1", date: "2026-09-14", person: "gino", exercises: [] },
+        removedSets: [1, 2],
+        edits: 2,
+        confirmed: 9, // more confirmed than written can't be: capped
+        base: { id: "nope" },
+      }),
     );
-    expect(readJournal("gino", st)).toEqual({
+    expect(readJournal("gino", "w1", st)).toEqual({
       workout: { id: "w1", date: "2026-09-14", person: "gino", exercises: [], name: "", notes: "", done: false },
       savedAt: 0,
       removedExercises: undefined,
       removedSets: undefined,
+      edits: 2,
+      confirmed: 2,
+      onServer: false,
     });
   });
 
   it("blocked or full storage never throws, and no storage at all is fine", () => {
     const w = wk([]);
     expect(() => writeJournal(w, { storage: throwing })).not.toThrow();
-    expect(() => readJournal("gino", throwing)).not.toThrow();
-    expect(readJournal("gino", throwing)).toBeNull();
+    expect(() => readJournal("gino", "w1", throwing)).not.toThrow();
+    expect(readJournal("gino", "w1", throwing)).toBeNull();
+    expect(readJournals("gino", throwing)).toEqual([]);
+    expect(() => confirmJournal(w, throwing)).not.toThrow();
     expect(() => clearJournal("gino", "w1", throwing)).not.toThrow();
     expect(() => writeJournal(w, { storage: null })).not.toThrow();
-    expect(readJournal("gino", null)).toBeNull();
+    expect(readJournals("gino", null)).toEqual([]);
     // the test runner has no localStorage: the defaults must cope too
     expect(() => writeJournal(w)).not.toThrow();
-    expect(readJournal("gino")).toBeNull();
+    expect(readJournals("gino")).toEqual([]);
+    expect(() => confirmJournal(w)).not.toThrow();
     expect(() => clearJournal("gino", "w1")).not.toThrow();
   });
 
-  it("clearing removes the slot only if it still holds that session", () => {
+  it("clearing removes only that session's slot", () => {
     const st = memoryStorage();
+    writeJournal(wk([], { id: "w1" }), { storage: st });
     writeJournal(wk([], { id: "w2" }), { storage: st });
     clearJournal("gino", "w1", st);
-    expect(readJournal("gino", st)?.workout.id).toBe("w2");
+    expect(readJournals("gino", st).map((j) => j.workout.id)).toEqual(["w2"]);
     clearJournal("gino", "w2", st);
     expect(st.data.size).toBe(0);
+  });
+});
+
+describe("a copy whose saves all landed never overrides the server", () => {
+  // Scratch test S1: phone A logged x, y, z and exercise e2, and every save
+  // landed. Phone B then fixed x to 105 lb, un-ticked y, deleted z and e2. On
+  // A's next load the lingering copy used to write all of that back.
+  const logged = () => wk([ex("e1", [ticked("x", 1000, 100), ticked("y", 1100), ticked("z", 1200)]), ex("e2", [ticked("q", 1300)])]);
+  const afterB = () => wk([ex("e1", [ticked("x", 1000, 105), open("y", 100, 5)])]);
+
+  it("confirmed copy → cleared, and B's edits stand", () => {
+    const st = memoryStorage();
+    writeJournal(logged(), { storage: st });
+    confirmJournal(logged(), st);
+    const j = readJournal("gino", "w1", st)!;
+    expect(j).toMatchObject({ edits: 1, confirmed: 1, onServer: true });
+    expect(resolveJournal(afterB(), j)).toEqual({ action: "clear" });
+  });
+
+  it("an unconfirmed edit after the confirmed save keeps only that edit; B's changes to untouched sets stand", () => {
+    const st = memoryStorage();
+    writeJournal(logged(), { storage: st });
+    confirmJournal(logged(), st);
+    // A ticks one more set; the app dies before that save lands
+    const more = logged();
+    more.exercises[0].sets.push(ticked("w", 9000));
+    writeJournal(more, { storage: st });
+    const r = resolveJournal(afterB(), readJournal("gino", "w1", st)!);
+    expect(r.action).toBe("restore");
+    if (r.action !== "restore") return;
+    expect(r.workout.exercises.map((e) => e.id)).toEqual(["e1"]); // e2 stays deleted
+    const sets = r.workout.exercises[0].sets as SyncSet[];
+    expect(sets.map((x) => x.id)).toEqual(["x", "y", "w"]); // z stays deleted, w is kept
+    expect(sets[0].weight).toBe(105); // B's fix
+    expect(sets[1].done).toBe(false); // B's un-tick
+  });
+
+  it("a set this phone changed after the confirmed save still wins over the server", () => {
+    const st = memoryStorage();
+    writeJournal(logged(), { storage: st });
+    confirmJournal(logged(), st);
+    const edited = logged();
+    edited.exercises[0].sets[2] = ticked("z", 1200, 110);
+    writeJournal(edited, { storage: st, removedExercises: [] });
+    const server = wk([ex("e1", [ticked("x", 1000), ticked("y", 1100), ticked("z", 1200)]), ex("e2", [ticked("q", 1300)])]);
+    const r = resolveJournal(server, readJournal("gino", "w1", st)!);
+    expect(r.action).toBe("restore");
+    if (r.action === "restore") expect((r.workout.exercises[0].sets[2] as SyncSet).weight).toBe(110);
+  });
+
+  it("untouched name and notes take the server's; edited ones stay", () => {
+    const base = wk([ex("e1", [ticked("a", 1000)])], { name: "Legs", notes: "" });
+    const mine = wk([ex("e1", [ticked("a", 1000), ticked("b", 2000)])], { name: "Legs", notes: "knee ok" });
+    const server = wk([ex("e1", [ticked("a", 1000)])], { name: "Lower A", notes: "from B" });
+    const r = resolveJournal(server, journal(mine, 2000, { edits: 2, confirmed: 1, onServer: true, base }));
+    expect(r.action).toBe("restore");
+    if (r.action === "restore") expect([r.workout.name, r.workout.notes]).toEqual(["Lower A", "knee ok"]);
+  });
+
+  it("a copy left stale by a failed copy write is confirmed by the next save that lands", () => {
+    const st = memoryStorage({ failWritesAfter: 1 });
+    writeJournal(wk([ex("e1", [ticked("a", 1000)])]), { storage: st });
+    // storage is full now: this edit never reaches the copy
+    writeJournal(wk([ex("e1", [ticked("a", 1000, 120)])]), { storage: st });
+    // …but its save lands; the stamp can't be written either, so the copy goes
+    confirmJournal(wk([ex("e1", [ticked("a", 1000, 120)])]), st);
+    expect(readJournals("gino", st)).toEqual([]);
+  });
+
+  // Scratch test S2: finished and deleted from history on phone B; phone A's copy
+  // used to bring the deleted session back.
+  it("a session once on the server and gone now was deleted on purpose → cleared", () => {
+    const copy = wk([ex("e1", [ticked("a", 1000)])]);
+    expect(resolveJournal(undefined, journal(copy, 5000, { onServer: true }))).toEqual({ action: "clear" });
+    expect(resolveJournal(undefined, journal(copy, 5000, { edits: 3, confirmed: 3 }))).toEqual({ action: "clear" });
+    // never on the server and logged → still restored
+    expect(resolveJournal(undefined, journal(copy)).action).toBe("restore");
+  });
+});
+
+describe("a finish is kept on the phone until the server has it", () => {
+  it("a finished copy against an unfinished server copy restores the finish", () => {
+    const server = wk([ex("e1", [ticked("a", 1000), open("b")])]);
+    const finished = wk([ex("e1", [ticked("a", 1000)])], { done: true });
+    const r = resolveJournal(server, journal(finished, 3000, { onServer: true, removedSets: ["b"] }));
+    expect(r.action).toBe("restore");
+    if (r.action !== "restore") return;
+    expect(r.workout.done).toBe(true);
+    expect(setIds(r.workout)).toEqual(["a"]);
+  });
+
+  it("a finished copy that never reached the server is restored finished (a quick log)", () => {
+    const quick = wk([{ ...ex("e1", []), duration: 30 }], { done: true });
+    const r = resolveJournal(undefined, journal(quick));
+    expect(r).toMatchObject({ action: "restore", workout: { done: true } });
+  });
+
+  it("already finished on the server with the same sets → keep", () => {
+    const w = wk([ex("e1", [ticked("a", 1000)])], { done: true });
+    expect(resolveJournal(w, journal(w))).toEqual({ action: "keep" });
   });
 });
 
@@ -245,10 +421,9 @@ describe("merging the phone copy with the server copy on load", () => {
     expect(resolveJournal(undefined, journal(wk([])))).toEqual({ action: "clear" });
   });
 
-  it("a finished session clears the phone copy", () => {
+  it("a session finished on another phone clears this phone's unfinished copy", () => {
     const phone = wk([ex("e1", [ticked("a", 1000), ticked("b", 2000)])]);
     expect(resolveJournal(wk([ex("e1", [ticked("a", 1000)])], { done: true }), journal(phone))).toEqual({ action: "clear" });
-    expect(resolveJournal(undefined, journal({ ...phone, done: true }))).toEqual({ action: "clear" });
   });
 
   it("the phone copy's name and notes are its newest edit", () => {

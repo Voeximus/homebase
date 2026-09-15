@@ -224,6 +224,12 @@ describe("StudyNoteList", () => {
     );
     expect(html).not.toContain("Show more");
   });
+
+  it("drops the sentence about the muscles shown when the page shows none (cardio)", () => {
+    const html = renderToStaticMarkup(createElement(StudyNoteList, { exercise: ex("Walking"), notes: [], hasMuscles: false }));
+    expect(html).toContain("No study notes for this exercise yet.");
+    expect(html).not.toContain("muscles shown");
+  });
 });
 
 describe("ExerciseDetail", () => {
@@ -245,7 +251,9 @@ describe("ExerciseDetail", () => {
     expect(html).toContain("You added this exercise, so there is no muscle map for it.");
     expect(html).not.toContain("data-region=");
     expect(html).toContain("What studies found");
-    expect(html).toContain("No study notes for this exercise yet. The muscles shown come from anatomy, not from a study of this exercise.");
+    // no map on this page, so no sentence about "the muscles shown"
+    expect(html).toContain("No study notes for this exercise yet.");
+    expect(html).not.toContain("The muscles shown come from anatomy");
     expect(html).toContain("Your numbers");
     expect(html).toContain("80×5 · 80×5");
     expect(html).toContain("Thu 10 Sep");

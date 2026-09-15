@@ -40,7 +40,7 @@ export function SetRow({
   ghost,
   showWeight,
   done,
-  weightError,
+  missing,
   shake,
   onWeight,
   onReps,
@@ -52,20 +52,23 @@ export function SetRow({
   ghost: Ghost;
   showWeight: boolean;
   done: boolean;
-  weightError: boolean;
-  shake: number; // bumped each time a tick is refused, to shake the weight box again
+  missing: "weight" | "reps" | null; // the box a refused tick needs filled
+  shake: number; // bumped each time a tick is refused, to shake that box again
   onWeight(n: number): void;
   onReps(n: number): void;
   onTick(): void;
   onToggleKind(): void;
 }) {
   const weightBox = useRef<HTMLSpanElement>(null);
+  const repsBox = useRef<HTMLSpanElement>(null);
   const warm = set.kind === "warmup";
+  const weightError = missing === "weight";
+  const repsError = missing === "reps";
 
   // The refusal shake. Web Animations API, so it needs no new CSS; skipped for
   // people who asked for reduced motion (the red border and message still show).
   useEffect(() => {
-    const el = weightBox.current;
+    const el = missing === "reps" ? repsBox.current : weightBox.current;
     if (!shake || !el || typeof el.animate !== "function") return;
     try {
       if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
@@ -77,7 +80,7 @@ export function SetRow({
     } catch {
       /* no animation support */
     }
-  }, [shake]);
+  }, [shake, missing]);
 
   const setName = warm ? t("warm-up") : t("set {n}", { n: label });
   return (
@@ -106,10 +109,12 @@ export function SetRow({
         />
       )}
       <NumBox
+        boxRef={repsBox}
         value={set.reps}
         ghost={ghost.reps}
         max={999}
         done={done}
+        error={repsError}
         label={t("Reps for {set}", { set: setName })}
         onChange={onReps}
       />
@@ -128,9 +133,9 @@ export function SetRow({
         <Check size={20} />
       </button>
 
-      {weightError && (
+      {missing && (
         <div role="alert" className="col-span-full pb-0.5 pl-[34px] text-[11px]" style={{ color: "var(--h-over)" }}>
-          {t("Enter a weight")}
+          {weightError ? t("Enter a weight") : t("Enter reps")}
         </div>
       )}
     </div>

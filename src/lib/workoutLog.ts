@@ -6,7 +6,7 @@
 
 import type { Exercise } from "./exerciseData";
 import { rowId, todayStr } from "./mealLog";
-import { e1rm, isDone, isWarmup, normName } from "./trainingMath";
+import { e1rm, findExercise, isDone, isLogged, isWarmup, normName } from "./trainingMath";
 
 export type { Exercise };
 export type Person = "gino" | "xinyan";
@@ -64,12 +64,12 @@ export function workoutVolume(w: Workout): number {
   return v;
 }
 /**
- * Done working sets — the "N sets" a history row shows. Warm-ups, sets typed in
- * but never ticked, and an old routine's empty rows are kept but not counted,
- * as the finish sheet promises.
+ * Done working sets with reps — the "N sets" a history row shows. Warm-ups, sets
+ * typed in but never ticked, a tick with no reps, and an old routine's empty
+ * rows are kept but not counted, as the finish sheet promises.
  */
 export function totalSets(w: Workout): number {
-  return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => isDone(s) && !isWarmup(s)).length, 0);
+  return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => isLogged(s) && !isWarmup(s)).length, 0);
 }
 /** Total minutes of time-based (cardio / quick) work in a session. */
 export function workoutDuration(w: Workout): number {
@@ -105,19 +105,23 @@ export interface PR {
   date: string;
 }
 /**
- * Best estimated-1RM set per exercise across all finished workouts. Keyed by
- * normalised name, so "Tricep pushdowns" and "Triceps pushdown" are one record.
+ * Best estimated-1RM set per exercise across all finished workouts. Keyed by the
+ * library entry (id, name or alias — the same identity as trainingMath), else by
+ * normalised name, so "Tricep pushdowns" and "Triceps pushdown" are one record,
+ * and so are an old routine's "Flat dumbbell press" and the library's
+ * "Dumbbell bench press".
  */
-export function personalRecords(workouts: Workout[]): PR[] {
+export function personalRecords(workouts: Workout[], library: Exercise[]): PR[] {
   const by = new Map<string, PR>();
   for (const w of workouts) {
     for (const ex of w.exercises) {
       const b = bestSet(ex.sets);
       if (b.e1rm <= 0) continue;
-      const k = normName(ex.name);
+      const lib = findExercise(library, ex.name, ex.exerciseId);
+      const k = lib ? `#${lib.id}` : `~${normName(ex.name)}`;
       const cur = by.get(k);
       if (!cur || b.e1rm > cur.e1rm) {
-        by.set(k, { name: ex.name, muscle: ex.muscle, weight: b.weight, reps: b.reps, e1rm: b.e1rm, date: w.date });
+        by.set(k, { name: lib?.name ?? ex.name, muscle: ex.muscle, weight: b.weight, reps: b.reps, e1rm: b.e1rm, date: w.date });
       }
     }
   }

@@ -15,14 +15,18 @@ import { GRADE_GLYPH, GRADE_LABEL, categoryLabel, loadEvidence } from "./viewHel
 // mid-workout, the citation is what you check later.
 
 const NO_NOTES = "No study notes for this exercise yet. The muscles shown come from anatomy, not from a study of this exercise.";
+// Where no muscles are shown (cardio, an exercise the person added), the second
+// sentence would point at a body map that isn't on the page.
+const NO_NOTES_NO_MAP = "No study notes for this exercise yet.";
 const FIRST = 2; // notes shown before "Show more"
+const noNotes = (hasMuscles: boolean) => t(hasMuscles ? NO_NOTES : NO_NOTES_NO_MAP);
 
 /**
  * Loads the notes for one exercise (lazily — see loadEvidence) and shows them.
  * An exercise the person added themselves (`undefined`) has none to load, and
- * gets the same fixed no-notes line as a library exercise without any.
+ * gets the no-notes line. `hasMuscles` = the page shows a body map above.
  */
-export function StudyNotes({ exercise }: { exercise: Exercise | undefined }) {
+export function StudyNotes({ exercise, hasMuscles }: { exercise: Exercise | undefined; hasMuscles: boolean }) {
   // Keyed by exercise id, so moving to another exercise shows nothing stale while it loads.
   const [loaded, setLoaded] = useState<{ id: string; notes: StudyNote[] } | { id: string; failed: true } | null>(null);
   useEffect(() => {
@@ -45,22 +49,22 @@ export function StudyNotes({ exercise }: { exercise: Exercise | undefined }) {
         <div className="t" style={{ flex: 1 }}>{t("What studies found")}</div>
       </div>
       {!exercise ? (
-        <p className="text-[13px] leading-normal text-bone">{t(NO_NOTES)}</p>
+        <p className="text-[13px] leading-normal text-bone">{noNotes(hasMuscles)}</p>
       ) : !mine ? (
         <p className="h-sub">{t("Loading study notes…")}</p>
       ) : "failed" in mine ? (
         <p className="h-sub">{t("Couldn't load the study notes. Check your connection and open this page again.")}</p>
       ) : (
-        <StudyNoteList key={exercise.id} exercise={exercise} notes={mine.notes} />
+        <StudyNoteList key={exercise.id} exercise={exercise} notes={mine.notes} hasMuscles={hasMuscles} />
       )}
     </section>
   );
 }
 
 /** The notes themselves: the first two, then the rest behind "Show more". */
-export function StudyNoteList({ exercise, notes }: { exercise: Exercise; notes: StudyNote[] }) {
+export function StudyNoteList({ exercise, notes, hasMuscles = true }: { exercise: Exercise; notes: StudyNote[]; hasMuscles?: boolean }) {
   const [all, setAll] = useState(false);
-  if (!notes.length) return <p className="text-[13px] leading-normal text-bone">{t(NO_NOTES)}</p>;
+  if (!notes.length) return <p className="text-[13px] leading-normal text-bone">{noNotes(hasMuscles)}</p>;
   const shown = all ? notes : notes.slice(0, FIRST);
   return (
     <>

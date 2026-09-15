@@ -29,7 +29,7 @@ export interface Region {
 export const REGIONS: readonly Region[] = [
   { id: "chest_upper", en: "Upper chest", zh: "上胸", group: "chest", drawn: true },
   { id: "chest_lower", en: "Mid/lower chest", zh: "中下胸", group: "chest", drawn: true },
-  { id: "serratus", en: "Serratus", zh: "前锯肌", group: "chest", drawn: true },
+  { id: "serratus", en: "Side of ribs (serratus)", zh: "前锯肌", group: "chest", drawn: true },
   { id: "delt_front", en: "Front delts", zh: "三角肌前束", group: "shoulders", drawn: true },
   { id: "delt_side", en: "Side delts", zh: "三角肌中束", group: "shoulders", drawn: true },
   { id: "delt_rear", en: "Rear delts", zh: "三角肌后束", group: "shoulders", drawn: true },
@@ -40,7 +40,7 @@ export const REGIONS: readonly Region[] = [
   { id: "lower_back", en: "Lower back", zh: "下背", group: "back", drawn: true },
   { id: "neck", en: "Neck", zh: "颈部肌群", group: "back", drawn: true },
   { id: "biceps", en: "Biceps", zh: "肱二头肌", group: "arms", drawn: true },
-  { id: "brachialis", en: "Brachialis & brachioradialis", zh: "肱肌与肱桡肌", group: "arms", drawn: true },
+  { id: "brachialis", en: "Deep elbow flexors (brachialis)", zh: "肱肌与肱桡肌", group: "arms", drawn: true },
   { id: "triceps_long", en: "Triceps long head", zh: "肱三头肌长头", group: "arms", drawn: true },
   { id: "triceps_short", en: "Triceps outer & inner heads", zh: "肱三头肌外侧头与内侧头", group: "arms", drawn: true },
   { id: "forearm_flex", en: "Forearm flexors", zh: "前臂屈肌", group: "arms", drawn: true },
@@ -50,12 +50,12 @@ export const REGIONS: readonly Region[] = [
   { id: "hip_flexors", en: "Hip flexors", zh: "屈髋肌", group: "core", drawn: false },
   { id: "glute_max", en: "Glute max", zh: "臀大肌", group: "legs", drawn: true },
   { id: "glute_med", en: "Glute med & min", zh: "臀中肌与臀小肌", group: "legs", drawn: true },
-  { id: "quads_rf", en: "Rectus femoris", zh: "股直肌", group: "legs", drawn: true },
+  { id: "quads_rf", en: "Hip-crossing quad (rectus femoris)", zh: "股直肌", group: "legs", drawn: true },
   { id: "quads_vasti", en: "Rest of quads", zh: "股四头肌其余部分", group: "legs", drawn: true },
   { id: "hamstrings", en: "Hamstrings", zh: "腘绳肌", group: "legs", drawn: true },
   { id: "adductors", en: "Adductors", zh: "大腿内收肌", group: "legs", drawn: true },
-  { id: "gastrocnemius", en: "Gastrocnemius", zh: "腓肠肌", group: "legs", drawn: true },
-  { id: "soleus", en: "Soleus", zh: "比目鱼肌", group: "legs", drawn: true },
+  { id: "gastrocnemius", en: "Upper calf (gastrocnemius)", zh: "腓肠肌", group: "legs", drawn: true },
+  { id: "soleus", en: "Lower calf (soleus)", zh: "比目鱼肌", group: "legs", drawn: true },
   { id: "tibialis", en: "Shin", zh: "胫骨前肌", group: "legs", drawn: true },
 ];
 

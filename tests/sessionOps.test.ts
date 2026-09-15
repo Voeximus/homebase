@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   addSet,
   clearSessionStart,
+  copyLastSet,
+  discardTarget,
   editSet,
   elapsedParts,
   finishSummary,
@@ -15,6 +17,7 @@ import {
   initSessionStart,
   logMode,
   needsWeight,
+  newSet,
   NO_GHOST,
   readSessionStart,
   removeExercise,
@@ -32,7 +35,7 @@ import {
 } from "../src/lib/sessionOps";
 import { isDone } from "../src/lib/trainingMath";
 import { ActiveSession } from "../src/views/workout/ActiveSession";
-import type { Exercise, ExerciseEntry, SetEntry, Workout } from "../src/lib/workoutLog";
+import { personalRecords, totalSets, type Exercise, type ExerciseEntry, type SetEntry, type Workout } from "../src/lib/workoutLog";
 
 // The logger's rules, one tap at a time. Nothing here renders except the last
 // block, which only checks what the logger DRAWS for a given workout.
@@ -239,6 +242,19 @@ describe("tickSet", () => {
     tickSet(e, 0, [g(185, 5)], BENCH, 1, ids());
     expect(JSON.stringify(e)).toBe(before);
   });
+
+  // The first time an exercise is logged there is no ghost: 225 typed, reps
+  // left empty, tick → a 0-rep "done" set that counted as a hard set.
+  it("refuses a set with no reps typed or suggested, for every kind of exercise", () => {
+    const make = ids();
+    expect(tickSet(entry([set(225, 0)]), 0, [NO_GHOST], BENCH, 1, make)).toEqual({ error: "needs-reps" });
+    for (const exercise of [PUSHUP, BAND_ROW, PLANK, BIKE, DIP, undefined]) {
+      expect(tickSet(entry([set(0, 0)]), 0, [], exercise, 1, make).error).toBe("needs-reps");
+    }
+    expect(make.count()).toBe(0);
+    // the weight is asked for first when both are missing
+    expect(tickSet(entry([set(0, 0)]), 0, [], BENCH, 1, make)).toEqual({ error: "needs-weight" });
+  });
 });
 
 describe("untick", () => {
@@ -262,11 +278,11 @@ describe("untick", () => {
 });
 
 describe("toggleWarmup", () => {
-  it("goes working (or no kind) → warm-up → working, and leaves done alone", () => {
+  it("goes working (or no kind) → warm-up → working, stored as no kind, and leaves done alone", () => {
     const e = entry([set(95, 5, { done: true })]);
     const w = toggleWarmup(e, 0);
     expect(w.sets[0]).toEqual({ weight: 95, reps: 5, done: true, kind: "warmup" });
-    expect(toggleWarmup(w, 0).sets[0].kind).toBe("working");
+    expect(toggleWarmup(w, 0).sets[0]).toEqual({ weight: 95, reps: 5, done: true });
     expect(toggleWarmup(e, 5)).toBe(e);
   });
 });
@@ -296,8 +312,30 @@ describe("addSet / removeSet", () => {
     const e = entry([W(95, 5, { id: "a", done: true, doneAt: 3 })]);
     const next = addSet(e, () => "new-id");
     expect(next.sets).toHaveLength(2);
-    expect(next.sets[1]).toEqual({ id: "new-id", reps: 0, weight: 0, kind: "working", done: false });
+    expect(next.sets[1]).toEqual({ id: "new-id", reps: 0, weight: 0 });
+    expect(newSet(() => "x")).toEqual({ id: "x", reps: 0, weight: 0 });
     expect(e.sets).toHaveLength(1);
+  });
+
+  // Scratch test S4: rows the new app created carried done: false, and the old
+  // app version (no tick; edits with {...set, ...patch}, adds by copying the
+  // last row) carried it along — nothing logged there ever counted.
+  it("a row the new app created counts once an old app version types into it", () => {
+    const make = ids();
+    let e = addSet(entry([]), make); // like a routine start: one fresh row
+    const oldEdit = (s: SetEntry, patch: Partial<SetEntry>) => ({ ...s, ...patch });
+    e = { ...e, sets: [oldEdit(e.sets[0], { weight: 135, reps: 8 })] };
+    e = { ...e, sets: [...e.sets, { ...e.sets[e.sets.length - 1] }] }; // old app's Add set
+    const w = workout([e]);
+    expect(e.sets.every(isDone)).toBe(true);
+    expect(totalSets(w)).toBe(2);
+    expect(finishWorkout(w).nothingLogged).toBe(false);
+    expect(personalRecords([finishWorkout(w).workout], LIB)).toHaveLength(1);
+  });
+
+  it("typing into a fresh row in this app still doesn't count until it is ticked", () => {
+    const e = editSet(addSet(entry([]), ids()), 0, { reps: 8 });
+    expect(isDone(e.sets[0])).toBe(false);
   });
 
   it("removes the row at the index, and nothing when the index is out of range", () => {
@@ -305,6 +343,33 @@ describe("addSet / removeSet", () => {
     expect(removeSet(e, 1).sets.map((s) => s.weight)).toEqual([1, 3]);
     expect(removeSet(e, 3)).toBe(e);
     expect(removeSet(e, -1)).toBe(e);
+  });
+});
+
+describe("copyLastSet (the history editor's Add set)", () => {
+  // Scratch test probe2: it copied the last row whole — id, tick, doneAt, kind.
+  it("copies the last row's numbers only: a new id, no tick, no warm-up mark", () => {
+    const e = entry([set(135, 8, { id: "a", done: false, kind: "warmup" }), set(185, 5, { id: "b", done: true, doneAt: 9 })]);
+    const next = copyLastSet(e, () => "fresh");
+    expect(next.sets[2]).toEqual({ id: "fresh", reps: 5, weight: 185 });
+    const fromUnticked = copyLastSet(entry([set(135, 6, { id: "a", done: false, kind: "warmup" })]), () => "fresh");
+    expect(fromUnticked.sets[1]).toEqual({ id: "fresh", reps: 6, weight: 135 });
+    expect(isDone(fromUnticked.sets[1])).toBe(true); // counts by the reps rule: the editor has no tick
+    expect(copyLastSet(entry([]), () => "fresh").sets).toEqual([{ id: "fresh", reps: 0, weight: 0 }]);
+  });
+});
+
+describe("discardTarget", () => {
+  // Discard deleted whatever was stale when Discard was TAPPED, not the session
+  // the confirm was opened for.
+  it("is the session the confirm was opened for, only while it exists and is unfinished", () => {
+    const mon = workout([], { id: "mon", date: "2026-09-08" });
+    const sun = workout([], { id: "sun", date: "2026-09-07" });
+    expect(discardTarget([mon, sun], "mon")).toBe(mon);
+    // the other phone finished Monday's session while the confirm was open
+    expect(discardTarget([{ ...mon, done: true }, sun], "mon")).toBeNull();
+    expect(discardTarget([sun], "mon")).toBeNull();
+    expect(discardTarget([mon, sun], null)).toBeNull();
   });
 });
 
@@ -361,6 +426,13 @@ describe("sessionCounts", () => {
     ]);
     expect(sessionCounts(w)).toEqual({ done: 2, planned: 4, warmups: 1 });
   });
+
+  it("a stored tick with no reps logged nothing: not done in the bar, not a set on the finish sheet", () => {
+    const w = workout([entry([set(225, 0, { done: true, doneAt: 5 })])]);
+    expect(sessionCounts(w)).toEqual({ done: 0, planned: 1, warmups: 0 });
+    expect(finishSummary(w, null)).toMatchObject({ sets: 0, unticked: 1 });
+    expect(finishWorkout(w).nothingLogged).toBe(true);
+  });
 });
 
 describe("finishSummary", () => {
@@ -402,9 +474,9 @@ describe("sessionRecords", () => {
     expect(sessionRecords(history, now, "gino", LIB)).toEqual([{ name: "Bench press", weight: 190, reps: 5, date: "2026-09-14" }]);
   });
 
-  it("treats the very first set of an exercise as a baseline, and never counts warm-ups", () => {
+  it("treats the first session of an exercise as a baseline, and never counts warm-ups", () => {
     const now = past("w-now", "2026-09-14", [set(135, 8, { done: true }), set(145, 8, { done: true })]);
-    expect(sessionRecords([], now, "gino", LIB)).toEqual([{ name: "Bench press", weight: 145, reps: 8, date: "2026-09-14" }]);
+    expect(sessionRecords([], now, "gino", LIB)).toEqual([]);
     const warm = past("w-now", "2026-09-14", [W(500, 5, { done: true })]);
     expect(sessionRecords([past("p1", "2026-09-01", [set(185, 5, { done: true })])], warm, "gino", LIB)).toEqual([]);
   });

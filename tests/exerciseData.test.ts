@@ -135,9 +135,19 @@ describe("labels agree with the evidence register", () => {
     for (const n of ["Nordic hamstring curl", "Seated leg curl", "Lying leg curl"]) expect(main(n), n).toContain("hamstrings");
   });
 
-  it("band row: lats, mid-back and rear delts main, biceps helping", () => {
+  it("band row: lats, mid-back and rear delts main, both elbow flexors helping like every other row", () => {
     expect([...main("Band row")].sort()).toEqual(["delt_rear", "lats", "traps_mid"]);
-    expect(helps("Band row")).toEqual(["biceps"]);
+    expect(helps("Band row")).toEqual(["biceps", "brachialis"]);
+    expect(helps("One-arm dumbbell row")).toEqual(expect.arrayContaining(["biceps", "brachialis"]));
+  });
+
+  it("the same arm position gets the same label: spider curl lists both elbow flexors as main, like the preacher curl", () => {
+    expect([...main("Spider curl")].sort()).toEqual([...main("Preacher curl")].sort());
+  });
+
+  it("the seated abductor machine: side glutes main, upper glute max helping (hips bent)", () => {
+    expect(main("Hip abductor machine")).toEqual(["glute_med"]);
+    expect(helps("Hip abductor machine")).toEqual(["glute_max"]);
   });
 
   it("plank: abs and obliques main", () => {
@@ -151,16 +161,26 @@ describe("labels agree with the evidence register", () => {
   });
 
   it("overhead press: front delts, side delts and triceps main; upper chest and upper traps helping", () => {
-    for (const n of ["Barbell overhead press", "Seated barbell military press"]) {
+    // the dumbbell, machine, seated and kettlebell presses are pressed in front too (overhead-press-anatomy)
+    for (const n of [
+      "Barbell overhead press",
+      "Seated barbell military press",
+      "Dumbbell shoulder press",
+      "Machine shoulder press",
+      "Seated dumbbell shoulder press",
+      "Kettlebell overhead press",
+    ]) {
       expect(main(n), n).toEqual(expect.arrayContaining(["delt_front", "delt_side", "triceps_long", "triceps_short"]));
       expect(helps(n), n).toEqual(expect.arrayContaining(["chest_upper", "traps_upper"]));
     }
   });
 
-  it("lunges: vasti main, both glutes helping, no rectus femoris", () => {
-    for (const n of ["Barbell lunge", "Dumbbell lunge", "Walking lunge", "Reverse lunge", "Step-up"]) {
-      expect(main(n), n).toEqual(["quads_vasti"]);
-      expect(helps(n), n).toEqual(expect.arrayContaining(["glute_med", "glute_max"]));
+  it("lunges, split squats and step-ups: vasti and glute max main, side glutes and adductors helping, no rectus femoris", () => {
+    // lunge-emg ranks the vasti first and the rectus femoris below the glutes; glute max is a
+    // prime hip extensor of the working leg, as in the squat (activation ranking is not growth)
+    for (const n of ["Barbell lunge", "Dumbbell lunge", "Walking lunge", "Reverse lunge", "Step-up", "Bulgarian split squat", "Pistol squat"]) {
+      expect(main(n), n).toEqual(["quads_vasti", "glute_max"]);
+      expect(helps(n), n).toEqual(["glute_med", "adductors"]);
       expect(roles(n), n).not.toContain("quads_rf");
     }
   });

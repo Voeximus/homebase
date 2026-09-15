@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { getLang, t, tc } from "../lib/i18n";
 import { REST_IDLE, saveRest } from "../lib/restTimer";
-import { clearSessionStart, shortDay } from "../lib/sessionOps";
+import { clearSessionStart, copyLastSet, discardTarget, newSet, shortDay } from "../lib/sessionOps";
 import { isDone } from "../lib/trainingMath";
 import {
   bestSet,
@@ -44,9 +44,8 @@ import { ConfirmSheet } from "./workout/FinishSheet";
 import { ProgressTab } from "./workout/ProgressTab";
 
 const newId = () => crypto.randomUUID();
-// A fresh empty working set. `done: false` is written out so a number typed into
-// it doesn't count until it is ticked (old rows count by the reps > 0 rule).
-const emptySet = (): SetEntry => ({ id: newId(), reps: 0, weight: 0, kind: "working", done: false });
+// A fresh empty working set — see newSet for why it carries no `done: false`.
+const emptySet = (): SetEntry => newSet(newId);
 // "30 min" for a time-based quick log, else "N sets"
 const sessionStat = (w: Workout) =>
   workoutDuration(w) > 0 && totalSets(w) === 0
@@ -271,7 +270,8 @@ function SoloWorkout({
   const [showHistory, setShowHistory] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
-  const [confirmStale, setConfirmStale] = useState(false);
+  // the id of the unfinished session the Discard confirm was opened for
+  const [confirmStale, setConfirmStale] = useState<string | null>(null);
 
   const mine = useMemo(() => allWorkouts.filter((w) => w.person === person), [allWorkouts, person]);
   const routines = useMemo(
@@ -279,7 +279,7 @@ function SoloWorkout({
     [allRoutines, person],
   );
   const done = useMemo(() => mine.filter((w) => w.done).sort((a, b) => b.date.localeCompare(a.date)), [mine]);
-  const prs = useMemo(() => personalRecords(done), [done]);
+  const prs = useMemo(() => personalRecords(done, library), [done, library]);
   const weekCount = thisWeekCount(done, today);
   // a past workout opened for editing (history is fully manageable, not rigid)
   const editingWorkout = useMemo(() => done.find((w) => w.id === editId) ?? null, [done, editId]);
@@ -330,13 +330,16 @@ function SoloWorkout({
     });
   };
   const deleteRoutine = (id: string) => storeDeleteRoutine(id);
+  // The session the confirm named, not whichever is stale now (discardTarget).
+  // Gone or finished meanwhile → the confirm closes with nothing to delete.
+  const staleToDiscard = discardTarget(mine, confirmStale);
   const discardStale = () => {
-    if (stale) {
-      clearSessionStart(stale.id);
+    if (staleToDiscard) {
+      clearSessionStart(staleToDiscard.id);
       saveRest(person, REST_IDLE);
-      deleteWorkout(stale.id);
+      deleteWorkout(staleToDiscard.id);
     }
-    setConfirmStale(false);
+    setConfirmStale(null);
   };
   // Quick log → a one-exercise session, marked done immediately. Counts toward
   // the week + history, never asks you to build a routine.
@@ -408,7 +411,7 @@ function SoloWorkout({
                 <button onClick={() => onOpenSession(stale.id)} className="h-btn" style={{ flex: 1 }}>
                   {t("Finish it")}
                 </button>
-                <button onClick={() => setConfirmStale(true)} className="h-btn quiet" style={{ width: "auto", padding: "0 16px" }}>
+                <button onClick={() => setConfirmStale(stale.id)} className="h-btn quiet" style={{ width: "auto", padding: "0 16px" }}>
                   {t("Discard")}
                 </button>
               </div>
@@ -566,15 +569,15 @@ function SoloWorkout({
           onDelete={() => { deleteWorkout(editingWorkout.id); setEditId(null); }}
         />
       )}
-      {confirmStale && stale && (
+      {staleToDiscard && (
         <ConfirmSheet
           title={t("Discard this workout?")}
-          text={t("{name} from {date}. Sets you logged will be deleted.", { name: t(stale.name), date: shortDay(stale.date, getLang()) })}
+          text={t("{name} from {date}. Sets you logged will be deleted.", { name: t(staleToDiscard.name), date: shortDay(staleToDiscard.date, getLang()) })}
           yes={t("Discard")}
           no={t("Keep")}
           danger
           onYes={discardStale}
-          onNo={() => setConfirmStale(false)}
+          onNo={() => setConfirmStale(null)}
         />
       )}
     </div>
@@ -666,15 +669,15 @@ function EditWorkoutSheet({
 
   const upd = (exId: string, fn: (e: ExerciseEntry) => ExerciseEntry) =>
     setDraft((w) => ({ ...w, exercises: w.exercises.map((e) => (e.id === exId ? fn(e) : e)) }));
-  const addSet = (exId: string) =>
-    upd(exId, (e) => ({ ...e, sets: [...e.sets, e.sets.length ? { ...e.sets[e.sets.length - 1] } : { reps: 0, weight: 0 }] }));
+  // the last row's numbers only — never its id, tick or warm-up mark (copyLastSet)
+  const addSet = (exId: string) => upd(exId, (e) => copyLastSet(e, newId));
   const setSet = (exId: string, i: number, patch: { reps?: number; weight?: number }) =>
     upd(exId, (e) => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
   const removeSet = (exId: string, i: number) => upd(exId, (e) => ({ ...e, sets: e.sets.filter((_, j) => j !== i) }));
   const setDur = (exId: string, d: number) => upd(exId, (e) => ({ ...e, duration: d }));
   const removeExercise = (exId: string) => setDraft((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== exId) }));
   const addExercise = (ex: { name: string; muscle: string; exerciseId: string }) =>
-    setDraft((w) => ({ ...w, exercises: [...w.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [{ reps: 0, weight: 0 }] }] }));
+    setDraft((w) => ({ ...w, exercises: [...w.exercises, { id: rowId(), exerciseId: ex.exerciseId, name: ex.name, muscle: ex.muscle, sets: [emptySet()] }] }));
 
   const inpStyle = { background: "var(--color-tile)", border: "1px solid var(--color-edge)" } as const;
 

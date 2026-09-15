@@ -53,6 +53,7 @@ const setText = (s: SetEntry) => (s.weight > 0 ? `${fmtWeight(s.weight)}×${s.re
 const restText = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
 type Confirm = null | "discard" | "nothing";
+type Refused = { row: string; missing: "weight" | "reps"; n: number } | null;
 
 export function ActiveSession({
   workout,
@@ -77,8 +78,8 @@ export function ActiveSession({
 }) {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [finishing, setFinishing] = useState(false);
-  // The refused tick: which row, and a counter so a second refusal shakes again.
-  const [refused, setRefused] = useState<{ row: string; n: number } | null>(null);
+  // The refused tick: which row, which box it needs, and a counter so a second refusal shakes again.
+  const [refused, setRefused] = useState<Refused>(null);
   const [restLabel, setRestLabel] = useState("");
   const restSetId = useRef<string | null>(null); // the set whose tick started the running rest
   const rest = useRestTimer(person);
@@ -115,7 +116,8 @@ export function ActiveSession({
     }
     const r = tickSet(entry, i, ghosts, ex, Date.now(), newId);
     if (r.error) {
-      setRefused((cur) => ({ row: rowKey(entry, i), n: (cur?.n ?? 0) + 1 }));
+      const missing = r.error === "needs-weight" ? "weight" : "reps";
+      setRefused((cur) => ({ row: rowKey(entry, i), missing, n: (cur?.n ?? 0) + 1 }));
       return;
     }
     setRefused(null);
@@ -268,7 +270,7 @@ function ExerciseCard({
   person: Person;
   library: Exercise[];
   workouts: Workout[];
-  refused: { row: string; n: number } | null;
+  refused: Refused;
   rowKey(entry: ExerciseEntry, i: number): string;
   onOpen(): void;
   onRemove(): void;
@@ -328,7 +330,7 @@ function ExerciseCard({
             ghost={ghosts[i]}
             showWeight={withWeight}
             done={isDone(s)}
-            weightError={err}
+            missing={err ? refused.missing : null}
             shake={err ? refused.n : 0}
             onWeight={(n) => onEntry(editSet(entry, i, { weight: n }))}
             onReps={(n) => onEntry(editSet(entry, i, { reps: n }))}

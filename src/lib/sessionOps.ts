@@ -11,8 +11,13 @@
 // Those rows follow the legacy rule in trainingMath (reps > 0 = done), and an
 // edit here pins that answer down (`done` written explicitly) so typing a
 // number into an old row never ticks or unticks it behind the person's back.
+//
+// A NEW row is stored without `done` and without `kind` (see newSet). The old
+// app version, still cached on a phone for a while, has no tick: it edits a row
+// with {...set, ...patch} and adds one by copying the last. A `done: false` it
+// carried along would keep every set logged there from ever counting.
 
-import { findExercise, isDone, isWarmup, recentRecords } from "./trainingMath";
+import { findExercise, isDone, isLogged, isWarmup, recentRecords } from "./trainingMath";
 import type { Exercise, ExerciseEntry, Person, SetEntry, Workout } from "./workoutLog";
 
 // ── how a set is logged for this exercise ───────────────────────────────────────
@@ -110,13 +115,17 @@ const withSet = (entry: ExerciseEntry, index: number, next: SetEntry): ExerciseE
   sets: entry.sets.map((s, i) => (i === index ? next : s)),
 });
 
-export type TickResult = { entry: ExerciseEntry; error?: undefined } | { error: "needs-weight"; entry?: undefined };
+export type TickResult =
+  | { entry: ExerciseEntry; error?: undefined }
+  | { error: "needs-weight" | "needs-reps"; entry?: undefined };
 
 /**
  * The tick. Empty boxes take their ghost, then the set is marked done with the
  * time and an id (a legacy row without one gets it now). A weighted exercise
- * with no weight typed or suggested is refused and nothing changes. A set that
- * is already ticked is left as it is — un-ticking is `untick`.
+ * with no weight typed or suggested is refused, and so is any set with no reps
+ * typed or suggested (the first time an exercise is logged has no ghost) — a
+ * 0-rep set would count as a hard set. Refused = nothing changes. A set that is
+ * already ticked is left as it is — un-ticking is `untick`.
  *
  * The weight ghost is only used where the weight box is shown, so a hidden box
  * never saves a weight nobody could see.
@@ -135,6 +144,7 @@ export function tickSet(
   const weight = pos(s.weight) || (showsWeight(exercise) ? g.weight : 0);
   const reps = pos(s.reps) || g.reps;
   if (needsWeight(exercise) && !(weight > 0)) return { error: "needs-weight" };
+  if (!(reps > 0)) return { error: "needs-reps" };
   return { entry: withSet(entry, index, { ...s, weight, reps, id: s.id ?? makeId(), done: true, doneAt: now }) };
 }
 
@@ -147,11 +157,13 @@ export function untick(entry: ExerciseEntry, index: number): ExerciseEntry {
   return withSet(entry, index, next);
 }
 
-/** The set-number cell: warm-up ↔ working. */
+/** The set-number cell: warm-up ↔ working. Working is stored as no `kind` (see newSet). */
 export function toggleWarmup(entry: ExerciseEntry, index: number): ExerciseEntry {
   const s = entry.sets[index];
   if (!s) return entry;
-  return withSet(entry, index, { ...s, kind: isWarmup(s) ? "working" : "warmup" });
+  const next: SetEntry = { ...s, kind: "warmup" };
+  if (isWarmup(s)) delete next.kind;
+  return withSet(entry, index, next);
 }
 
 const clean = (n: number | undefined) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
@@ -170,12 +182,29 @@ export function editSet(entry: ExerciseEntry, index: number, patch: { weight?: n
 }
 
 /**
- * A new empty working set. It copies NOTHING from the row above (the ghost
- * already shows those numbers faintly) — only a fresh id, and `done: false`
- * so a number typed into it doesn't count until it is ticked.
+ * A new empty working set: a fresh id and zeros, nothing else. No `done: false`
+ * and no `kind` (see the note at the top): empty, it is not done by the legacy
+ * rule anyway, and the first box typed into it here pins `done` (editSet), so a
+ * number typed in this app still doesn't count until it is ticked.
  */
+export function newSet(makeId: () => string): SetEntry {
+  return { id: makeId(), reps: 0, weight: 0 };
+}
+
+/** Add an empty set. It copies NOTHING from the row above — the ghost already shows those numbers faintly. */
 export function addSet(entry: ExerciseEntry, makeId: () => string): ExerciseEntry {
-  return { ...entry, sets: [...entry.sets, { id: makeId(), reps: 0, weight: 0, kind: "working", done: false }] };
+  return { ...entry, sets: [...entry.sets, newSet(makeId)] };
+}
+
+/**
+ * The history editor's "Add set": the last row's numbers, and nothing else of
+ * it — not its id (two sets sharing an id merge into one, or split into a set
+ * that was never lifted), not its tick or warm-up mark. The editor has no tick,
+ * so `done` is left out and the numbers count by the reps > 0 rule.
+ */
+export function copyLastSet(entry: ExerciseEntry, makeId: () => string): ExerciseEntry {
+  const last = entry.sets[entry.sets.length - 1];
+  return { ...entry, sets: [...entry.sets, { id: makeId(), reps: clean(last?.reps), weight: clean(last?.weight) }] };
 }
 
 export function removeSet(entry: ExerciseEntry, index: number): ExerciseEntry {
@@ -192,6 +221,16 @@ export function removeExercise(w: Workout, entryId: string): Workout {
   return { ...w, exercises: w.exercises.filter((e) => e.id !== entryId) };
 }
 
+/**
+ * What a Discard confirm deletes: the session it was OPENED for, and only while
+ * that session still exists unfinished. Not "the stale session now" — a refetch
+ * while the confirm is open (the other phone finishing it) can make a different
+ * session the stale one, with its own ticked sets.
+ */
+export function discardTarget(workouts: Workout[], id: string | null): Workout | null {
+  return (id !== null && workouts.find((w) => w.id === id && !w.done)) || null;
+}
+
 // ── finish ──────────────────────────────────────────────────────────────────────
 const hasNumbers = (s: SetEntry) => pos(s.weight) > 0 || pos(s.reps) > 0;
 const hasDuration = (e: ExerciseEntry) => pos(e.duration) > 0;
@@ -200,17 +239,17 @@ const hasDuration = (e: ExerciseEntry) => pos(e.duration) > 0;
  * What Finish saves: sets with no numbers are dropped, then exercises left with
  * nothing (and no duration). Unticked sets that do have numbers stay, still
  * unticked, so they are kept but never counted. `nothingLogged` = not one done
- * set or timed entry is left, which is when the logger asks to discard instead.
+ * set with reps, or timed entry, is left — when the logger asks to discard instead.
  */
 export function finishWorkout(w: Workout): { workout: Workout; nothingLogged: boolean } {
   const exercises = w.exercises
     .map((e) => (e.sets.every(hasNumbers) ? e : { ...e, sets: e.sets.filter(hasNumbers) }))
     .filter((e) => e.sets.length > 0 || hasDuration(e));
-  const nothingLogged = !exercises.some((e) => hasDuration(e) || e.sets.some(isDone));
+  const nothingLogged = !exercises.some((e) => hasDuration(e) || e.sets.some(isLogged));
   return { workout: { ...w, exercises, done: true }, nothingLogged };
 }
 
-/** Working sets ticked / working sets in the session, and warm-ups ticked. */
+/** Working sets ticked / working sets in the session, and warm-ups ticked (a tick with no reps logged nothing). */
 export function sessionCounts(w: Workout): { done: number; planned: number; warmups: number } {
   let done = 0;
   let planned = 0;
@@ -218,11 +257,11 @@ export function sessionCounts(w: Workout): { done: number; planned: number; warm
   for (const e of w.exercises) {
     for (const s of e.sets) {
       if (isWarmup(s)) {
-        if (isDone(s)) warmups++;
+        if (isLogged(s)) warmups++;
         continue;
       }
       planned++;
-      if (isDone(s)) done++;
+      if (isLogged(s)) done++;
     }
   }
   return { done, planned, warmups };
@@ -255,7 +294,7 @@ export function finishSummary(
         empty++;
         continue;
       }
-      if (!isDone(s)) {
+      if (!isLogged(s)) {
         unticked++;
         continue;
       }

@@ -78,7 +78,7 @@ export function ExerciseDetail({
         </section>
       )}
 
-      {!loading && <StudyNotes exercise={ex} />}
+      {!loading && <StudyNotes exercise={ex} hasMuscles={!!ex && primary.length + secondary.length > 0} />}
 
       <YourNumbers name={ex?.name ?? name} person={person} library={library} workouts={workouts} />
     </div>

@@ -186,8 +186,8 @@ describe("bandLabel", () => {
     [0, "None"],
     [3.5, "Below the lowest band in the studies"],
     [4, "Minimum band"],
-    [4.5, "Most growth for each set"],
-    [10, "Most growth for each set"],
+    [4.5, "More growth for each set"],
+    [10, "More growth for each set"],
     [10.5, "More in total, less for each extra set"],
     [18, "More in total, less for each extra set"],
     [18.5, "Less for each extra set"],
@@ -253,14 +253,37 @@ describe("recentRecords", () => {
     expect(recentRecords(ws, "gino", LIB, 1)).toHaveLength(1);
   });
 
-  it("a later set in the same session can beat an earlier one", () => {
-    const ws = [workout("2026-09-01", [["Bench press", [set(185, 5), set(195, 5)]]])];
-    expect(recentRecords(ws, "gino", LIB)).toEqual([{ name: "Bench press", weight: 195, reps: 5, date: "2026-09-01" }]);
+  // A first-ever session used to turn every heavier ramp set after the first
+  // into a "record", several per exercise in one workout.
+  it("the first session of an exercise is a baseline: its ramp sets are not records", () => {
+    const first = workout("2026-09-01", [["Bench press", [set(95, 10), set(135, 8), set(185, 5)]]]);
+    expect(recentRecords([first], "gino", LIB)).toEqual([]);
+    const second = workout("2026-09-08", [["Bench press", [set(190, 5)]]]);
+    expect(recentRecords([first, second], "gino", LIB)).toEqual([{ name: "Bench press", weight: 190, reps: 5, date: "2026-09-08" }]);
+  });
+
+  it("compares with earlier workouts only, and keeps one record per rep count per workout (the heaviest)", () => {
+    const ws = [
+      workout("2026-09-01", [["Bench press", [set(185, 5)]]]),
+      workout("2026-09-08", [["Bench press", [set(190, 5), set(195, 5), set(185, 5)]]]),
+    ];
+    expect(recentRecords(ws, "gino", LIB)).toEqual([{ name: "Bench press", weight: 195, reps: 5, date: "2026-09-08" }]);
   });
 
   it("bodyweight sets set a baseline but are never records", () => {
-    const ws = [workout("2026-09-01", [["Pull-up", [set(0, 8), set(0, 10), set(25, 5)]]])];
-    expect(recentRecords(ws, "gino", LIB)).toEqual([{ name: "Pull-up", weight: 25, reps: 5, date: "2026-09-01" }]);
+    const ws = [
+      workout("2026-09-01", [["Pull-up", [set(0, 8), set(0, 10)]]]),
+      workout("2026-09-03", [["Pull-up", [set(0, 12), set(25, 5)]]]),
+    ];
+    expect(recentRecords(ws, "gino", LIB)).toEqual([{ name: "Pull-up", weight: 25, reps: 5, date: "2026-09-03" }]);
+  });
+
+  it("a tick with no reps is not a set: no hard set, no record, not last time", () => {
+    const w = workout("2026-09-12", [["Exercise X", [set(225, 0, { done: true })]]]);
+    expect(hardSetsByRegion([w], LIB, "gino", "2026-09-12")).toEqual({ byRegion: {}, unplaced: 0 });
+    expect(totalSets(w)).toBe(0);
+    expect(lastTime([w], "gino", "Exercise X", LIB)).toBeNull();
+    expect(repRecords([w], "gino", "Exercise X", LIB)[1]).toBeNull();
   });
 });
 
@@ -306,9 +329,25 @@ describe("workoutLog records skip warm-ups and un-ticked sets", () => {
       workout("2026-09-01", [["Tricep pushdowns", [set(50, 10)]]]),
       workout("2026-09-08", [["Triceps pushdown", [warm(90, 10), set(60, 10)]]]),
     ];
-    const prs = personalRecords(ws);
+    const prs = personalRecords(ws, LIB);
     expect(prs).toHaveLength(1);
     expect(prs[0]).toMatchObject({ name: "Triceps pushdown", weight: 60, reps: 10, date: "2026-09-08" });
+  });
+
+  // An old routine's alias name and the library name picked from search used to
+  // show as two separate records.
+  it("personalRecords: an alias and the library name are one exercise (V1 §8)", () => {
+    const ws = [
+      workout("2026-09-01", [["Flat dumbbell press", [set(60, 8)]]]),
+      workout("2026-09-08", [["Dumbbell bench press", [set(55, 8)], "ex-db-press"]]),
+    ];
+    const prs = personalRecords(ws, LIB);
+    expect(prs).toHaveLength(1);
+    expect(prs[0]).toMatchObject({ name: "Dumbbell bench press", weight: 60, reps: 8 });
+  });
+  it("personalRecords: an exercise not in the library still keys by its normalised name", () => {
+    const ws = [workout("2026-09-01", [["Sandbag carry", [set(80, 5)]]]), workout("2026-09-02", [["sandbag-carrys", [set(90, 5)]]])];
+    expect(personalRecords(ws, LIB)).toHaveLength(1);
   });
   it("totalSets (the history row's 'N sets') counts done working sets only", () => {
     const w = workout("2026-09-08", [

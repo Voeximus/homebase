@@ -2,7 +2,7 @@
 // HealthStore keeps the network and the timers; everything that DECIDES which
 // copy of a document survives lives here, so it can be tested without Supabase.
 //
-// Three decisions, each fixing a way a logged set used to disappear:
+// Four decisions, each fixing a way a logged set used to disappear:
 //   1. When an unsaved edit counts as saved (SyncTracker). A save used to clear
 //      the "unsaved" flag even when a newer edit had arrived while it was in the
 //      air, and the next refetch then replaced that newer edit with the older
@@ -13,6 +13,8 @@
 //      an id.
 //   3. Duplicate set ids. Old app versions add a set by copying the last one,
 //      id and all, and two sets sharing an id would merge into one.
+//   4. When a failed save stops retrying. A workout used to give up after about
+//      a minute offline, and giving up marked it saved.
 
 import type { ExerciseEntry, SetEntry, Workout } from "./workoutLog";
 
@@ -156,6 +158,21 @@ export function mergeWorkoutLists(
   return [...pendingLocal, ...merged];
 }
 
+/**
+ * A workout edit as it enters local state. Duplicate set ids are repaired HERE
+ * too, not only on the way in from the server: a local copy [a, b, b] next to
+ * the server's repaired [a, b, b~1] sees b~1 as a set it doesn't have, adopts
+ * it, and the next save stores a set that was never lifted. Returns the
+ * workout to keep and the exercise and set ids the edit deleted.
+ */
+export function localEdit(
+  prev: Workout | undefined,
+  next: Workout,
+): { workout: Workout; removedExercises: string[]; removedSets: string[] } {
+  const workout = repairDuplicateSetIds(next);
+  return { workout, removedExercises: removedIds(prev?.exercises, workout.exercises), removedSets: removedSetIds(prev, workout) };
+}
+
 /** Ids present in `prev` and missing from `next`: what an edit deleted. */
 export function removedIds(prev: { id: string }[] | undefined, next: { id: string }[]): string[] {
   if (!prev?.length) return [];
@@ -175,13 +192,18 @@ export function removedSetIds(prev: Workout | undefined, next: Workout): string[
 
 // ── 3. duplicate set ids ─────────────────────────────────────────────────────
 // Within one exercise, the FIRST set keeps a shared id and each later copy gets
-// a new one. The default new id is DERIVED from the duplicate and its position,
+// a new one. The default new id is DERIVED from the duplicate and its occurrence,
 // not random, and that is load-bearing: the repair runs on every load and is
 // never written back by itself, so a random id would change on every refetch.
 // A phone holding yesterday's repaired id would then see today's repaired id as
 // a set it doesn't have, adopt it, and show the set twice.
-export type SetIdMaker = (duplicateOf: string, position: number) => string;
-export const derivedSetId: SetIdMaker = (dup, position) => `${dup}~${position}`;
+//
+// The occurrence is the copy's count among sets sharing that id (the 2nd "b" is
+// b~1, the 3rd b~2), NOT its position in the list. A position shifts whenever
+// any earlier set is removed — the old app removes rows too — and [a, b, b]
+// would repair to b~2 on one phone and, after "a" went, to b~1 on the other.
+export type SetIdMaker = (duplicateOf: string, occurrence: number) => string;
+export const derivedSetId: SetIdMaker = (dup, occurrence) => `${dup}~${occurrence}`;
 
 export function repairDuplicateSetIds(w: Workout, makeId: SetIdMaker = derivedSetId): Workout {
   let changed = false;
@@ -190,21 +212,19 @@ export function repairDuplicateSetIds(w: Workout, makeId: SetIdMaker = derivedSe
     if (!Array.isArray(sets) || sets.length < 2) return ex;
     const taken = new Set<string>();
     for (const s of sets) if (s?.id) taken.add(s.id);
-    const seen = new Set<string>();
+    const copies = new Map<string, number>(); // id → how many sets carried it so far
     let fixed: SyncSet[] | null = null;
     for (let i = 0; i < sets.length; i++) {
       const s = sets[i];
       if (!s?.id) continue;
-      if (!seen.has(s.id)) {
-        seen.add(s.id);
-        continue;
-      }
-      let id = makeId(s.id, i);
+      const n = copies.get(s.id) ?? 0;
+      copies.set(s.id, n + 1);
+      if (n === 0) continue;
+      let id = makeId(s.id, n);
       // never land on an id another set in this exercise already uses
-      for (let n = 0; taken.has(id) && n < 50; n++) id = makeId(id, i);
-      if (taken.has(id)) id = `${s.id}~${i}~${taken.size}`;
+      for (let k = 0; taken.has(id) && k < 50; k++) id = makeId(id, n);
+      if (taken.has(id)) id = `${s.id}~${n}~${taken.size}`;
       taken.add(id);
-      seen.add(id);
       fixed ??= [...sets];
       fixed[i] = { ...s, id };
     }
@@ -213,4 +233,19 @@ export function repairDuplicateSetIds(w: Workout, makeId: SetIdMaker = derivedSe
     return { ...ex, sets: fixed };
   });
   return changed ? { ...w, exercises } : w;
+}
+
+// ── 4. retrying a failed save ────────────────────────────────────────────────
+// Backoff 1 s, 2 s, 4 s … capped at 30 s. A meal day gives up after 6 attempts
+// (about a minute) and re-syncs from the server. A workout never gives up:
+// giving up cleared its unsaved flag, the next refetch then replaced the session
+// with the older server copy, and the next tick saved that reduced copy — a 90 s
+// rest with no signal was enough to lose the set logged before it. Staying
+// unsaved is safe, because a refetch merges set by set into an unsaved session.
+export const WORKOUT_KEY_PREFIX = "w|";
+
+/** Milliseconds before retrying the attempt (0-based) that just failed; null = give up. */
+export function retryDelay(key: string, attempt: number): number | null {
+  if (attempt >= 6 && !key.startsWith(WORKOUT_KEY_PREFIX)) return null;
+  return Math.min(30000, 1000 * 2 ** Math.min(attempt, 5));
 }
