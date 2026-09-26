@@ -18,7 +18,7 @@
 //
 // A refusal is never silent. It returns a plain sentence the sheet shows.
 
-import { billCycleFor } from "../../lib/schedule";
+import { DUE_DAYS, billCycleFor } from "../../lib/schedule";
 import { t } from "../../lib/i18n";
 import type { AppData } from "../../types";
 import type { NewBillDraft, SuggestionFix } from "../../lib/reviewTypes";
@@ -200,7 +200,16 @@ export async function applyFix(
       // duplicate was invisible. The due day is what distinguishes one
       // installment from another (support to family, paid on the 15th AND the
       // 30th), every stored row carries it, and comparing it needs no table.
-      const cycle = billCycleFor(rec.dueDays, txn.date);
+      //
+      // The days themselves come from the SAME place the engine keyed the cycle
+      // on: the row's own, falling back to the legacy name map the calendar also
+      // falls back to. Handing `rec.dueDays` straight over looked right and was
+      // not — for a row whose days live only in that map, billCycleFor() falls
+      // back to the CHARGE's own day, so this guard would be reading a different
+      // cycle than the card offered and could let two charges settle one (which
+      // the exact check `one-payment-per-cycle` would then report as a defect).
+      const dueDays = rec.dueDays?.length ? rec.dueDays : DUE_DAYS[rec.name];
+      const cycle = billCycleFor(dueDays, txn.date);
       const taken = data.transactions.some((x) => {
         const at = x.appliesTo;
         if (x.id === txn.id) return false;

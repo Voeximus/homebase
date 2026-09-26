@@ -177,6 +177,38 @@ describe("applyFix — linking a charge to a bill", () => {
     expect(calls).toEqual(["link:t1:r2"]);
   });
 
+  // The engine placed the cycle with the row's due days OR the legacy name map
+  // (dueDaysOf in ledgerReview.ts), so the guard has to read the same map. Given
+  // only `rec.dueDays`, billCycleFor() falls back to the CHARGE's own day — the
+  // guard would then be looking at 16 Sep instead of the 15th cycle the card
+  // offered, find it free, and let a second charge settle it.
+  it("refuses a taken cycle on a row whose due days live only in the legacy map", async () => {
+    const legacy = rec({ id: "r3", name: "Mom", amount: 300, dueDays: undefined });
+    const data = appData({
+      recurring: [legacy],
+      transactions: [
+        txn({ id: "t1", date: "2026-09-16", amount: 300 }),
+        txn({
+          id: "t2",
+          date: "2026-09-15",
+          amount: 300,
+          appliesTo: { kind: "bill", recurringId: "r3", monthKey: "2026-09", day: 15 },
+        }),
+      ],
+    });
+    const { calls, writes } = spyWrites();
+    expect(
+      (
+        await applyFix(
+          { label: "Yes, that is the bill", write: "link-charge-to-bill", txnId: "t1", recurringId: "r3" },
+          data,
+          writes,
+        )
+      ).ok,
+    ).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   it("refuses a charge that is already attached to something", async () => {
     const data = appData({
       recurring: [bill],

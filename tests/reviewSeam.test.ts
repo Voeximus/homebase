@@ -9,6 +9,7 @@ import {
   toSurfaceFix,
 } from "../src/lib/reviewEngine";
 import { hasWrite, applyFix, type ReviewWrites } from "../src/views/redesign/reviewApply";
+import { REVIEW_STRINGS } from "../src/lib/ledgerReview";
 import { DEFAULT_CATEGORIES } from "../src/lib/seed";
 import { ZH } from "../src/lib/i18n_zh";
 import type { AppData, Account, Recurring, Transaction } from "../src/types";
@@ -391,6 +392,16 @@ describe("the seam's own strings", () => {
       if (!ZH[s]) missing.push(s);
     }
     expect(missing).toEqual([]);
+  });
+
+  // The other half of the sheet. The test above only reads this file, and the
+  // engine writes most of what a card says — so two W1 evidence lines shipped
+  // with no Chinese and the sheet rendered a Chinese headline over an English
+  // sentence, on the one rule that fires on the real ledger. REVIEW_STRINGS is
+  // the right list to check: ledgerReview.test.ts already proves it is exactly
+  // the set of user-facing literals in the engine, both ways.
+  it("every string the engine can emit has a Simplified Chinese entry", () => {
+    expect(REVIEW_STRINGS.filter((s) => !ZH[s])).toEqual([]);
   });
 
   it("says what it saw and never how likely it is", () => {

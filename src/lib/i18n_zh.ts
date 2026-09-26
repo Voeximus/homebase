@@ -603,6 +603,10 @@ const SEED: Record<string, string> = {
   // what the app noticed — one headline and one evidence line per rule
   "{name} now charges more than the app expects": "{name} 现在收的比应用预计的多",
   "{name} now charges less than the app expects": "{name} 现在收的比应用预计的少",
+  "The app plans {modelled} a month. The last charge, on {date}, was {actual} — {gap} more.":
+    "应用每月按 {modelled} 计划。最近一次扣费是 {date} 的 {actual} — 多了 {gap}。",
+  "The app plans {modelled} a month. The last charge, on {date}, was {actual} — {gap} less.":
+    "应用每月按 {modelled} 计划。最近一次扣费是 {date} 的 {actual} — 少了 {gap}。",
   "Use {amount} from now on": "以后就用 {amount}",
   "{name} may be finished": "{name} 可能已经结束了",
   "The app still plans {monthly} a month for {name}, and nothing has been charged for it in {months}. That is {total} of planned money that is not leaving.":
