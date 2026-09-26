@@ -303,7 +303,7 @@ function splitsSumToTheirTransaction(data: AppData): AuditCheck {
  *  would collapse a two-installment bill (support to family, paid on the 15th
  *  AND the 30th) into one cycle and read every second payment as a duplicate.
  *  MIRROR of installmentIndexForDay in supabase/functions/plaid/index.ts. */
-function cycleKeyOf(at: { recurringId?: string; monthKey?: string; day?: number; installmentIndex?: number }, dueDays?: number[]): string {
+export function cycleKeyOf(at: { recurringId?: string; monthKey?: string; day?: number; installmentIndex?: number }, dueDays?: number[]): string {
   let idx = at.installmentIndex;
   if (idx == null) {
     const days = dueDays && dueDays.length ? [...dueDays].sort((a, b) => a - b) : [];
