@@ -12,6 +12,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.09.26a",
+    date: "September 26, 2026",
+    notes: [
+      "Activity has a new card: \"Worth a look\". It is the app telling you what it noticed about your bills and charges — a bill that now costs more than the app plans for, a bill nothing has been charged for in months, a charge that looks like a bill nothing connected, money that may be in twice.",
+      "These are not the same as the checks in Profile. Those are the app disagreeing with itself: certain, and always a real mistake. These are guesses with the evidence attached, and every single one of them can be wrong — so each card says what it noticed, what it would do about it, and has a \"Looks fine — dismiss\" next to the fix. Dismissing sticks until the facts change.",
+      "Each fix is one tap on one thing, and the card shows both numbers first. It will never delete a charge that came from your bank, never delete a bill, and never mark anything paid — a bill it thinks is finished gets turned off, and your history keeps every payment you made.",
+      "If nothing is worth a look, the card is not there at all.",
+    ],
+  },
+  {
     version: "2026.09.14a",
     date: "September 14, 2026",
     notes: [

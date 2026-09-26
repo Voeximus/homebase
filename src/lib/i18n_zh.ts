@@ -565,6 +565,41 @@ const SEED: Record<string, string> = {
   "{x}× your usual {cat}": "是平时 {cat} 的 {x} 倍",
   Recategorize: "重新分类",
   "Looks fine — dismiss": "没问题 — 忽略",
+  // ── Worth a look — the review layer ──
+  // Deliberately worded apart from the self-check panel ("对不上"), because the two
+  // mean different things: that one is certain, this one is a guess with evidence.
+  "Worth a look": "值得看看",
+  "Not mistakes — things the app noticed about your bills and charges. Fix or dismiss.":
+    "不是错误 — 只是应用在你的账单和消费里注意到的事。可以修正，也可以忽略。",
+  "1 thing the app noticed": "应用注意到 1 件事",
+  "{n} things the app noticed": "应用注意到 {n} 件事",
+  "Nothing to look at — the bills and the charges agree.": "没什么要看的 — 账单和消费是对得上的。",
+  "Done — the app has been updated.": "好了 — 应用已经更新。",
+  "Show me the bill": "看看这笔账单",
+  "Show me the charge": "看看这笔消费",
+  "Show me the charges": "看看这几笔消费",
+  "This one is for you to decide.": "这一条要你自己决定。",
+  // why a one-tap fix refused
+  "That charge is no longer here.": "这笔消费已经不在了。",
+  "That charge is already free of any bill.": "这笔消费本来就没有挂在任何账单上。",
+  "That charge is already attached to something.": "这笔消费已经挂在别的地方了。",
+  "That charge is still processing. It can be attached once it posts.":
+    "这笔消费还在处理中。等入账后才能挂上去。",
+  "That bill is no longer here.": "这笔账单已经不在了。",
+  "That bill is already off.": "这笔账单已经关掉了。",
+  "That income is no longer here.": "这笔收入已经不在了。",
+  "That amount does not look right.": "这个金额看着不对。",
+  "That date does not look right.": "这个日期看着不对。",
+  "That due day does not look right.": "这个到期日看着不对。",
+  "That bill needs a name.": "这笔账单需要一个名字。",
+  "Give it a category first.": "先给它一个分类。",
+  "You already have a bill with that name.": "你已经有一笔同名的账单了。",
+  "This one came from the bank, so it stays.": "这一笔来自银行，所以要留着。",
+  "This one records money that moved outside the app, so it stays.":
+    "这一笔记录的是在应用之外动过的钱，所以要留着。",
+  "Something else is already paying that bill for this month.": "这个月这笔账单已经有别的消费在付了。",
+  "That fix is not ready yet. You can still change it yourself.":
+    "这个一键修正还没准备好。你仍然可以自己改。",
   // workout history edit
   "Edit workout": "编辑训练",
   "Save changes": "保存更改",
