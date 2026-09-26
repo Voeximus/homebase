@@ -600,6 +600,59 @@ const SEED: Record<string, string> = {
   "Something else is already paying that bill for this month.": "这个月这笔账单已经有别的消费在付了。",
   "That fix is not ready yet. You can still change it yourself.":
     "这个一键修正还没准备好。你仍然可以自己改。",
+  // what the app noticed — one headline and one evidence line per rule
+  "{name} now charges more than the app expects": "{name} 现在收的比应用预计的多",
+  "{name} now charges less than the app expects": "{name} 现在收的比应用预计的少",
+  "Use {amount} from now on": "以后就用 {amount}",
+  "{name} may be finished": "{name} 可能已经结束了",
+  "The app still plans {monthly} a month for {name}, and nothing has been charged for it in {months}. That is {total} of planned money that is not leaving.":
+    "应用仍然为 {name} 每月留出 {monthly}，但 {months} 都没有相关消费。那是 {total} 计划中的钱并没有真的花出去。",
+  "Turn this bill off": "关掉这笔账单",
+  "{name} looks like a monthly subscription": "{name} 看着像每月订阅",
+  "{amount} charged in {months}, always the same amount. It is not in your bills, so nothing plans for it.":
+    "{months} 每次都收 {amount}，金额一样。它不在你的账单里，所以没有任何计划留出这笔钱。",
+  "Add it as a monthly bill": "把它加成每月账单",
+  "Give it a category first": "先给它一个分类",
+  "{name} has not been charged for {month}": "{month} 还没有 {name} 的消费",
+  "{name} is {amount}, due on the {day}. It was charged in {months}, and for {month} nothing matches it. Either it has not gone out yet or the charge is not in the app.":
+    "{name} 是 {amount}，每月 {day} 号到期。{months} 都有消费，但 {month} 没有对得上的。要么还没扣，要么这笔消费没进应用。",
+  "This charge may be in twice": "这笔消费可能记了两次",
+  "{count} charges of {amount} on {date} in the same account — {bank} from the bank, {manual} entered by hand. If they are the same money, the hand-entered one is the extra.":
+    "{date} 同一个账户上有 {count} 笔 {amount} 的消费 — {bank} 来自银行，{manual} 是手工录入的。如果是同一笔钱，手工那一笔是多出来的。",
+  "Remove the hand-entered one": "删掉手工录入的那一笔",
+  "{name} may be recorded twice for {month}": "{month} 的 {name} 可能记了两次",
+  "You marked {name} paid by hand for {month} at {manual}. The bank also shows a {bank} charge on {date} that went against the {debt} balance. If they are the same payment, {month} is counting {manual} twice.":
+    "你在 {month} 手工把 {name} 标记为已付 {manual}。银行在 {date} 也有一笔 {bank} 的消费，冲减了 {debt} 的余额。如果这是同一笔付款，{month} 就把 {manual} 算了两次。",
+  "{name} looks like it already came in": "{name} 看着已经到账了",
+  "The app expects {monthly} a month. One deposit of {actual} arrived on {date} and nothing like it before. If that was a one-off, the app is counting it every month from here.":
+    "应用预计每月 {monthly}。{date} 到账了一笔 {actual}，之前没有类似的。如果那是一次性的，应用会从现在起每个月都算上它。",
+  "It was one-off — stop expecting it": "这是一次性的 — 不用再预计它",
+  "This charge looks like your {name} bill": "这笔消费看着像你的 {name} 账单",
+  "{amount} at {merchant} on {date}. Your {name} bill is {modelled}, due on the {day}, and the app has that cycle as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.":
+    "{date} 在 {merchant} 花了 {amount}。你的 {name} 账单是 {modelled}，每月 {day} 号到期，应用把那一期记为未付。现在这笔既算普通支出，又算一笔还没付的账单。",
+  "Yes, that is the bill": "对，就是这笔账单",
+  // the charge whose bill was deleted — the self-check finds it, this fixes it
+  "A charge is attached to a bill that was deleted": "有一笔消费挂在一笔已经被删掉的账单上",
+  "A charge is attached to something that was deleted": "有一笔消费挂在一个已经被删掉的东西上",
+  "{amount} on {date} — {name}. Right now it counts against no budget and pays no bill.":
+    "{date} 的 {amount} — {name}。现在它不算进任何预算，也不付任何账单。",
+  "The {amount} charge on {date} points at something that is no longer here. Right now it counts against no budget and pays no bill.":
+    "{date} 那笔 {amount} 的消费指向一个已经不在的东西。现在它不算进任何预算，也不付任何账单。",
+  "Free this charge": "放开这笔消费",
+  // the green line after a tap
+  "Saved. The app will expect that amount from now on.": "已保存。以后应用会按这个金额预计。",
+  "Turned off. It is still in your bills if you want it back.":
+    "已关掉。它还在你的账单里，想恢复随时可以。",
+  "Ended. The months before this still show the money you got.":
+    "已结束。之前那几个月仍然显示你收到的钱。",
+  "Added to your bills.": "已加到你的账单里。",
+  "Removed. The bank's own record of it is still here.": "已删掉。银行自己的那条记录还在。",
+  "Attached. That bill is marked paid for the month.": "已挂上。这个月这笔账单记为已付。",
+  "Freed. It counts as ordinary spending again.": "已放开。它又算作普通支出了。",
+  // Activity's month arrows and the tab list's label, both read aloud only
+  "Previous month": "上个月",
+  "Next month": "下个月",
+  Sections: "分区",
   // workout history edit
   "Edit workout": "编辑训练",
   "Save changes": "保存更改",

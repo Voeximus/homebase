@@ -33,7 +33,8 @@ export type SuggestionKind =
   | "missing" // W4 — every previous cycle was charged, this one was not
   | "duplicate" // W5 — the same money looks like it is in twice
   | "income-landed" // W6 — income told to repeat looks like it arrived once
-  | "unlinked"; // W7 — a charge that matches a bill you already model
+  | "unlinked" // W7 — a charge that matches a bill you already model
+  | "dangling"; // A8 — a charge pointing at a row that was deleted (§D.1)
 
 /** A bill row a fix may create. Spec §D.4. */
 export interface NewBillDraft {

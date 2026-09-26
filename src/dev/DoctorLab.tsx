@@ -147,13 +147,25 @@ export function DoctorLab() {
     return isNaN(d.getTime()) ? new Date() : d;
   }, [nowText]);
 
+  // Bumped when the language flips, and a dependency of the list below. The
+  // suggestions are built by t() at ENGINE time, and this component sits ABOVE the
+  // LanguageProvider it renders — so the provider's remount never reaches this
+  // memo and the cards stayed in English while the chrome around them turned
+  // Chinese. In the real app FinanceTabs is BELOW the provider and remounts with
+  // it, so this is a harness-shaped problem with a harness-shaped fix; checking
+  // that the Chinese reads well is half of what this screen is for.
+  const [langTick, setLangTick] = useState(0);
+
   const suggestions = useMemo(() => {
+    // Read so the dependency is a real one: the strings below come out of t(),
+    // which reads a module-level language this memo cannot otherwise see.
+    void langTick;
     const list =
       source === "snapshot"
         ? reviewSuggestions(data, now, dismissed)
         : examples.filter((s) => !dismissed.has(s.key));
     return sortSuggestions(list);
-  }, [source, data, now, dismissed, examples]);
+  }, [source, data, now, dismissed, examples, langTick]);
 
   // Fake writes. They change the local AppData exactly the way the real actions
   // change the row in Supabase, so the recompute afterwards is honest. For the
@@ -274,7 +286,11 @@ export function DoctorLab() {
           <div className="mb-3 flex items-center gap-2">
             <Lightbulb size={18} style={{ color: "#e3b341" }} />
             <h1 className="flex-1 text-[16px] font-bold text-bone">Worth a look — lab</h1>
-            <LangToggle />
+            {/* The click bubbles here AFTER LangToggle has already flipped the
+                language, so the recompute below reads the new one. See langTick. */}
+            <div onClick={() => setLangTick((n) => n + 1)}>
+              <LangToggle />
+            </div>
           </div>
 
           {!ENGINE_WIRED && (

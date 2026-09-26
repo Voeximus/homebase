@@ -496,26 +496,50 @@ function onePaymentPerBillCycle(data: AppData): AuditCheck {
  * whole table fits inside both windows. The day it does not, either the window
  * goes or `settledByTxnId` does — a check that can be wrong does not belong here.
  */
-function linksPointSomewhere(data: AppData): AuditCheck {
+/** One row carrying at least one id that names something no longer in the data. */
+export interface DanglingLink {
+  /** The ledger row, when the broken link is on a transaction. */
+  txnId?: string;
+  /** The bill row, when the broken link is `recurring.linkedDebtId`. */
+  recurringId?: string;
+  /** The row's own words, for the sentence the user reads. */
+  date?: string;
+  description: string;
+  /** Dollars on the row. Zero for a bill row, which holds no spending itself. */
+  amount: number;
+  /** What each broken id was supposed to name: bill, debt, goal, charge, account. */
+  targets: string[];
+}
+
+/**
+ * The offenders behind check 8, as data rather than as a sentence.
+ *
+ * Split out so the one-tap fix (`Worth a look`, spec §D.1) stands on the SAME
+ * resolution the check does. Two implementations of "which links are broken"
+ * would be the five-cycle-key mistake again, and this time with a button on the
+ * end of it.
+ *
+ * `links` is every id examined; `broken` is one entry per ROW, with one `targets`
+ * entry per broken id — so a row that dangles twice counts twice in the check's
+ * total and once in the list the user is shown.
+ */
+export function danglingLinks(data: AppData): { links: number; broken: DanglingLink[] } {
   const recurringIds = new Set(data.recurring.map((r) => r.id));
   const debtIds = new Set(data.debts.map((d) => d.id));
   const goalIds = new Set(data.goals.map((g) => g.id));
   const txnIds = new Set(data.transactions.map((t) => t.id));
   const accountIds = new Set(data.accounts.map((a) => a.id));
 
-  const offenders: string[] = [];
+  const broken: DanglingLink[] = [];
   let links = 0;
-  let broken = 0;
-  let stranded = 0; // dollars sitting on ledger rows whose link is broken
 
   for (const t of data.transactions) {
-    const dangling: string[] = [];
+    const targets: string[] = [];
     const point = (id: string | undefined, exists: Set<string>, what: string) => {
       if (!id) return;
       links++;
       if (exists.has(id)) return;
-      broken++;
-      dangling.push(what);
+      targets.push(what);
     };
     const at = t.appliesTo;
     point(at?.recurringId, recurringIds, "bill");
@@ -523,20 +547,37 @@ function linksPointSomewhere(data: AppData): AuditCheck {
     point(at?.goalId, goalIds, "goal");
     point(at?.settledByTxnId, txnIds, "charge");
     point(t.accountId, accountIds, "account");
-    if (!dangling.length) continue;
-    stranded += t.amount;
-    offenders.push(
-      `${t.date} ${t.description} ($${t.amount.toFixed(2)}) points at a deleted ${dangling.join(" and ")}`,
-    );
+    if (!targets.length) continue;
+    broken.push({
+      txnId: t.id,
+      date: t.date,
+      description: t.description,
+      amount: t.amount,
+      targets,
+    });
   }
 
   for (const r of data.recurring) {
     if (!r.linkedDebtId) continue;
     links++;
     if (debtIds.has(r.linkedDebtId)) continue;
-    broken++;
-    offenders.push(`the bill ${r.name} points at a deleted debt`);
+    broken.push({ recurringId: r.id, description: r.name, amount: 0, targets: ["debt"] });
   }
+
+  return { links, broken };
+}
+
+function linksPointSomewhere(data: AppData): AuditCheck {
+  const { links, broken: rows } = danglingLinks(data);
+
+  const offenders = rows.map((r) =>
+    r.txnId
+      ? `${r.date} ${r.description} ($${r.amount.toFixed(2)}) points at a deleted ${r.targets.join(" and ")}`
+      : `the bill ${r.description} points at a deleted debt`,
+  );
+  const broken = rows.reduce((n, r) => n + r.targets.length, 0);
+  // Dollars sitting on ledger rows whose link is broken. A bill row holds none.
+  const stranded = rows.reduce((n, r) => n + (r.txnId ? r.amount : 0), 0);
 
   const many = broken > 1;
   const money =
