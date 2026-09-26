@@ -35,6 +35,13 @@ const WorkoutLab = import.meta.env.DEV
 const LabelLab = import.meta.env.DEV
   ? lazy(() => import("./views/redesign/LabelLab").then((m) => ({ default: m.LabelLab })))
   : null;
+// ?doctorlab — "Worth a look" over a snapshot you drop in, or a hand-written card
+// for every state the sheet can be in. Same DEV-only gating: the harness and its
+// invented examples never ship, and it never mounts the store, so nothing it does
+// can reach Supabase.
+const DoctorLab = import.meta.env.DEV
+  ? lazy(() => import("./dev/DoctorLab").then((m) => ({ default: m.DoctorLab })))
+  : null;
 
 export default function App() {
   if (
@@ -82,6 +89,18 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <LabelLab />
+      </Suspense>
+    );
+  }
+  if (
+    import.meta.env.DEV &&
+    DoctorLab &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("doctorlab")
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <DoctorLab />
       </Suspense>
     );
   }

@@ -10,7 +10,22 @@ const TABS: { key: TabKey; label: string; Icon: LucideIcon }[] = [
   { key: "profile", label: "Profile", Icon: User },
 ];
 
-export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) => void }) {
+export function TabNav({
+  active,
+  onTab,
+  badges,
+}: {
+  active: TabKey;
+  onTab: (t: TabKey) => void;
+  /**
+   * A plain count beside a tab's label. Used by "Worth a look" — Activity is a
+   * tab you open on purpose, so without this there is no way to learn the app
+   * noticed something. Counts are never summed with anything else: "the app has a
+   * question about a bill" and "the app has a question about a category" are two
+   * different questions and one number would hide both.
+   */
+  badges?: Partial<Record<TabKey, number>>;
+}) {
   return (
     // `justify-around` sized each button to its own TEXT, so the targets
     // measured 29–36px wide with dead gutters between them — on the most-used
@@ -28,6 +43,7 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
     >
       {TABS.map(({ key, label, Icon }) => {
         const on = key === active;
+        const badge = badges?.[key] ?? 0;
         return (
           <button
             key={key}
@@ -37,7 +53,17 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
             style={{ color: on ? "#34c5e8" : "#7a8595" }}
           >
             <Icon size={21} />
-            {t(label)}
+            <span className="inline-flex items-center gap-1">
+              {t(label)}
+              {badge > 0 && (
+                <span
+                  className="rounded-full px-1.5 text-[10px] font-bold"
+                  style={{ background: "#e3b341", color: "#0b0f17" }}
+                >
+                  {badge}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}

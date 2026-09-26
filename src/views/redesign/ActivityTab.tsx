@@ -2,6 +2,7 @@ import { useState } from "react";
 import { RefreshCw, Check, Plus, ArrowDownLeft, HelpCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
+import { ReviewCard } from "./ReviewSheet";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -40,6 +41,8 @@ interface ActivityTaps {
   onRow?: (id: string) => void;
   onRefresh?: () => void | Promise<void>;
   onAdd?: () => void;
+  /** Open "Worth a look" — the review sheet. */
+  onReview?: () => void;
 }
 
 type FilterKey = "all" | "budget" | "review";
@@ -110,9 +113,18 @@ function FateBadge({ row }: { row: ActivityRow }) {
 export function ActivityTab({
   vm,
   taps = {},
+  reviewCount = 0,
 }: {
   vm: ActivityVM;
   taps?: ActivityTaps;
+  /**
+   * How many things the review engine noticed about the bills and charges. This
+   * tab is where the CHARGES are, which is what every suggestion is about, and it
+   * is a tab you open on purpose — so the card lives here rather than on Home,
+   * where it would be a fourth amber thing competing for the same glance.
+   * Zero renders nothing at all.
+   */
+  reviewCount?: number;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [refreshing, setRefreshing] = useState(false);
@@ -202,6 +214,9 @@ export function ActivityTab({
       </div>
 
       <div className="flex flex-col gap-4 p-4">
+        {/* ── Worth a look — the review layer's one entry point ── */}
+        {taps.onReview && <ReviewCard count={reviewCount} onOpen={taps.onReview} />}
+
         {/* ── Filter segmented bar ── */}
         <div
           className="flex gap-1 rounded-[13px] p-1"
