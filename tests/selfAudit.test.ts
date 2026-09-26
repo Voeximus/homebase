@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { selfAudit } from "../src/lib/selfAudit";
 import { DEFAULT_CATEGORIES } from "../src/lib/seed";
-import type { AppData, Recurring, Transaction } from "../src/types";
+import type { Account, AppData, Debt, Recurring, SavingsGoal, Transaction } from "../src/types";
 
 const NOW = new Date(2026, 7, 18, 12); // Aug 18 2026, local noon
 
@@ -25,6 +25,38 @@ const txn = (over: Partial<Transaction> = {}): Transaction => ({
   categoryId: "groceries",
   description: "Store",
   createdAt: "2026-08-16T12:00:00Z",
+  ...over,
+});
+
+const account = (over: Partial<Account> = {}): Account => ({
+  id: "acct",
+  name: "Joint",
+  owner: "Joint",
+  type: "checking",
+  balance: 1000,
+  sortOrder: 0,
+  createdAt: "2026-01-01T00:00:00Z",
+  ...over,
+});
+
+const debt = (over: Partial<Debt> = {}): Debt => ({
+  id: "d",
+  name: "Debt",
+  balance: 1000,
+  originalBalance: 2000,
+  color: "#888888",
+  createdAt: "2026-01-01T00:00:00Z",
+  ...over,
+});
+
+const goal = (over: Partial<SavingsGoal> = {}): SavingsGoal => ({
+  id: "g",
+  name: "Goal",
+  saved: 100,
+  target: 1000,
+  icon: "🎯",
+  color: "#888888",
+  createdAt: "2026-01-01T00:00:00Z",
   ...over,
 });
 
@@ -207,6 +239,252 @@ describe("check 5 — a split must not resize the charge", () => {
       NOW,
     );
     expect(byId(r, "splits-sum").status).toBe("ok");
+  });
+});
+
+describe("check 8 — a link must point at something that still exists", () => {
+  it("catches the real $165 hole: four payments left pointing at a deleted bill", () => {
+    // The exact shape the live ledger carried on 2026-09-26. A phantom $35/month
+    // card-payment bill was deleted by hand; its four payments stayed behind,
+    // pointing at a recurring row that no longer exists. Checks 6 and 7 both read
+    // these rows and both step over them in silence (`if (!rec) continue`), so
+    // $165 of real spending counted against no budget and settled no bill.
+    const gone = "b04df2be-824e-4e71-b332-b6ee07c94944";
+    const pay = (id: string, date: string, amount: number, monthKey: string, cat: string) =>
+      txn({
+        id,
+        date,
+        amount,
+        categoryId: cat,
+        description: "Mobile Banking payment to CRD 6813",
+        appliesTo: { kind: "bill", recurringId: gone, monthKey, day: 15 },
+      });
+    const r = selfAudit(
+      data({
+        transactions: [
+          pay("a", "2026-06-15", 85, "2026-06", "other"),
+          pay("b", "2026-07-06", 35, "2026-07", "other"),
+          pay("c", "2026-08-25", 25, "2026-09", "bills"),
+          pay("d", "2026-09-16", 20, "2026-10", "bills"),
+        ],
+      }),
+      NOW,
+    );
+    const c = byId(r, "links-point-somewhere");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("4 links");
+    expect(c.detail).toContain("$165.00"); // the whole hole, in dollars
+    expect(c.detail).toContain("2026-06-15"); // the date
+    expect(c.detail).toContain("Mobile Banking payment to CRD 6813"); // the description
+    expect(c.detail).toContain("$85.00"); // the amount
+    expect(c.detail).toContain("deleted bill");
+    // Nothing else objects, which is the point: this was invisible to all seven.
+    expect(r.failures).toBe(1);
+  });
+
+  it("catches a deleted debt", () => {
+    const r = selfAudit(
+      data({
+        transactions: [txn({ id: "x", description: "Extra to Cherry", appliesTo: { kind: "debt", debtId: "gone" } })],
+      }),
+      NOW,
+    );
+    const c = byId(r, "links-point-somewhere");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("deleted debt");
+    expect(c.detail).toContain("Extra to Cherry");
+  });
+
+  it("catches a deleted goal", () => {
+    const r = selfAudit(
+      data({
+        goals: [goal({ id: "kept" })],
+        transactions: [txn({ id: "x", description: "To savings", appliesTo: { kind: "goal", goalId: "gone" } })],
+      }),
+      NOW,
+    );
+    expect(byId(r, "links-point-somewhere").status).toBe("fail");
+    expect(byId(r, "links-point-somewhere").detail).toContain("deleted goal");
+  });
+
+  it("catches a reimbursable whose settling credit was deleted", () => {
+    const r = selfAudit(
+      data({
+        transactions: [
+          txn({
+            id: "front",
+            description: "Fronted for Mom",
+            categoryId: "bills",
+            appliesTo: { kind: "setaside", reason: "reimbursable", settled: true, settledByTxnId: "gone" },
+          }),
+        ],
+      }),
+      NOW,
+    );
+    expect(byId(r, "links-point-somewhere").status).toBe("fail");
+    expect(byId(r, "links-point-somewhere").detail).toContain("deleted charge");
+  });
+
+  it("catches a charge attributed to a deleted account", () => {
+    const r = selfAudit(
+      data({
+        accounts: [account({ id: "kept" })],
+        transactions: [txn({ id: "x", description: "Safeway", accountId: "gone" })],
+      }),
+      NOW,
+    );
+    expect(byId(r, "links-point-somewhere").status).toBe("fail");
+    expect(byId(r, "links-point-somewhere").detail).toContain("deleted account");
+  });
+
+  it("catches a bill whose linked debt was deleted, without claiming money is stranded", () => {
+    // A model row, not a ledger row — no dollars are sitting in the wrong place,
+    // so the detail must not invent a figure for them.
+    const r = selfAudit(
+      data({ recurring: [bill({ id: "card", name: "Card payment", linkedDebtId: "gone" })] }),
+      NOW,
+    );
+    const c = byId(r, "links-point-somewhere");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("the bill Card payment points at a deleted debt");
+    expect(c.detail).not.toContain("of real spending");
+  });
+
+  it("counts LINKS, not rows — one charge can dangle twice", () => {
+    // A bill payment on a deleted account, against a deleted bill: two broken
+    // links, one row. The count has to say two or the detail is lying about how
+    // much is loose.
+    const r = selfAudit(
+      data({
+        transactions: [
+          txn({
+            id: "x",
+            description: "Cherry",
+            accountId: "gone",
+            appliesTo: { kind: "bill", recurringId: "gone", monthKey: "2026-08", day: 24 },
+          }),
+        ],
+      }),
+      NOW,
+    );
+    const c = byId(r, "links-point-somewhere");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("2 links");
+    expect(c.detail).toContain("deleted bill and account");
+  });
+
+  it("passes when every link resolves, and says how many it checked", () => {
+    const r = selfAudit(
+      data({
+        accounts: [account()],
+        debts: [debt({ id: "cherry-debt" })],
+        goals: [goal({ id: "trip" })],
+        recurring: [bill({ id: "card", name: "Card payment", linkedDebtId: "cherry-debt" })],
+        transactions: [
+          txn({ id: "a", accountId: "acct" }),
+          txn({ id: "b", accountId: "acct", appliesTo: { kind: "debt", debtId: "cherry-debt" } }),
+          txn({ id: "c", accountId: "acct", appliesTo: { kind: "goal", goalId: "trip" } }),
+        ],
+      }),
+      NOW,
+    );
+    const c = byId(r, "links-point-somewhere");
+    expect(c.status).toBe("ok");
+    expect(c.detail).toContain("All 6 links"); // 3 accountIds + 1 debt + 1 goal + 1 linkedDebtId
+  });
+
+  it("passes on an appliesTo that names nothing — a transfer has no ids to dangle", () => {
+    const r = selfAudit(data({ transactions: [txn({ id: "x", appliesTo: { kind: "transfer" } })] }), NOW);
+    expect(byId(r, "links-point-somewhere").status).toBe("ok");
+  });
+
+  it("the healthy household still passes, now across eight checks", () => {
+    const r = selfAudit(
+      data({
+        accounts: [account()],
+        recurring: [bill({ id: "rent", name: "Rent", amount: 1732.16, dueDays: [1] })],
+        transactions: [txn({ accountId: "acct" })],
+      }),
+      NOW,
+    );
+    expect(r.clean).toBe(true);
+    expect(r.checks.length).toBe(8);
+  });
+});
+
+// ── The Cherry double-count, and why it is NOT a check ─────────────────────────
+//
+// On 24 Sep 2026 the same $151.72 Cherry payment was in the ledger twice: the real
+// bank charge claimed the DEBT while a hand-written "(already paid)" marker claimed
+// the BILL. No rule was broken — which is the finding. Check 7 cannot see it,
+// because the two rows claim different KINDS, and seeing that they are the same
+// obligation needs a seven-day date window plus an amount match: two tuned
+// constants, in the file whose whole claim is that it has none.
+//
+// So these tests assert the BOUNDARY rather than a failure. They are the guard
+// against someone later slipping a threshold in here, where the screen promises the
+// user that anything it reports is certain. The Cherry shape belongs in the
+// suggestions layer, which is allowed to be probably-right and says so.
+describe("the Cherry shape stays out of the exact layer", () => {
+  const cherry = (over: Partial<Recurring> = {}) =>
+    bill({ id: "cherry", name: "Cherry", amount: 151.72, dueDays: [24], linkedDebtId: "cherry-debt", ...over });
+
+  const marker = txn({
+    id: "manual",
+    date: "2026-08-24",
+    amount: 151.72,
+    categoryId: "bills",
+    description: "Cherry (already paid)",
+    appliesTo: { kind: "bill", recurringId: "cherry", monthKey: "2026-08", day: 24, settled: true },
+  });
+
+  const bankRow = txn({
+    id: "bank",
+    date: "2026-08-24",
+    amount: 151.72,
+    categoryId: "bills",
+    description: "CHERRY TECHNOLOGIES",
+    accountId: "acct",
+    provider: "plaid",
+    appliesTo: { kind: "debt", debtId: "cherry-debt", settled: true },
+  });
+
+  const cherryData = (over: Partial<AppData> = {}) =>
+    data({
+      accounts: [account()],
+      debts: [debt({ id: "cherry-debt", name: "Cherry" })],
+      recurring: [cherry()],
+      ...over,
+    });
+
+  it("the double-count raises NO exact failure — every link resolves and no rule is broken", () => {
+    const r = selfAudit(cherryData({ transactions: [marker, bankRow] }), NOW);
+    expect(byId(r, "links-point-somewhere").status).toBe("ok");
+    expect(byId(r, "one-payment-per-cycle").status).toBe("ok"); // different kinds, invisible to it
+    expect(r.failures).toBe(0);
+  });
+
+  it("the healthy single-row version passes", () => {
+    const r = selfAudit(cherryData({ transactions: [bankRow] }), NOW);
+    expect(r.failures).toBe(0);
+  });
+
+  it("a hand-written paid marker with no bank charge behind it still passes", () => {
+    // Already a documented rejection in this file's header: a manual marker
+    // legitimately has no matching charge, so a check on that fires on correct use.
+    const r = selfAudit(cherryData({ transactions: [marker] }), NOW);
+    expect(r.failures).toBe(0);
+  });
+
+  it("a bill with no linked debt is untouched by any of this", () => {
+    const r = selfAudit(
+      cherryData({
+        recurring: [cherry({ linkedDebtId: undefined })],
+        transactions: [marker, bankRow],
+      }),
+      NOW,
+    );
+    expect(r.failures).toBe(0);
   });
 });
 

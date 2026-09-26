@@ -48,6 +48,28 @@ import { monthKeyOf } from "./format";
 //   · cash vs the ledger's own sum — the app has no independent second source
 //     for cash on the client; the bank IS the source, and it is already the
 //     anchor. Comparing a number to itself proves nothing.
+//   · a hand-written "already paid" marker sitting beside a real bank row for the
+//     same obligation — the Cherry $151.72 of 24 Sep 2026, counted twice, and the
+//     nearest miss this list will ever hold. To avoid firing on a correct ledger
+//     it needs TWO judgement calls: a date window, because the bank row claims the
+//     DEBT and so carries no monthKey (the only mapping available is billCycleFor
+//     and its seven-day grace), and an amount match, so a genuine second payment
+//     toward the same loan inside one cycle is not called a duplicate. Two tuned
+//     constants, in the file whose whole claim is that it has none. Note that
+//     check 7 cannot see it either: the two rows claimed different KINDS — the
+//     bank row the debt, the hand-written row the bill — and that asymmetry IS the
+//     defect, invisible without the window. It belongs in the suggestions layer,
+//     where its thresholds can be said out loud and the user can judge them.
+//   · an active bill linked to a debt at $0 is a phantom — pay a credit card to
+//     zero and the debt reads $0 while the bill row is still entirely correct,
+//     because the card gets used again next month. schedule.ts already gates the
+//     calendar on the live balance so it self-corrects both ways. A check that
+//     fires the month you pay off your card teaches you to ignore the next one.
+//   · one credit settles at most one reimbursable — on 2026-09-02 a $40 front and
+//     a $120 front were both repaid by ONE $160 credit. That is a correct
+//     household event the model cannot express, so a one-to-one rule reports it
+//     as a defect. Only the dangling-reference half of the idea is exact, and
+//     that half is now check 8.
 
 export type CheckStatus = "ok" | "fail";
 
@@ -82,6 +104,7 @@ export function selfAudit(data: AppData, now: Date = new Date()): AuditResult {
     splitsSumToTheirTransaction(data),
     aSettledBillIsActuallySettled(data, now),
     onePaymentPerBillCycle(data),
+    linksPointSomewhere(data),
   ];
   const failures = checks.filter((c) => c.status === "fail").length;
   return { checks, failures, clean: failures === 0 };
@@ -298,12 +321,16 @@ function splitsSumToTheirTransaction(data: AppData): AuditCheck {
   };
 }
 
-/** The installment slot a stored `appliesTo.day` belongs to. Rows written before
+/** The installment slot a stored `appliesTo.day` belongs to. Exported because the
+ *  suggestions layer asks the same question and must not become a SIXTH
+ *  implementation of it — there are already five in this codebase, and every one
+ *  of them is a chance for two screens to disagree about which cycle a payment
+ *  belongs to. Rows written before
  *  installmentIndex existed carry only the day, so defaulting them all to 0
  *  would collapse a two-installment bill (support to family, paid on the 15th
  *  AND the 30th) into one cycle and read every second payment as a duplicate.
  *  MIRROR of installmentIndexForDay in supabase/functions/plaid/index.ts. */
-function cycleKeyOf(at: { recurringId?: string; monthKey?: string; day?: number; installmentIndex?: number }, dueDays?: number[]): string {
+export function cycleKeyOf(at: { recurringId?: string; monthKey?: string; day?: number; installmentIndex?: number }, dueDays?: number[]): string {
   let idx = at.installmentIndex;
   if (idx == null) {
     const days = dueDays && dueDays.length ? [...dueDays].sort((a, b) => a - b) : [];
@@ -428,6 +455,103 @@ function onePaymentPerBillCycle(data: AppData): AuditCheck {
     detail: offenders.length
       ? `${offenders.length} bill cycle${offenders.length > 1 ? "s are" : " is"} claimed by more than one charge, counting $${doubled.toFixed(2)} of spending twice: ${offenders.join("; ")}.`
       : `Every settled bill cycle is claimed by exactly one charge.`,
+  };
+}
+
+// ── 8. Every link must point at something that still exists ───────────────────
+/**
+ * A ledger row names other rows by id — `appliesTo.recurringId`,
+ * `appliesTo.debtId`, `appliesTo.goalId`, `appliesTo.settledByTxnId`, and
+ * `accountId` — and a recurring row names the card it pays with `linkedDebtId`.
+ * Delete the thing being named and the id stays behind. Nothing in the app has
+ * ever checked, and the two checks above that read bill links both open with
+ * `if (!rec) continue` — they step over a broken link in SILENCE, which is the
+ * worst available response to one.
+ *
+ * Exact for the same reason check 3 is exact: this is set membership, not
+ * arithmetic. Either the id resolves or it does not. There is no ledger in which
+ * pointing at a row that does not exist is correct, so there is no tolerance to
+ * tune and no case to argue.
+ *
+ * It also has the same consequence as check 3 — MONEY ON NO SCREEN. A row
+ * carrying any `appliesTo` is held out of the budget partition (plan.ts, the
+ * `!t.appliesTo` arm of spentByCategoryBetween) and out of every bill cycle
+ * (`!rec` → skip), so a dangling link is real spending that counts against no
+ * budget line, settles no bill, and shows a blank name wherever the bill's name
+ * would be resolved.
+ *
+ * The app opened exactly this hole on 2026-09-26. A phantom $35/month
+ * card-payment bill was deleted by hand, and its four payments — $85.00, $35.00,
+ * $25.00 and $20.00, $165.00 in all — were left pointing at a recurring row that
+ * no longer exists. The hand repair created a new silent hole while closing an
+ * old one, which is the argument for this check made by the data rather than by
+ * an opinion.
+ *
+ * ONE ASSUMPTION, stated because it is the only way this check can lie: it reads
+ * whole-table sets, so it is exact only on a COMPLETE load. The app itself is fine
+ * — the store selects every ledger row rather than a page. But `settledByTxnId`
+ * points at another TRANSACTION, so any caller that hands this function a WINDOW
+ * of the ledger (tests/live-selfaudit.test.ts takes the newest 2000 rows;
+ * scripts/snapshot.mjs takes 500) can make an old credit look deleted. Today the
+ * whole table fits inside both windows. The day it does not, either the window
+ * goes or `settledByTxnId` does — a check that can be wrong does not belong here.
+ */
+function linksPointSomewhere(data: AppData): AuditCheck {
+  const recurringIds = new Set(data.recurring.map((r) => r.id));
+  const debtIds = new Set(data.debts.map((d) => d.id));
+  const goalIds = new Set(data.goals.map((g) => g.id));
+  const txnIds = new Set(data.transactions.map((t) => t.id));
+  const accountIds = new Set(data.accounts.map((a) => a.id));
+
+  const offenders: string[] = [];
+  let links = 0;
+  let broken = 0;
+  let stranded = 0; // dollars sitting on ledger rows whose link is broken
+
+  for (const t of data.transactions) {
+    const dangling: string[] = [];
+    const point = (id: string | undefined, exists: Set<string>, what: string) => {
+      if (!id) return;
+      links++;
+      if (exists.has(id)) return;
+      broken++;
+      dangling.push(what);
+    };
+    const at = t.appliesTo;
+    point(at?.recurringId, recurringIds, "bill");
+    point(at?.debtId, debtIds, "debt");
+    point(at?.goalId, goalIds, "goal");
+    point(at?.settledByTxnId, txnIds, "charge");
+    point(t.accountId, accountIds, "account");
+    if (!dangling.length) continue;
+    stranded += t.amount;
+    offenders.push(
+      `${t.date} ${t.description} ($${t.amount.toFixed(2)}) points at a deleted ${dangling.join(" and ")}`,
+    );
+  }
+
+  for (const r of data.recurring) {
+    if (!r.linkedDebtId) continue;
+    links++;
+    if (debtIds.has(r.linkedDebtId)) continue;
+    broken++;
+    offenders.push(`the bill ${r.name} points at a deleted debt`);
+  }
+
+  const many = broken > 1;
+  const money =
+    stranded > CENT
+      ? `, so $${stranded.toFixed(2)} of real spending counts against no budget and settles no bill`
+      : "";
+  return {
+    id: "links-point-somewhere",
+    question: "Does every charge still point at something real?",
+    status: broken ? "fail" : "ok",
+    detail: broken
+      ? `${broken} link${many ? "s" : ""} point${many ? "" : "s"} at something that was deleted${money}: ${offenders.join("; ")}. Worth a look has a one-tap fix for this.`
+      : links
+        ? `All ${links} links between your charges, bills, debts, goals and accounts point at something that still exists.`
+        : `Nothing in the ledger links to a bill, debt, goal or account yet, so there is nothing that can dangle.`,
   };
 }
 
