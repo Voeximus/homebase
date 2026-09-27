@@ -80,7 +80,7 @@ everything you asked.
 
 ---
 
-## The eleven questions you can ask
+## The questions you can ask
 
 **You never send a person.** The door works out whether it is Gino or Xinyan asking
 from the key you used, and it refuses the call outright if you put `person` in the
@@ -320,6 +320,161 @@ thing in this reply.
 
 ---
 
+---
+
+## The finance questions Phase 2 added
+
+Phase 1 answered the summary questions. These answer the detail ones, and two of them
+are a reversal worth knowing about: **individual charges and search used to be
+forbidden** and are not any more. He made that trade deliberately — the app shows him
+those rows, and an assistant that cannot see a charge cannot answer "what was that $47
+on Tuesday". The one part he did not trade away is the raw bank descriptor, and it is
+still absent under every tool.
+
+### `finance.categories`
+
+**Takes nothing.** `{}`
+
+**Read this before you write a category anywhere.** The write door refuses a category
+id that is not on this list, and it refuses it because a made-up id writes a charge
+that belongs to no budget line and shows on no bar.
+
+**What comes back:** every category, with `kind` (income or expense) and
+`on_a_budget_line`.
+
+**`other` is the absence of a category, not a category.** Filing one charge there is
+fine. Teaching a merchant rule to use it is refused, because that stops the app ever
+trying on that merchant again.
+
+### `finance.transaction`
+
+**Takes an id.** `{"id": "…"}`
+
+**What comes back:** one charge in full — amount, date, category, the merchant's
+cleaned name, what it is attached to, and its flags. `applies_to` is the field worth
+reading twice: a charge quietly attached to a bill is recorded as PAYING that bill.
+
+### `finance.search_transactions`
+
+**Every filter is optional.** `from`, `to`, `min_amount`, `max_amount`, `category_id`,
+`merchant`, `kind`, `needs_review`, `still_processing`, `from_bank`, `unattached`,
+`limit`.
+
+**No window means the whole ledger, newest first.** The door does not quietly narrow
+it to a recent month — so if you want a month, say the month, and then **say the
+window you used** before you say any number.
+
+**It tells you when there are more.** `found` is the honest count before the cap and
+`more` is true when you are not seeing all of them. Never report `returned` as if it
+were `found`.
+
+**`merchant` matches the way the app's own labeller matches**, so "trader joes" finds
+the charge however the bank spelled it.
+
+### `finance.accounts`
+
+**Takes nothing.** `{}`
+
+**What comes back:** every account including the credit cards, each flagged
+`is_credit`. On a cash account the balance is what can be spent; on a card it is what
+is **owed**. Never add the two together.
+
+**Not in it:** any card or account number.
+
+### `finance.bills`
+
+**Takes nothing**, or `{"include_off": true}` to see the switched-off rows too.
+
+**What comes back:** every recurring row in full — cadence, due days, the window it is
+alive in, and `planned_monthly`, which is what the plan actually prices it at. For a
+variable bill that is the amount somebody recorded, else the rolling average of real
+payments.
+
+`live_today` is a separate fact from `active`: a bill paused until November is active
+and dormant at the same time.
+
+### `finance.bill_calendar`
+
+**Takes a month**, or nothing for this month. `{"month": "2026-09"}`
+
+**What comes back:** the month's bills on their DUE days, marked paid or not.
+`paid_on` is when the payment actually landed, which can be in an earlier month.
+`amount_is_an_estimate` means the figure is a rolling average, so do not say it as a
+price.
+
+### `finance.paid_bills`
+
+**Takes a month**, or nothing for all of them.
+
+**An empty list is the healthy answer.** A row exists here only where somebody set the
+paid state by hand, against what the ledger says.
+
+### `finance.merchant_rules`
+
+**Takes nothing.** `{}`
+
+**What comes back:** what the app has LEARNED about a merchant. A learned rule beats
+every built-in rule, so a wrong one is permanent until it is changed. `bill` means the
+charge pays that bill, `variable` means ordinary spending in a category, `skip` means
+the feed drops the charge entirely.
+
+### `finance.firepower`
+
+**Takes nothing.** `{}`
+
+**What comes back:** `available` — what is really free this month to aim at the debt —
+plus the three figures it is made of, so the number is checkable rather than taken on
+faith.
+
+Overspending the budget and spending in a category no line watches both come straight
+off it. Spending **under** the budget does not add to it.
+
+### `finance.next_bills`
+
+**Takes nothing.** `{}`
+
+**What comes back:** what is still owed out of the paycheck that already landed. The
+window opens at the **start of the pay cycle, not today**, so a bill whose due day has
+passed is still in the list, marked `overdue`.
+
+### `finance.bank_status`
+
+**Takes nothing.** `{}`
+
+**Ask this when a balance looks wrong.** Every figure on the finance side comes from
+the last good sync, and a connection that needs re-authorising makes those numbers
+stale without making them look stale.
+
+### `finance.bank_pending`
+
+**Takes nothing.** `{}`
+
+**What comes back:** charges the bank has taken but not posted. They are **not in the
+ledger** — that is what stops them being counted twice when they post. The amount is
+signed the way the bank reports it: negative is money going out.
+
+### `system.changes`
+
+**Takes nothing**, or `{"limit": 20, "undoable_only": true}`
+
+**This is "what did you change?", and it is the question that makes the write door's
+bargain honest.** Every change the write door makes is recorded here with the sentence
+it said at the time and the token that reverses it.
+
+`state` is one of four, and `means` says each one in plain words:
+
+| state | what it means |
+|---|---|
+| `undoable` | it landed, and `system.undo` can put it back |
+| `undone` | it landed and has since been put back |
+| `abandoned` | it did **not** happen — the row had changed, so the door stopped |
+| `pending` | the door stopped mid-call and **nobody knows** whether it landed |
+
+**Never read `pending` as done, and never read it as not done.** Say that it needs
+checking in the app.
+
+---
+
 ## When a call is refused
 
 Every refusal comes back with one plain sentence written to be said as it stands.
@@ -354,33 +509,40 @@ that the app can do it.
 
 **Never, at any point, by anyone:**
 
-- Move money, pay a bill, or touch the bank connection.
-- Mark a bill as paid, or settle a bill cycle.
-- Delete anything.
-- Return the list of transactions, or anything about one merchant or one charge.
-- Change a debt balance or a savings goal.
+- The raw bank descriptor on a charge. The cleaned merchant name comes back from
+  `finance.transaction`, `finance.search_transactions` and `finance.bank_pending`;
+  what the bank literally wrote does not, under any tool. It is the one string in the
+  ledger that nothing in the app has ever cleaned.
+- Any card or account number.
+- Touching the bank connection. Disconnecting one hard-deletes the accounts and their
+  whole transaction history, and nothing can put real bank history back — so it takes
+  a code he types in the app, not a message to you.
+- Asking about the other person. Each key answers about its own owner.
+- Writing anything. **This door has no write verb anywhere in it.** If you are asked
+  to change something with the key you have, say plainly that you can only read.
 
 **Reads that are planned but not built yet.** Do not attempt them and do not
-approximate them from the eleven above:
+approximate them from the tools above:
 
-- the lowest the balance gets and the day it happens
-- what is due before the next paycheck
-- how much is free each month to aim at the debt
+- the lowest the balance gets and the day it happens, and the debt-free date. The
+  maths exists, but the screen it came from does not — so there is nothing to check a
+  spoken number against. `finance.firepower` and `finance.next_bills` were absent for
+  the same reason until the assembly behind them moved into a shared function.
 - how many days were logged — the streak
 - a barcode looked up
-- bill dates in a shape that can go on a calendar
 
-**Writes are a separate door with a separate key.** You are holding the read key,
-and this door has no write verb anywhere in it. If you are asked to log or change
-anything with the key you have, say plainly that you can only read.
+**What changed in Phase 2, so you do not hold an old rule.** Individual charges and
+search used to be forbidden here, in these words: "returning individual ledger rows
+turns a chat into a copy of the ledger". He reversed that deliberately. What he did
+not reverse is the bank descriptor above.
 
-For when somebody asks what the other door does: three writes land straight away —
-logging a weigh-in, logging one of the household's saved meals by name, and writing
-a reminder for a given time. Four more are **queued**: categorising a charge,
-recording what a variable bill came to, adding a cash charge, and logging free-form
-food. Queued means that door writes down what was asked and **changes nothing** —
-the change happens when one of them taps it in the app, and it expires after a day
-if nobody does.
+**Writes are a separate door with a separate key.** For when somebody asks what it
+does: it can change everything the app can change about the money side — add and
+delete a hand-entered charge, categorise and split one, attach one to a bill or
+release it, record a bill as paid, edit or turn off a bill, teach a merchant rule, set
+an account balance, add a debt. **Every one of those records what it replaced and
+hands back a token**, and `system.undo` on that door puts it back. `system.changes` on
+THIS door is how you see what it has done.
 
 ## Two habits that matter more than the rest
 

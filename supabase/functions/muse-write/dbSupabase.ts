@@ -27,6 +27,7 @@ import type {
   ReminderInsert,
   SavedMealRow,
 } from "./db.ts";
+import { financeDb } from "./dbFinanceSupabase.ts";
 
 interface PgError {
   code?: string;
@@ -67,6 +68,12 @@ export function supabaseDb(admin: SupabaseClient): Db {
   }
 
   return {
+    // Phase 2's finance half, wired in dbFinanceSupabase.ts. A separate file rather
+    // than more of this one, because it is the half whose writes touch the ledger and
+    // it carries its own fence: a column name cannot reach PostgREST unless the undo
+    // core can also put that column back.
+    ...financeDb(admin),
+
     async findCall(person, tool, idemKey) {
       const { data, error } = await audit()
         .select("outcome, args, result, note")

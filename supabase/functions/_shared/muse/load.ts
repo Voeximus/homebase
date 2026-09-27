@@ -19,6 +19,7 @@ import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { Db } from "./paging.ts";
 import { readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
+import { createFinanceExtras, type FinanceExtras } from "./loadFinance.ts";
 import {
   toAppData,
   toBodyWeight,
@@ -34,7 +35,11 @@ function once<T>(make: () => Promise<T>): () => Promise<T> {
   return () => (p ??= make());
 }
 
-export interface Loader {
+// Phase 2's finance parity reads three tables nothing else touches (the bank's
+// in-flight charges, the connections' health, the change log). They are declared and
+// mapped in loadFinance.ts and mixed in here, so every tool still sees ONE loader
+// and every read still goes through readAll.
+export interface Loader extends FinanceExtras {
   /** Everything the finance maths modules take. */
   appData(): Promise<AppData>;
   /** One person's weigh-ins, oldest first — the same filter and sort the weight
@@ -109,6 +114,7 @@ export function createLoader(db: Db): Loader {
   const days = new Map<string, Promise<DayLog>>();
 
   return {
+    ...createFinanceExtras(db),
     appData,
     weights,
     macroTarget,

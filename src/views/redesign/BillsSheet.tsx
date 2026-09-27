@@ -2,10 +2,9 @@ import { useState } from "react";
 import { Receipt, X, CalendarDays, ChevronDown, ChevronRight } from "lucide-react";
 import { t } from "../../lib/i18n";
 import { catColor, catIcon } from "../../lib/catColor";
-import { dueBeforeNextPayday, type MonthCalendar, type MonthCalBill } from "../../lib/schedule";
+import { type MonthCalendar, type MonthCalBill } from "../../lib/schedule";
 import { BillCalendar } from "./BillCalendar";
-import { payCycleFor } from "../../lib/plan";
-import { isoDate } from "../../lib/format";
+import { nextBills } from "../../lib/headline";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -132,18 +131,19 @@ export function BillsSheet({
   // 1st, and that decision is why bills didn't move to pay cycles with the budget.
   // What the cycle answers here is a different question: of the check that's
   // already landed, how much is still spoken for before the next one arrives.
-  const cycle = payCycleFor(base);
+  // The window — which months it spans and which day it opens on — moved into
+  // src/lib/headline.ts, because the Muse read door has to answer "what is still
+  // due before the next check" with the same window this sheet draws, and a window
+  // assembled in a view module is a window the door would have had to assemble a
+  // second time. `getMonth` stays injected: this sheet already holds a memoised
+  // builder and the door builds one from the ledger it loaded, and which of those
+  // is used is not what has to match. The window is.
+  //
+  // It opens at cycle.start, not today — an unpaid bill whose due day has already
+  // passed inside this cycle still comes out of the paycheck already in the account.
+  const beforePayday = nextBills(base, getMonth);
+  const cycle = beforePayday.cycle;
   const daysLeft = Math.max(0, cycle.days - cycle.dayIndex);
-  // Shared spelling, not a local copy — this window is compared against ledger
-  // dates, so the two conversions have to be the same function.
-  const todayISO = isoDate(base);
-  // The window can cross a month boundary, so hand over every month it touches.
-  const [endY, endM] = cycle.end.split("-").map(Number);
-  const windowMonths =
-    endY === mc.year && endM - 1 === mc.month ? [mc] : [mc, getMonth(endY, endM - 1)];
-  // cycle.start, not today — an unpaid bill whose due day has already passed
-  // inside this cycle still comes out of the paycheck already in the account.
-  const beforePayday = dueBeforeNextPayday(windowMonths, todayISO, cycle.end, cycle.start);
 
   return (
     <div

@@ -19,6 +19,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { azDateISO, clockNow, nowAZ } from "../supabase/functions/_shared/muse/az.ts";
 import { handleWrite, WRITES_PER_HOUR, type Deps, type Secrets } from "../supabase/functions/muse-write/handler.ts";
 import { REMIND_PER_DAY, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
+import { FINANCE_WRITE_TOOLS } from "../supabase/functions/muse-write/toolsFinance.ts";
+import { FinanceFake } from "./museFinanceFake.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
 import type {
   CallRecord,
@@ -60,7 +62,12 @@ interface MealDoc {
   updatedAt: string;
 }
 
-class Fake implements Db {
+// Phase 2's finance half comes from tests/museFinanceFake.ts, and it is EXTENDED
+// rather than copied so both test files drive one in-memory ledger — the same reason
+// the two doors share one az.ts. The `ledger` field below stays this file's own: the
+// assertions that read it are proving that a PHASE 1 tool touches no money row, and
+// that is still true.
+class Fake extends FinanceFake implements Db {
   audit: AuditRow[] = [];
   calls = new Map<string, number>();
   reminders: { id: string; person: Person; dueAt: string; repeats: string; message: string; sentAt: string | null }[] = [];
@@ -82,6 +89,15 @@ class Fake implements Db {
   private id(prefix: string) {
     this.seq += 1;
     return `${prefix}-${String(this.seq).padStart(8, "0")}-0000-0000-0000-000000000000`.slice(0, 36);
+  }
+
+  constructor() {
+    super();
+    // The two rows Phase 1's tests seeded into `ledger` also belong in the shared
+    // ledger now, because the finance tools read from there. Same ids, so every
+    // existing assertion still names the same charge and the same bill.
+    this.tables.transactions.push({ ...this.ledger.transactions[0], description: "Parking", created_at: "2026-09-20T12:00:00Z" });
+    this.tables.recurring.push({ ...this.ledger.recurring[0], direction: "out", active: true, variable: false });
   }
 
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null> {
@@ -312,14 +328,19 @@ describe("a retry does not write twice", () => {
 // tool added to tools.ts and not to this list fails the first test here, the same
 // way the read door's own catalogue check works.
 
-/** A call that each tool accepts, so the loops below can drive all seven. */
+/**
+ * A call that each PHASE 1 tool accepts, so the loops below can drive all four.
+ *
+ * The finance tools moved to tests/museFinance.test.ts with Phase 2, because they
+ * stopped being the same kind of thing: each one now records a before-state and hands
+ * back an undo token, and the loop below asserts "queued" or "direct" — a question
+ * those tools no longer answer. The catalogue check underneath compares the UNION of
+ * the two lists against the registry, so neither file can fall behind it.
+ */
 const EVERY_WRITE: { tool: string; args: Record<string, unknown>; queued: boolean }[] = [
   { tool: "health.log_weight", args: { weight: 198.4 }, queued: false },
   { tool: "health.log_saved_meal", args: { name: "Usual breakfast" }, queued: false },
   { tool: "schedule.remind", args: { message: "read the electric bill", at: "2026-09-27T09:00" }, queued: false },
-  { tool: "finance.categorize_charge", args: { transaction_id: TXN_ID, category_id: "groceries" }, queued: true },
-  { tool: "finance.note_known_amount", args: { recurring_id: BILL_ID, amount: 123.45, month_key: "2026-09" }, queued: true },
-  { tool: "finance.add_transaction", args: { amount: 6, category_id: "transport", description: "parking" }, queued: true },
   { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: true },
 ];
 
@@ -332,7 +353,11 @@ function stocked(): Fake {
 
 describe("every tool in the catalogue, not just the first one", () => {
   it("names all of them, so this list cannot fall behind tools.ts", () => {
-    expect(EVERY_WRITE.map((w) => w.tool).sort()).toEqual([...TOOL_NAMES].sort());
+    // Both halves, against the registry. A tool added to Phase 1's file and to neither
+    // list fails here; a tool added to Phase 2's registry and not driven by
+    // tests/museFinance.test.ts fails that file's own catalogue check.
+    const covered = [...EVERY_WRITE.map((w) => w.tool), ...Object.keys(FINANCE_WRITE_TOOLS)];
+    expect(covered.sort()).toEqual([...TOOL_NAMES].sort());
   });
 
   for (const { tool, args } of EVERY_WRITE) {
@@ -407,13 +432,24 @@ describe("the caps hold", () => {
 
 // ── the queued path ──────────────────────────────────────────────────────────
 
+// PHASE 1 HAD FOUR QUEUED TOOLS. THREE OF THEM ARE GONE, and the tests that proved
+// they changed nothing went with them — because the reason they changed nothing was
+// that nothing in the app ever read the queue. Searching src/ for muse_pending finds no
+// hits, so a queued row sat there until cron-reminders marked it expired a day later.
+// They are direct writes with an undo now, and tests/museFinance.test.ts proves the
+// thing that actually matters about them: the before-state is recorded, the change
+// lands, and system.undo puts it back byte for byte.
+//
+// health.log_meal is still queued, so the machinery is still here and still tested. The
+// queued path was worth keeping for exactly one case: free-form food has no
+// before-state worth restoring, only a meal to take back out.
 describe("a queued write asks and changes nothing", () => {
-  it("categorize_charge writes one waiting row, pushes, and leaves the ledger identical", async () => {
+  it("log_meal writes one waiting row, pushes, and leaves the ledger identical", async () => {
     const db = new Fake();
     const before = JSON.stringify(db.ledger);
 
     const r = await handleWrite(
-      post("finance.categorize_charge", { transaction_id: TXN_ID, category_id: "groceries" }),
+      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
       deps(db),
     );
 
@@ -421,48 +457,35 @@ describe("a queued write asks and changes nothing", () => {
     expect(r.body.result).toMatchObject({ queued: true });
     expect(JSON.stringify(db.ledger)).toBe(before);
     expect(db.pending).toHaveLength(1);
-    expect(db.pending[0].tool).toBe("finance.categorize_charge");
+    expect(db.pending[0].tool).toBe("health.log_meal");
     expect(db.pending[0].person).toBe("gino");
     expect(db.pushes).toHaveLength(1);
     expect(db.pushes[0].owner).toBe("Gino");
     expect(String(r.body.message)).toContain("waiting in the app");
+    // A queued write writes NOTHING, including no undo row: there is nothing to undo
+    // until he taps it.
+    expect(db.changes).toHaveLength(0);
+    expect(db.mealDays.size).toBe(0);
   });
 
-  it("names the bill in a note_known_amount, and still touches nothing", async () => {
-    const db = new Fake();
-    const before = JSON.stringify(db.ledger);
-    const r = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 101.24, month_key: "2026-09" }),
-      deps(db),
-    );
-    expect(r.status).toBe(200);
-    expect(db.pending[0].summary).toBe("Record Electric for 2026-09 as $101.24.");
-    expect(JSON.stringify(db.ledger)).toBe(before);
-    expect(db.ledger.recurring[0].known_amount).toBeNull();
-  });
-
-  it("refuses a charge id that is not in the ledger", async () => {
-    const db = new Fake();
-    const r = await handleWrite(
-      post("finance.categorize_charge", { transaction_id: "00000000-0000-0000-0000-000000000000", category_id: "dining" }),
-      deps(db),
-    );
-    expect(r.status).toBe(404);
-    expect(db.pending).toHaveLength(0);
-  });
-
-  it("refuses an added charge that tries to settle a bill", async () => {
+  it("still refuses an added charge that tries to settle a bill, now that adding is direct", async () => {
+    // The per-tool field list is what refuses it, and the sentence is LOADED_FIELDS'.
+    // This is the guard that matters most in the whole door: a charge that can point at
+    // a bill settles a bill cycle on the way in, which is how a $6 parking charge
+    // marked a $1,732 rent paid. Making the write DIRECT did not widen it.
     const db = new Fake();
     const r = await handleWrite(
       post("finance.add_transaction", {
-        date: AZ_TODAY, amount: 6, category_id: "transport",
+        date: AZ_TODAY, amount: 6, category_id: "transport", description: "parking",
         applies_to: { kind: "bill", recurringId: BILL_ID, monthKey: "2026-09", day: 1 },
       }),
       deps(db),
     );
     expect(r.status).toBe(400);
     expect(String(r.body.message)).toContain("settle a bill");
-    expect(db.pending).toHaveLength(0);
+    // Only the seeded charge. Nothing was added and nothing was logged as a change.
+    expect(db.tables.transactions).toHaveLength(1);
+    expect(db.changes).toHaveLength(0);
   });
 });
 

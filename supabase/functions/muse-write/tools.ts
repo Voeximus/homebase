@@ -43,6 +43,7 @@
 import type { Db, MealDayRow, Person, Push } from "./db.ts";
 import { addDays, azDateISO, azWallClock, daysBetweenISO, isDateISO, parseInstant } from "../_shared/muse/az.ts";
 import { MESSAGE_CAP, MUSE_MARKER, scrubCap, wasChanged } from "../_shared/muse/scrub.ts";
+import { FINANCE_WRITE_TOOLS } from "./toolsFinance.ts";
 
 /** The push_subscriptions "owner" spelling, and the name a sentence uses. */
 export const DISPLAY: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -82,13 +83,11 @@ export interface Tool {
 
 const refuse = (status: number, say: string): Refusal => ({ ok: false, status, say });
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// A category id is a stable slug in the app's own list. That list is code
-// (src/lib/seed.ts DEFAULT_CATEGORIES) and it is deliberately NOT copied here:
-// a hand-made copy of the app's data is exactly the mirror that drifts. The door
-// checks the shape; the app resolves the id when he taps, and refuses one it does
-// not know.
-const SLUG = /^[a-z][a-z0-9-]{1,40}$/;
+// The id and category checks that used to live here moved to toolsFinance.ts with
+// the three tools that used them — and the category one changed shape on the way:
+// it checks the id against the app's OWN LIST (DEFAULT_CATEGORIES) instead of against
+// a slug pattern. A shape check passes a category the app does not know, and a charge
+// filed under one belongs to no budget line and appears on no bar.
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -100,8 +99,6 @@ function money(v: unknown): number | null {
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
   return v;
 }
-
-const dollars = (n: number) => `$${n.toFixed(2)}`;
 
 /**
  * The date this write is for. Defaults to Arizona's today — never the runtime's,
@@ -408,92 +405,30 @@ const remind: Tool = {
   },
 };
 
-// ── finance.categorize_charge (queued) ───────────────────────────────────────
-
-const categorizeCharge: Tool = {
-  kind: "queued",
-  does: "Ask for one charge to be put in a category, and optionally to remember that merchant.",
-  fields: ["transaction_id", "category_id", "learn_merchant"],
-  async run(payload, ctx) {
-    const id = typeof payload.transaction_id === "string" ? payload.transaction_id : "";
-    if (!UUID.test(id)) return refuse(400, "I need the charge's id, which the read door gives you.");
-    const category = typeof payload.category_id === "string" ? payload.category_id : "";
-    if (!SLUG.test(category)) return refuse(400, "I need a category id, like groceries or transport.");
-    const learn = payload.learn_merchant;
-    if (learn !== undefined && typeof learn !== "boolean") {
-      return refuse(400, "learn_merchant is either true or false.");
-    }
-    if (!(await ctx.db.transactionExists(id))) {
-      return refuse(404, "There is no charge with that id. It may have been deleted since you read it.");
-    }
-    // No merchant, no amount, no date in the sentence — he is looking at the
-    // charge on screen when he taps, and the sentence is also going back into an
-    // assistant's context.
-    const summary = learn
-      ? `Put one charge in ${category}, and remember that merchant.`
-      : `Put one charge in ${category}.`;
-    return queue(ctx, "finance.categorize_charge", { transaction_id: id, category_id: category, learn_merchant: learn === true }, summary);
-  },
-};
-
-// ── finance.note_known_amount (queued) ───────────────────────────────────────
-
-const noteKnownAmount: Tool = {
-  kind: "queued",
-  does: "Ask for what a variable bill actually came to this month to be recorded.",
-  fields: ["recurring_id", "amount", "month_key"],
-  async run(payload, ctx) {
-    const id = typeof payload.recurring_id === "string" ? payload.recurring_id : "";
-    if (!UUID.test(id)) return refuse(400, "I need the bill's id, which the read door gives you.");
-    const amount = money(payload.amount);
-    if (amount === null || amount < 0 || amount > 100_000) {
-      return refuse(400, "I need the amount off the bill as a number.");
-    }
-    const monthKey = payload.month_key;
-    if (monthKey !== undefined && !(typeof monthKey === "string" && /^\d{4}-\d{2}$/.test(monthKey))) {
-      return refuse(400, "The month goes in as 2026-09, or leave it out.");
-    }
-    const name = await ctx.db.recurringName(id);
-    if (name === null) return refuse(404, "There is no bill with that id.");
-
-    const forMonth = monthKey ? ` for ${monthKey}` : "";
-    const summary = `Record ${scrubCap(name, 40)}${forMonth} as ${dollars(amount)}.`;
-    return queue(ctx, "finance.note_known_amount", { recurring_id: id, amount, month_key: monthKey ?? null }, summary);
-  },
-};
-
-// ── finance.add_transaction (queued) ─────────────────────────────────────────
-
-const addTransaction: Tool = {
-  kind: "queued",
-  does: "Ask for a cash expense the bank will never see to be added.",
-  fields: ["date", "amount", "category_id", "description"],
-  async run(payload, ctx) {
-    const when = dateFor(payload, ctx, 60);
-    if ("ok" in when) return when;
-    const amount = money(payload.amount);
-    if (amount === null || amount <= 0 || amount > 100_000) {
-      return refuse(400, "I need the amount as a number above zero.");
-    }
-    const category = typeof payload.category_id === "string" ? payload.category_id : "";
-    if (!SLUG.test(category)) return refuse(400, "I need a category id, like groceries or transport.");
-    const description = scrubCap(payload.description, 40);
-
-    // `type` is not a field this tool takes, and neither is applies_to — see the
-    // per-tool field list and the refusals in handler.ts. An expense that cannot
-    // point at a bill is the whole reason this one is allowed to exist: settling a
-    // bill cycle unattended is how a $6 parking charge moved a month by $1,732.
-    const summary = description
-      ? `Add a ${dollars(amount)} expense on ${when.date} in ${category}: ${description}.`
-      : `Add a ${dollars(amount)} expense on ${when.date} in ${category}.`;
-    return queue(
-      ctx,
-      "finance.add_transaction",
-      { date: when.date, amount, category_id: category, description, type: "expense" },
-      summary,
-    );
-  },
-};
+// ── the three finance tools that used to only ASK ────────────────────────────
+//
+// finance.categorize_charge, finance.note_known_amount and finance.add_transaction
+// were queued in Phase 1: each wrote one row into muse_pending, fired a push, and
+// changed nothing until he tapped it in the app.
+//
+// THEY ARE NOW DIRECT, WITH AN UNDO, AND THEY LIVE IN toolsFinance.ts. Two things
+// made the queue the wrong answer rather than the careful one:
+//
+//   1. NOTHING IN THE APP READS muse_pending. `grep -rn "muse_pending" src/` returns
+//      nothing, so a queued row sat there until cron-reminders marked it expired 24
+//      hours later. The three careful tools were the three that did nothing.
+//   2. HOMEBASE NEVER MOVES MONEY. The worst a wrong write does is make data wrong,
+//      and data can be put back — so the tap moved from "before the change" to "after
+//      it, if he wants it back".
+//
+// finance.note_known_amount became finance.set_bill_amount, because the app has ONE
+// action for that write and it decides which column from the ROW rather than from the
+// caller: a variable bill's figure lives in known_amount, a fixed bill's price is
+// amount, and writing the wrong one reads as a fix that did nothing.
+//
+// health.log_meal below is still queued. Free-form food is the one write whose
+// before-state is not the question — there is nothing to restore, only a meal to
+// remove — and the health half of this phase owns that decision.
 
 // ── health.log_meal (queued) ─────────────────────────────────────────────────
 
@@ -552,10 +487,10 @@ export const TOOLS: Record<string, Tool> = {
   "health.log_weight": logWeight,
   "health.log_saved_meal": logSavedMeal,
   "schedule.remind": remind,
-  "finance.categorize_charge": categorizeCharge,
-  "finance.note_known_amount": noteKnownAmount,
-  "finance.add_transaction": addTransaction,
   "health.log_meal": logMeal,
+  // Phase 2's finance parity and the undo, in their own file so the two phases can be
+  // read apart. Same Tool shape, same handler, same Idempotency-Key.
+  ...FINANCE_WRITE_TOOLS,
 };
 
 export const TOOL_NAMES = Object.keys(TOOLS);

@@ -19,6 +19,8 @@
 // with a hard `limit`. A read that could be truncated at 1,000 rows does not
 // exist in this door.
 
+import type { FinanceDb } from "./dbFinance.ts";
+
 export type Person = "gino" | "xinyan";
 
 export type Outcome = "pending" | "ok" | "denied" | "rate_limited" | "error";
@@ -64,7 +66,20 @@ export interface PendingInsert {
   summary: string;
 }
 
-export interface Db {
+/**
+ * Everything the write door may do to the database.
+ *
+ * PHASE 2 WIDENED THIS, and the note above about "notice what is NOT here" now reads
+ * differently, so it is restated rather than left to be contradicted by the code. The
+ * finance half — writes to `transactions`, `recurring`, `accounts`, `debts`,
+ * `paid_bills` and `merchant_rules` — lives in dbFinance.ts and is mixed in here. It
+ * is not an escape hatch: those writes are fenced by the same allowlist of tables AND
+ * columns that the undo core validates against, so the door can only write a column it
+ * can also put back. What is still absent is anything that hard-deletes beyond
+ * recovery — there is no way from here to disconnect a bank, and no way to delete a
+ * bill or a bank-fed charge.
+ */
+export interface Db extends FinanceDb {
   // ── the audit log, which is also the duplicate guard ──────────────────────
   /** The earlier call under this idempotency key, or null. */
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null>;

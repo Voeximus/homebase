@@ -19,5 +19,17 @@
   // that decides anything is in the files below, and tests/museWrite.test.ts runs
   // those for real.
   "extends": "../_shared/muse/tsconfig.json",
-  "include": ["db.ts", "handler.ts", "openapi.ts", "tools.ts", "../cron-reminders/schedule.ts"]
+  // dbFinanceSupabase.ts joins index.ts and dbSupabase.ts on the excluded list, for
+  // the same reason: it is the other half of the Supabase wiring and holds no
+  // decisions. dbFinance.ts (the interface) and toolsFinance.ts (the tools) are
+  // checked, and they are where every decision is.
+  "include": [
+    "db.ts",
+    "dbFinance.ts",
+    "handler.ts",
+    "openapi.ts",
+    "tools.ts",
+    "toolsFinance.ts",
+    "../cron-reminders/schedule.ts"
+  ]
 }

@@ -29,9 +29,16 @@ Five things have to be true already. None of them are code you write now.
    before you wire this up — build a connector, close the app, and the next day in
    a brand-new conversation ask again. If it makes you rebuild it every time, stop
    here; rebuilding setup is the thing this was supposed to remove.
-4. **The database tables exist.** `schema_v36_muse_bridge.sql` has been run in the
-   Supabase SQL editor. The door writes a log row for every call, so without that
-   table every call fails.
+4. **The database tables exist.** TWO files, in order, in the Supabase SQL editor:
+   - `schema_v36_muse_bridge.sql` — the audit log, the rate-limit counters, the
+     waiting-for-a-tap queue and the reminder list. The door writes a log row for
+     every call, so without that table every call fails.
+   - `schema_v37_muse_undo.sql` — the change log, and `restore_money_event`. **Every
+     finance write records what it replaced in `muse_undo` before it changes anything,
+     so without that table every finance write fails** — which is the right direction
+     to fail in: a change nobody could put back would not be recorded as one.
+
+   Both are safe to re-run.
 5. **The doors' code is on `main`.** `supabase/functions/muse-read/`,
    `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/` and the
    shared modules both doors import, `supabase/functions/_shared/muse/`.

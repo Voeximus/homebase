@@ -32,6 +32,7 @@ import { NAME_MAX, money, scrub } from "../supabase/functions/_shared/muse/scrub
 import { LedgerUnreadable, readAll, type Db, type DbRow } from "../supabase/functions/_shared/muse/paging";
 import { redactArgs, type AuditRow } from "../supabase/functions/_shared/muse/audit";
 import { ABSENT, TOOLS } from "../supabase/functions/_shared/muse/tools";
+import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
 import { redactSuggestions } from "../supabase/functions/_shared/muse/worthALook";
 import {
   toAccount,
@@ -315,6 +316,22 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "health.training_volume", body: {} },
   { tool: "health.last_lift", body: { exercise: "leg press" } },
   { tool: "health.next_workout", body: {} },
+  // Phase 2's finance parity. Every one of them goes through the same two sweeps: the
+  // same answer under UTC and under Arizona, and nothing a person typed getting out
+  // that should not.
+  { tool: "finance.categories", body: {} },
+  { tool: "finance.transaction", body: { id: "t1" } },
+  { tool: "finance.search_transactions", body: {} },
+  { tool: "finance.accounts", body: {} },
+  { tool: "finance.bills", body: {} },
+  { tool: "finance.bill_calendar", body: { month: "2026-09" } },
+  { tool: "finance.paid_bills", body: {} },
+  { tool: "finance.merchant_rules", body: {} },
+  { tool: "finance.firepower", body: {} },
+  { tool: "finance.next_bills", body: {} },
+  { tool: "finance.bank_status", body: {} },
+  { tool: "finance.bank_pending", body: {} },
+  { tool: "system.changes", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -535,10 +552,22 @@ describe("Rule 4 — every string out is scrubbed", () => {
   it("no reply from any tool contains a descriptor, a URL, a newline or an injection line", async () => {
     for (const { tool, body } of EVERY_TOOL) {
       const text = await (await ask(tool, body)).text();
-      // The absolute one: a ledger description never leaves the door under any
-      // tool. Not shortened, not scrubbed — absent. Every description, every meal
-      // name and every workout note in the fixture carries this string.
-      expect(text, `${tool} leaked the descriptor`).not.toContain("CANARY");
+      // PHASE 2 SPLIT THIS PROMISE IN TWO, because he changed one half of it and not
+      // the other.
+      //
+      // The half that changed: a charge's cleaned merchant name may now leave the
+      // door, from the tools that DECLARE it in the door's own source
+      // (SAYS_DESCRIPTION). He made that trade deliberately — the app shows him those
+      // rows, and an assistant that cannot see a charge cannot answer "what was that
+      // $47 on Tuesday". Checking the list here rather than hard-coding tool names is
+      // what keeps it a list a reader can look at rather than a habit.
+      //
+      // The half that did not change, asserted on EVERY tool including those: no URL,
+      // no injection line, no newline. Those are not privacy — they are the path from
+      // "words in a memo line" to "his assistant fetched something".
+      if (!SAYS_DESCRIPTION.has(tool)) {
+        expect(text, `${tool} leaked the descriptor`).not.toContain("CANARY");
+      }
       expect(text, `${tool} leaked a URL`).not.toContain("http");
       expect(text, `${tool} leaked a URL`).not.toContain("canary.example.com");
       expect(text, `${tool} leaked an injection line`).not.toMatch(/ignore previous/i);
@@ -798,26 +827,42 @@ describe("what exists and what never will", () => {
     const body = await jsonOf(res);
     expect(body.error).toBe("unknown_tool");
     expect(body.tools).toEqual(TOOLS.map((t) => t.name));
-    expect((body.never as { name: string }[]).map((n) => n.name)).toContain("finance.search_transactions");
+    // What never will, in Phase 2's words: the raw bank descriptor.
+    // `finance.search_transactions` used to be on this list and is a tool now — he
+    // reversed that deliberately, and tools.ts keeps a note saying so, because a
+    // reversal that leaves no trace reads later as an oversight.
+    expect((body.never as { name: string }[]).map((n) => n.name).join(" ")).toContain("raw_description");
   });
 
   for (const name of [
-    "finance.search_transactions",
+    // Still absent after Phase 2, each for its own stated reason. `forecast` is the
+    // interesting one: firepower and next_bills sat beside it for the SAME reason —
+    // their inputs were assembled in a view module, so no shared function returned the
+    // number the screen showed — and they ship now because that assembly moved into
+    // src/lib/headline.ts. forecast is waiting on its screen, not on a change of mind.
     "finance.forecast",
-    "finance.firepower",
-    "finance.next_bills",
+    "finance.payoff_date",
+    // And no write verb reaches this door, whatever it is called. system.undo is on
+    // the WRITE door: undoing is a change.
     "health.log_weight",
-    "finance.categorize_charge",
+    "finance.add_transaction",
+    "system.undo",
   ]) {
-    it(`${name} is absent, not disabled`, async () => {
+    it(`${name} is absent from the read door, not disabled`, async () => {
       const res = await ask(name);
       expect(res.status).toBe(404);
     });
   }
 
-  it("has no write verb: the forbidden names are not in the catalogue at all", () => {
+  it("has no write verb: no tool here changes anything", () => {
     for (const t of TOOLS) {
-      expect(t.name).not.toMatch(/log_|add_|set_|categorize|delete|remove|pay|notify|remind/);
+      // `set_` and `add_` came out of this pattern in Phase 2, and finance.paid_bills
+      // is why: it is a READ of the hand-set paid/unpaid overrides. A name test cannot
+      // tell a read of a setting from a write of one. The promise is kept where it is
+      // actually enforceable — the read door's Tool type has no write seam at all: a
+      // tool is handed a loader and a date and has nothing else to reach for.
+      expect(t.name).not.toMatch(/^(log|delete|remove|pay|notify|remind)/);
+      expect(t.name).not.toMatch(/\.(log|delete|remove|pay|notify|remind)_/);
     }
     expect(ABSENT.length).toBeGreaterThan(0);
   });
@@ -855,7 +900,7 @@ describe("what exists and what never will", () => {
     // present and undescribed.
     const paths = Object.keys(doc.paths as object).sort();
     expect(paths).toEqual(TOOLS.map((t) => `/${t.name}`).sort());
-    expect(String((doc.info as { description: string }).description)).toContain("search_transactions");
+    expect(String((doc.info as { description: string }).description)).toContain("raw_description");
   });
 
   it("does not hand its description to a stranger", async () => {

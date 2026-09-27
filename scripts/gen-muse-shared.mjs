@@ -55,6 +55,10 @@ const MODULES = [
   "src/lib/plan.ts",
   "src/lib/schedule.ts",
   "src/lib/forecast.ts",
+  // The hero tile's firepower and the bills-before-next-payday window. Both used
+  // to be assembled in view modules, which is why the read door's Rule 3 kept them
+  // out. Extracted so the screen and the door read one implementation.
+  "src/lib/headline.ts",
   "src/lib/selfAudit.ts",
   // the "worth a look" judgement rules and their closure
   "src/lib/categorize.ts",

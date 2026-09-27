@@ -5,28 +5,25 @@
 
 import type { AppData, Transaction, Debt } from "../../types";
 import {
-  planMath,
   orderedDebts,
   payoffSchedule,
   payoffClears,
   PAY_DAYS,
   SAVINGS_SPLIT,
-  sumTargets,
   LEAN_VARIABLE,
-  OUTSIDE_BUDGET_CASH_CATS,
   lineSpent,
-  spentByCategory,
   spentByCategoryBetween,
   variableSpentBetween,
+  variableSpentThisMonth,
   payCycleFor,
   perCycle,
-  variableSpentThisMonth,
   avgVariableSpend,
   commitmentProgress,
   billExpected,
   previousPayday,
   type PayoffEvent,
 } from "../../lib/plan";
+import { headlineFirepower } from "../../lib/headline";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
@@ -100,32 +97,32 @@ export function buildFinanceVMs(
   // and bills are monthly. The BUDGET is graded per PAY CYCLE, because that's the
   // unit money actually arrives in — a calendar month splits one paycheck's
   // spending across two reports and hides where you stand until it's too late.
-  const monthlyTarget = sumTargets(LEAN_VARIABLE);
-  // transactions are passed so a VARIABLE bill is priced the way the calendar
-  // prices it (known_amount, else the rolling average) rather than by its stale
-  // stored amount — without them the plan and the calendar disagree.
-  const math = planMath(data.recurring, data.debts, monthlyTarget, undefined, data.transactions);
-  const spentMonth = variableSpentThisMonth(data.transactions, monthKey);
+  // The hero tile's figure and the two subtractions behind it moved into
+  // src/lib/headline.ts. They used to live right here, in a view module, which
+  // meant the number on the screen had no shared function behind it — so the Muse
+  // read door could not serve it without spelling the same arithmetic a second
+  // time, and a second spelling is how this repo got a push that said
+  // "Electric $85" while every screen said $100. One implementation now, called by
+  // this screen and by the door.
+  //
+  // TWO horizons, deliberately, and headline.ts owns the monthly one. The
+  // debt/firepower math is MONTHLY because income and bills are monthly. The BUDGET
+  // is graded per PAY CYCLE, because that's the unit money actually arrives in — a
+  // calendar month splits one paycheck's spending across two reports and hides
+  // where you stand until it's too late.
+  const head = headlineFirepower(data, now);
+  const monthlyTarget = head.monthlyTarget;
+  const math = head.plan;
+  const spentMonth = head.spentThisMonth;
+  const firepower = head.firepower; // "available THIS month" (the hero tile)
 
   const cycle = payCycleFor(now);
   const target = perCycle(monthlyTarget); // the allowance for THIS cycle
   const spent = variableSpentBetween(data.transactions, cycle.start, cycle.end);
   const byCat = spentByCategoryBetween(data.transactions, cycle.start, cycle.end);
-  // Overspending the lean budget is real cash that can NO LONGER go at the debt,
-  // so it reduces firepower live as you spend. (Under-spending does NOT inflate
-  // firepower — the budget stays reserved, and a mid-period "under" is just the
-  // period not being over yet.) Measured MONTHLY here on purpose: firepower is a
-  // monthly figure (monthly income less monthly bills), so mixing a per-cycle
-  // overspend into it would compare half a period against a whole one.
-  const overspendMonth = Math.max(0, spentMonth - monthlyTarget);
-  // The same idea on the cycle horizon — what the budget bar shows.
+  // The overspend on the CYCLE horizon — what the budget bar shows. Its monthly
+  // twin is inside headline.ts, subtracted from firepower there.
   const overspend = Math.max(0, spent - target);
-  // Cash that left but is NOT graded against the envelope (electronics). It never
-  // shows as "overspend" — there's no line to blow — but it's still money that
-  // can't go at the debt, so it comes off firepower directly. Monthly, to match.
-  const byCatMonth = spentByCategory(data.transactions, monthKey);
-  const outsideBudgetCash = OUTSIDE_BUDGET_CASH_CATS.reduce((s, c) => s + (byCatMonth[c] ?? 0), 0);
-  const firepower = Math.max(0, math.firepower - overspendMonth - outsideBudgetCash); // "available THIS month" (the hero tile)
   const ordered = orderedDebts(data.debts);
   // Project the payoff from the SUSTAINABLE pace — a trailing average of ACTUAL
   // variable spend — so the debt-free date tracks real behavior: a one-off
