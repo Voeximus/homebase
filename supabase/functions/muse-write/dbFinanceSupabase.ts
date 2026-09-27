@@ -28,6 +28,7 @@
 // table. Checking in one place and trusting in the other would mean the table's
 // contents decide what can be written.
 
+import { expectParts } from "./expectParts.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import type {
   AccountRow,
@@ -118,34 +119,6 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
 };
 
 export function financeDb(admin: SupabaseClient): FinanceDb {
-  /**
-   * The expectation, as PostgREST filter PARAMETERS rather than as a builder chain.
-   *
-   * WHY NOT A SHARED `expectAll(builder, …)` HELPER, which is the obvious shape. This file
-   * is excluded from both tsconfigs — it imports `jsr:@supabase/…`, which plain tsc cannot
-   * resolve — so nothing here is type-checked, exactly like dbSupabase.ts. A helper
-   * generic over supabase-js's builder type would therefore be a generic no compiler ever
-   * agreed to. The two call sites below chain `.eq()` / `.is()` on the real builder, where
-   * a wrong call is a runtime error in a path the tests drive rather than a type nobody
-   * verified.
-   *
-   * A NULL EXPECTED VALUE HAS TO BE `.is()`, NOT `.eq()`. PostgREST renders eq(null) as
-   * `=null`, which matches nothing in SQL — so an expectation of null spelled with eq
-   * would silently refuse every write, and every tool would report "something changed
-   * that row" about a row nothing had touched.
-   *
-   * A json value compared with eq() is compared as jsonb, which is key-order independent.
-   * That is what makes `applies_to` usable as an expectation at all.
-   */
-  function expectParts(expect: Record<string, UndoValue>): { nulls: string[]; values: [string, UndoValue][] } {
-    const nulls: string[] = [];
-    const values: [string, UndoValue][] = [];
-    for (const [col, want] of Object.entries(expect)) {
-      if (want === null) nulls.push(col);
-      else values.push([col, want]);
-    }
-    return { nulls, values };
-  }
 
   /** One change out of muse_undo. `where` narrows the select; the two callers differ only
    *  in whether they ask by token or by "the newest undoable one", so the mapping and the
