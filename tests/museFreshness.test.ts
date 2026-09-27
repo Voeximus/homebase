@@ -311,13 +311,28 @@ function stub(name: string, type: string): unknown {
   if (name === "to") return "2026-09-30";
   if (name === "month") return "2026-09";
   if (name === "id") return "t1";
+  // A memory handle is checked against a shape — lower case with dashes — so "x" is
+  // refused with a 400 rather than answering "nothing remembered under that".
+  if (name === "key") return "pay-floor";
   if (type === "integer" || type === "number") return 1;
   if (type === "boolean") return false;
   return "x";
 }
 
+/**
+ * Tools whose arguments are ALL optional but which refuse an empty call anyway,
+ * because at least one of them is needed.
+ *
+ * `stub()` above fills what a tool declares as required, and "at least one of these
+ * three" is not a required argument — it is a rule between them, enforced in the
+ * tool. So it is named here rather than guessed.
+ */
+const AT_LEAST_ONE: Record<string, Record<string, unknown>> = {
+  "memory.search": { text: "x" },
+};
+
 const callTool = async (t: { name: string; args?: readonly { name: string; type: string; required: boolean }[] }, tables: Record<string, DbRow[]>) => {
-  const body: Record<string, unknown> = {};
+  const body: Record<string, unknown> = { ...(AT_LEAST_ONE[t.name] ?? {}) };
   for (const a of t.args ?? []) if (a.required) body[a.name] = stub(a.name, a.type);
   const res = await handleMuseRead(
     new Request(`https://example.test/functions/v1/muse-read/${t.name}`, {
