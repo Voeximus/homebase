@@ -30,17 +30,20 @@
 // checks that live in the repo are in tests/museRead.test.ts: the served paths
 // against the tool catalogue both ways, and each argument's declared type.
 
-import { ABSENT, TOOLS, type Json } from "./tools.ts";
+import { ABSENT, CATALOGUE, type Json } from "./tools.ts";
 
 const DEFAULT_BASE = "https://example.supabase.co/functions/v1/muse-read";
 
 export function openApiDocument(baseUrl: string = DEFAULT_BASE): { [k: string]: Json } {
   const paths: { [k: string]: Json } = {};
 
-  for (const tool of TOOLS) {
+  // CATALOGUE, not TOOLS — the same normalised list the write door's description and
+  // API.md's headings are checked against, so "the document describes this door" and
+  // "both doors describe the same set of tools" are one claim instead of two.
+  for (const tool of CATALOGUE) {
     const properties: { [k: string]: Json } = {};
     const required: string[] = [];
-    for (const a of tool.args ?? []) {
+    for (const a of tool.args) {
       // The type comes off the argument's own declaration in tools.ts. It used to
       // be guessed from the name here, which was right for the one integer
       // argument that exists and would have been wrong for the next one.

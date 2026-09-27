@@ -5,24 +5,26 @@
 // costs a few lines and it might help. The list of tools and their fields comes
 // straight out of tools.ts, which means adding a tool updates this document and
 // forgetting to update this document is not possible.
+//
+// AND SO DOES THE COUNT, now. "The seven things an assistant may change" was typed
+// here, in tools.ts, in index.ts and in API.md, and two branches adding tools at once
+// each corrected some of those and not others. Every number in the text below is
+// counted from the catalogue; none is written.
 
-import { REMIND_OPEN_MAX, REMIND_PER_DAY, TOOLS } from "./tools.ts";
+import { CATALOGUE, REMIND_OPEN_MAX, REMIND_PER_DAY, TOOL_NAMES } from "./tools.ts";
 import { DUPLICATE_WINDOW_MIN, UNIVERSAL_FIELDS, WRITES_PER_HOUR } from "./handler.ts";
+import { numberWord, toolLines } from "../_shared/muse/catalogue.ts";
 import { REPEAT_LIMITS } from "../_shared/muse/reminders.ts";
 
 export function openapi(url: URL): Record<string, unknown> {
-  const names = Object.keys(TOOLS);
-  const lines = names.map((n) => {
-    const t = TOOLS[n];
-    // The queued half says what is TRUE TODAY. It used to say the request waits for
-    // a tap in the app; the app has no screen for these rows, so nothing can tap one
-    // and nothing applies one. Telling an assistant otherwise sends a person looking
-    // for a screen that is not there.
-    const lands = t.kind === "direct"
-      ? "takes effect right away"
-      : "only writes the request down. The app has no screen for these yet, so it will NOT be applied and it clears itself after 24 hours. Say that plainly, and say the app is where the change actually gets made";
-    return `- ${n}: ${t.does} Fields: ${t.fields.join(", ")}. This one ${lands}.`;
-  });
+  const names = TOOL_NAMES;
+  // Both the lines and the count come out of catalogue.ts, off the same normalised
+  // list the read door's document and API.md's headings are checked against. The
+  // queued sentence in particular lives there rather than here: it says what is TRUE
+  // TODAY — it used to promise a tap in an app screen that does not exist — and one
+  // copy of it is the only way the two doors cannot end up describing the same split
+  // two different ways.
+  const lines = toolLines(CATALOGUE);
 
   return {
     openapi: "3.1.0",
@@ -30,7 +32,9 @@ export function openapi(url: URL): Record<string, unknown> {
       title: "Homebase write door",
       version: "1.0.0",
       description: [
-        "The nine things an assistant may change in Homebase.",
+        // Counted, never typed. This sentence said "seven" while there were nine, in
+        // two branches at once, because the number lived in five hand-written places.
+        `The ${numberWord(CATALOGUE.length)} things an assistant may change in Homebase.`,
         "",
         ...lines,
         "",

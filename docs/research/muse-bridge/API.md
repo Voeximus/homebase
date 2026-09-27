@@ -533,11 +533,11 @@ answered.
 and this door has no write verb anywhere in it. If you are asked to log or change
 anything with the key you have, say plainly that you can only read.
 
-For when somebody asks what the other door does: five writes land straight away —
-logging a weigh-in, logging one of the household's saved meals by name, writing a
-reminder for a given time, cancelling a reminder, and changing one. Four more are
-**queued**: categorising a charge, recording what a variable bill came to, adding a
-cash charge, and logging free-form food. Queued means that door writes the request
+For when somebody asks what the other door does: some of its writes land straight
+away — logging a weigh-in, logging one of the household's saved meals by name,
+writing a reminder for a given time, cancelling a reminder, and changing one. The
+rest are **queued**: categorising a charge, recording what a variable bill came to,
+adding a cash charge, and logging free-form food. Queued means that door writes the request
 down and **changes nothing** — and today it stays that way, because the app has no
 screen for these rows yet, so nothing applies one and it clears itself after a day.
 If somebody asks for one of those four, say it can be written down but it will not

@@ -83,6 +83,7 @@ import { BUNDLED_EXERCISES } from "./lib/exerciseData.ts";
 import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
 import { describe, pendingFor } from "./reminders.ts";
+import { catalogueOf, readEntries, type CatalogueArg } from "./catalogue.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import type { Loader } from "./load.ts";
 import type { Person } from "./auth.ts";
@@ -113,8 +114,12 @@ export interface Tool {
    * string — and the plan already names it (`finance.forecast`, months ahead). An
    * assistant told "string" sends "3", and intArg refuses it, and the refusal
    * reads like the assistant's mistake.
+   *
+   * The shape is CatalogueArg, in catalogue.ts, because openapi.ts now builds the
+   * served schema off the catalogue rather than off this array — one definition of
+   * "an argument" for the door, its description and the test that compares them.
    */
-  args?: { name: string; type: "string" | "integer"; required: boolean; description: string }[];
+  args?: CatalogueArg[];
   run(ctx: ToolContext): Promise<{ [k: string]: Json }>;
 }
 
@@ -984,6 +989,17 @@ export const TOOLS: readonly Tool[] = [
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
+
+/**
+ * This door's half of the catalogue, normalised — the thing openapi.ts builds the
+ * served document from, and the thing the cross-door test compares against API.md.
+ *
+ * It is derived from TOOLS above and validated by catalogueOf, which throws. So a
+ * tool with a malformed name, an empty summary or a field spelled two ways fails at
+ * module load: the door does not start rather than serving a description that is
+ * subtly wrong about itself.
+ */
+export const CATALOGUE = catalogueOf(readEntries(TOOLS));
 
 /**
  * What this door will never have, and why — the forbidden list, ABSENT rather than

@@ -78,7 +78,12 @@ function newest(): { file: string; takenAt: string; tables: Record<string, DbRow
   for (const [k, v] of Object.entries(raw)) if (Array.isArray(v)) tables[k] = v as DbRow[];
   // The snapshot is the finance half only. Empty rather than missing, so every
   // health tool runs its no-data path for real instead of being skipped.
-  for (const t of ["body_weights", "meal_days", "macro_targets", "workouts", "workout_routines"]) {
+  // `reminders` is on the list for a different reason than the health tables: it is
+  // not in the snapshot because scripts/snapshot.mjs exports the finance half, and a
+  // reminder is one person's private line on a lock screen. Empty here means
+  // schedule.list_reminders runs its genuinely-empty path against real data — total
+  // 0, shown 0, more false — which is the reply he will actually get most days.
+  for (const t of ["body_weights", "meal_days", "macro_targets", "workouts", "workout_routines", "reminders"]) {
     tables[t] ??= [];
   }
   return { file, takenAt: String(raw.takenAt ?? ""), tables };
@@ -168,6 +173,10 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     { tool: "health.training_volume", body: {} },
     { tool: "health.last_lift", body: { exercise: "leg press" } },
     { tool: "health.next_workout", body: {} },
+    // Paged deliberately, not called bare: the page arguments are the half of this
+    // tool that can be wrong against real data, and offset 0 with an explicit limit
+    // is the call the assistant makes first.
+    { tool: "schedule.list_reminders", body: { limit: 5, offset: 0 } },
   ];
 }
 

@@ -1,6 +1,12 @@
-// The nine things an assistant may change, and nothing else.
+// What an assistant may change, and nothing else.
 //
-// FIVE LAND STRAIGHT AWAY ("direct")
+// NO COUNT IN THIS COMMENT, deliberately. It said "the seven things" while nine
+// existed, and the same number was typed in four other places — openapi.ts, index.ts,
+// API.md, and again further down this file. Every sentence that states it is now
+// counted from CATALOGUE at the bottom, through _shared/muse/catalogue.ts, and
+// tests/museCatalogue.test.ts fails if a typed one comes back.
+//
+// THESE LAND STRAIGHT AWAY ("direct")
 //   health.log_weight       one number, one row, visible on the weight screen,
 //                           deletable in two taps.
 //   health.log_saved_meal   a meal the household already saved, by name. The
@@ -21,7 +27,7 @@
 // is what lets the audit log still point at it and what makes "that one already went
 // out" answerable instead of guessable.
 //
-// FOUR ONLY ASK ("queued")
+// THESE ONLY ASK ("queued")
 //   finance.categorize_charge, finance.note_known_amount,
 //   finance.add_transaction, health.log_meal
 //   Each one writes a single row into muse_pending and NOTHING ELSE. The ledger
@@ -72,6 +78,7 @@ import {
   TRIMMED_SAYS,
   type Repeats,
 } from "../_shared/muse/reminders.ts";
+import { catalogueOf, namesOf, writeEntries } from "../_shared/muse/catalogue.ts";
 import { scrubCap } from "../_shared/muse/scrub.ts";
 
 /** The push_subscriptions "owner" spelling, and the name a sentence uses. */
@@ -174,7 +181,7 @@ function dateFor(
  * is no list, no screen and no tap, and no code path anywhere that applies one of
  * these rows. PLAN.md Phase 4 puts the app half and the door half in the same phase
  * and only the door half was built. So the door was sending him to a screen that
- * does not exist, four times out of nine, and "go and tap it" is the one sentence
+ * does not exist, on every queued tool, and "go and tap it" is the one sentence
  * in the whole bridge a person cannot check without walking into the app and finding
  * nothing.
  *
@@ -814,13 +821,24 @@ const REGISTRY: Record<string, Tool> = {
  * WHY NOT THE OBJECT. `REGISTRY[name]` answers for every key on Object.prototype,
  * so "constructor", "__proto__", "toString", "valueOf" and "hasOwnProperty" each
  * found an inherited value and got past the door's "no such tool" check. A Map has
- * no inherited keys, so the only names in it are the nine below. The read door has
- * always been a Map; this is the same shape.
+ * no inherited keys, so the only names in it are the ones listed above. The read door
+ * has always been a Map; this is the same shape.
  */
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(Object.entries(REGISTRY));
 
-/** The nine names, for the OpenAPI description and the "no such tool" reply. */
-export const TOOL_NAMES = [...TOOL_BY_NAME.keys()];
+/**
+ * This door's half of the catalogue, normalised and validated — see catalogue.ts.
+ * openapi.ts builds every sentence of the served description from it, including the
+ * count, which was typed by hand in five places and wrong in two of them.
+ *
+ * catalogueOf throws, so a tool whose name, summary or field list is malformed takes
+ * this door down at deploy rather than being described wrongly to an assistant.
+ */
+export const CATALOGUE = catalogueOf(writeEntries(TOOL_BY_NAME));
+
+/** The names, for the OpenAPI enum and the "no such tool" reply. Off the catalogue,
+ *  so it cannot be a different list from the one the description was built from. */
+export const TOOL_NAMES = namesOf(CATALOGUE);
 
 /** The catalogue by name, for the description builder and the tests. Reading it is
  *  safe; ROUTING goes through TOOL_BY_NAME above. */

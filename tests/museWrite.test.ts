@@ -1661,6 +1661,34 @@ describe("the household does not do the same write twice by accident", () => {
     }
   });
 
+  it("offers the way past on every tool, and it is the door that offers it", async () => {
+    // WHY THIS IS SEPARATE FROM THE TEST ABOVE. That one proves the same call twice
+    // does not happen twice. It cannot tell WHICH refusal did it: for cancel and
+    // update the tool itself would have refused anyway, so a guard that had been
+    // skipped for those two would pass it unnoticed. The guard's sentence is the only
+    // one that offers do_it_anyway, so naming that sentence is what proves the guard
+    // ran — on every tool, including the two added after it was written.
+    //
+    // And the third call proves the flag is honoured everywhere. What happens after
+    // the guard steps aside is the tool's own business: cancel still refuses, because
+    // the reminder really is already cancelled. What must never happen is the DOOR
+    // refusing again with the same offer, which would leave a caller that did exactly
+    // as it was told with nowhere to go.
+    for (const { tool, args } of EVERY_WRITE) {
+      const db = stocked();
+      expect((await handleWrite(post(tool, args), deps(db))).status, tool).toBe(200);
+
+      const guarded = await handleWrite(post(tool, args), deps(db));
+      expect(String(guarded.body.message), `${tool} was refused by something else`).toContain("do_it_anyway");
+
+      const anyway = await handleWrite(post(tool, { ...args, do_it_anyway: true }), deps(db));
+      expect(String(anyway.body.message ?? ""), `${tool} refused its own override`).not.toContain("do_it_anyway");
+      // The audit log records that it was told to, on every tool — "he overrode the
+      // duplicate guard" is exactly what the log is for.
+      expect(db.audit.at(-1)?.args.fields, tool).toContain("do_it_anyway");
+    }
+  });
+
   it("refuses a flag that is not a boolean rather than reading a string as yes", async () => {
     const db = new Fake();
     const r = await handleWrite(post("health.log_weight", { weight: 198.4, do_it_anyway: "yes" }), deps(db));

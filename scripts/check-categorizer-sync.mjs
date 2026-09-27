@@ -180,6 +180,13 @@ const SHARED_ONLY = [
   // screen. That is the same shape as cron-notify's private copy of the bill
   // cadence, which told the phones a semiannual bill was due every month.
   "reminders.ts",
+  // catalogue.ts is the one list of what exists on BOTH doors: each door normalises
+  // its own registry through it, and every sentence that states how many tools there
+  // are is counted from it. A door with a private copy could be describing a
+  // different set of tools from the one the other door and API.md were checked
+  // against — which is the whole failure this file's other three guards are about,
+  // arriving through the document an assistant actually reads.
+  "catalogue.ts",
 ];
 const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
 let privateCopies = false;
