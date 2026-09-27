@@ -1,13 +1,20 @@
 # Supabase CLI config — the parts that MUST NOT live only in the dashboard.
 #
-# Three of the five edge functions are deliberately PUBLIC (verify_jwt = false).
-# They are not unguarded: each one checks its own shared secret from the query
-# string and fails CLOSED if that secret is missing or wrong. They have to be
-# public because their callers cannot present a Supabase JWT:
+# Several edge functions are deliberately PUBLIC (verify_jwt = false). They are not
+# unguarded: each one checks its own shared secret and fails CLOSED if that secret
+# is missing or wrong. They have to be public because their callers cannot present
+# a Supabase JWT:
 #
 #   announce-update  called by the GitHub Pages deploy workflow with plain curl
 #   plaid-webhook    called by Plaid's servers
 #   cron-notify      called by pg_cron via net.http_post
+#   cron-reminders   called by pg_cron via net.http_post
+#   muse-write       called by an assistant's cloud VM, which has no session
+#
+# The first four take their secret from the query string. muse-write takes a
+# per-person secret from a header instead, because a secret in a URL ends up in
+# logs — and because the secret is WHO is calling, not just a doorbell: it decides
+# which person every row is stamped with.
 #
 # Before this file existed those settings lived ONLY in the Supabase dashboard,
 # which made them invisible to code review and — worse — resettable by any CLI
@@ -28,4 +35,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cron-notify]
+verify_jwt = false
+
+[functions.cron-reminders]
+verify_jwt = false
+
+[functions.muse-write]
 verify_jwt = false
