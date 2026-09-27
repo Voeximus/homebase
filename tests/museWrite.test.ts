@@ -1939,3 +1939,49 @@ describe("the write door's own description", () => {
     }
   });
 });
+
+// One key per person, because the platform can only hold one.
+//
+// Muse's connector is an egress allowlist plus a single stored bearer token, scoped
+// to a bare hostname. Both doors are paths on that one host, so a second connector
+// for the write door was refused six times — the last under a name that had never
+// existed, with a spec identical field for field to the connector that saved on its
+// first try, and with the key proved good by a 200 from this very door moments
+// earlier. So the write door accepts a person's read key as well as their write key.
+describe("the write door also answers to the read keys", () => {
+  const READS: Secrets = { gino: "r".repeat(40) + "-gino", xinyan: "r".repeat(40) + "-xin" };
+
+  const withKey = (key: string) =>
+    new Request("https://example.test/functions/v1/muse-write", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Idempotency-Key": "k-" + key.slice(-6) },
+      body: JSON.stringify({ tool: "health.log_weight", args: { pounds: 148.6 } }),
+    });
+
+  it("lets a read key write, and attributes it to the right person", async () => {
+    for (const [person, key] of [["gino", READS.gino], ["xinyan", READS.xinyan]] as const) {
+      expect(personFor(withKey(key), SECRETS, READS)).toBe(person);
+    }
+  });
+
+  it("still takes the write keys, so nothing outside Muse has to change", async () => {
+    expect(personFor(withKey(SECRETS.gino), SECRETS, READS)).toBe("gino");
+    expect(personFor(withKey(SECRETS.xinyan), SECRETS, READS)).toBe("xinyan");
+  });
+
+  it("refuses a stranger, and refuses a short or empty configured value", async () => {
+    expect(personFor(withKey("not-a-key-at-all-but-long-enough-to-pass"), SECRETS, READS)).toBe(null);
+    // The floor still applies to the SECOND set. An unset MUSE_READ_* is "" in
+    // production, and "" must mean "that person cannot write", never "let anyone in".
+    expect(personFor(withKey(""), SECRETS, { gino: "", xinyan: "" })).toBe(null);
+    expect(personFor(withKey("short"), SECRETS, { gino: "short", xinyan: "short" })).toBe(null);
+  });
+
+  it("is one-way: the door is unchanged when no second set is given", async () => {
+    // Every other test in this file calls personFor with two arguments, so the
+    // two-key behaviour is still what the suite describes — and the READ door is
+    // never handed write keys, so a leaked write key does not become a way to read.
+    expect(personFor(withKey(READS.gino), SECRETS)).toBe(null);
+    expect(personFor(withKey(SECRETS.gino), SECRETS)).toBe("gino");
+  });
+});

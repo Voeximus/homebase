@@ -62,10 +62,16 @@ Write door:
 https://ganzefaciiyibselizqi.supabase.co/functions/v1/muse-write
 ```
 
-Each door has its **own** key. Hold both of them yourself, so you never ask me to
-type one again — in your secure credential store if you can reach it, otherwise in
-your own skill storage. Never print a key back to me unless I ask, never put one
-in a web address, never send the read key to the write door or the other way round.
+**ONE KEY PER PERSON, and it opens both doors.** It was two — one per door — and the
+platform decided otherwise: a connector is an egress allowlist plus a single stored
+bearer token, scoped to a bare hostname, and both doors are paths on the same host.
+A second connector was refused six times, the last under a name that had never
+existed, with a spec identical field for field to the one that saved first try. So
+the write door now also accepts the read key. Use the key you already hold, for both.
+
+This is one-way on purpose. The read door does NOT accept a write key, so the older
+write keys still work where they always did and nowhere new. Never print a key back
+to me unless I ask, and never put one in a web address.
 
 The key's header name is not part of the guard. The doors read it from
 `Authorization: Bearer`, `X-Muse-Token`, `X-API-Key` or `apikey` — whichever your

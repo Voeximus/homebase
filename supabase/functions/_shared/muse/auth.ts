@@ -87,6 +87,49 @@ export function presentedSecret(req: Request): string {
  * first hit would make "is this Gino's secret" measurably faster than "is this
  * Xinyan's", which tells an attacker which half of the keyspace to work on.
  */
+/**
+ * Which person is calling, checked against SEVERAL sets of secrets.
+ *
+ * WHY MORE THAN ONE SET, and it is a platform constraint rather than a preference.
+ * Muse's connector is an egress allowlist plus one stored bearer token, scoped to a
+ * BARE HOSTNAME: `ganzefaciiyibselizqi.supabase.co`. Both doors are paths on that
+ * one host, so the platform can hold exactly one token for both of them. A second
+ * connector for the same host was refused six times — five under one name and once
+ * under a name that had never existed, with a spec identical field for field to the
+ * connector that saved on its first try, and with a key proved good by a 200 from
+ * the door itself moments earlier.
+ *
+ * So the write door accepts a person's READ key as well as their write key. That is
+ * a real loss and the file above describes what it was worth: read access can no
+ * longer be handed out without also handing out writes. What is NOT lost is the part
+ * that protects the household — no key here moves money, every write records what it
+ * replaced and returns an undo token, and each person's keys still answer only about
+ * that person. The alternative was a door nobody can write through, on a system whose
+ * whole point is that there is no app to open.
+ *
+ * Still separate: the READ door does not accept write keys. The collapse is one-way,
+ * so a write key leaking does not become a second way to read, and `finance.*` reads
+ * keep working through the key that has always done them.
+ *
+ * Every candidate in every set is compared even after one matches, for the reason
+ * callerOf gives below.
+ */
+export function callerOfAny(req: Request, sets: readonly ReadSecrets[]): Person | null {
+  const presented = presentedSecret(req);
+  if (!presented) return null;
+
+  let found: Person | null = null;
+  for (const secrets of sets) {
+    for (const person of ["gino", "xinyan"] as const) {
+      const configured = secrets?.[person];
+      const usable = typeof configured === "string" && configured.length >= MIN_SECRET_LENGTH;
+      const hit = usable && safeEqual(presented, configured);
+      if (hit && found === null) found = person;
+    }
+  }
+  return found;
+}
+
 export function callerOf(req: Request, secrets: ReadSecrets): Person | null {
   const presented = presentedSecret(req);
   if (!presented) return null;

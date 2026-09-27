@@ -42,6 +42,24 @@ const SECRETS: Secrets = {
   gino: Deno.env.get("MUSE_WRITE_GINO") ?? "",
   xinyan: Deno.env.get("MUSE_WRITE_XINYAN") ?? "",
 };
+
+/**
+ * The READ keys, which this door also answers to.
+ *
+ * Not a convenience. Muse's connector is an egress allowlist plus ONE stored bearer
+ * token, scoped to a bare hostname, and both doors are paths on the same host — so
+ * the platform can hold one token for the pair. A second connector was refused six
+ * times, the last under a name that had never existed, with a spec identical field
+ * for field to the one that saved first try. The read connector holds the read key
+ * and works; this makes that key reach the write door too.
+ *
+ * The write keys keep working, so nothing outside Muse has to change and reversing
+ * this is deleting these four lines.
+ */
+const ALSO_ACCEPT: Secrets = {
+  gino: Deno.env.get("MUSE_READ_GINO") ?? "",
+  xinyan: Deno.env.get("MUSE_READ_XINYAN") ?? "",
+};
 const APP = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
 
 /** This door's own public address, the way the read door builds its own. */
@@ -73,7 +91,7 @@ Deno.serve(async (req) => {
   // If Phone Test 2 shows the assistant needs this before it can be given a
   // secret, opening it up is a one-line change — make it deliberately.
   if (req.method === "GET" && url.pathname.endsWith("/openapi.json")) {
-    if (!personFor(req, SECRETS)) {
+    if (!personFor(req, SECRETS, ALSO_ACCEPT)) {
       return new Response(JSON.stringify({ ok: false, message: "Unauthorized." }), {
         status: 401,
         headers: JSON_HEADERS,
@@ -88,7 +106,7 @@ Deno.serve(async (req) => {
   // connected. A bare GET now answers yes when the key is good, 401 when it is
   // not. It reads no table and names no figure.
   if (req.method === "GET" || req.method === "HEAD") {
-    const who = personFor(req, SECRETS);
+    const who = personFor(req, SECRETS, ALSO_ACCEPT);
     if (!who) {
       return new Response(JSON.stringify({ ok: false, message: "Unauthorized." }), {
         status: 401,
@@ -125,6 +143,7 @@ Deno.serve(async (req) => {
         }
       },
       secrets: SECRETS,
+      alsoAccept: ALSO_ACCEPT,
       appUrl: APP,
       // The one clock reading in the whole door, taken once, passed down. See
       // az.ts for why a UTC runtime answering about an Arizona day is not a small

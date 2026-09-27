@@ -54,7 +54,7 @@
 
 import type { Db, Person, Push } from "./db.ts";
 import { azDateISO, minusMinutes, minutesSince, ticks } from "../_shared/muse/az.ts";
-import { callerOf } from "../_shared/muse/auth.ts";
+import { callerOf, callerOfAny } from "../_shared/muse/auth.ts";
 import { BodyTooLarge, MAX_BODY_BYTES, readCappedText } from "../_shared/muse/body.ts";
 import { scrubName } from "../_shared/muse/scrub.ts";
 // TOOL_BY_NAME, not TOOLS: routing goes through the Map. `REGISTRY[name]` answered for
@@ -116,6 +116,15 @@ export interface Deps {
   db: Db;
   push: Push;
   secrets: Secrets;
+  /**
+   * A SECOND set of secrets this door also answers to — in production, the read
+   * keys. Muse's connector stores one bearer token per BARE HOSTNAME and both
+   * doors live on one host, so a second connector for the write door was refused
+   * six times. See callerOfAny in _shared/muse/auth.ts for the full account and
+   * for what the collapse costs. Optional, and absent in every test that is not
+   * about it, so the two-key behaviour is still what the suite describes.
+   */
+  alsoAccept?: Secrets;
   appUrl: string;
   /** Built once by clockNow(), passed in. The door never reads a clock itself. */
   clock: { at: Date; az: Date };
@@ -150,8 +159,8 @@ export interface Reply {
  * a phone-built connector puts a static secret in. PLAN.md's Phone Test 2 settles
  * it on his phone; when it does, delete the losing branch in auth.ts.
  */
-export function personFor(req: Request, secrets: Secrets): Person | null {
-  return callerOf(req, secrets);
+export function personFor(req: Request, secrets: Secrets, alsoAccept?: Secrets): Person | null {
+  return alsoAccept ? callerOfAny(req, [secrets, alsoAccept]) : callerOf(req, secrets);
 }
 
 /** Key order must not change a fingerprint, or the same request sent twice looks
@@ -206,7 +215,7 @@ export async function handleWrite(req: Request, deps: Deps): Promise<Reply> {
     return deny(405, "Send a POST with a tool name and its arguments.");
   }
 
-  const person = personFor(req, deps.secrets);
+  const person = personFor(req, deps.secrets, deps.alsoAccept);
   if (!person) {
     // Nothing is written: there is no person to attribute the row to, and an
     // audit table a stranger can fill up is its own problem.
