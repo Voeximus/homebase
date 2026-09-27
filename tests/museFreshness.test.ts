@@ -333,21 +333,26 @@ const callTool = async (t: { name: string; args?: readonly { name: string; type:
 describe("the stamp is on every reply the read door gives", () => {
   it("stamps every tool in the door's own catalogue", async () => {
     const tables = tablesWith([bankRow()]);
-    const missing: string[] = [];
-    let answered = 0;
+    const unstamped: string[] = [];
+    const undriven: string[] = [];
     for (const t of TOOLS) {
       const { status, body } = await callTool(t, tables);
-      // A tool this test could not guess arguments for is not evidence either way —
-      // but the count below stops the whole test passing on nothing but refusals.
-      if (status !== 200) continue;
-      answered++;
+      if (status !== 200) {
+        // Not evidence either way about the stamp — but it IS a gap in this sweep,
+        // and the assertion below refuses to let the sweep quietly shrink. The
+        // message carries what the door said, so whoever adds the next tool can fix
+        // `stub()` above in one look instead of debugging this file.
+        undriven.push(`${t.name} → ${status} ${String(body.says ?? body.error ?? "")}`);
+        continue;
+      }
       const fresh = body.fresh as Record<string, unknown> | undefined;
-      if (!fresh || typeof fresh.says !== "string") missing.push(t.name);
+      if (!fresh || typeof fresh.says !== "string") unstamped.push(t.name);
     }
-    expect(missing).toEqual([]);
-    // Every tool in the catalogue should have answered. If this number drops, the
-    // stub map above needs a case — not a smaller assertion.
-    expect(answered).toBe(TOOLS.length);
+    expect(unstamped, "these tools answered with no freshness stamp").toEqual([]);
+    // EVERY tool in the catalogue must be driven here. A tool added by a later merge
+    // that this sweep cannot call is a tool whose reply nothing checks — so the fix is
+    // a case in `stub()` or a row in `tablesWith`, never a smaller assertion.
+    expect(undriven, "this sweep could not drive these tools — give stub() a case").toEqual([]);
   });
 
   it("says the real age, not a default", async () => {
