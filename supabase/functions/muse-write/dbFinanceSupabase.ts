@@ -119,44 +119,46 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
 
 export function financeDb(admin: SupabaseClient): FinanceDb {
   /**
-   * The two filter methods a compare-and-set needs, and nothing else.
+   * The expectation, as PostgREST filter PARAMETERS rather than as a builder chain.
    *
-   * Written as its own small interface rather than as the client's own builder type,
-   * because supabase-js's builder is generic over the table's row shape and this function
-   * is deliberately table-agnostic. Naming the two methods keeps it honest: `any` would
-   * let a future edit reach a third method by accident, and `.delete()` is one of them.
+   * WHY NOT A SHARED `expectAll(builder, …)` HELPER, which is the obvious shape. This file
+   * is excluded from both tsconfigs — it imports `jsr:@supabase/…`, which plain tsc cannot
+   * resolve — so nothing here is type-checked, exactly like dbSupabase.ts. A helper
+   * generic over supabase-js's builder type would therefore be a generic no compiler ever
+   * agreed to. The two call sites below chain `.eq()` / `.is()` on the real builder, where
+   * a wrong call is a runtime error in a path the tests drive rather than a type nobody
+   * verified.
+   *
+   * A NULL EXPECTED VALUE HAS TO BE `.is()`, NOT `.eq()`. PostgREST renders eq(null) as
+   * `=null`, which matches nothing in SQL — so an expectation of null spelled with eq
+   * would silently refuse every write, and every tool would report "something changed
+   * that row" about a row nothing had touched.
+   *
+   * A json value compared with eq() is compared as jsonb, which is key-order independent.
+   * That is what makes `applies_to` usable as an expectation at all.
    */
-  interface Filterable<T> {
-    eq(column: string, value: never): T;
-    is(column: string, value: null): T;
-  }
-
-  /** The `.eq()` chain that makes a write a compare-and-set. A null expected value has to
-   *  be spelled `.is()`, not `.eq()`: PostgREST renders eq(null) as `=null`, which matches
-   *  nothing in SQL, so an expectation of null would silently refuse every write instead
-   *  of matching the rows that actually hold null. */
-  function expectAll<T extends Filterable<T>>(q: T, expect: Record<string, UndoValue>): T {
-    let out = q;
+  function expectParts(expect: Record<string, UndoValue>): { nulls: string[]; values: [string, UndoValue][] } {
+    const nulls: string[] = [];
+    const values: [string, UndoValue][] = [];
     for (const [col, want] of Object.entries(expect)) {
-      if (want === null) out = out.is(col, null);
-      // A json column compared with eq() needs the value as JSON text, and PostgREST does
-      // that itself when handed an object — and an OBJECT compared for equality is
-      // compared as jsonb, which is key-order independent. That is what makes applies_to
-      // usable as an expectation at all.
-      else out = out.eq(col, want as never);
+      if (want === null) nulls.push(col);
+      else values.push([col, want]);
     }
-    return out;
+    return { nulls, values };
   }
 
-  /** What a read of muse_undo comes back as, whichever filter shape asked for it. */
-  type UndoReply = { data: Record<string, unknown> | Record<string, unknown>[] | null; error: PgError | null };
-
+  /** One change out of muse_undo. `where` narrows the select; the two callers differ only
+   *  in whether they ask by token or by "the newest undoable one", so the mapping and the
+   *  step validation live here once. */
   async function readUndoRow(
-    filter: (q: ReturnType<typeof admin.from>) => PromiseLike<UndoReply>,
+    where: (q: ReturnType<ReturnType<typeof admin.from>["select"]>) => PromiseLike<{
+      data: unknown;
+      error: PgError | null;
+    }>,
   ): Promise<UndoRecord | null> {
-    const { data, error } = await filter(admin.from("muse_undo"));
+    const { data, error } = await where(admin.from("muse_undo").select("*"));
     must(error, "read muse_undo");
-    const row = Array.isArray(data) ? data[0] : data;
+    const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null | undefined;
     if (!row) return null;
     let steps;
     try {
@@ -369,8 +371,13 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async setColumns(table, id, patch, expect) {
       const t = fence(table, Object.keys(patch), false);
       fence(table, Object.keys(expect), false);
+      const { nulls, values } = expectParts(expect);
       let q = admin.from(t).update(patch).eq("id", id);
-      q = expectAll(q, expect);
+      for (const col of nulls) q = q.is(col, null);
+      for (const [col, want] of values) q = q.eq(col, want);
+      // `.select("id")` is load-bearing, not decoration. An UPDATE whose WHERE matched
+      // nothing comes back { error: null } with no rows, which is how the app once
+      // reported a write that changed nothing as a success.
       const { data, error } = await q.select("id");
       must(error, `update ${table}`);
       return (data ?? []).length === 1 ? "ok" : "moved";
@@ -389,9 +396,13 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     },
 
     async deleteRow(table, id, expect) {
+      // `fence` refuses an empty column list, so a delete here can never be blind: it
+      // always carries something it expects to find.
       const t = fence(table, Object.keys(expect), false);
+      const { nulls, values } = expectParts(expect);
       let q = admin.from(t).delete().eq("id", id);
-      q = expectAll(q, expect);
+      for (const col of nulls) q = q.is(col, null);
+      for (const [col, want] of values) q = q.eq(col, want);
       const { data, error } = await q.select("id");
       must(error, `delete ${table}`);
       return (data ?? []).length === 1 ? "ok" : "moved";
@@ -467,19 +478,16 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     },
 
     findChange(person: Person, token: string) {
-      // Fenced on the person as well as the token. Her key cannot reverse his write,
-      // which is the same rule every other tool on this door follows.
-      return readUndoRow((q) => q.select("*").eq("person", person).eq("token", token).maybeSingle());
+      // Fenced on the person as well as the token. Her key cannot reverse his write, which
+      // is the same rule every other tool on this door follows.
+      return readUndoRow((q) => q.eq("person", person).eq("token", token).maybeSingle());
     },
 
     latestUndoable(person: Person) {
+      // What a bare "undo that" asks for. `state = 'undoable'` is what keeps it off a row
+      // the door could not finish and off an undo's own row, which is born `undone`.
       return readUndoRow((q) =>
-        q
-          .select("*")
-          .eq("person", person)
-          .eq("state", "undoable")
-          .order("at", { ascending: false })
-          .limit(1),
+        q.eq("person", person).eq("state", "undoable").order("at", { ascending: false }).limit(1),
       );
     },
   };
