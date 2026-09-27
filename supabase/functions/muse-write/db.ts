@@ -9,10 +9,25 @@
 //   the duplicate guard get tested at all — neither is reachable through a real
 //   Supabase call from a test runner.
 //
-//   Notice what is NOT here: no delete, anywhere. No write to `transactions`,
-//   `recurring`, `debts`, `savings_goals`, `paid_bills` or `food_cache`. The
-//   forbidden list from PLAN.md §4 is enforced by absence — there is no verb to
-//   reach for, so no amount of talking to the assistant can reach one.
+//   WHAT PHASE 2 CHANGED, SAID PLAINLY. Phase 1's version of this comment read
+//   "notice what is NOT here: no delete, anywhere", and that was the whole safety
+//   story. It is not the story any more. His instruction for this phase is that
+//   the assistant has every functionality the app has, and the thing that makes
+//   that safe is not a shorter list of verbs — it is that every change captures
+//   what was there before it, so it can be put back. So there ARE deletes below,
+//   one per kind of row, and every tool that reaches one reads the row first and
+//   returns an UndoRecord carrying it.
+//
+//   The rule that replaced "no delete" is narrower and stronger: a delete may
+//   exist here only where the row it removes can be restored byte for byte. That
+//   is why `deleteFood` and `deleteSavedMeal` take an id back on insert, and why
+//   there is still nothing here that touches a bank connection — a Plaid
+//   disconnect wipes the accounts and their entire transaction history, no
+//   before-state can hold that, and it stays a code he types rather than a chat
+//   command.
+//
+//   Still absent, by absence rather than by a flag: any write to a bank
+//   connection, any write to `food_cache`, and any call to another edge function.
 //
 // Rule 5 (every read is paged and fails closed) is satisfied here by never
 // reading a whole table: every read below is a single row, a count, or a list
@@ -50,6 +65,57 @@ export interface MealDayRow {
   note: string | null;
   /** The value the compare-and-set writes against. See updateMealDayIfUnchanged. */
   updatedAt: string;
+}
+
+/**
+ * One logged session, as one json document.
+ *
+ * `exercises` is opaque here for the same reason `meals` is: the shape belongs to
+ * src/lib/workoutLog.ts and the tools that build it, and a seam that named the
+ * fields would be a second definition of them. What this layer owes the tools is
+ * the whole document and the version it was read at.
+ */
+export interface WorkoutRow {
+  id: string;
+  person: Person;
+  date: string;
+  name: string;
+  notes: string;
+  exercises: unknown[];
+  done: boolean;
+  /** The value the compare-and-set writes against. See updateWorkoutIfUnchanged. */
+  updatedAt: string;
+}
+
+export interface RoutineRow {
+  id: string;
+  person: Person;
+  name: string;
+  meta: string;
+  exercises: unknown[];
+}
+
+/** A row of the shared food library. Mirrors `foods` (schema_v6.sql) column for
+ *  column, so an undo can put a deleted food back exactly as it was — including
+ *  its id, which is what every logged portion's `foodId` still points at. */
+export interface FoodRow {
+  id: string;
+  name: string;
+  role: string;
+  kcal: number;
+  p: number;
+  c: number;
+  f: number;
+  serving: number | null;
+  note: string | null;
+  barcode: string | null;
+}
+
+export interface MacroRow {
+  kcal: number;
+  p: number;
+  c: number;
+  f: number;
 }
 
 export interface ReminderInsert {
@@ -216,6 +282,9 @@ export interface Db extends FinanceDb {
    *  replaced instead of quietly overwriting it. */
   readWeight(person: Person, date: string): Promise<number | null>;
   upsertWeight(person: Person, date: string, weight: number, atISO: string): Promise<void>;
+  /** false = there was no weigh-in for that day. Not an error: it is the answer to
+   *  "delete Tuesday's" when Tuesday was never logged. */
+  deleteWeight(person: Person, date: string): Promise<boolean>;
 
   // ── saved meals ───────────────────────────────────────────────────────────
   /** Every saved meal whose name matches, ignoring case and outer spaces. */
@@ -231,6 +300,10 @@ export interface Db extends FinanceDb {
     person: Person;
     date: string;
     meals: unknown[];
+    /** Left out = the column keeps its default (null). Passed only by the tool
+     *  that marks a day followed-roughly or off-plan on a day with no row yet. */
+    status?: string | null;
+    note?: string | null;
     atISO: string;
   }): Promise<"ok" | "conflict">;
   /**
@@ -242,12 +315,94 @@ export interface Db extends FinanceDb {
    * step further: the update only lands if `updated_at` is still the value we
    * read. "stale" means the phone wrote in the gap, and the caller re-reads and
    * tries again. That closes the window the app's own merge still leaves open.
+   *
+   * Every field in `patch` is OPTIONAL except the stamp, and only the fields
+   * present are written. That matters: `status` and `note` are the other phone's
+   * business as much as ours, so a tool that only adds a meal must not send them
+   * at all rather than send back the values it happened to read. The app's own
+   * write has the same rule — "nothing clears a status, so a day the other phone
+   * marked skipped survives our write" (src/store/HealthStore.tsx).
    */
   updateMealDayIfUnchanged(
     id: string,
     seenUpdatedAt: string,
-    patch: { meals: unknown[]; atISO: string },
+    patch: { meals?: unknown[]; status?: string | null; note?: string | null; atISO: string },
   ): Promise<"ok" | "stale">;
+
+  // ── saved meals, as rows rather than as a lookup ───────────────────────────
+  /** One saved meal by id, for editing, deleting, and for putting a deleted one
+   *  back. Null when there is no such row. */
+  readSavedMeal(id: string): Promise<SavedMealRow | null>;
+  /** `id` is supplied only by an undo putting a deleted row back — a saved meal's
+   *  id is what nothing else points at, but restoring the same one means a second
+   *  undo of the same delete cannot create a duplicate. */
+  insertSavedMeal(r: { id?: string; name: string; items: unknown[] }): Promise<string>;
+  /** false = no such row. Only the fields present are written. */
+  updateSavedMeal(id: string, patch: { name?: string; items?: unknown[] }): Promise<boolean>;
+  deleteSavedMeal(id: string): Promise<boolean>;
+
+  // ── the food library ──────────────────────────────────────────────────────
+  readFood(id: string): Promise<FoodRow | null>;
+  /**
+   * The first library food with this name, ignoring case and outer spaces.
+   *
+   * It exists to REFUSE a duplicate, and the reason is a real trap rather than
+   * tidiness: src/lib/mealLog.ts buildLibrary() dedupes the searchable library by
+   * lower-cased name, custom foods first, so a second food called "Protein bar"
+   * can never be found by search. The app has the same trap and lets you walk into
+   * it; a door that let an assistant walk into it would be adding a row that can
+   * only be seen by deleting the other one.
+   */
+  findFoodByName(name: string): Promise<FoodRow | null>;
+  /** `id` supplied only by an undo putting a deleted food back — every logged
+   *  portion's `foodId` points at it, so a restore under a new id would restore
+   *  the food and orphan every portion of it. */
+  insertFood(r: FoodRow & { id?: string }): Promise<string>;
+  deleteFood(id: string): Promise<boolean>;
+
+  // ── macro targets ─────────────────────────────────────────────────────────
+  /** The saved row, or null when nobody has set one and the app is falling back to
+   *  nutrition.ts's DAILY. The difference is what an undo has to restore. */
+  readMacroTarget(person: Person): Promise<MacroRow | null>;
+  upsertMacroTarget(person: Person, target: MacroRow, atISO: string): Promise<void>;
+  /** Puts a person back to having no saved target at all — the only honest inverse
+   *  of the first time one was ever set. */
+  deleteMacroTarget(person: Person): Promise<boolean>;
+
+  // ── the session document ──────────────────────────────────────────────────
+  readWorkout(id: string): Promise<WorkoutRow | null>;
+  /**
+   * This person's unfinished session on that date, if there is one.
+   *
+   * The workout screen shows at most one running session and starting a second is
+   * not something the app can do, so the door refuses it too rather than leaving
+   * two half-logged sessions on one day for him to find later.
+   */
+  findOpenSession(person: Person, date: string): Promise<WorkoutRow | null>;
+  /** "conflict" means that id is already taken. The door generates ids, so the
+   *  only way to see this is an undo re-inserting a row that came back. */
+  insertWorkout(r: WorkoutRow): Promise<"ok" | "conflict">;
+  /**
+   * Compare-and-set on the whole session document — the same guard as
+   * updateMealDayIfUnchanged and for the same reason, spelled out in
+   * src/store/HealthStore.tsx: "a session row is one document, so a blind upsert
+   * drops any set the other device added". Two phones are in this app at once and
+   * one of them may be mid-set while the door writes.
+   */
+  updateWorkoutIfUnchanged(
+    id: string,
+    seenUpdatedAt: string,
+    patch: { name?: string; notes?: string; exercises?: unknown[]; done?: boolean; atISO: string },
+  ): Promise<"ok" | "stale">;
+  deleteWorkout(id: string): Promise<boolean>;
+
+  // ── routines ──────────────────────────────────────────────────────────────
+  readRoutine(id: string): Promise<RoutineRow | null>;
+  /** This person's SAVED routines. The code-defined seeds are not rows and are
+   *  added by the tool, exactly as the workout screen adds them. */
+  listRoutines(person: Person): Promise<RoutineRow[]>;
+  insertRoutine(r: RoutineRow): Promise<"ok" | "conflict">;
+  deleteRoutine(id: string): Promise<boolean>;
 
   // ── queued writes ─────────────────────────────────────────────────────────
   /**

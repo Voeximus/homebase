@@ -83,54 +83,21 @@ import { BUNDLED_EXERCISES } from "./lib/exerciseData.ts";
 import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
 import { describe, pendingFor } from "./reminders.ts";
-import { catalogueOf, readEntries, type CatalogueArg } from "./catalogue.ts";
-// The argument readers, extracted out of this file by phase 2 so both halves of the
-// read door refuse a bad date, a bad integer and a bad string the same way.
-import { BadArgs, dateArg, intArg, lastDayOf, textArg } from "./args.ts";
+import { catalogueOf, readEntries } from "./catalogue.ts";
+// The argument readers and the tool shape, moved out of this file by phase 2 so every
+// half of the read door refuses a bad date, a bad integer and a bad string the same way.
+import { BadArgs, dateArg, intArg, lastDayOf, textArg, type Json, type Tool } from "./args.ts";
 import { FINANCE_TOOLS } from "./toolsFinance.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
-import type { Loader } from "./load.ts";
-import type { Person } from "./auth.ts";
 import { redactSuggestions } from "./worthALook.ts";
+import { HEALTH_ABSENT, HEALTH_READS } from "./healthRead.ts";
 
-export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
-
-export interface ToolContext {
-  /** Forced from the secret. Never read from the request body — see ARGS below. */
-  person: Person;
-  /** The Arizona "now", built once per request. The door's only clock reading. */
-  now: Date;
-  load: Loader;
-  args: Record<string, unknown>;
-}
-
-export interface Tool {
-  name: string;
-  /** One plain sentence, used in the catalogue and in the OpenAPI description. */
-  summary: string;
-  /**
-   * The arguments, for the OpenAPI description and for the handler's own refusal
-   * of a key that is not on the list. `person` is never one of them.
-   *
-   * `type` is declared HERE rather than guessed in openapi.ts, which used to read
-   * `name === "days" ? "integer" : "string"`. That worked for the one integer
-   * argument that exists and would have quietly described the next one as a
-   * string — and the plan already names it (`finance.forecast`, months ahead). An
-   * assistant told "string" sends "3", and intArg refuses it, and the refusal
-   * reads like the assistant's mistake.
-   *
-   * The shape is CatalogueArg, in catalogue.ts, because openapi.ts now builds the
-   * served schema off the catalogue rather than off this array — one definition of
-   * "an argument" for the door, its description and the test that compares them.
-   *
-   * Phase 2 widened the declared types to "number" (a dollar figure in a search
-   * filter) and "boolean" (a three-valued filter, where absent is not the same
-   * instruction as false). That widening lives on CatalogueArg, so the served
-   * schema and the door agree about it by construction.
-   */
-  args?: CatalogueArg[];
-  run(ctx: ToolContext): Promise<{ [k: string]: Json }>;
-}
+// The shape of a tool, the argument checks, and BadArgs now live in args.ts, so
+// this catalogue and healthRead.ts can both use them without one importing the
+// other. Re-exported here because handler.ts, openapi.ts and the tests have always
+// asked tools.ts for them, and moving a file should not move a door's front door.
+export type { Json, Tool, ToolContext } from "./args.ts";
+export { BadArgs } from "./args.ts";
 
 // ── ARGS ──────────────────────────────────────────────────────────────────────
 //
@@ -148,12 +115,6 @@ export interface Tool {
 // Every tool declares the arguments it takes, and the handler refuses any key that
 // is not on that list — so a misspelled argument is an error rather than a silently
 // ignored instruction, and `person` is refused everywhere at once.
-//
-// THE VALIDATORS MOVED TO ./args.ts in Phase 2, when a second tool file appeared.
-// They are re-exported here because handler.ts and the tests import BadArgs from
-// the catalogue, and because a second copy of a date validator is the drift this
-// bridge exists to stop, in miniature.
-export { BadArgs } from "./args.ts";
 
 // ── finance.audit ─────────────────────────────────────────────────────────────
 //
@@ -953,9 +914,11 @@ export const TOOLS: readonly Tool[] = [
   healthLastLift,
   healthNextWorkout,
   scheduleListReminders,
-  // Phase 2's finance parity, in its own file so the two phases can be read apart.
-  // Same Tool shape, same rules, same handler.
+  // Phase 2's parity, one file per domain so the phases can be read apart. Same Tool
+  // shape, same rules, same handler. Appended rather than interleaved so the eleven
+  // tools he has already read the wording of keep the order he read them in.
   ...FINANCE_TOOLS,
+  ...HEALTH_READS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
@@ -1003,6 +966,17 @@ export const ABSENT: readonly { name: string; why: string }[] = [
       "bank history back. That takes a code he types in the app, not a chat message.",
   },
   {
+    // Phase 1 said "no door has a delete verb", and that stopped being true the
+    // day the write door grew one. It is stated accurately instead of quietly
+    // dropped, because an assistant that reads a promise and finds the opposite
+    // stops trusting the whole list. The write door deletes only where the row it
+    // removes can be put back byte for byte; the one thing no undo can restore —
+    // disconnecting the bank, which wipes the accounts and their whole transaction
+    // history — takes a code he types, not a chat command.
+    name: "anything that deletes, on this door",
+    why: "Deleting lives on the write door, and only where the before-state was captured first so 'undo that' can put it back.",
+  },
+  {
     name: "asking about the other person",
     why: "Each key answers about its own owner. A key that could ask about both makes losing one phone cost two people's data.",
   },
@@ -1010,6 +984,7 @@ export const ABSENT: readonly { name: string; why: string }[] = [
     name: "anything that writes",
     why: "This is the read door. It has no write verb at all. The write door has the changes, and every one of them records what it replaced.",
   },
+  ...HEALTH_ABSENT,
 ];
 
 /**

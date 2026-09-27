@@ -12,8 +12,8 @@
 
 import type { AppData } from "./lib/types.ts";
 import type { BodyWeight } from "./lib/weightLog.ts";
-import type { DayLog } from "./lib/mealLog.ts";
-import type { MacroTarget } from "./lib/nutrition.ts";
+import type { DayLog, SavedMeal } from "./lib/mealLog.ts";
+import type { Food, MacroTarget } from "./lib/nutrition.ts";
 import { DAILY } from "./lib/nutrition.ts";
 import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { Db } from "./paging.ts";
@@ -25,9 +25,11 @@ import {
   toAppData,
   toBodyWeight,
   toDayLog,
+  toFood,
   toMacroTarget,
   toReminder,
   toRoutine,
+  toSavedMeal,
   toWorkout,
 } from "./rows.ts";
 
@@ -53,6 +55,15 @@ export interface Loader extends FinanceExtras {
   /** The person's macro target, falling back to the plan's own DAILY constant —
    *  which is what the app does when the row is missing. */
   macroTarget(person: Person): Promise<MacroTarget>;
+  /**
+   * The macro target that is actually SAVED, or null when nobody has set one.
+   *
+   * macroTarget() above cannot answer this: it has already substituted the
+   * starting plan's numbers, and "the target you chose" and "the numbers nobody
+   * has touched" are different answers to say out loud. Same read, so asking for
+   * both costs one query.
+   */
+  savedTarget(person: Person): Promise<MacroTarget | null>;
   /** One person's logged sessions. */
   workouts(person: Person): Promise<Workout[]>;
   /** One person's saved custom routines (the code-defined seeds are added by the
@@ -72,6 +83,23 @@ export interface Loader extends FinanceExtras {
    * silently missing the one that matters is worse than no list.
    */
   reminders(person: Person): Promise<ReminderRow[]>;
+  /**
+   * EVERY one of this person's meal days, keyed `person|date` — the shape
+   * src/lib/adherence.ts takes, because that is the map HealthStore hands it.
+   *
+   * A whole-table read rather than a window, for the same reason the app does it:
+   * a streak is defined by walking back until it breaks, so a window would decide
+   * the answer by where it was cut. It is paged and fails closed like every other
+   * read, and the table is one row per person per day.
+   */
+  days(person: Person): Promise<Map<string, DayLog>>;
+  /** The household's saved meals, oldest first — the order the meal screen lists
+   *  them in. Shared, not per person, which is what the table is. */
+  savedMeals(): Promise<SavedMeal[]>;
+  /** The household's own food library (the `foods` table). The bundled and seed
+   *  tables are code and are added by the tool, exactly as the meal builder's
+   *  buildLibrary() does. */
+  foods(): Promise<Food[]>;
 }
 
 export function createLoader(db: Db): Loader {
@@ -111,11 +139,14 @@ export function createLoader(db: Db): Loader {
     return rows.map(toBodyWeight).sort((a, b) => a.date.localeCompare(b.date));
   });
 
-  const macroTarget = perPerson(async (person) => {
+  const savedTarget = perPerson(async (person) => {
     const rows = await readAll(db, { table: "macro_targets", orderBy: "person", eq: { person } });
     const row = rows[0];
-    return row ? toMacroTarget(row) : DAILY[person];
+    return row ? toMacroTarget(row) : null;
   });
+
+  const macroTarget = async (person: Person): Promise<MacroTarget> =>
+    (await savedTarget(person)) ?? DAILY[person];
 
   const workouts = perPerson(async (person) => {
     const rows = await readAll(db, { table: "workouts", orderBy: "id", eq: { person } });
@@ -129,8 +160,34 @@ export function createLoader(db: Db): Loader {
 
   const reminders = perPerson(async (person) => {
     const rows = await readAll(db, { table: "reminders", orderBy: "id", eq: { person } });
+    // Unsorted on purpose, and the health half of phase 2 briefly sorted it here. The
+    // order a list is READ in is the tool's question, not the loader's: two read tools
+    // now share this loader and they want different orders — soonest-due for a list of
+    // what is coming, and paging order for a page that has to join up with the next one.
+    // Sorting here would make one of them quietly reorder its pages.
     return rows.map(toReminder);
   });
+
+  const allDays = perPerson(async (person) => {
+    const rows = await readAll(db, { table: "meal_days", orderBy: "id", eq: { person } });
+    const out = new Map<string, DayLog>();
+    for (const r of rows) {
+      const log = toDayLog(r);
+      out.set(`${person}|${log.date}`, log);
+    }
+    return out;
+  });
+
+  const savedMeals = once(async () => {
+    const rows = await readAll(db, { table: "saved_meals", orderBy: "id" });
+    return rows.map(toSavedMeal);
+  });
+
+  const foods = once(async () => {
+    const rows = await readAll(db, { table: "foods", orderBy: "id" });
+    return rows.map(toFood);
+  });
+
 
   const days = new Map<string, Promise<DayLog>>();
 
@@ -139,8 +196,12 @@ export function createLoader(db: Db): Loader {
     appData,
     weights,
     macroTarget,
+    savedTarget,
     workouts,
     routines,
+    days: allDays,
+    savedMeals,
+    foods,
     reminders,
     day(person, date) {
       const key = `${person}|${date}`;

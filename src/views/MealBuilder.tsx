@@ -32,12 +32,14 @@ import {
   buildLibrary,
   contribution,
   dayTotals,
+  itemFromFood,
   mealTotals,
   pluralizeUnit,
   rowId,
   searchFoods,
   todayStr,
   ZERO,
+  type Amount,
   type DayLog,
   type LoggedItem,
   type Macros,
@@ -85,25 +87,12 @@ const other = (p: Person): Person => (p === "gino" ? "xinyan" : "gino");
 // Meals are generic + dynamic — displayed by position so deletes renumber.
 const mealName = (i: number) => `Meal ${i + 1}`;
 
-const macroOf = (f: Food): Macros => ({ kcal: f.kcal, p: f.p, c: f.c, f: f.f });
-
-// How much of a food — either a gram weight, or a count of its natural unit
-// (grams stays canonical = qty × unit.grams).
-export interface Amount {
-  grams: number;
-  qty?: number;
-  unit?: FoodUnit;
-}
-const toItem = (f: Food, a: Amount): LoggedItem => ({
-  id: rowId(),
-  foodId: f.id,
-  name: f.name,
-  role: f.role,
-  grams: a.grams,
-  per100: macroOf(f),
-  qty: a.qty,
-  unit: a.unit,
-});
+// `Amount` and the portion builder moved into src/lib/mealLog.ts so the Muse write
+// door can log a meal with the app's own rule instead of a copy of it — a door with
+// its own copy drifts from the screen and nobody notices in a chat. Re-exported
+// here because this file is where `Amount` has always been imported from.
+export type { Amount };
+const toItem = (f: Food, a: Amount): LoggedItem => itemFromFood(f, a, rowId());
 // ── entry point ────────────────────────────────────────────────────────────────
 export function MealBuilder({ owner, person }: { owner: Person; person: Person }) {
   const { data } = useStore();

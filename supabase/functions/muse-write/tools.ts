@@ -1,4 +1,4 @@
-// What an assistant may change, and nothing else.
+// The reminder half of what an assistant may change, and the door's registry.
 //
 // NO COUNT IN THIS COMMENT, deliberately. It said "the seven things" while nine
 // existed, and the same number was typed in four other places — openapi.ts, index.ts,
@@ -6,68 +6,37 @@
 // counted from CATALOGUE at the bottom, through _shared/muse/catalogue.ts, and
 // tests/museCatalogue.test.ts fails if a typed one comes back.
 //
-// THESE LAND STRAIGHT AWAY ("direct")
-//   health.log_weight       one number, one row, visible on the weight screen,
-//                           deletable in two taps.
-//   health.log_saved_meal   a meal the household already saved, by name. The
-//                           macros are already known, so there is nothing to
-//                           parse and nothing to get wrong.
-//   schedule.remind         a reminder in Homebase's own list, which Homebase's
-//                           cron delivers as a real push.
-//   schedule.cancel_reminder  stops one that has not gone off yet.
-//   schedule.update_reminder  moves its time, changes its words, or changes how
-//                           often it repeats.
+// WHERE EVERYTHING ELSE WENT. Phase 1 had seven tools in this file. Phase 2 is parity —
+// a tool for everything the app can do — which is 25 finance tools (toolsFinance.ts) and
+// 22 health and workout tools (healthTools.ts), including the three health tools that
+// started here. The shape of a tool and the checks all three files share live in kit.ts,
+// so no catalogue imports another: the registry is built at module load, and a cycle
+// here is a door that does not start.
 //
-// WHY THE LAST TWO ARE NOT A LOOSENING. They are the correction half of the tool
-// above them. `schedule.remind` could put a 3 AM reminder on a lock screen and
-// nothing could take it back: the app has no reminders screen — nothing in `src/`
-// reads or writes that table — so the only fix was the Supabase dashboard. A door
-// that can make a mistake and not undo it is not safer, it is just less finished.
-// Neither of them is a delete: "cancel" sets `canceled_at` and the row stays, which
-// is what lets the audit log still point at it and what makes "that one already went
-// out" answerable instead of guessable.
+// WHAT IS LEFT HERE is the three reminder tools, and they belong together.
+// `schedule.remind` could put a 3 AM reminder on a lock screen and nothing could take it
+// back: the app has no reminders screen — nothing in `src/` reads or writes that table —
+// so the only fix was the Supabase dashboard. cancel and update are the correction half
+// of it, and neither is a delete: "cancel" sets `canceled_at` and the row stays, which is
+// what lets the audit log still point at it and what makes "that one already went out"
+// answerable instead of guessable.
 //
-// THESE ONLY ASK ("queued")
-//   finance.categorize_charge, finance.note_known_amount,
-//   finance.add_transaction, health.log_meal
-//   Each one writes a single row into muse_pending and NOTHING ELSE. The ledger
-//   does not move until he taps it in the app, where the app's own read-and-
-//   refuse guards run and he can see both numbers.
-//
-// WHY THE SPLIT IS NOT "ASK HIM IN THE ASSISTANT"
+// WHY THE SPLIT WAS NOT "ASK HIM IN THE ASSISTANT"
 //   Meta's approval choices are per "type of action" on a connector, in the
 //   future — "Always allow: Muse can take this type of action for this Connector
 //   in the future without asking again". Nobody outside Meta knows how wide a
 //   "type of action" is, and the door cannot tell an approved write from an
-//   auto-approved one. So the door treats EVERY write as unattended, and the tap
-//   that matters lives inside Homebase where it can actually be enforced.
-//
-// WHAT IS NOT HERE, AND WILL NOT BE
-//   Moving money. Deleting anything. Settling a bill cycle or writing paid_bills
-//   — a $6 parking charge once settled September's rent and moved the month by
-//   $1,732, and that was a human doing it in daylight. Changing a debt balance or
-//   a savings goal. Writing food_cache. Calling another edge function. None of
-//   these is a disabled flag: there is no code for them, so there is nothing to
-//   talk the assistant into finding.
+//   auto-approved one. So the door treats EVERY write as unattended.
 //
 // AND THE THING THIS FILE DOES NOT DO: ARITHMETIC
-//   Not one number below is derived. A weigh-in is stored as it was said. A saved
-//   meal's portions are copied across exactly as they sit in `saved_meals`. A
-//   queued row stores the request and lets the app compute. That is why this door
-//   imports nothing out of src/lib — it has no maths to keep in step with the
-//   screens, which is the drift that told the phones "Electric $85" while every
-//   screen said $100.
+//   Not one number below is derived. A queued row stores the request and lets the
+//   app compute. Where phase 2 needed a rule the app had — a portion's per-100g
+//   values, a set's shape after the fact — that rule was moved into src/lib and
+//   imported rather than copied, because a hand-written mirror is the drift that
+//   told the phones "Electric $85" while every screen said $100.
 
-import type { Db, MealDayRow, Person, Push, ReminderRow } from "./db.ts";
-import {
-  addDays,
-  azDateISO,
-  azWallClock,
-  daysBetweenISO,
-  instantOf,
-  isDateISO,
-  parseInstant,
-} from "../_shared/muse/az.ts";
+import type { ReminderRow } from "./db.ts";
+import { addDays, azDateISO, azWallClock, instantOf, parseInstant } from "../_shared/muse/az.ts";
 import {
   closedBecause,
   DELIVERY_GRAIN_MIN,
@@ -79,283 +48,37 @@ import {
   type Repeats,
 } from "../_shared/muse/reminders.ts";
 import { catalogueOf, namesOf, writeEntries } from "../_shared/muse/catalogue.ts";
-import { UUID } from "../_shared/muse/args.ts";
 import { scrubCap } from "../_shared/muse/scrub.ts";
+import { DISPLAY, refuse, UUID, type Ctx, type Refusal, type Tool } from "./kit.ts";
 import { FINANCE_WRITE_TOOLS } from "./toolsFinance.ts";
+import { HEALTH_TOOLS } from "./healthTools.ts";
 
-/** The push_subscriptions "owner" spelling, and the name a sentence uses. */
-export const DISPLAY: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
+// The shape of a tool and the checks every tool shares live in kit.ts, so this
+// catalogue, toolsFinance.ts and healthTools.ts can all use them without one importing
+// another. Re-exported here because handler.ts, openapi.ts and the tests have always
+// asked tools.ts for them, and moving a file should not move a door's front door.
+export type { Ctx, Refusal, Success, Tool, ToolOutcome } from "./kit.ts";
+export { DISPLAY } from "./kit.ts";
 
-export interface Ctx {
-  db: Db;
-  push: Push;
-  /** Taken from the secret that was presented. NEVER from the request body. */
-  person: Person;
-  /** The true instant, built once at the top of the request. */
-  at: Date;
-  /** The same instant as Arizona's calendar and clock. Built once, passed down. */
-  az: Date;
-  appUrl: string;
-}
-
-export type Refusal = { ok: false; status: number; say: string };
-export type Success = {
-  ok: true;
-  result: Record<string, unknown>;
-  rowIds: string[];
-  say: string;
-};
-export type ToolOutcome = Refusal | Success;
-
-export interface Tool {
-  kind: "direct" | "queued";
-  /** One line, for the OpenAPI description and for the "no such tool" reply. */
-  does: string;
-  /** Every field this tool accepts. Anything else is refused by name — a typo
-   *  that silently did nothing would be worse than a refusal. */
-  fields: string[];
-  run(payload: Record<string, unknown>, ctx: Ctx): Promise<ToolOutcome>;
-}
-
-// ── small shared checks ──────────────────────────────────────────────────────
-
-const refuse = (status: number, say: string): Refusal => ({ ok: false, status, say });
-
-// The id and category checks that used to live here moved to toolsFinance.ts with
-// the three tools that used them — and the category one changed shape on the way:
-// it checks the id against the app's OWN LIST (DEFAULT_CATEGORIES) instead of against
-// a slug pattern. A shape check passes a category the app does not know, and a charge
-// filed under one belongs to no budget line and appears on no bar.
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-/** A finite number, and not a numeric string — a string that looks like a number
- *  is a sign the caller guessed at the shape. */
-function money(v: unknown): number | null {
-  if (typeof v !== "number" || !Number.isFinite(v)) return null;
-  return v;
-}
-
-/**
- * The date this write is for. Defaults to Arizona's today — never the runtime's,
- * which from 5 PM onward is already tomorrow.
- *
- * `backDays` is how far back the tool is willing to look. It is small on purpose:
- * a weigh-in from three months ago is a typo far more often than a memory, and a
- * wrong date is invisible in a chat.
- */
-function dateFor(
-  payload: Record<string, unknown>,
-  ctx: Ctx,
-  backDays: number,
-): { date: string } | Refusal {
-  const today = azDateISO(ctx.az);
-  if (payload.date === undefined) return { date: today };
-  if (!isDateISO(payload.date)) {
-    return refuse(400, "I need the date as YYYY-MM-DD, or leave it out and I will use today.");
-  }
-  const delta = daysBetweenISO(payload.date, today);
-  if (delta < 0) return refuse(400, `${payload.date} has not happened yet in Arizona. Today is ${today}.`);
-  if (delta > backDays) {
-    return refuse(
-      400,
-      `${payload.date} is more than ${backDays} days back. Add that one in the app so you can see what is already there.`,
-    );
-  }
-  return { date: payload.date };
-}
-
-// ── the queued path ──────────────────────────────────────────────────────────
-
-/**
- * One row in muse_pending, one push, and nothing else. This function is the
- * whole of the queued path, which is the point: there is no branch anywhere in
- * it that touches the ledger.
- *
- * WHAT THE SENTENCE USED TO SAY, AND WHY IT HAD TO CHANGE. It said the request was
- * "waiting in the app for your tap". Nothing in the app reads muse_pending — there
- * is no list, no screen and no tap, and no code path anywhere that applies one of
- * these rows. PLAN.md Phase 4 puts the app half and the door half in the same phase
- * and only the door half was built. So the door was sending him to a screen that
- * does not exist, on every queued tool, and "go and tap it" is the one sentence
- * in the whole bridge a person cannot check without walking into the app and finding
- * nothing.
- *
- * The sentence now says what is true TODAY: the request is written down, the ledger
- * has not moved, and nothing will move it until the app grows the screen. When that
- * screen lands, this is the line to change back — and PLAN.md's Phase 4 gate ("undo
- * each in the app and confirm it undoes cleanly") is what proves it.
- */
-async function queue(
-  ctx: Ctx,
-  tool: string,
-  payload: Record<string, unknown>,
-  summary: string,
-): Promise<Success> {
-  const row = await ctx.db.insertPending({ person: ctx.person, tool, payload, summary });
-  await ctx.push(
-    {
-      // Not "Waiting for your tap": there is nothing to tap yet, and a notification
-      // that sends him looking for a screen that is not there is worse than none.
-      title: "Written down, not applied",
-      body: summary,
-      url: ctx.appUrl,
-      tag: "muse-pending",
-    },
-    DISPLAY[ctx.person],
-  );
-  return {
-    ok: true,
-    result: {
-      queued: true,
-      id: row.id,
-      expires_at: row.expiresAt,
-      summary,
-      applied: false,
-      can_be_applied_yet: false,
-    },
-    rowIds: [row.id],
-    say:
-      `${summary} Nothing has changed, and nothing will: the app has no screen for ` +
-      `these yet, so this is only written down. It clears itself after 24 hours. ` +
-      `Do it in the app if it needs to actually happen.`,
-  };
-}
-
-// ── health.log_weight ────────────────────────────────────────────────────────
-
-const logWeight: Tool = {
-  kind: "direct",
-  does: "Record a weigh-in.",
-  fields: ["weight", "date"],
-  async run(payload, ctx) {
-    const weight = money(payload.weight);
-    if (weight === null) return refuse(400, "I need the weight as a number, in pounds.");
-    // A plausible range, not a judgement about his body: the point is to catch a
-    // misheard number (19.84, 1984) before it lands in the trend line, where a
-    // single wild point bends the slope the app reports.
-    if (weight < 50 || weight > 700) {
-      return refuse(400, "That weight does not look like pounds. Say it as you read it off the scale.");
-    }
-    const when = dateFor(payload, ctx, 14);
-    if ("ok" in when) return when;
-
-    const previous = await ctx.db.readWeight(ctx.person, when.date);
-    // Stored exactly as it was said. No rounding: the door does no arithmetic,
-    // and a number that comes back different from the one he spoke is the small
-    // end of the same problem.
-    await ctx.db.upsertWeight(ctx.person, when.date, weight, ctx.at.toISOString());
-
-    const who = DISPLAY[ctx.person];
-    const say = previous === null
-      ? `Logged ${weight} lb for ${who} on ${when.date}.`
-      : `Logged ${weight} lb for ${who} on ${when.date}. That replaced the ${previous} already saved for that day.`;
-    // rowIds stays empty: body_weights has one row per person per date, so the
-    // person and the date in `result` already name the row exactly. The audit log
-    // can still answer "did that actually happen" without a second round trip.
-    return {
-      ok: true,
-      result: { person: ctx.person, date: when.date, weight, replaced: previous },
-      rowIds: [],
-      say,
-    };
-  },
-};
-
-// ── health.log_saved_meal ────────────────────────────────────────────────────
-
-const MAX_MEAL_ATTEMPTS = 3;
-
-const logSavedMeal: Tool = {
-  kind: "direct",
-  does: "Log one of the household's saved meals by name.",
-  fields: ["name", "date"],
-  async run(payload, ctx) {
-    const name = typeof payload.name === "string" ? payload.name.trim() : "";
-    if (!name || name.length > 80) {
-      return refuse(400, "Tell me the name of the saved meal, as it is spelled in the app.");
-    }
-    const when = dateFor(payload, ctx, 2);
-    if ("ok" in when) return when;
-
-    const matches = await ctx.db.findSavedMealsByName(name);
-    if (matches.length === 0) {
-      const names = (await ctx.db.listSavedMealNames(8)).map((n) => scrubCap(n, 40)).filter(Boolean);
-      const list = names.length ? ` Saved meals right now: ${names.join(", ")}.` : "";
-      return refuse(404, `There is no saved meal called that.${list}`);
-    }
-    if (matches.length > 1) {
-      return refuse(409, "More than one saved meal has that name. Pick it in the app so the right one lands.");
-    }
-    const saved = matches[0];
-
-    // The portions are copied across EXACTLY as they sit in saved_meals. Each one
-    // already carries its own per-100g snapshot, which is why the app's log stays
-    // correct after a library food is edited. The door does not look inside them
-    // and never computes a macro.
-    //
-    // The id is generated once, outside the retry loop on purpose: the app merges
-    // day documents by meal id, so a retry that appends the same id can never
-    // show up twice.
-    const meal = { id: crypto.randomUUID(), name: saved.name, items: saved.items };
-    const atISO = ctx.at.toISOString();
-
-    let day: MealDayRow | null = null;
-    let landed = false;
-    for (let attempt = 0; attempt < MAX_MEAL_ATTEMPTS && !landed; attempt++) {
-      // THE RE-READ, IMMEDIATELY BEFORE THE WRITE. A meal_days row holds the
-      // WHOLE day as one json document, so every write replaces the lot — writing
-      // a copy read a moment ago erases anything the phone logged in between.
-      // Reading here, inside the loop, means each attempt carries the freshest
-      // copy rather than re-sending a stale one.
-      day = await ctx.db.readMealDay(ctx.person, when.date);
-      if (!day) {
-        landed = (await ctx.db.insertMealDay({
-          person: ctx.person,
-          date: when.date,
-          meals: [meal],
-          atISO,
-        })) === "ok";
-        continue;
-      }
-      // status and note are left exactly as they are, which is what the app's own
-      // write does — nothing clears a day's status, so a day the other phone
-      // marked skipped survives this write.
-      landed = (await ctx.db.updateMealDayIfUnchanged(day.id, day.updatedAt, {
-        meals: [...day.meals, meal],
-        atISO,
-      })) === "ok";
-    }
-
-    if (!landed) {
-      // Fails closed and says so plainly. The phone was writing the same day at
-      // the same moment, three times over; a fourth blind attempt is how the
-      // phone's meals get erased.
-      return refuse(
-        503,
-        "The phone was writing that same day at the same moment. Nothing was changed — try again in a few seconds.",
-      );
-    }
-
-    const total = (day ? day.meals.length : 0) + 1;
-    return {
-      ok: true,
-      result: {
-        person: ctx.person,
-        date: when.date,
-        meal: scrubCap(saved.name, 40),
-        items: saved.items.length,
-        meals_on_day: total,
-      },
-      rowIds: [],
-      say:
-        `Added ${scrubCap(saved.name, 40)} to ${DISPLAY[ctx.person]}'s food log for ${when.date}. ` +
-        `That day now has ${total} ${total === 1 ? "meal" : "meals"}.`,
-    };
-  },
-};
+// THE QUEUED PATH USED TO BE HERE, and it is worth one paragraph rather than a silent
+// deletion, because the sentence it wrote is the one a person could not check.
+//
+// It wrote one row into muse_pending, fired a push, and touched nothing else. Its reply
+// said the request was "waiting in the app for your tap" — and nothing in the app reads
+// muse_pending. No list, no screen, no code path that applies one of those rows.
+// PLAN.md's Phase 4 puts the app half and the door half in one phase, and only the door
+// half was built. So four tools sent him to a screen that does not exist, and a queued
+// row sat there until cron-reminders marked it expired a day later.
+//
+// Phase 2 answered that by making all four direct with a captured before-state and an
+// undo token, which is the trade his instruction asks for: the tap moved from before the
+// change to after it, if he wants it back. With no queued tool left, the helper was
+// unreachable, and tsc refuses unreachable code here rather than leaving a reader to
+// wonder which path runs.
+//
+// If the app ever grows that approval screen, this is the commit to read: the row shape
+// and the RLS for muse_pending are still in schema_v36, and `Tool.kind` still has the
+// "queued" variant with catalogue.ts still holding the one sentence that describes it.
 
 // ── schedule.remind ──────────────────────────────────────────────────────────
 
@@ -661,73 +384,23 @@ const updateReminder: Tool = {
 // caller: a variable bill's figure lives in known_amount, a fixed bill's price is
 // amount, and writing the wrong one reads as a fix that did nothing.
 //
-// health.log_meal below is still queued. Free-form food is the one write whose
-// before-state is not the question — there is nothing to restore, only a meal to
-// remove — and the health half of this phase owns that decision.
+// health.log_meal WAS the fourth, and the finance half left the decision to the health
+// half, which made it direct too. So the queued path now has no tools at all. `Tool.kind`
+// keeps the variant and catalogue.ts keeps the sentence — the machinery is sound and what
+// it was missing was a screen — but the helper that wrote those rows is gone, because an
+// unreachable function is something tsc refuses rather than something a reader trusts.
 
-// ── health.log_meal (queued) ─────────────────────────────────────────────────
-
-const MAX_ITEMS = 12;
-
-const logMeal: Tool = {
-  kind: "queued",
-  does: "Ask for free-form food to be added to a day's log.",
-  fields: ["date", "items"],
-  async run(payload, ctx) {
-    const when = dateFor(payload, ctx, 2);
-    if ("ok" in when) return when;
-    const items = payload.items;
-    if (!Array.isArray(items) || items.length === 0) {
-      return refuse(400, "I need at least one food, each with its calories and macros.");
-    }
-    if (items.length > MAX_ITEMS) {
-      return refuse(400, `That is more than ${MAX_ITEMS} foods at once. Split it into two meals.`);
-    }
-    const clean: Record<string, unknown>[] = [];
-    for (const raw of items) {
-      if (!isObject(raw)) return refuse(400, "Each food is an object with a name, calories and macros.");
-      const name = scrubCap(raw.name, 40);
-      if (!name) return refuse(400, "Each food needs a name.");
-      const nums: Record<string, number> = {};
-      for (const k of ["kcal", "p", "c", "f"]) {
-        const v = money(raw[k]);
-        if (v === null || v < 0 || v > 10_000) {
-          return refuse(400, `${name} needs ${k} as a number of zero or more.`);
-        }
-        nums[k] = v;
-      }
-      let grams: number | null = null;
-      if (raw.grams !== undefined) {
-        grams = money(raw.grams);
-        if (grams === null || grams <= 0 || grams > 5_000) {
-          return refuse(400, `${name} needs grams as a number above zero, or leave it out.`);
-        }
-      }
-      clean.push({ name, grams, ...nums });
-    }
-    // No totals. The app adds these up when he taps, with the same code that
-    // draws the screen.
-    const first = String(clean[0].name);
-    const more = clean.length - 1;
-    const summary = more > 0
-      ? `Add ${first} and ${more} more to ${DISPLAY[ctx.person]}'s food log for ${when.date}.`
-      : `Add ${first} to ${DISPLAY[ctx.person]}'s food log for ${when.date}.`;
-    return queue(ctx, "health.log_meal", { date: when.date, items: clean }, summary);
-  },
-};
-
-// ── the registry ─────────────────────────────────────────────────────────────
+// ── the registry ───────────────────────────────────────────
 
 const REGISTRY: Record<string, Tool> = {
-  "health.log_weight": logWeight,
-  "health.log_saved_meal": logSavedMeal,
   "schedule.remind": remind,
   "schedule.cancel_reminder": cancelReminder,
   "schedule.update_reminder": updateReminder,
-  "health.log_meal": logMeal,
-  // Phase 2's finance parity and the undo, in their own file so the two phases can be
-  // read apart. Same Tool shape, same handler, same Idempotency-Key.
+  // Phase 2's parity, one file per domain. Spread rather than listed, so a tool added
+  // there cannot be missing from the door — and the "no such tool" reply, the served
+  // description and the tests all read this one object.
   ...FINANCE_WRITE_TOOLS,
+  ...HEALTH_TOOLS,
 };
 
 /**

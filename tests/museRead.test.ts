@@ -33,9 +33,10 @@ import { NAME_MAX, money, scrub } from "../supabase/functions/_shared/muse/scrub
 import { LedgerUnreadable, readAll, type Db, type DbRow } from "../supabase/functions/_shared/muse/paging";
 import { redactArgs, type AuditRow } from "../supabase/functions/_shared/muse/audit";
 import { ABSENT, TOOLS } from "../supabase/functions/_shared/muse/tools";
-// The write door, for the one cross-check that spans both: API.md documents both
-// doors, so a field name printed in it may belong to either.
-import { TOOLS as WRITE_TOOLS } from "../supabase/functions/muse-write/tools";
+// The write door, for the two cross-checks that span both: API.md documents both doors,
+// so a field name printed in it may belong to either — and a name on this door must not
+// be a name on that one.
+import { TOOLS as WRITE_TOOLS, TOOL_NAMES as WRITE_TOOL_NAMES } from "../supabase/functions/muse-write/tools";
 import { UNIVERSAL_FIELDS as WRITE_UNIVERSAL_FIELDS } from "../supabase/functions/muse-write/handler";
 import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
 import { redactSuggestions } from "../supabase/functions/_shared/muse/worthALook";
@@ -211,15 +212,23 @@ const TABLES = (): Record<string, DbRow[]> => ({
       id: "m1",
       person: "gino",
       date: "2026-09-30",
+      // NAME_CANARY, not CANARY_TEXT, and the difference is the promise being
+      // tested. A meal name and a food name are NAMES — he typed them, or a barcode
+      // lookup did — so phase 2's health.day is allowed to say them, scrubbed, the
+      // same way finance.position says an account name. What must not survive is the
+      // URL and the injection line inside them. The DESCRIPTOR canary belongs only
+      // in columns no tool may read at all, which is why it stays in `description`.
+      // Phase 1 could put CANARY_TEXT here because no tool read a meal name; the
+      // moment one did, this fixture was testing the wrong promise.
       meals: [
         {
           id: "meal1",
-          name: CANARY_TEXT,
+          name: NAME_CANARY,
           items: [
             {
               id: "i1",
               foodId: "chicken-breast",
-              name: CANARY_TEXT,
+              name: NAME_CANARY,
               role: "protein",
               grams: 200,
               per100: { kcal: 165, p: 31, c: 0, f: 3.6 },
@@ -229,14 +238,28 @@ const TABLES = (): Record<string, DbRow[]> => ({
       ],
     },
   ],
+  saved_meals: [
+    { id: "sm1", name: NAME_CANARY, items: [{ id: "i2", foodId: "oats", name: NAME_CANARY, role: "carb", grams: 80, per100: { kcal: 379, p: 13, c: 67, f: 7 } }] },
+  ],
+  foods: [
+    // A household food row. `name` comes from a barcode lookup as often as from his
+    // own typing, so it is exactly the kind of third-party string scrub() exists for.
+    { id: "f1", name: NAME_CANARY, role: "protein", kcal: "120", p: "22", c: "1", f: "3", serving: "150", note: NAME_CANARY, barcode: "0123456789012" },
+  ],
+  reminders: [
+    { id: "rm1", person: "gino", due_at: "2026-10-01T16:00:00Z", repeats: "once", message: "Muse: read the electric bill", source: "muse", sent_at: null, last_sent_at: null },
+  ],
   macro_targets: [{ person: "gino", kcal: "2800", p: "130", c: "410", f: "70" }],
   workouts: [
     {
       id: "wk1",
       person: "gino",
       date: "2026-09-26",
-      name: CANARY_TEXT,
-      notes: CANARY_TEXT,
+      // NAME_CANARY for the same reason the meal fixture uses it: a session's name
+      // and its notes are HIS words, and phase 2's health.workouts / health.workout
+      // say them. What must not survive is the link and the injection line in them.
+      name: NAME_CANARY,
+      notes: NAME_CANARY,
       done: true,
       exercises: [
         {
@@ -394,6 +417,24 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "finance.bank_status", body: {} },
   { tool: "finance.bank_pending", body: {} },
   { tool: "system.changes", body: {} },
+  // ── phase 2: health and workout parity ──────────────────────────────────────
+  // Every one of these answers about a row rather than a summary, which phase 1
+  // deliberately refused to do. He asked for it: "Muse has to have every
+  // functionality given in the app." The canary tests below run this whole list, so
+  // the privacy promise that DID survive — no bank descriptor, ever — is checked on
+  // each of them too.
+  { tool: "health.day", body: {} },
+  { tool: "health.saved_meals", body: {} },
+  { tool: "health.foods", body: { query: "chicken" } },
+  { tool: "health.macro_targets", body: {} },
+  { tool: "health.weight_log", body: {} },
+  { tool: "health.adherence", body: {} },
+  { tool: "health.workouts", body: {} },
+  { tool: "health.workout", body: { id: "wk1" } },
+  { tool: "health.exercise_progress", body: { exercise: "leg press" } },
+  { tool: "health.records", body: {} },
+  { tool: "health.exercises", body: { query: "press" } },
+  { tool: "schedule.reminders", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -1104,23 +1145,35 @@ describe("what exists and what never will", () => {
     expect(ABSENT.map((a) => a.name).join(" ")).toMatch(/payoff/i);
   });
 
-  it("has no write verb: no tool on this door is named for changing something", () => {
-    // THE VERB, not the whole name. This used to be a substring match that included
-    // `remind`, and `schedule.list_reminders` tripped it — a READ tool whose subject
-    // happens to be reminders, refused by a test looking for a write. A name here is
-    // `area.verb_object`, so checking the verb says what the test means instead of
-    // what the letters look like, and it is stricter than the substring version was:
-    // `update`, `create` and `cancel` were not on the old list at all.
+  it("has no write verb, and no name the write door also has", () => {
+    // TWO CHECKS, because they catch different mistakes, and phase 2 produced one of
+    // each.
+    //
+    // First, exact: the two catalogues are compared directly. That is what the regex
+    // below was approximating, and it is the check that would actually catch a read
+    // tool given a write tool's name — which matters because ABSENT is served with
+    // every 404, so a read door claiming a write name would tell an assistant holding
+    // the READ key that it can change something.
+    const writeNames = new Set<string>(WRITE_TOOL_NAMES);
+    for (const t of TOOLS) {
+      expect(writeNames.has(t.name), `${t.name} is also a write tool`).toBe(false);
+    }
+
+    // Second, the VERB — for a write-shaped name that does not exist on the other door
+    // yet. A read called `health.delete_day` passes the check above and is still a lie
+    // about what this door is.
+    //
+    // It is the verb TOKEN, not a substring. As a substring this included `remind` and
+    // `schedule.list_reminders` tripped it — a READ tool whose subject happens to be
+    // reminders, failed by a test looking for a write. Phase 2 added two more names that
+    // a substring test would have caught wrongly (`schedule.reminders`,
+    // `health.saved_meals`) and one that looks like a write and is not:
+    // `finance.paid_bills`, a read of the hand-set paid/unpaid overrides. Its token is
+    // `paid`, and `pay` is anchored, so it does not trip.
     for (const t of TOOLS) {
       const verb = t.name.split(".")[1]?.split("_")[0] ?? "";
-      // Phase 2's names were checked against this list rather than the list being
-      // loosened to fit them. The one that looked like a problem is finance.paid_bills,
-      // a READ of the hand-set paid/unpaid overrides: its verb token is `paid`, and
-      // `pay` is anchored, so it does not trip. Where the promise is actually
-      // enforceable is the type — a read tool is handed a loader and a date and has no
-      // write seam to reach for — and this is the cheap check on top of that.
       expect(verb, t.name).not.toMatch(
-        /^(log|add|set|update|create|delete|remove|cancel|pay|send|notify|remind|categorize|move|apply|settle)$/,
+        /^(log|add|set|save|mark|start|finish|edit|update|create|delete|remove|cancel|pay|send|notify|remind|categorize|move|apply|settle)$/,
       );
     }
     expect(ABSENT.length).toBeGreaterThan(0);
@@ -1845,6 +1898,10 @@ describe("API.md's field names exist", () => {
       // heading: the four states a change can be in, the two merchant-rule kinds that
       // are not also field names, and the "what it means" column of that table.
       "undoable", "undone", "abandoned", "pending", "skip", "other", "means",
+      // And phase 2's health values, for the same reason: `day_status` is one of
+      // logged/partial/estimated/skipped/none, and a food's origin is one of
+      // library/seed/bundled. Each is a value a field TAKES.
+      "logged", "estimated", "none", "library", "seed", "bundled",
     ]);
     const printed = new Set(
       [...md.matchAll(/`([a-z][a-z0-9_]*)`/g)]

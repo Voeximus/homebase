@@ -72,10 +72,16 @@ const MODULES = [
   "src/lib/ledgerReview.ts",
   // health
   "src/lib/nutrition.ts",
+  "src/lib/foodData.ts",
   "src/lib/mealLog.ts",
+  "src/lib/adherence.ts",
   "src/lib/weightLog.ts",
   "src/lib/workoutLog.ts",
   "src/lib/trainingMath.ts",
+  // What one edit to a session does — the tick, the warm-up toggle, adding and
+  // removing sets, and what Finish keeps. The write door logs and edits sets, so
+  // it has to use these rather than its own spelling of them.
+  "src/lib/sessionOps.ts",
 ];
 
 /** Deno needs the file extension, and this folder is FLAT, so every relative

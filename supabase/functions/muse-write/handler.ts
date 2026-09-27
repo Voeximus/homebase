@@ -31,17 +31,37 @@
 //   9  Run the tool. A refusal gives the key back (nothing happened). A crash
 //      keeps it (we cannot prove nothing happened, so a retry needs a new key).
 //
-// WHAT IS DELIBERATELY ABSENT
-//   No tool for moving money, deleting anything, settling a bill cycle, writing
-//   paid_bills, changing a debt balance or a savings goal, writing food_cache, or
-//   calling another edge function. Not disabled — absent. See tools.ts.
+//   9  Store the UNDO RECORD with the call, and hand the caller its token.
+//
+// STEP 9 IS PHASE 2, AND IT IS WHAT REPLACED "A SHORT LIST OF VERBS"
+//   Phase 1's safety story was that almost nothing could be changed. This phase's
+//   instruction is his own: the assistant has every functionality the app has, and
+//   what makes that safe is that every change writes down what was there first.
+//   Homebase never moves money — it records, categorises and computes — so the worst
+//   a wrong write does is make data wrong, and wrong data can be undone.
+//
+//   The audit row is already keyed on (person, tool, idem_key) and already holds
+//   `result` for a replay, so the before-state rides along in it and the token is
+//   those three things. Looking a token up, refusing a second undo of the same
+//   change, and dispatching to the registry belong to the undo core; see
+//   undoContract.ts for exactly what this handler owes it and what it owes back.
+//
+// WHAT IS STILL DELIBERATELY ABSENT
+//   Nothing here can disconnect the bank. A Plaid disconnect wipes the accounts and
+//   their entire transaction history (_shared/callerAuth.ts), no before-state can
+//   hold that, and so it stays a one-time code he types rather than a chat command.
+//   No tool calls another edge function. No tool writes food_cache.
 
 import type { Db, Person, Push } from "./db.ts";
 import { azDateISO, minusMinutes, minutesSince, ticks } from "../_shared/muse/az.ts";
 import { callerOf } from "../_shared/muse/auth.ts";
 import { BodyTooLarge, MAX_BODY_BYTES, readCappedText } from "../_shared/muse/body.ts";
 import { scrubName } from "../_shared/muse/scrub.ts";
+// TOOL_BY_NAME, not TOOLS: routing goes through the Map. `REGISTRY[name]` answered for
+// every key on Object.prototype, so "constructor", "__proto__" and "toString" each found
+// an inherited value and got past the "no such tool" check.
 import { DISPLAY, TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
+import { undoToken } from "./undoContract.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
  *  connectors, so this is ours. */
@@ -400,7 +420,20 @@ async function afterAuth(
       return deny(outcome.status, outcome.say);
     }
 
-    const stored = { message: outcome.say, result: outcome.result };
+    // THE UNDO RECORD IS STORED WITH THE CALL, and that is the whole of what this
+    // handler owes the undo core. The audit row is already keyed on (person, tool,
+    // idem_key) and already holds `result` for a replay, so the before-state rides
+    // along in it and the token is those three things — no new table, and no second
+    // place a change and its inverse could disagree about which change is which.
+    //
+    // What is NOT here: looking a token up, refusing a second undo of the same
+    // change, and dispatching to the registry. Those are the undo core's, and
+    // undoContract.ts lists exactly what it owes in return.
+    //
+    // A tool that leaves `undo` off is saying it could not honestly capture a
+    // before-state, and the reply says so rather than implying one exists.
+    const stored: Record<string, unknown> = { message: outcome.say, result: outcome.result };
+    if (outcome.undo) stored.undo = outcome.undo;
     await db.finishCall({
       person, tool, idemKey,
       outcome: "ok",
@@ -408,7 +441,18 @@ async function afterAuth(
       rowIds: outcome.rowIds,
       ms: ms(),
     });
-    return { status: 200, body: { ok: true, tool, ...stored } };
+    const body: Record<string, unknown> = { ok: true, tool, message: outcome.say, result: outcome.result };
+    if (outcome.undo) {
+      body.undo = {
+        token: undoToken(tool, idemKey),
+        says: outcome.undo.says,
+        ...(outcome.undo.fragile ? { only_until: outcome.undo.fragile } : {}),
+      };
+    } else {
+      body.undo = null;
+      body.cannot_undo = "Nothing was written down that could put this back.";
+    }
+    return { status: 200, body };
   } catch (e) {
     // The key stays used. We cannot prove nothing landed, and re-running a write
     // we might already have done is the failure this whole header exists to stop.
@@ -434,7 +478,27 @@ async function replayFor(
   }
   if (earlier.outcome === "ok") {
     const stored = (earlier.result ?? {}) as Record<string, unknown>;
-    return { status: 200, body: { ok: true, tool, repeated: true, ...stored } };
+    // Rebuilt field by field, NOT spread. The stored record now carries the undo
+    // record, and its `before` can be a whole session document — spreading it would
+    // put the before-state of every write into the reply, which is a copy of the
+    // ledger arriving by the back door. The repeat gets the same three things the
+    // first call got: the sentence, the result, and the token.
+    const body: Record<string, unknown> = {
+      ok: true,
+      tool,
+      repeated: true,
+      message: stored.message,
+      result: stored.result,
+    };
+    const undo = stored.undo as { says?: unknown; fragile?: unknown } | undefined;
+    body.undo = undo
+      ? {
+          token: undoToken(tool, idemKey),
+          says: undo.says,
+          ...(undo.fragile ? { only_until: undo.fragile } : {}),
+        }
+      : null;
+    return { status: 200, body };
   }
   if (earlier.outcome === "pending") {
     return deny(409, "I am still working on that one. Ask me again in a moment rather than sending it twice.");

@@ -78,6 +78,18 @@ export interface ReminderRow {
    *  one — it moves its own dueAt forward instead, which is why "has it fired" and
    *  "is it finished" are different questions. */
   sentAt: string | null;
+  /**
+   * For a REPEATING reminder, the last time it actually fired.
+   *
+   * A repeating row never gets a `sentAt` — it moves its own dueAt forward instead — so
+   * without this there is no way to answer "has the daily one been going out?" at all.
+   * The column has been in schema_v36 since the start; nothing read it until phase 2's
+   * schedule.reminders did, and the health branch had added a private ReminderRow here
+   * to carry it. It belongs on the shared one: this interface is what the read door, the
+   * write door and cron-reminders all agree a reminder is, and a second spelling of that
+   * is the drift scripts/check-categorizer-sync.mjs keeps this file in SHARED_ONLY for.
+   */
+  lastSentAt: string | null;
   /** Set when somebody called schedule.cancel_reminder. Not a delete: no door has
    *  a delete verb, and a cancelled row is the record that it was cancelled. */
   canceledAt: string | null;

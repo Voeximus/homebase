@@ -36,7 +36,7 @@ import type {
 import { DEFAULT_CATEGORIES } from "./lib/seed.ts";
 import type { BodyWeight } from "./lib/weightLog.ts";
 import type { DayLog, SavedMeal } from "./lib/mealLog.ts";
-import type { MacroTarget } from "./lib/nutrition.ts";
+import type { Food, MacroTarget } from "./lib/nutrition.ts";
 import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { DbRow } from "./paging.ts";
 import type { ReminderRow } from "./reminders.ts";
@@ -188,12 +188,33 @@ export function toReminder(r: DbRow): ReminderRow {
     repeats: str(r.repeats),
     source: str(r.source),
     sentAt: opt(r.sent_at) ?? null,
+    lastSentAt: opt(r.last_sent_at) ?? null,
     canceledAt: opt(r.canceled_at) ?? null,
   };
 }
 
 export function toSavedMeal(r: DbRow): SavedMeal {
   return { id: str(r.id), name: str(r.name), items: arr<SavedMeal["items"][number]>(r.items) };
+}
+
+/** A row of the shared food library. `custom: true` is not read off the row — the
+ *  table IS the custom library, which is exactly what src/store/FinanceStore.tsx's
+ *  mapFood does. The table has no `unit` column, so a library food is gram-only
+ *  unless nutrition.ts's unitFor() infers a countable unit from its name. */
+export function toFood(r: DbRow): Food {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    role: str(r.role) as Food["role"],
+    kcal: num(r.kcal),
+    p: num(r.p),
+    c: num(r.c),
+    f: num(r.f),
+    serving: optNum(r.serving),
+    note: opt(r.note),
+    barcode: opt(r.barcode),
+    custom: true,
+  };
 }
 
 export function toMacroTarget(r: DbRow): MacroTarget {

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { getLang, t, tc } from "../lib/i18n";
 import { REST_IDLE, saveRest } from "../lib/restTimer";
-import { clearSessionStart, copyLastSet, discardTarget, newSet, shortDay } from "../lib/sessionOps";
+import { clearSessionStart, copyLastSet, discardTarget, editLoggedSet, newSet, shortDay } from "../lib/sessionOps";
 import { mergeWorkout, removedIds, removedSetIds } from "../lib/syncMerge";
 import { isLogged } from "../lib/trainingMath";
 import {
@@ -686,9 +686,11 @@ function EditWorkoutSheet({
   // the last row's numbers only — never its id, tick or warm-up mark (copyLastSet)
   const addSet = (exId: string) => upd(exId, (e) => copyLastSet(e, newId));
   // An edited row counts by the editor's rule (reps > 0), like a copied one: a
-  // row Finish kept unticked would otherwise never count, whatever is typed.
+  // row Finish kept unticked would otherwise never count, whatever is typed. The
+  // rule itself is editLoggedSet in lib/sessionOps, because the Muse write door
+  // edits these same rows and must count a set the same way this screen does.
   const setSet = (exId: string, i: number, patch: { reps?: number; weight?: number }) =>
-    upd(exId, (e) => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch, done: undefined } : s)) }));
+    upd(exId, (e) => editLoggedSet(e, i, patch));
   const removeSet = (exId: string, i: number) => upd(exId, (e) => ({ ...e, sets: e.sets.filter((_, j) => j !== i) }));
   const setDur = (exId: string, d: number) => upd(exId, (e) => ({ ...e, duration: d }));
   const removeExercise = (exId: string) => setDraft((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== exId) }));

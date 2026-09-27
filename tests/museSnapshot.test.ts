@@ -234,8 +234,60 @@ if (!SNAP) {
 }
 
 describeSnapshot("the read door against the real ledger", () => {
+  /**
+   * The tools this file CANNOT drive, and the reason is the snapshot, not the tool.
+   *
+   * `npm run snapshot` captures the finance tables only — accounts, transactions,
+   * recurring, debts, savings_goals, paid_bills, merchant_rules. Phase 2's health and
+   * workout tools read meal_days, saved_meals, foods, macro_targets, body_weights,
+   * workouts and routines, and schedule.reminders reads reminders. None of those are in
+   * the file, so driving those tools here would prove they answer about an empty
+   * database, which is not what this file is for: it exists to catch the door
+   * disagreeing with HIS REAL numbers.
+   *
+   * They are covered against a built fixture in tests/museHealthRead.test.ts.
+   *
+   * PHASE 1'S HEALTH TOOLS ARE SWEPT, and they are not an inconsistency. Each one answers
+   * with a SUMMARY — today's macros, the weight trend, training volume — and a summary of
+   * nothing is a real answer the door has to give without failing, which is worth proving
+   * against the real file. The phase-2 tools answer with ROWS, and a page of no rows
+   * proves only that the table is empty.
+   *
+   * THE CHECK UNDER THE EXCUSE. The test below does not just subtract these names — it
+   * asserts the snapshot really is missing their tables. The day `npm run snapshot`
+   * starts capturing health data, this fails and says to come and sweep them, instead of
+   * quietly staying an exemption nobody revisits.
+   */
+  const NOT_IN_THE_SNAPSHOT: Record<string, string> = {
+    "health.day": "meal_days",
+    "health.saved_meals": "saved_meals",
+    "health.foods": "foods",
+    "health.macro_targets": "macro_targets",
+    "health.weight_log": "body_weights",
+    "health.adherence": "meal_days",
+    "health.workouts": "workouts",
+    "health.workout": "workouts",
+    "health.exercise_progress": "workouts",
+    "health.records": "workouts",
+    "health.exercises": "workouts",
+    "schedule.reminders": "reminders",
+  };
+
   it("names every tool in the catalogue, so this file cannot fall behind it", () => {
-    expect(everyTool().map((t) => t.tool).sort()).toEqual(TOOLS.map((t) => t.name).sort());
+    const swept = everyTool().map((t) => t.tool);
+    const skipped = Object.keys(NOT_IN_THE_SNAPSHOT);
+    // Nothing is both swept and skipped, so the excuse list cannot hide a tool that is
+    // actually being driven and failing.
+    for (const name of skipped) expect(swept, `${name} is both swept and skipped`).not.toContain(name);
+    expect([...swept, ...skipped].sort()).toEqual(TOOLS.map((t) => t.name).sort());
+
+    // And every excuse is true of the snapshot in hand. EMPTY, not absent: the loader
+    // defaults a table the file does not carry to an empty array, which is why the
+    // summary tools can be swept at all — so "absent" is never what to check here.
+    for (const [tool, table] of Object.entries(NOT_IN_THE_SNAPSHOT)) {
+      const rows = (SNAP!.tables as Record<string, unknown[] | undefined>)[table] ?? [];
+      expect(rows.length, `${table} has real rows now — sweep ${tool} here`).toBe(0);
+    }
   });
 
   it("answers every tool, with no tool failing on real data", async () => {

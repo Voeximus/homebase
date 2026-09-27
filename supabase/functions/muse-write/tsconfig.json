@@ -21,12 +21,14 @@
   "extends": "../_shared/muse/tsconfig.json",
   // dbFinanceSupabase.ts joins index.ts and dbSupabase.ts on the excluded list, for
   // the same reason: it is the other half of the Supabase wiring and holds no
-  // decisions. dbFinance.ts (the interface) and toolsFinance.ts (the tools) are
-  // checked, and they are where every decision is.
+  // decisions. The interfaces and the tool files are checked, and they are where every
+  // decision is.
   "include": [
     "db.ts",
     "dbFinance.ts",
     "handler.ts",
+    "healthTools.ts",
+    "kit.ts",
     "openapi.ts",
     "tools.ts",
     "toolsFinance.ts",

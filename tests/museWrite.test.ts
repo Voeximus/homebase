@@ -23,15 +23,18 @@ import { callerOf, MIN_SECRET_LENGTH } from "../supabase/functions/_shared/muse/
 import { MAX_BODY_BYTES } from "../supabase/functions/_shared/muse/body.ts";
 import { REMIND_PER_DAY, TOOL_BY_NAME, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
 import { FINANCE_WRITE_TOOLS } from "../supabase/functions/muse-write/toolsFinance.ts";
-import { FinanceFake } from "./museFinanceFake.ts";
 // The READ door's registry, for the one claim that spans both: a write refusal that
 // tells the caller where to get an id is only true if that read tool exists.
 import { TOOLS as READ_TOOLS } from "../supabase/functions/_shared/muse/tools.ts";
+import { HEALTH_TOOLS } from "../supabase/functions/muse-write/healthTools.ts";
+// The health rows, shared with tests/museHealth.test.ts. HealthRows extends FinanceFake,
+// so this one class is the whole write door's database: one fake, the same way the doors
+// share one clock and one cleaner.
+import { HealthRows } from "./helpers/museHealthDb.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
 import type {
   CallRecord,
   Db,
-  MealDayRow,
   Outcome,
   Person,
 } from "../supabase/functions/muse-write/db.ts";
@@ -80,29 +83,22 @@ interface ReminderDoc {
   canceledAt: string | null;
 }
 
-interface MealDoc {
-  id: string;
-  meals: unknown[];
-  status: string | null;
-  note: string | null;
-  updatedAt: string;
-}
-
-// Phase 2's finance half comes from tests/museFinanceFake.ts, and it is EXTENDED
-// rather than copied so both test files drive one in-memory ledger — the same reason
-// the two doors share one az.ts. The `ledger` field below stays this file's own: the
-// assertions that read it are proving that a PHASE 1 tool touches no money row, and
-// that is still true.
-class Fake extends FinanceFake implements Db {
+// ONE FAKE FOR THE WHOLE DOOR. HealthRows holds the health rows and extends
+// FinanceFake, which holds the ledger tables and the undo store, so this class is both
+// halves of phase 2 plus phase 1's reminders and audit log. Three fakes that disagreed
+// about what a stale compare-and-set means would make two of the three suites lie, which
+// is the same reason the two doors share one az.ts.
+//
+// `ledger` below stays this file's own: the assertions that read it prove a reminder tool
+// touches no money row, and the constructor copies its two seed rows into the shared
+// tables so the finance tools can see the same charge and the same bill.
+class Fake extends HealthRows implements Db {
   audit: AuditRow[] = [];
   calls = new Map<string, number>();
   /** The `at` every audit row this fake writes is stamped with. Tests move it back
    *  to put an earlier write in the past — the duplicate guard measures minutes. */
   stamp = AT.toISOString();
   reminders: ReminderDoc[] = [];
-  weights = new Map<string, number>();
-  savedMeals: { id: string; name: string; items: unknown[] }[] = [];
-  mealDays = new Map<string, MealDoc>();
   pending: { id: string; person: Person; tool: string; payload: Record<string, unknown>; summary: string }[] = [];
   pushes: { title: string; body: string; owner: string }[] = [];
   /** The ledger the queued path must never touch. */
@@ -114,12 +110,8 @@ class Fake extends FinanceFake implements Db {
    *  writing in the gap. */
   onReadMealDay: ((date: string) => void) | null = null;
 
-  private seq = 0;
-  private id(prefix: string) {
-    this.seq += 1;
-    return `${prefix}-${String(this.seq).padStart(8, "0")}-0000-0000-0000-000000000000`.slice(0, 36);
-  }
-
+  // `id()` is HealthRows'. Main's Fake had a private copy of the same three lines with
+  // its own counter; two counters on one shape is how two rows end up with one id.
   constructor() {
     super();
     // The two rows Phase 1's tests seeded into `ledger` also belong in the shared
@@ -219,46 +211,6 @@ class Fake extends FinanceFake implements Db {
     if (patch.repeats !== undefined) r.repeats = patch.repeats;
     if (patch.canceledAt !== undefined) r.canceledAt = patch.canceledAt;
     return Promise.resolve<"ok" | "stale">("ok");
-  }
-  readWeight(person: Person, date: string): Promise<number | null> {
-    return Promise.resolve(this.weights.get(`${person}|${date}`) ?? null);
-  }
-  upsertWeight(person: Person, date: string, weight: number): Promise<void> {
-    this.weights.set(`${person}|${date}`, weight);
-    return Promise.resolve();
-  }
-  findSavedMealsByName(name: string) {
-    const want = name.trim().toLowerCase();
-    return Promise.resolve(this.savedMeals.filter((m) => m.name.trim().toLowerCase() === want));
-  }
-  listSavedMealNames(limit: number): Promise<string[]> {
-    return Promise.resolve(this.savedMeals.map((m) => m.name).slice(0, limit));
-  }
-  readMealDay(person: Person, date: string): Promise<MealDayRow | null> {
-    const doc = this.mealDays.get(`${person}|${date}`);
-    const snapshot: MealDayRow | null = doc
-      ? { id: doc.id, meals: [...doc.meals], status: doc.status, note: doc.note, updatedAt: doc.updatedAt }
-      : null;
-    // The phone's turn. Fired AFTER the snapshot is taken, so what the door holds
-    // is genuinely stale from here on.
-    this.onReadMealDay?.(date);
-    return Promise.resolve(snapshot);
-  }
-  insertMealDay(r: { person: Person; date: string; meals: unknown[]; atISO: string }) {
-    const k = `${r.person}|${r.date}`;
-    if (this.mealDays.has(k)) return Promise.resolve<"ok" | "conflict">("conflict");
-    this.mealDays.set(k, { id: this.id("day"), meals: r.meals, status: null, note: null, updatedAt: r.atISO });
-    return Promise.resolve<"ok" | "conflict">("ok");
-  }
-  updateMealDayIfUnchanged(id: string, seenUpdatedAt: string, patch: { meals: unknown[]; atISO: string }) {
-    for (const doc of this.mealDays.values()) {
-      if (doc.id !== id) continue;
-      if (doc.updatedAt !== seenUpdatedAt) return Promise.resolve<"ok" | "stale">("stale");
-      doc.meals = patch.meals;
-      doc.updatedAt = patch.atISO;
-      return Promise.resolve<"ok" | "stale">("ok");
-    }
-    return Promise.resolve<"ok" | "stale">("stale");
   }
   transactionExists(id: string): Promise<boolean> {
     return Promise.resolve(this.ledger.transactions.some((t) => t.id === id));
@@ -423,6 +375,9 @@ const EVERY_WRITE: {
 }[] = [
   { tool: "health.log_weight", args: { weight: 198.4 }, queued: false },
   { tool: "health.log_saved_meal", args: { name: "Usual breakfast" }, queued: false },
+  // Phase 2: this one was queued, and nothing in src/ ever read the queue, so the
+  // tap it was waiting for did not exist. It lands now, with an undo record.
+  { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: false },
   { tool: "schedule.remind", args: { message: "read the electric bill", at: "2026-09-27T09:00" }, queued: false },
   {
     tool: "schedule.cancel_reminder",
@@ -436,12 +391,16 @@ const EVERY_WRITE: {
     queued: false,
     did: (db) => db.reminders.filter((r) => r.dueAt === "2026-09-28T16:00:00.000Z").length,
   },
-  // THE THREE FINANCE TOOLS THAT WERE HERE MOVED TO tests/museFinance.test.ts, because
-  // they stopped being the same kind of thing: each one now records a before-state and
-  // hands back an undo token, and this loop asserts "queued" or "direct", which is a
-  // question they no longer answer. The catalogue check below compares the UNION of the
-  // two files' lists against the registry, so neither can fall behind it.
-  { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: true },
+  // THE FINANCE TOOLS THAT WERE HERE MOVED TO tests/museFinance.test.ts, and the health
+  // ones are driven again in tests/museHealth.test.ts, because they stopped being the
+  // same kind of thing: each one now records a before-state and hands back an undo token,
+  // and this loop asserts "queued" or "direct", which is a question they no longer
+  // answer. The catalogue check below compares the UNION of the three files against the
+  // registry, so none of them can fall behind it.
+  //
+  // NOTHING IN THIS LIST IS QUEUED ANY MORE, and `queued` stays as a field rather than
+  // being deleted: it is what the loop below asserts each reply's shape against, and the
+  // day a queued tool comes back it should be a one-word diff here.
 ];
 
 /** The default: one new row, somewhere. Counted across all four places a direct or
@@ -452,22 +411,37 @@ const rowsWritten = (db: Fake) =>
 /** A Fake with the one saved meal `health.log_saved_meal` needs to find. */
 function stocked(): Fake {
   const db = new Fake();
-  db.savedMeals.push({ id: "sm-1", name: "Usual breakfast", items: [{ name: "Oats", kcal: 300, p: 10, c: 54, f: 5 }] });
+  // A REAL logged portion, not a loose bag of macros: the log stores per-100g values
+  // scaled by grams (src/lib/mealLog.ts), and the door's reply now says what the meal
+  // came to — so a fixture in the wrong shape would be testing a shape the app
+  // cannot store.
+  db.savedMeals.push({
+    id: "sm-1",
+    name: "Usual breakfast",
+    items: [
+      { id: "it-1", foodId: "oats", name: "Oats", role: "carb", grams: 80, per100: { kcal: 379, p: 13, c: 67, f: 7 } },
+    ],
+  });
   // One of his own reminders, still waiting, for the two tools that edit one.
   db.reminders.push({
     id: REM_ID, person: "gino", dueAt: "2026-09-27T16:00:00.000Z", repeats: "once",
-    message: "Muse: read the electric bill", source: "muse", sentAt: null, canceledAt: null,
+    message: "Muse: read the electric bill", source: "muse", sentAt: null, lastSentAt: null, canceledAt: null,
   });
   return db;
 }
 
 describe("every tool in the catalogue, not just the first one", () => {
   it("names all of them, so this list cannot fall behind tools.ts", () => {
-    // Both halves, against the registry. A tool added to Phase 1's file and to neither
-    // list fails here; a tool added to Phase 2's registry and not driven by
-    // tests/museFinance.test.ts fails that file's own catalogue check.
-    const covered = [...EVERY_WRITE.map((w) => w.tool), ...Object.keys(FINANCE_WRITE_TOOLS)];
-    expect(covered.sort()).toEqual([...TOOL_NAMES].sort());
+    // THREE FILES NOW COVER ONE REGISTRY, and this is the claim that stops a tool
+    // slipping between them. The finance tools are driven in tests/museFinance.test.ts
+    // and the health ones in tests/museHealth.test.ts, each because they need a fixture
+    // that file builds — a seeded ledger with an undo store, or a day document with
+    // meals in it, a session with sets, a routine and a food library. A tool in NONE of
+    // the three lists fails here, and both unions are taken from the registries
+    // themselves rather than from a hand-kept list of exceptions.
+    const here = EVERY_WRITE.map((w) => w.tool);
+    const elsewhere = [...Object.keys(FINANCE_WRITE_TOOLS), ...Object.keys(HEALTH_TOOLS)];
+    expect([...new Set([...here, ...elsewhere])].sort()).toEqual([...TOOL_NAMES].sort());
   });
 
   for (const { tool, args, did } of EVERY_WRITE) {
@@ -566,33 +540,49 @@ describe("the caps hold", () => {
 // health.log_meal is still queued, so the machinery is still here and still tested. The
 // queued path was worth keeping for exactly one case: free-form food has no
 // before-state worth restoring, only a meal to take back out.
-describe("a queued write asks and changes nothing", () => {
-  it("log_meal writes one waiting row, pushes, and leaves the ledger identical", async () => {
+// ── the queued path, which no longer has a tool on it ────────────────────────
+//
+// THIS BLOCK USED TO PROVE A QUEUED WRITE CHANGED NOTHING, and it is worth saying what
+// happened to it rather than deleting it quietly.
+//
+// Four tools were queued in phase 1: each wrote one row into muse_pending, fired a push,
+// and moved no data until he tapped it in the app. The test below asserted exactly that,
+// and it passed, and the thing it was proving turned out not to be a safety property.
+// Nothing in the app reads muse_pending — `grep -rn "muse_pending" src/` finds nothing —
+// so there was no tap, and a queued row sat there until cron-reminders marked it expired
+// a day later. The four careful tools were the four that did nothing.
+//
+// All four are direct now, with a captured before-state. So the claim worth testing
+// inverted: not "it changed nothing" but "it changed exactly one thing and the change can
+// be put back". health.log_meal is driven that way in tests/museHealth.test.ts, and the
+// finance three in tests/museFinance.test.ts.
+describe("a write that used to only ask now lands, and can be put back", () => {
+  it("log_meal writes the day, pushes nothing, and is not queued", async () => {
     const db = new Fake();
     const before = JSON.stringify(db.ledger);
 
     const r = await handleWrite(
-      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
+      post("schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }),
       deps(db),
     );
 
-    expect(r.status).toBe(200);
-    expect(r.body.result).toMatchObject({ queued: true });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    // WHAT THIS FILE CHECKS, and no more. That the meal lands in the day document and
+    // comes back out again is proved against the full fixture in
+    // tests/museHealth.test.ts — a day with meals in it, portions in the shape
+    // src/lib/mealLog.ts really stores. Asserting it here with a thinner fixture was
+    // asserting a different thing and calling it the same name.
+    //
+    // What belongs HERE is the queue's disappearance, because that is what the merge
+    // changed and this is the file that used to hold the opposite claim:
+    expect(r.body.result).not.toMatchObject({ queued: true });
+    expect(db.pending).toHaveLength(0);
+    // no money row moved — a meal is not money;
     expect(JSON.stringify(db.ledger)).toBe(before);
-    expect(db.pending).toHaveLength(1);
-    expect(db.pending[0].tool).toBe("health.log_meal");
-    expect(db.pending[0].person).toBe("gino");
-    expect(db.pushes).toHaveLength(1);
-    expect(db.pushes[0].owner).toBe("Gino");
-    // The push may not promise a tap either: its title is what lands on a lock
-    // screen, and "Waiting for your tap" is an instruction to go somewhere that
-    // does not exist.
-    expect(db.pushes[0].title).not.toMatch(/\btap\b/i);
-    expect(String(r.body.message)).toMatch(/no screen for these yet/i);
-    // A queued write writes NOTHING, including no undo row: there is nothing to undo
-    // until he taps it.
-    expect(db.changes).toHaveLength(0);
-    expect(db.mealDays.size).toBe(0);
+    // and nothing in the reply still sends him to a screen that does not exist.
+    expect(String(r.body.message)).not.toMatch(/\btap\b/i);
+    expect(String(r.body.message)).not.toMatch(/waiting in the app/i);
+    expect(db.pushes).toHaveLength(0);
   });
 
   it("still refuses an added charge that tries to settle a bill, now that adding is direct", async () => {
@@ -1590,33 +1580,36 @@ describe("the household does not do the same write twice by accident", () => {
 
   it("refuses his copy of a write she made four minutes ago, and names her", async () => {
     const db = new Fake();
-    const hers = await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 4);
+    const hers = await herCall(db, "schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }, 4);
     expect(hers.status, JSON.stringify(hers.body)).toBe(200);
-    expect(db.pending).toHaveLength(1);
+    expect(db.reminders).toHaveLength(1);
 
     const his = await handleWrite(
-      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
+      post("schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }),
       deps(db),
     );
     expect(his.status).toBe(409);
     expect(String(his.body.message)).toContain("Xinyan already did that 4 minutes ago");
     expect(String(his.body.message)).toContain("do_it_anyway");
     // And it did NOT do it: one waiting row, not two.
-    expect(db.pending).toHaveLength(1);
+    expect(db.reminders).toHaveLength(1);
   });
 
   it("does it anyway when the caller says so, and records that it was told to", async () => {
     const db = new Fake();
-    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 4);
+    await herCall(db, "schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }, 4);
     const his = await handleWrite(
-      post("health.log_meal", { ...{ items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, do_it_anyway: true }),
+      post("schedule.remind", { ...{ message: "read the electric bill", at: "2026-09-27T09:00" }, do_it_anyway: true }),
       deps(db),
     );
     expect(his.status, JSON.stringify(his.body)).toBe(200);
-    expect(db.pending).toHaveLength(2);
+    expect(db.reminders).toHaveLength(2);
     // The flag never reaches the tool: the queued payload is identical either way, so
     // no tool has to know the field exists.
-    expect(db.pending[1].payload).toEqual(db.pending[0].payload);
+    // Same request, written twice: the two rows carry the same message and the same due
+    // time, so the flag changed whether it happened and nothing about what happened.
+    expect(db.reminders[1].message).toBe(db.reminders[0].message);
+    expect(db.reminders[1].dueAt).toBe(db.reminders[0].dueAt);
     // It IS in the audit log. "Somebody overrode the duplicate guard" is exactly what
     // a log is for.
     const row = db.audit.find((a) => a.person === "gino" && a.outcome === "ok")!;
@@ -1625,9 +1618,9 @@ describe("the household does not do the same write twice by accident", () => {
 
   it("lets the refused call through on the SAME key once the flag is added", async () => {
     const db = new Fake();
-    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 2);
+    await herCall(db, "schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }, 2);
     const refused = await handleWrite(
-      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, { key: "his-key-0001" }),
+      post("schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }, { key: "his-key-0001" }),
       deps(db),
     );
     expect(refused.status).toBe(409);
@@ -1636,36 +1629,36 @@ describe("the household does not do the same write twice by accident", () => {
     // the retry would come back "that key was used for a different request".
     const done = await handleWrite(
       post(
-        "health.log_meal",
-        { ...{ items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, do_it_anyway: true },
+        "schedule.remind",
+        { ...{ message: "read the electric bill", at: "2026-09-27T09:00" }, do_it_anyway: true },
         { key: "his-key-0001" },
       ),
       deps(db),
     );
     expect(done.status, JSON.stringify(done.body)).toBe(200);
-    expect(db.pending).toHaveLength(2);
+    expect(db.reminders).toHaveLength(2);
   });
 
   it("lets the same write through once the window has gone by", async () => {
     const db = new Fake();
-    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, DUPLICATE_WINDOW_MIN + 1);
+    await herCall(db, "schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }, DUPLICATE_WINDOW_MIN + 1);
     const his = await handleWrite(
-      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
+      post("schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }),
       deps(db),
     );
     expect(his.status, JSON.stringify(his.body)).toBe(200);
-    expect(db.pending).toHaveLength(2);
+    expect(db.reminders).toHaveLength(2);
   });
 
-  it("does not mistake a different meal for the same write", async () => {
+  it("does not mistake a different reminder for the same write", async () => {
     const db = new Fake();
-    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 3);
+    await herCall(db, "schedule.remind", { message: "read the electric bill", at: "2026-09-27T09:00" }, 3);
     const his = await handleWrite(
-      post("health.log_meal", { items: [{ name: "Chicken", kcal: 99, p: 20, c: 0, f: 2 }] }),
+      post("schedule.remind", { message: "put the bins out", at: "2026-09-27T10:00" }),
       deps(db),
     );
     expect(his.status, JSON.stringify(his.body)).toBe(200);
-    expect(db.pending).toHaveLength(2);
+    expect(db.reminders).toHaveLength(2);
   });
 
   it("catches the same person asking twice under two keys, and names nobody", async () => {
