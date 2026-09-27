@@ -10,9 +10,27 @@ before the read door is deployed; there is nothing for Muse to call.
 - **Paste 1** is the long one below. It teaches Muse the doors and the rules.
 - **Paste 2** is short, at the bottom. It tells Muse about you and Xinyan.
 
-Before you paste anything: put the read key in Muse's secure credential box, not
-in the chat. Same for the write key. If Muse asks you to type a key into the
-conversation, stop — that puts it in a transcript, and `SETUP.md` says why.
+Before you paste anything, the keys have to live somewhere Muse can reach them
+without asking you. Two places, in order of preference:
+
+1. **Muse's secure credential box**, reached through its custom-connector screen.
+   This is the better one: the box holds the key and the model itself never reads
+   it. Use it if the screen will take the key.
+2. **The skill's own storage** — the workspace Muse keeps across conversations and
+   devices. Use this when the connector screen refuses, which it has done four
+   times on these doors while Muse's own calls to the same doors with the same key
+   returned 200. The paste at the bottom of this file tells Muse to do it.
+
+Option 2 is a real trade and worth naming: the model can read a key it stores
+itself, so it may end up quoted in a transcript. What that costs is bounded. These
+keys cannot move money — they read and change records. Every write is logged with
+a before-state and an undo token. And revoking is one secret change plus a
+redeploy, under a minute, and it cannot half-work. Against that: being asked to
+type a key by hand on every single write, on a system whose whole point is that
+there is no app to open.
+
+What is NOT acceptable either way: a key in a web address, a key sent to the other
+door, or a key you re-type into the chat every time because nothing is holding it.
 
 If a paste is too long for one message, break it at a heading. Muse keeps the
 whole conversation, so two messages read the same as one.
@@ -52,9 +70,15 @@ Write door:
 https://ganzefaciiyibselizqi.supabase.co/functions/v1/muse-write
 ```
 
-Each door has its **own** key. I am giving you both, in your secure credential
-store. Never print a key, never put one in a web address, never send the read key
-to the write door or the other way round.
+Each door has its **own** key. Hold both of them yourself, so you never ask me to
+type one again — in your secure credential store if you can reach it, otherwise in
+your own skill storage. Never print a key back to me unless I ask, never put one
+in a web address, never send the read key to the write door or the other way round.
+
+The key's header name is not part of the guard. The doors read it from
+`Authorization: Bearer`, `X-Muse-Token`, `X-API-Key` or `apikey` — whichever your
+side finds easiest. What they refuse is a key in the query string, because those
+end up in server logs, browser history and referrer headers.
 
 Send the key as a header, one way or the other, never both at once:
 
@@ -468,3 +492,42 @@ have been burned by confident wrong numbers, so I would rather hear "that is not
 something the door gives me" than a good guess. If I am wrong, say so.
 
 ## PASTE 2 — ends here
+
+---
+
+# PASTE 3 — hold the keys yourself
+
+**When.** The moment Muse asks you to type a key by hand for a second time. The
+connector screen has refused these doors four times while Muse's own calls to the
+same doors with the same key returned 200 — the screen is the broken part, not the
+key and not the door.
+
+---
+
+Stop asking me for a key. You have proved the key works: your own call to the write
+door returned 200 with the full OpenAPI document. So the key is not the problem —
+holding it is.
+
+Store both keys in your own skill storage, the workspace you keep across
+conversations and devices, under exactly these two names:
+
+- `homebase_read_key`
+- `homebase_write_key`
+
+Then load them from there on every call, and never ask me for one again. If the
+connector screen ever starts working, move them into the secure credential box
+instead and delete your own copies — that is the better home, because then you
+cannot read them.
+
+Two rules that do not change:
+
+1. **Never print a key back to me** unless I ask for it in so many words. Not in a
+   summary, not in an example call, not when something fails.
+2. **Never put a key in a web address.** Header only —
+   `Authorization: Bearer <key>` is what the doors prefer, and they also read
+   `X-Muse-Token`, `X-API-Key` and `apikey`.
+
+If storing it is genuinely not something you can do, say that plainly instead of
+working around it, and say what you *can* do. Do not quietly go back to asking me.
+
+## PASTE 3 — ends here
