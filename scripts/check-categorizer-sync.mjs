@@ -172,6 +172,14 @@ const SHARED_ONLY = [
   "paging.ts",
   "audit.ts",
   "load.ts",
+  // reminders.ts is on the list because THREE places now read the same four
+  // columns: the read door lists what is pending, the write door cancels and edits,
+  // and cron-reminders decides what to deliver. If "pending" meant `sent_at is null`
+  // in one of them and `sent_at is null and canceled_at is null` in another, a
+  // cancelled reminder would be invisible in the list and still arrive on a lock
+  // screen. That is the same shape as cron-notify's private copy of the bill
+  // cadence, which told the phones a semiannual bill was due every month.
+  "reminders.ts",
 ];
 const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
 let privateCopies = false;

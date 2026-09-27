@@ -165,3 +165,71 @@ export function azWallClock(at: Date): string {
 export function addDays(at: Date, days: number): Date {
   return new Date(at.getTime() + days * 86_400_000);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reading a timestamp somebody else wrote.
+//
+// Everything above turns "now" into an Arizona calendar. These four turn a STORED
+// timestamp — `reminders.due_at`, `reminders.sent_at`, `muse_audit.at` — into
+// something a tool can compare against or say out loud.
+//
+// THEY LIVE HERE FOR THE SAME REASON THE CLOCK DOES. A door that wrote
+// `new Date(row.due_at)` would fail the build (scripts/check-categorizer-sync.mjs
+// greps every door file for `new Date(`), and rightly: the grep cannot tell a
+// harmless parse from a fired default, so the rule is that no door file spells it
+// at all. Parsing is instant handling, instant handling is this file's job, and a
+// door that needs a stored time asks for it by name.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A stored timestamp as the instant it names, or null.
+ *
+ * Refuses anything without a zone on the end. Postgres hands a `timestamptz` back
+ * with one ("2026-09-27T06:00:00+00:00"), and a value that arrived without one is
+ * a value whose zone we would have to guess — which for a reminder means guessing
+ * seven hours, which means guessing the wrong end of a night shift. Both
+ * separators are accepted because PostgREST spells it with a T and psql with a
+ * space, and a reader should not have to know which one wrote the row.
+ */
+export function instantOf(stored: unknown): Date | null {
+  if (typeof stored !== "string") return null;
+  const t = stored.trim().replace(" ", "T");
+  // The offset may be "+00", "+00:00" or "Z" — all three come out of Postgres
+  // depending on who is asking.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}(:?\d{2})?)$/.test(t)) return null;
+  const at = new Date(t);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * The same conversion nowAZ() does, named for what it is when the instant is not
+ * "now": an instant re-expressed as Arizona's calendar and clock.
+ *
+ * WHY A TOOL NEEDS THIS AND CANNOT JUST SUBTRACT. `nowAZ()` returns a Date whose
+ * LOCAL fields are Arizona's, so its epoch value is NOT the instant it describes
+ * unless the machine happens to be in Arizona. Comparing that against a real
+ * instant is wrong by the runtime's own offset — seven hours, on the machine these
+ * doors actually run on. So "is this reminder overdue" is answered by putting BOTH
+ * sides through here and comparing two Arizona calendars.
+ */
+export function azFields(at: Date): Date {
+  return nowAZ(at);
+}
+
+/** An instant, moved back by whole minutes. The duplicate guard's window. */
+export function minusMinutes(at: Date, minutes: number): Date {
+  return new Date(at.getTime() - minutes * 60_000);
+}
+
+/**
+ * Whole minutes from a stored timestamp up to `at`, or null when the timestamp
+ * cannot be read. Negative when the stored time is in the future.
+ *
+ * Floor, not round: "already done 2 minutes ago" must never become "3 minutes ago"
+ * on a sentence a person is reading back to themselves.
+ */
+export function minutesSince(stored: unknown, at: Date): number | null {
+  const then = instantOf(stored);
+  if (!then) return null;
+  return Math.floor((at.getTime() - then.getTime()) / 60_000);
+}

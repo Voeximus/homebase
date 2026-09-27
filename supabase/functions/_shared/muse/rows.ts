@@ -39,6 +39,7 @@ import type { DayLog, SavedMeal } from "./lib/mealLog.ts";
 import type { MacroTarget } from "./lib/nutrition.ts";
 import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { DbRow } from "./paging.ts";
+import type { ReminderRow } from "./reminders.ts";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number => Number(v ?? 0);
@@ -163,6 +164,31 @@ export function toDayLog(r: DbRow): DayLog {
     meals: arr<DayLog["meals"][number]>(r.meals),
     status: (opt(r.status) ?? undefined) as DayLog["status"],
     note: opt(r.note),
+  };
+}
+
+/**
+ * A reminder row.
+ *
+ * The one mapper here whose return type is NOT one of the app's own domain types,
+ * because the app has no reminders screen and therefore no type for one — see the
+ * note at the top of reminders.ts. `ReminderRow` is that type, and it lives beside
+ * the rules that read it.
+ *
+ * `sent_at` and `canceled_at` are mapped to null rather than to undefined on
+ * purpose: "has not been delivered" is a fact this door states, and undefined
+ * would let a forgotten column read as one.
+ */
+export function toReminder(r: DbRow): ReminderRow {
+  return {
+    id: str(r.id),
+    person: str(r.person),
+    message: str(r.message),
+    dueAt: str(r.due_at),
+    repeats: str(r.repeats),
+    source: str(r.source),
+    sentAt: opt(r.sent_at) ?? null,
+    canceledAt: opt(r.canceled_at) ?? null,
   };
 }
 

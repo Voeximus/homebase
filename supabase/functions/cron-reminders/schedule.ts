@@ -6,7 +6,14 @@
 // semiannual insurance bill and a yearly membership were due on their day of
 // EVERY month. Cadence logic that nothing tests is how that happens.
 
-export type Repeats = "once" | "daily" | "weekly";
+// One spelling of the three cadences, in _shared/muse/reminders.ts, where the read
+// door's list and the write door's edit tool read it too. It used to be declared
+// here and again inside muse-write/tools.ts as a bare string comparison, which is the
+// same two-copies shape that let the write door accept a secret the read door
+// refused. The database's own check constraint is the third copy and the only one
+// that cannot import this.
+export type { Repeats } from "../_shared/muse/reminders.ts";
+import type { Repeats } from "../_shared/muse/reminders.ts";
 
 /**
  * How late a reminder may be and still be worth delivering.

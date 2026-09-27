@@ -141,6 +141,27 @@ export function supabaseDb(admin: SupabaseClient): Db {
       must(error, "write muse_audit");
     },
 
+    async recentSameWrite({ tool, fingerprint, sinceISO }) {
+      // Matched on the fingerprint the audit row already carries, inside jsonb, so
+      // nothing new has to be stored for this and the guard works on rows written
+      // before it existed. `outcome` is restricted to the two that mean something
+      // was actually attempted: a 'denied' or 'rate_limited' row did nothing, and
+      // treating it as "already done" would refuse the corrected retry.
+      const { data, error } = await audit()
+        .select("person, at")
+        .eq("door", "write")
+        .eq("tool", tool)
+        .eq("args->>fingerprint", fingerprint)
+        .in("outcome", ["ok", "pending"])
+        .gte("at", sinceISO)
+        .order("at", { ascending: false })
+        .limit(1);
+      must(error, "read muse_audit for a duplicate");
+      const row = (data ?? [])[0];
+      if (!row) return null;
+      return { person: row.person as "gino" | "xinyan", atISO: String(row.at) };
+    },
+
     async bump(person, bucket) {
       const { data, error } = await admin.rpc("muse_bump", { p_person: person, p_bucket: bucket });
       must(error, "bump muse_calls");
@@ -155,7 +176,11 @@ export function supabaseDb(admin: SupabaseClient): Db {
         .from("reminders")
         .select("id", { count: "exact", head: true })
         .eq("person", person)
-        .is("sent_at", null);
+        .is("sent_at", null)
+        // A cancelled reminder is not waiting for anything. Without this line,
+        // cancelling one would free nothing and the open cap would be a wall: twenty
+        // cancelled rows and no way to add a twenty-first reminder ever again.
+        .is("canceled_at", null);
       must(error, "count reminders");
       if (count === null) throw new Error("count reminders: no count returned");
       return count;
@@ -175,6 +200,59 @@ export function supabaseDb(admin: SupabaseClient): Db {
         .single();
       must(error, "insert reminder");
       return String(data!.id);
+    },
+
+    async readReminder(id) {
+      // No `person` filter, on purpose: the tool needs to know the row exists and
+      // whose it is, so that it can answer the same way for "no such reminder" and
+      // "that one is hers". A filter here would hide the difference from the code
+      // that has to make that choice deliberately.
+      const { data, error } = await admin
+        .from("reminders")
+        .select("id, person, message, due_at, repeats, source, sent_at, canceled_at")
+        .eq("id", id)
+        .maybeSingle();
+      must(error, "read reminders");
+      if (!data) return null;
+      return {
+        id: String(data.id),
+        person: String(data.person),
+        message: String(data.message ?? ""),
+        dueAt: String(data.due_at),
+        repeats: String(data.repeats ?? "once"),
+        source: String(data.source ?? ""),
+        sentAt: (data.sent_at as string | null) ?? null,
+        canceledAt: (data.canceled_at as string | null) ?? null,
+      };
+    },
+
+    async updateReminderIfUnchanged(id, seen, patch) {
+      const row: Record<string, unknown> = {};
+      if (patch.dueAt !== undefined) row.due_at = patch.dueAt;
+      if (patch.message !== undefined) row.message = patch.message;
+      if (patch.repeats !== undefined) row.repeats = patch.repeats;
+      if (patch.canceledAt !== undefined) row.canceled_at = patch.canceledAt;
+      // Compare-and-set, and all four conditions are load-bearing:
+      //   · the id, obviously;
+      //   · `due_at` still the value that was read — a repeating reminder that the
+      //     cron job advanced in the gap is a DIFFERENT reminder now, and editing
+      //     "9 AM tomorrow" when it has already moved to 9 AM the day after is a
+      //     wrong row written confidently;
+      //   · `sent_at` still null — a reminder that went out in the gap cannot be
+      //     cancelled, and answering "cancelled" while the push is already on the
+      //     lock screen is the worst lie this tool could tell;
+      //   · `canceled_at` still null — the other phone's cancel wins, and the caller
+      //     is told so rather than quietly resurrecting it.
+      const { data, error } = await admin
+        .from("reminders")
+        .update(row)
+        .eq("id", id)
+        .eq("due_at", seen.dueAt)
+        .is("sent_at", null)
+        .is("canceled_at", null)
+        .select("id");
+      must(error, "update reminders");
+      return (data ?? []).length === 1 ? "ok" : "stale";
     },
 
     async readWeight(person, date) {

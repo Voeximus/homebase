@@ -84,6 +84,12 @@ Deno.serve(async (req) => {
       .from("reminders")
       .select("id, person, message, due_at, repeats")
       .is("sent_at", null)
+      // A cancelled reminder is not delivered, and this is the line that makes
+      // schedule.cancel_reminder mean anything. "Pending" has one definition —
+      // _shared/muse/reminders.ts closedBecause() — and it is the same one the read
+      // door's list uses. A second spelling of it here is how a reminder somebody
+      // cancelled still arrives on a lock screen while the list says it is gone.
+      .is("canceled_at", null)
       .lte("due_at", nowISO)
       .order("due_at", { ascending: true })
       .limit(MAX_PER_RUN + 1);
@@ -112,6 +118,12 @@ Deno.serve(async (req) => {
         .eq("id", r.id)
         .eq("due_at", r.due_at)
         .is("sent_at", null)
+        // And again on the claim, not only on the select above. A cancel that lands
+        // in the seconds between the two is the whole point of the cancel tool: the
+        // claim has to lose that race, or the door answers "cancelled" and the push
+        // goes out anyway. This is the same compare-and-set the write door uses from
+        // the other side.
+        .is("canceled_at", null)
         .select("id");
       if (claimErr) throw new Error(`claim reminder: ${claimErr.message}`);
       if ((claimed ?? []).length !== 1) continue; // another run got it

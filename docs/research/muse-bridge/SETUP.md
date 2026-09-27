@@ -70,6 +70,26 @@ Five things have to be true already. None of them are code you write now.
 4. **The database tables exist.** `schema_v36_muse_bridge.sql` has been run in the
    Supabase SQL editor. The door writes a log row for every call, so without that
    table every call fails.
+
+   **And then `schema_v37_reminder_edits.sql`, in that order.** It adds one column,
+   `reminders.canceled_at`, and it is not optional — three things break without it,
+   and only one of them is loud:
+
+   - `schedule.cancel_reminder` and `schedule.update_reminder` fail outright, which
+     you will notice;
+   - `schedule.remind` fails too, because counting how many reminders are waiting now
+     asks about that column;
+   - **and the quiet one:** `schedule.list_reminders` on the read door still answers,
+     and lists cancelled reminders as if they were still coming. It reads the row, the
+     column is simply absent, and absent reads as "not cancelled". That is a wrong
+     list somebody will act on, with no error anywhere.
+
+   Check it landed:
+
+   ```sql
+   select column_name from information_schema.columns
+    where table_name = 'reminders' and column_name = 'canceled_at';
+   ```
 5. **The doors' code is on `main`.** `supabase/functions/muse-read/`,
    `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/` and the
    shared modules both doors import, `supabase/functions/_shared/muse/`.

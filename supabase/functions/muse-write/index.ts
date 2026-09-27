@@ -10,7 +10,7 @@
 //   that, 17 of the 18 tables carry the same rule — any signed-in account may read
 //   and write every row. So a login is not a permission, it is the whole ledger.
 //   supabase/functions/_shared/callerAuth.ts records the live audit that proved
-//   it. A separate door with its own secret and seven named verbs is the answer.
+//   it. A separate door with its own secret and nine named verbs is the answer.
 //
 // TWO DOORS, TWO SECRETS. This one holds everything that changes anything;
 // muse-read holds the questions. Meta's "Always allow" is granted per type of

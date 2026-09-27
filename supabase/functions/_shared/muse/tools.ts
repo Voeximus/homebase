@@ -1,5 +1,15 @@
 // The read door's catalogue. What is in TOOLS exists; nothing else does.
 //
+// (Counts are deliberately not written here. Two branches built on this file at
+// once and both had to correct the word "eleven" in this very comment. The count
+// now comes off TOOLS itself, in catalogue.ts, and every sentence that states one —
+// the OpenAPI descriptions, the "no such tool" reply — is generated from there.)
+//
+// ALL BUT ONE OF THESE ANSWER ABOUT THE HOUSEHOLD'S OWN FIGURES. The exception is
+// schedule.list_reminders, which answers about rows the WRITE door made — it is here
+// because it is a question, and because the write door's cancel and edit tools need
+// an id that something has to hand out. See the note above that tool.
+//
 // RULE 1 — no arithmetic in here. Every number below comes out of a function in
 // src/lib, imported through the generated copies in ./lib. The repo has the
 // receipts for what happens otherwise: cron-notify re-implemented the app's bill
@@ -72,6 +82,7 @@ import { bestSet, SEED_ROUTINES, type Routine } from "./lib/workoutLog.ts";
 import { BUNDLED_EXERCISES } from "./lib/exerciseData.ts";
 import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
+import { describe, pendingFor } from "./reminders.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import type { Loader } from "./load.ts";
 import type { Person } from "./auth.ts";
@@ -875,10 +886,85 @@ const healthNextWorkout: Tool = {
   },
 };
 
+// ── schedule.list_reminders ───────────────────────────────────────────────────
+//
+// WHY A READ TOOL IS PART OF THE REMINDER STORY. Until this existed, an assistant
+// could WRITE a reminder and had no way to see one, so a reminder set for the wrong
+// hour could only be fixed in the database dashboard — the app has no reminders
+// screen at all (nothing in `src/` reads the table). That also made
+// `schedule.remind`'s own refusal untrue: it said "clear some in the app", and
+// there is nothing in the app to clear them with.
+//
+// It is the same hole `finance.categorize_charge` still has and says so about: a
+// write door that needs an id no read door hands out cannot be used. This closes it
+// for reminders, which is why the write door's cancel and edit tools can exist.
+//
+// THE COUNTS ARE COUNTS, NOT MATHS. `total` is how many rows matched, `shown` is
+// how many are in this reply. Rule 1 is about not re-deriving the household's
+// FIGURES; the length of a list the door itself just filtered is not one of them.
+const MAX_REMINDERS_PAGE = 50;
+const DEFAULT_REMINDERS_PAGE = 20;
+const MAX_REMINDERS_OFFSET = 500;
+
+const scheduleListReminders: Tool = {
+  name: "schedule.list_reminders",
+  summary: "The reminders waiting to go off, with their ids and times.",
+  args: [
+    {
+      name: "limit",
+      type: "integer",
+      required: false,
+      description: `How many to return, 1 to ${MAX_REMINDERS_PAGE}. Default ${DEFAULT_REMINDERS_PAGE}.`,
+    },
+    {
+      name: "offset",
+      type: "integer",
+      required: false,
+      description: "How many to skip. Use next_offset from the previous reply.",
+    },
+  ],
+  async run({ load, person, now, args }) {
+    const limit = intArg(args, "limit", DEFAULT_REMINDERS_PAGE, 1, MAX_REMINDERS_PAGE);
+    const offset = intArg(args, "offset", 0, 0, MAX_REMINDERS_OFFSET);
+    const rows = await load.reminders(person);
+    // "Pending" has ONE definition and it is not here — see reminders.ts. A second
+    // spelling of it is how a cancelled reminder ends up invisible in this list and
+    // still arriving on a lock screen.
+    const pending = pendingFor(rows, person);
+    const page = pending.slice(offset, offset + limit);
+    const more = offset + page.length < pending.length;
+    return {
+      person,
+      // Rule 5's habit, stated: the answer is about this Arizona day. A reply read
+      // back tomorrow is a stale list of times.
+      as_of: isoDate(now),
+      total: pending.length,
+      shown: page.length,
+      offset,
+      more,
+      next_offset: more ? offset + page.length : null,
+      reminders: page.map((r) => ({ ...describe(r, now) })),
+      // No backticks in a sentence that leaves the door: scrub() removes them from
+      // every string it cleans, and a door that emits a character its own cleaner
+      // strips is saying one thing and checking another.
+      note:
+        "Only this person's reminders, and only the ones still waiting. A repeating one " +
+        "shows the NEXT time it goes off, not the time it was first set for. Overdue " +
+        "means its time has passed and it has not gone out — the 15-minute job is behind, " +
+        "not that it was cancelled. Cancelling or changing one is the write door.",
+    };
+  },
+};
+
 // THE CATALOGUE. Every tool that exists, in the order an assistant meets them in the
 // OpenAPI description. Add to it; never reorder to make room, and never take a name
 // off it without moving that name into ABSENT below with a reason — "no such tool"
 // has to be checkable against an intention rather than an oversight.
+//
+// It is also the ONE list this door's router, its OpenAPI description and API.md all
+// come off. catalogue.ts turns it into entries, openapi.ts builds the served document
+// from those, and tests/museCatalogue.test.ts fails if API.md's headings, either
+// door's registry or either served document disagree by one name.
 export const TOOLS: readonly Tool[] = [
   financeAudit,
   financePosition,
@@ -894,6 +980,7 @@ export const TOOLS: readonly Tool[] = [
   healthTrainingVolume,
   healthLastLift,
   healthNextWorkout,
+  scheduleListReminders,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
