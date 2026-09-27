@@ -50,12 +50,31 @@ export interface ReadSecrets {
  */
 export const MIN_SECRET_LENGTH = 24;
 
-/** The secret the caller presented, or "" when there is none. */
+/**
+ * The secret the caller presented, or "" when there is none.
+ *
+ * FOUR HEADER NAMES, and the reason is the measurement the comment above asked
+ * for. Muse's connector screen refused these doors three times, each refusal
+ * spelled "check your API key", and twice the key was fine: once the door would
+ * not answer the browser's permission question, once it advertised its own
+ * description at an address that 404s. The remaining candidate is the header
+ * itself — a setup screen that sends `apikey` or `X-API-Key` against a door that
+ * reads only two other names gets a 401 that looks exactly like a wrong secret.
+ * Accepting the common spellings costs nothing: the secret is what opens the
+ * door, and its name was never part of the guard.
+ *
+ * A secret in the QUERY STRING is still refused, and that is not laziness — query
+ * strings end up in server logs, browser history and referrer headers.
+ */
 export function presentedSecret(req: Request): string {
   const auth = req.headers.get("Authorization") ?? "";
   const bearer = auth.replace(/^Bearer\s+/i, "").trim();
   if (bearer) return bearer;
-  return (req.headers.get("X-Muse-Token") ?? "").trim();
+  for (const name of ["X-Muse-Token", "X-API-Key", "apikey", "X-Api-Key"]) {
+    const v = (req.headers.get(name) ?? "").trim();
+    if (v) return v;
+  }
+  return "";
 }
 
 /**

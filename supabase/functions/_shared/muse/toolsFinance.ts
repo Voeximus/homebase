@@ -313,6 +313,15 @@ const financeSearch: Tool = {
       found: matched.length,
       returned: Math.min(matched.length, limit),
       more: matched.length > limit,
+      // The totals of the WHOLE match, not of the page. "What did we spend at Sam's
+      // this month" is the commonest shape of this question, and an assistant that is
+      // told never to do arithmetic on what it is handed cannot answer it from a list
+      // of charges — it refuses, correctly, and the person hears "open the app".
+      // So the door adds them up, which is where addition belongs, and says plainly
+      // that the figure covers every match rather than the ones shown.
+      spent: money(matched.filter((t) => t.type === "expense").reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0)),
+      received: money(matched.filter((t) => t.type === "income").reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0)),
+      totals_cover: "every charge that matched, not only the ones listed here",
       note:
         matched.length > limit
           ? "There are more than these. Narrow the window or the amount to see the rest."

@@ -44,6 +44,10 @@ const SECRETS: Secrets = {
 };
 const APP = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
 
+/** This door's own public address, the way the read door builds its own. */
+const BASE_URL =
+  Deno.env.get("MUSE_WRITE_URL") ?? `${Deno.env.get("SUPABASE_URL") ?? ""}/functions/v1/muse-write`;
+
 // See the note in _shared/muse/handler.ts: a connector's setup screen runs in a
 // browser, asks permission with an OPTIONS request first, and reports "check your
 // API key" when the answer does not allow the header the key travels in.
@@ -92,7 +96,12 @@ Deno.serve(async (req) => {
       });
     }
     return new Response(
-      JSON.stringify({ ok: true, door: "homebase-write", openapi: `${url.origin}${url.pathname.replace(/\/$/, "")}/openapi.json` }),
+      // Built from the project URL, NOT from the incoming request. Behind Supabase's
+      // proxy the request arrives as http:// with /functions/v1 already stripped, so
+      // echoing it back handed out `http://…/muse-write/openapi.json` — wrong scheme,
+      // missing prefix, 404 for anything that followed it. A connector's setup screen
+      // follows that link to check the key, and reports the 404 as a bad key.
+      JSON.stringify({ ok: true, door: "homebase-write", openapi: `${BASE_URL}/openapi.json` }),
       { headers: JSON_HEADERS },
     );
   }

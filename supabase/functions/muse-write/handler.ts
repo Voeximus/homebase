@@ -64,8 +64,16 @@ import { DISPLAY, TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
 import { mintToken, undoSummary } from "../_shared/muse/undo.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
- *  connectors, so this is ours. */
-export const WRITES_PER_HOUR = 10;
+ *  connectors, so this is ours.
+ *
+ *  It started at 10, which the first real hour of use spent on repairs — three bill
+ *  links, two bill settings — leaving a weigh-in refused with "do this one in the
+ *  app" on a system whose whole point is that there is no app to open. The cap is
+ *  there to bound a loop, not to ration a household: a morning of catching up on
+ *  meals, sets and charges is easily thirty writes, and every one of them is
+ *  recorded, reversible, and cannot move money. 60 still stops a runaway at a cost
+ *  of one wasted minute. */
+export const WRITES_PER_HOUR = 60;
 
 /**
  * How far back the door looks for the same write the household already made.
