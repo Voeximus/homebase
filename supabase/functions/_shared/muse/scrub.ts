@@ -37,20 +37,46 @@
 // string into every description in the fixture and asserts it appears in no
 // reply. Scrubbing is the second line, not the first.
 
+// WHICH DOOR USES WHICH FUNCTION
+//
+// The two doors need the same cleaning and two different answers to "it did not
+// fit", so there is one cleaner and two wrappers around it:
+//
+//   · scrub()    — the READ door. Refuses (null) rather than slicing, and the
+//                  caller substitutes its own fixed sentence. A sliced sentence
+//                  loses the half that said what it meant.
+//   · scrubCap() — the WRITE door. Caps, because the string is going into a row
+//                  or onto a lock screen and a shorter true line is better than a
+//                  refusal. It says so out loud when it shortened something, via
+//                  wasChanged().
+//
+// Both were written separately while the doors were built side by side, and the
+// cleaning halves had already started to disagree. One cleaner now, so a string
+// that is unsafe to say is also unsafe to store.
+
 /** Names, labels, category ids — anything one of them could have typed. */
 export const NAME_MAX = 64;
 
 /** The `a`/`b` labels on an audit check ("lines", "envelope"). */
 export const LABEL_MAX = 32;
 
+/** The cap on a reminder in his own words. PLAN.md §5. The stored message is this
+ *  plus the six-character marker, so the line that reaches a lock screen is at
+ *  most 86 characters. */
+export const MESSAGE_CAP = 80;
+
+/** The marker every assistant-written reminder starts with, so both phones can see
+ *  at a glance that an assistant wrote it and Homebase did not. */
+export const MUSE_MARKER = "Muse: ";
+
 // Instruction-shaped fragments. Removed rather than refused, because a real bill
 // called "System: Electric" should still be answerable — it just must not arrive
 // wearing a prompt's clothes. The list is deliberately short and literal: a
 // cleverer matcher would be a filter to argue with rather than a rule to read.
 const INSTRUCTION_SHAPES: RegExp[] = [
-  /ignore\s+(all\s+)?previous/gi,
-  /ignore\s+(all\s+)?above/gi,
-  /disregard\s+(all\s+)?previous/gi,
+  /ignore\s+(all\s+|any\s+)?previous/gi,
+  /ignore\s+(all\s+|any\s+)?above/gi,
+  /disregard\s+(all\s+|any\s+)?(previous|prior)/gi,
   /\bsystem\s*:/gi,
   /\bassistant\s*:/gi,
   /\buser\s*:/gi,
@@ -81,6 +107,25 @@ function stripControl(s: string): string {
 }
 
 /**
+ * The cleaning, with no opinion about length. The one place either door removes
+ * anything from a string. Returns "" when nothing usable survives.
+ */
+function clean(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  // Control characters (including newlines) become spaces, never nothing: joining
+  // two words that were on separate lines invents a word that was never written.
+  // Done first, so a newline cannot hide the middle of a link from the checks below.
+  let s = stripControl(raw);
+  // Token by token, so a link leaves nothing of itself behind.
+  s = s
+    .split(/\s+/)
+    .filter((tok) => tok && !URLISH.test(tok))
+    .join(" ");
+  for (const rx of INSTRUCTION_SHAPES) s = s.replace(rx, " ");
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/**
  * A database string, made safe to say — or null when it cannot be.
  *
  * Returns null for: not a string, empty, empty after cleaning, or longer than
@@ -89,20 +134,63 @@ function stripControl(s: string): string {
  * up slicing.
  */
 export function scrub(raw: unknown, max: number = NAME_MAX): string | null {
-  if (typeof raw !== "string") return null;
-  // Control characters (including newlines) become spaces, never nothing: joining
-  // two words that were on separate lines invents a word that was never written.
-  let s = stripControl(raw);
-  // Token by token, so a link leaves nothing of itself behind.
-  s = s
-    .split(/\s+/)
-    .filter((tok) => tok && !URLISH.test(tok))
-    .join(" ");
-  for (const rx of INSTRUCTION_SHAPES) s = s.replace(rx, " ");
-  s = s.replace(/\s+/g, " ").trim();
+  const s = clean(raw);
   if (!s) return null;
   if (s.length > max) return null;
   return s;
+}
+
+/**
+ * A tool name or a field key, which is an IDENTIFIER and not prose.
+ *
+ * This exists because of a bug the merge found. A tool name and a hostname are the
+ * same shape — `finance.audit` and `evil.com` are indistinguishable to the link
+ * check in clean() — so running a tool name through the prose cleaner deleted the
+ * whole thing, and "there is no schedule.remind" became "name the tool". The names
+ * were never prose to begin with.
+ *
+ * So a name is not cleaned, it is RECOGNISED: keep the longest leading run of the
+ * characters a name is made of, and drop everything after it whole. A caller that
+ * appends a newline and a sentence to a tool name has not named a tool that has a
+ * sentence in it — it has named a tool and then written a sentence, and the
+ * sentence is not part of the name. That closes the same hole cleaning was there
+ * to close, because a name repeated back in a refusal lands in the assistant's
+ * context and in his settings screen through the audit log.
+ *
+ * Returns "" when there is no name at the front at all, and every caller has a
+ * fixed word ready for that — the same rule as scrub().
+ */
+export function scrubName(raw: unknown, cap: number = NAME_MAX): string {
+  if (typeof raw !== "string") return "";
+  const m = /^[A-Za-z0-9_.-]+/.exec(raw.trim());
+  return m ? m[0].slice(0, cap) : "";
+}
+
+/**
+ * The same cleaning, capped instead of refused, for a string that is going INTO
+ * something — a reminder on a lock screen, a queued charge description, a tool
+ * name repeated back in a refusal.
+ *
+ * Returns "" when nothing survives, and the caller decides whether that is a
+ * refusal or a dropped field, because those are different bugs. Cutting happens
+ * after the squeeze, so the budget is not spent on whitespace.
+ */
+export function scrubCap(raw: unknown, cap: number = NAME_MAX): string {
+  const s = clean(raw);
+  return s.length > cap ? s.slice(0, cap).trimEnd() : s;
+}
+
+/**
+ * Did cleaning take something out? The reminder tool uses it to say so out loud —
+ * a message that arrives shorter than he said it should not arrive silently
+ * shorter.
+ *
+ * Squeezed whitespace does not count. Saying "I took the links out" because two
+ * spaces became one would be a small lie, and the whole value of that sentence is
+ * that it is only said when it is true.
+ */
+export function wasChanged(input: string, cleaned: string): boolean {
+  return input.replace(/\s+/g, " ").trim() !== cleaned;
 }
 
 /** `scrub`, with the caller's fixed sentence when the string cannot be said. */

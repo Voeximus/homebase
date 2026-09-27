@@ -1,0 +1,23 @@
+{
+  // The write door's type check, and the reminder job's.
+  //
+  // It is separate from _shared/muse/tsconfig.json only because that config's
+  // `include` is relative to its own folder. The settings are the same ones, kept
+  // in one place and extended here, so the two doors cannot end up compiled under
+  // different rules — which is the same reason they now share one az.ts and one
+  // scrub.ts instead of carrying a copy each.
+  //
+  // WHY IT MATTERS MORE HERE THAN ANYWHERE ELSE IN THIS REPO. Nothing under
+  // supabase/functions was type-checked before the doors: tsconfig.app.json ends
+  // with `"include": ["src"]`. On a read door an uncaught type slip is a wrong
+  // number in a chat; on a write door it is a wrong row in the ledger, written
+  // without anybody looking at a screen.
+  //
+  // index.ts and dbSupabase.ts are deliberately left out of both configs: they
+  // import `jsr:@supabase/…` and use Deno globals, which plain tsc cannot resolve.
+  // That is exactly why they hold the runtime wiring and no decisions — everything
+  // that decides anything is in the files below, and tests/museWrite.test.ts runs
+  // those for real.
+  "extends": "../_shared/muse/tsconfig.json",
+  "include": ["db.ts", "handler.ts", "openapi.ts", "tools.ts", "../cron-reminders/schedule.ts"]
+}

@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { azDateISO, clockNow, nowAZ } from "../supabase/functions/muse-write/az.ts";
+import { azDateISO, clockNow, nowAZ } from "../supabase/functions/_shared/muse/az.ts";
 import { handleWrite, WRITES_PER_HOUR, type Deps, type Secrets } from "../supabase/functions/muse-write/handler.ts";
 import { REMIND_PER_DAY } from "../supabase/functions/muse-write/tools.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
@@ -712,8 +712,8 @@ describe("when a reminder fires, and where a repeating one goes next", () => {
 
 // ── nothing else may read a clock ─────────────────────────────────────────────
 
-describe("only az.ts reads a clock", () => {
-  it("has no Date construction anywhere else in the door", () => {
+describe("only the shared az.ts reads a clock", () => {
+  it("has no Date construction anywhere in the door", () => {
     // The grep half of Rule 2. The shared modules read the machine's own calendar
     // date whenever you do not hand them one — there are eight such defaults in
     // src/lib — and a single forgotten argument makes the door answer about
@@ -723,10 +723,14 @@ describe("only az.ts reads a clock", () => {
     // cron-reminders is deliberately not covered: its whole job is "what is due
     // now", the same as cron-notify, and it compares instants rather than
     // calendar dates, so no timezone gets a vote in it.
+    //
+    // There is no exemption in this loop any more, because the clock now lives in
+    // supabase/functions/_shared/muse/az.ts, which both doors import. The door's
+    // own folder may not construct a Date at all.
     const dir = "supabase/functions/muse-write";
     const offenders: string[] = [];
     for (const f of readdirSync(dir)) {
-      if (!f.endsWith(".ts") || f === "az.ts") continue;
+      if (!f.endsWith(".ts")) continue;
       const src = readFileSync(`${dir}/${f}`, "utf8");
       // Strip comments first, so explaining the rule does not break it.
       const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
@@ -736,24 +740,38 @@ describe("only az.ts reads a clock", () => {
   });
 });
 
-// ── the copy of nowAZ ────────────────────────────────────────────────────────
+// ── one copy of the clock, and one copy of the cleaner ───────────────────────
 
 describe("one spelling of the clock", () => {
-  it("matches the read door's shared copy once that lands", () => {
-    // supabase/functions/muse-write/az.ts is a stand-in until the read door adds
-    // supabase/functions/_shared/muse/az.ts. The moment both exist, they have to
-    // agree — two spellings of a clock is the drift this plan exists to stop.
-    // This test does nothing until the shared file appears, and then it is the
-    // thing that makes deleting the local copy safe.
-    const shared = "supabase/functions/_shared/muse/az.ts";
-    if (!existsSync(shared)) return;
-    const body = (src: string) => {
-      const m = /export function nowAZ\([\s\S]*?\n}/.exec(src);
-      return m ? m[0].replace(/\s+/g, " ") : null;
-    };
-    const mine = body(readFileSync("supabase/functions/muse-write/az.ts", "utf8"));
-    const theirs = body(readFileSync(shared, "utf8"));
-    expect(theirs).not.toBeNull();
-    expect(mine).toBe(theirs);
+  // The write door was built beside the read door and carried its own az.ts and
+  // scrub.ts as stand-ins. Both doors now import the one copy under
+  // _shared/muse/, which is what the merge was for: two spellings of a clock, or
+  // two cleaners that disagree about what a link looks like, is exactly the drift
+  // this plan exists to stop. A private copy coming back is a build failure
+  // (scripts/check-categorizer-sync.mjs) and a test failure here.
+  const shared = "supabase/functions/_shared/muse/az.ts";
+
+  it("keeps the clock in one file, which both doors import", () => {
+    expect(existsSync(shared)).toBe(true);
+    expect(existsSync("supabase/functions/muse-write/az.ts")).toBe(false);
+    expect(existsSync("supabase/functions/muse-read/az.ts")).toBe(false);
+    const body = /export function nowAZ\([\s\S]*?\n}/.exec(readFileSync(shared, "utf8"));
+    expect(body).not.toBeNull();
+    // The one thing that must be true of it, wherever it lives: the zone comes
+    // from the IANA database, not from subtracting seven hours — that trick is
+    // right only while the runtime happens to be UTC.
+    expect(body![0]).toContain("HOUSEHOLD_ZONE");
+    expect(body![0]).not.toContain("3600");
+  });
+
+  it("keeps the cleaner in one file too", () => {
+    expect(existsSync("supabase/functions/muse-write/scrub.ts")).toBe(false);
+    const src = readFileSync("supabase/functions/_shared/muse/scrub.ts", "utf8");
+    // The read door refuses what does not fit; the write door caps it. Two
+    // answers to "it did not fit", one cleaner underneath — so a string that is
+    // unsafe to say is also unsafe to store.
+    expect(src).toContain("export function scrub(");
+    expect(src).toContain("export function scrubCap(");
+    expect(src).toContain("function clean(");
   });
 });

@@ -34,7 +34,10 @@ import type { Person } from "./auth.ts";
 export type Outcome = "ok" | "denied" | "rate_limited" | "error";
 
 export interface AuditRow {
-  person: Person | null;
+  /** Never null. A call with no recognised key is not written to this table at all
+   *  — the column is NOT NULL and this door is public, so a row for an anonymous
+   *  caller would be a table a stranger can fill. handler.ts logs those instead. */
+  person: Person;
   door: "read" | "write";
   tool: string;
   args: Record<string, unknown>;

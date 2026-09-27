@@ -3,11 +3,15 @@
 For Gino. Everything here is done once. Nothing here writes to the database or
 changes the app. Commands are PowerShell, from the repo folder.
 
-The project is `ganzefaciiyibselizqi`, so the door's address is:
+The project is `ganzefaciiyibselizqi`, so the two doors' addresses are:
 
 ```
 https://ganzefaciiyibselizqi.supabase.co/functions/v1/muse-read
+https://ganzefaciiyibselizqi.supabase.co/functions/v1/muse-write
 ```
+
+Both halves are written and tested now. Nothing below has been run, and neither
+door is deployed.
 
 ---
 
@@ -28,8 +32,9 @@ Five things have to be true already. None of them are code you write now.
 4. **The database tables exist.** `schema_v36_muse_bridge.sql` has been run in the
    Supabase SQL editor. The door writes a log row for every call, so without that
    table every call fails.
-5. **The door's code is on `main`.** `supabase/functions/muse-read/` and
-   `supabase/functions/_shared/muse/`.
+5. **The doors' code is on `main`.** `supabase/functions/muse-read/`,
+   `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/` and the
+   shared modules both doors import, `supabase/functions/_shared/muse/`.
 
 ---
 
@@ -90,14 +95,21 @@ hers and not yours.
 npx supabase functions deploy muse-read --project-ref ganzefaciiyibselizqi
 ```
 
-No Docker needed. Deploy `muse-write` the same way when that half exists.
+No Docker needed. Start with the read door alone and do Step 5 against it, because
+a read that is wrong tells you something and costs nothing. When those checks pass,
+the other two go the same way:
+
+```powershell
+npx supabase functions deploy muse-write --project-ref ganzefaciiyibselizqi
+npx supabase functions deploy cron-reminders --project-ref ganzefaciiyibselizqi
+```
 
 **One thing to fix once:** the deploy workflow lists every function by name
-(`.github/workflows/deploy.yml`, the `for fn in ...` line). `muse-read` is not in
-that list, so a later edit to the door will look shipped and will not be running.
-Add `muse-read` — and `muse-write` when it exists — to that line, or deploy the
-door by hand every time you change it. This is the same trap that let
-`cron-notify` drift two schema versions behind the app.
+(`.github/workflows/deploy.yml`, the `for fn in ...` line). None of these three are
+in that list, so a later edit to a door will look shipped and will not be running.
+Add `muse-read`, `muse-write` and `cron-reminders` to that line, or deploy by hand
+every time you change one. This is the same trap that let `cron-notify` drift two
+schema versions behind the app.
 
 ## Step 4 — give Muse the key
 
@@ -116,9 +128,17 @@ keeps the key out of the model's sight. If Muse asks you to type the key into th
 conversation instead, stop — that puts it in a transcript. Try the credential
 entry again, and if there isn't one, the project does not go ahead on this path.
 
-If Muse cannot fetch the description with the token, open
-`supabase/functions/muse-read/openapi.json` in the repo and paste its contents
-into the chat. There are no secrets in that file.
+The door builds that description from its own list of tools, so it can never
+describe a tool that does not exist. It is **behind the key**, like every other
+path on the door — a stranger with no key gets the same refusal there as anywhere
+else, and does not even learn which tools exist.
+
+If Muse cannot fetch the description before it holds the key, paste `API.md` from
+beside this file into the chat instead. It says the same things in plain sentences
+and there are no secrets in it. Do not go looking for an `openapi.json` file in the
+repo: there isn't one, on purpose. A second hand-written copy of the tool list was
+wrong within a day of being written, so the only copy is the one the door
+generates.
 
 Two more things to tell it, because they are how this stays safe:
 
@@ -190,7 +210,7 @@ Muse will say the door's own sentence out loud. This is what each one means.
 |---|---|---|
 | "did not recognise the key" | Wrong key, no key, or the write key used on the read door. | Check step 2 landed, then redeploy (step 3). Secrets take effect on a fresh start. |
 | "has no such tool" | It asked for something that does not exist here. | Nothing is broken. If it keeps trying, tell it to read the description again. |
-| "as many questions as this door answers in an hour" | Over 60 reads in an hour for you. | Wait. If you were not asking that much, something is looping — check `muse_audit` for repeats. |
+| "as many questions as this door answers in an hour" | Too many calls in an hour. The write door counts these today; the read door's own cap is not switched on yet, so a runaway read loop will not be stopped for you. | Wait. If you were not asking that much, something is looping — check `muse_audit` for repeats. |
 | "could not read the ledger cleanly" | The door could not read the whole ledger, so it refused to answer from part of it. | Working as designed. Ask again in a minute. If it keeps happening, the ledger has outgrown a page size and the door needs a look. |
 | "Dates must look like..." | It sent a date the door did not understand. | Ask your question again with explicit dates. |
 

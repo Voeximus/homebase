@@ -792,16 +792,57 @@ describe("what exists and what never will", () => {
     }
   });
 
-  it("serves its own description without a key, and the description names every tool", async () => {
+  it("serves its own description to a key, and the description names every tool", async () => {
     const res = await handleMuseRead(
-      new Request("https://example.test/functions/v1/muse-read/openapi.json"),
+      new Request("https://example.test/functions/v1/muse-read/openapi.json", {
+        headers: { Authorization: `Bearer ${GINO_SECRET}` },
+      }),
       deps(),
     );
     expect(res.status).toBe(200);
     const doc = await jsonOf(res);
+    // Name by name, both directions. This is the whole guard against the door and
+    // its own description disagreeing: the document is generated from the same
+    // catalogue the router uses, so a tool cannot be described and missing, or
+    // present and undescribed.
     const paths = Object.keys(doc.paths as object).sort();
     expect(paths).toEqual(TOOLS.map((t) => `/${t.name}`).sort());
     expect(String((doc.info as { description: string }).description)).toContain("search_transactions");
+  });
+
+  it("does not hand its description to a stranger", async () => {
+    // Without this, an unauthenticated probe learns exactly which tools exist. The
+    // document holds no household data, but it does name the whole surface, and
+    // this door is public (verify_jwt = false) — so every path answers the same
+    // refusal to a caller with no key, including this one.
+    const res = await handleMuseRead(
+      new Request("https://example.test/functions/v1/muse-read/openapi.json"),
+      deps(),
+    );
+    expect(res.status).toBe(401);
+    const body = await jsonOf(res);
+    expect(body).not.toHaveProperty("paths");
+    expect(String(body.says)).toContain("does not open this door");
+  });
+
+  it("is written up in API.md, tool for tool", async () => {
+    // API.md is what gets pasted into the assistant's chat, so a tool missing from
+    // it is a tool the assistant will not use, and a tool in it that does not exist
+    // is a tool the assistant will keep trying. The guide was written against six
+    // tools while eleven were being built, which is how this test earned its place.
+    const { readFileSync } = await import("node:fs");
+    const md = readFileSync("docs/research/muse-bridge/API.md", "utf8");
+    const documented = [...md.matchAll(/^### `([a-z_.]+)`/gm)].map((m) => m[1]).sort();
+    expect(documented).toEqual(TOOLS.map((t) => t.name).sort());
+  });
+
+  it("keeps no second copy of the description in the repo", async () => {
+    // A hand-written openapi.json next to index.ts was committed while the door was
+    // being built, and within a day it described six tools out of eleven. Nothing
+    // imported it, so it was never even deployed — it was a file that could only
+    // ever be wrong. The door generates the document from tools.ts instead.
+    const { existsSync } = await import("node:fs");
+    expect(existsSync("supabase/functions/muse-read/openapi.json")).toBe(false);
   });
 
   it("accepts the envelope shape as well as the path shape, and refuses a disagreement", async () => {
@@ -828,12 +869,27 @@ describe("what exists and what never will", () => {
   });
 
   it("refuses anything but POST, and never answers a preflight", async () => {
-    const res = await handleMuseRead(
+    // A preflight with no key gets the same 401 every other keyless request gets:
+    // the key is checked before the method, so a browser cannot use OPTIONS to find
+    // out which paths are real. With a key it is a 405 — a wrong method, not a
+    // wrong caller. Neither reply carries a CORS header, so no web page can read
+    // this door at all.
+    const stranger = await handleMuseRead(
       new Request("https://example.test/functions/v1/muse-read/finance.audit", { method: "OPTIONS" }),
       deps(),
     );
-    expect(res.status).toBe(405);
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(stranger.status).toBe(401);
+    expect(stranger.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    const keyed = await handleMuseRead(
+      new Request("https://example.test/functions/v1/muse-read/finance.audit", {
+        method: "OPTIONS",
+        headers: { Authorization: `Bearer ${GINO_SECRET}` },
+      }),
+      deps(),
+    );
+    expect(keyed.status).toBe(405);
+    expect(keyed.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 });
 
@@ -897,9 +953,30 @@ describe("one row per call", () => {
     expect(row.ms).toBeGreaterThanOrEqual(0);
   });
 
-  it("records a refusal too, with no person on it", async () => {
-    await ask("finance.position", {}, "nope");
-    expect(audited[0]).toMatchObject({ person: null, outcome: "denied", tool: "finance.position" });
+  it("records a refusal a key made, and writes no row for a caller it cannot name", async () => {
+    // A refusal that got past the key is audited like anything else.
+    await ask("finance.spend_by_category", { from: "nope", to: "2026-09-01" });
+    expect(audited[0]).toMatchObject({
+      person: "gino",
+      outcome: "denied",
+      tool: "finance.spend_by_category",
+    });
+
+    // A wrong key writes nothing. `muse_audit.person` is NOT NULL and checked
+    // against the two names, so there is no row this could be — and this door is
+    // public, so a row written for an anonymous caller is a table a stranger can
+    // fill, in front of a rate limiter that counts per person and so cannot count
+    // these at all. Those go to the function log. muse-write makes the same choice.
+    audited.length = 0;
+    const res = await ask("finance.position", {}, "nope");
+    expect(res.status).toBe(401);
+    expect(audited).toEqual([]);
+    // And the reply is the plain refusal — not the refusal plus a confession that a
+    // log row failed, which is what a NOT NULL violation would have produced here.
+    expect(await jsonOf(res)).toEqual({
+      error: "unauthorized",
+      says: "That key does not open this door.",
+    });
   });
 
   it("records an unreadable ledger as an error", async () => {

@@ -32,8 +32,8 @@
 //   calling another edge function. Not disabled — absent. See tools.ts.
 
 import type { Db, Person, Push } from "./db.ts";
-import { azDateISO, ticks } from "./az.ts";
-import { scrub } from "./scrub.ts";
+import { azDateISO, ticks } from "../_shared/muse/az.ts";
+import { scrubName } from "../_shared/muse/scrub.ts";
 import { TOOL_NAMES, TOOLS } from "./tools.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
@@ -171,11 +171,12 @@ export async function handleWrite(req: Request, deps: Deps): Promise<Reply> {
     return deny(400, "Send an object with a tool and its args.");
   }
   const body = parsed as Record<string, unknown>;
-  // Cleaned before it is stored or echoed. A tool name and a field name are
+  // Checked before it is stored or echoed. A tool name and a field name are
   // strings a caller chose, and both end up in the audit log and on his settings
-  // screen — so they are no more trusted than a bank descriptor. A real tool name
-  // passes through the cleaner unchanged.
-  const tool = scrub(body.tool, 60);
+  // screen — so they are no more trusted than a bank descriptor. They are names
+  // rather than sentences, so scrubName keeps the name off the front and drops
+  // whatever was appended to it; a real tool name comes through unchanged.
+  const tool = scrubName(body.tool, 60);
   if (!tool) {
     await db.logCall({ person, tool: "?", args: {}, outcome: "denied", note: "no tool named", ms: ms() });
     return deny(400, "Name the tool.", { tools: TOOL_NAMES });
@@ -196,7 +197,7 @@ export async function handleWrite(req: Request, deps: Deps): Promise<Reply> {
   // Membership is tested against the RAW keys — cleaning first would let "weight "
   // read as "weight" and then find nothing under it.
   const rawKeys = Object.keys(args);
-  const shown = (keys: string[]) => keys.map((k) => scrub(k, 24) || "?").sort();
+  const shown = (keys: string[]) => keys.map((k) => scrubName(k, 24) || "?").sort();
   const fields = shown(rawKeys);
   const extra = rawKeys.filter((f) => !def.fields.includes(f));
   if (extra.length) {

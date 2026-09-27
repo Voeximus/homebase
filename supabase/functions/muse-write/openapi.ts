@@ -29,7 +29,7 @@ export function openapi(url: URL): Record<string, unknown> {
         "",
         ...lines,
         "",
-        "Every call needs the household secret in Authorization: Bearer, and an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
+        "Every call needs the household secret, in Authorization: Bearer or in X-Muse-Token — the door takes either, because nobody has published which one a phone-built connector sends. It also needs an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
         `At most ${WRITES_PER_HOUR} writes an hour, ${REMIND_PER_DAY} new reminders a day, and ${REMIND_OPEN_MAX} reminders waiting at once.`,
         "There is no tool for moving money, deleting anything, settling a bill, or changing a debt balance. Those are not switched off; they do not exist here.",
       ].join("\n"),

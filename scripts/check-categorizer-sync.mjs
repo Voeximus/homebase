@@ -61,8 +61,8 @@ if (drift) {
 console.log("✓ categorizer copies in sync");
 
 // ── the Muse doors ───────────────────────────────────────────────────────────
-// Two more guards, run from here so `npm run build` covers them without the build
-// script growing a third step.
+// Four more guards, run from here so `npm run build` covers them without the build
+// script growing a step per guard.
 
 // 1. The generated shared copies. The PAIRS list above cannot hold them: it
 //    normalises exactly one difference — a same-folder `./name.ts` import — and a
@@ -145,21 +145,65 @@ if (clockDrift) {
 }
 console.log("✓ muse doors read no clock");
 
-// 3. THE DOORS TYPE-CHECK. `tsconfig.app.json` ends with `"include": ["src"]`, so
+// 3. NEITHER DOOR KEEPS A PRIVATE COPY OF A SHARED HELPER.
+//
+//    The two doors were built side by side, so the write door carried its own
+//    az.ts and scrub.ts as stand-ins while the shared ones were being written. By
+//    the time they met, the two clocks had already drifted — one named the zone
+//    through a constant and one spelled it out — and the two cleaners disagreed
+//    about what a link looks like, which is worse: it means a string could be
+//    unsafe to say and safe to store, or the other way round.
+//
+//    So the helper names below may exist in exactly one place, _shared/muse/. A
+//    door folder that grows one again fails the build, which is the same
+//    instrument that stops the categorizer copies drifting at the top of this file.
+const SHARED_ONLY = ["az.ts", "scrub.ts", "auth.ts", "paging.ts", "audit.ts", "load.ts"];
+const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
+let privateCopies = false;
+for (const dir of DOOR_DIRS) {
+  for (const name of SHARED_ONLY) {
+    const path = `${dir}/${name}`;
+    let exists = true;
+    try {
+      statSync(path);
+    } catch {
+      exists = false;
+    }
+    if (!exists) continue;
+    privateCopies = true;
+    console.error(`\n✗ ${path} is a second copy of supabase/functions/_shared/muse/${name}.`);
+  }
+}
+if (privateCopies) {
+  console.error(
+    "\n  → import the shared one instead. Two spellings of the clock, or two cleaners\n" +
+      "    that disagree, is the drift the whole bridge plan exists to prevent.\n",
+  );
+  process.exit(1);
+}
+console.log("✓ muse doors share one copy of each helper");
+
+// 4. THE DOORS TYPE-CHECK. `tsconfig.app.json` ends with `"include": ["src"]`, so
 //    nothing in the repo has ever type-checked supabase/functions — every edge
 //    function has shipped unchecked. For a door that speaks numbers into a chat
 //    that is the wrong place to have no compiler: a dropped optional field in a
-//    row mapper is not a crash, it is a quietly different number. The door has its
-//    own tsconfig, and it is run from here so `npm run build` covers it.
-const MUSE_TSCONFIG = "supabase/functions/_shared/muse/tsconfig.json";
-try {
-  const require = createRequire(import.meta.url);
-  // typescript's package root, then its own bin — resolved rather than assumed,
-  // because node_modules is hoisted and a git worktree does not have its own.
-  const tsc = join(dirname(dirname(require.resolve("typescript"))), "bin", "tsc");
-  execFileSync(process.execPath, [tsc, "--noEmit", "-p", MUSE_TSCONFIG], { stdio: "inherit" });
-  console.log("✓ muse doors type-check");
-} catch {
-  console.error(`\n✗ ${MUSE_TSCONFIG} did not type-check.\n`);
-  process.exit(1);
+//    row mapper is not a crash, it is a quietly different number. On the write door
+//    it is a wrong row. Each door has its own tsconfig, and both run from here so
+//    `npm run build` covers them.
+const MUSE_TSCONFIGS = [
+  "supabase/functions/_shared/muse/tsconfig.json",
+  "supabase/functions/muse-write/tsconfig.json",
+];
+for (const config of MUSE_TSCONFIGS) {
+  try {
+    const require = createRequire(import.meta.url);
+    // typescript's package root, then its own bin — resolved rather than assumed,
+    // because node_modules is hoisted and a git worktree does not have its own.
+    const tsc = join(dirname(dirname(require.resolve("typescript"))), "bin", "tsc");
+    execFileSync(process.execPath, [tsc, "--noEmit", "-p", config], { stdio: "inherit" });
+  } catch {
+    console.error(`\n✗ ${config} did not type-check.\n`);
+    process.exit(1);
+  }
 }
+console.log("✓ muse doors type-check");

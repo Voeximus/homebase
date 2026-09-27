@@ -41,8 +41,8 @@
 //   screen said $100.
 
 import type { Db, MealDayRow, Person, Push } from "./db.ts";
-import { addDays, azDateISO, azWallClock, daysBetweenISO, isDateISO, parseInstant } from "./az.ts";
-import { MESSAGE_CAP, MUSE_MARKER, scrub, wasChanged } from "./scrub.ts";
+import { addDays, azDateISO, azWallClock, daysBetweenISO, isDateISO, parseInstant } from "../_shared/muse/az.ts";
+import { MESSAGE_CAP, MUSE_MARKER, scrubCap, wasChanged } from "../_shared/muse/scrub.ts";
 
 /** The push_subscriptions "owner" spelling, and the name a sentence uses. */
 export const DISPLAY: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -223,7 +223,7 @@ const logSavedMeal: Tool = {
 
     const matches = await ctx.db.findSavedMealsByName(name);
     if (matches.length === 0) {
-      const names = (await ctx.db.listSavedMealNames(8)).map((n) => scrub(n, 40)).filter(Boolean);
+      const names = (await ctx.db.listSavedMealNames(8)).map((n) => scrubCap(n, 40)).filter(Boolean);
       const list = names.length ? ` Saved meals right now: ${names.join(", ")}.` : "";
       return refuse(404, `There is no saved meal called that.${list}`);
     }
@@ -286,13 +286,13 @@ const logSavedMeal: Tool = {
       result: {
         person: ctx.person,
         date: when.date,
-        meal: scrub(saved.name, 40),
+        meal: scrubCap(saved.name, 40),
         items: saved.items.length,
         meals_on_day: total,
       },
       rowIds: [],
       say:
-        `Added ${scrub(saved.name, 40)} to ${DISPLAY[ctx.person]}'s food log for ${when.date}. ` +
+        `Added ${scrubCap(saved.name, 40)} to ${DISPLAY[ctx.person]}'s food log for ${when.date}. ` +
         `That day now has ${total} ${total === 1 ? "meal" : "meals"}.`,
     };
   },
@@ -329,7 +329,7 @@ const remind: Tool = {
         `That reminder is ${raw.length} characters. Keep it under ${MESSAGE_CAP} — it has to fit on a lock screen.`,
       );
     }
-    const clean = scrub(raw, MESSAGE_INPUT_MAX);
+    const clean = scrubCap(raw, MESSAGE_INPUT_MAX);
     if (!clean) return refuse(400, "There was nothing left of that reminder once the links were taken out.");
     if (clean.length > MESSAGE_CAP) {
       return refuse(
@@ -457,7 +457,7 @@ const noteKnownAmount: Tool = {
     if (name === null) return refuse(404, "There is no bill with that id.");
 
     const forMonth = monthKey ? ` for ${monthKey}` : "";
-    const summary = `Record ${scrub(name, 40)}${forMonth} as ${dollars(amount)}.`;
+    const summary = `Record ${scrubCap(name, 40)}${forMonth} as ${dollars(amount)}.`;
     return queue(ctx, "finance.note_known_amount", { recurring_id: id, amount, month_key: monthKey ?? null }, summary);
   },
 };
@@ -477,7 +477,7 @@ const addTransaction: Tool = {
     }
     const category = typeof payload.category_id === "string" ? payload.category_id : "";
     if (!SLUG.test(category)) return refuse(400, "I need a category id, like groceries or transport.");
-    const description = scrub(payload.description, 40);
+    const description = scrubCap(payload.description, 40);
 
     // `type` is not a field this tool takes, and neither is applies_to — see the
     // per-tool field list and the refusals in handler.ts. An expense that cannot
@@ -516,7 +516,7 @@ const logMeal: Tool = {
     const clean: Record<string, unknown>[] = [];
     for (const raw of items) {
       if (!isObject(raw)) return refuse(400, "Each food is an object with a name, calories and macros.");
-      const name = scrub(raw.name, 40);
+      const name = scrubCap(raw.name, 40);
       if (!name) return refuse(400, "Each food needs a name.");
       const nums: Record<string, number> = {};
       for (const k of ["kcal", "p", "c", "f"]) {

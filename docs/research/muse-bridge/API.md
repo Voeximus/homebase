@@ -5,7 +5,7 @@ called Homebase. Two people share it: Gino and Xinyan. It holds their bank
 accounts, bills, budget, debts, body weight and workouts, and it is the place
 those things are true.
 
-This door lets you **ask** Homebase questions. It changes nothing. Six questions
+This door lets you **ask** Homebase questions. It changes nothing. Eleven questions
 can be asked today. Everything else in this document is either a rule about how to
 speak, or a plain statement that something does not exist yet.
 
@@ -69,9 +69,10 @@ or the other, never both.
 The machine-readable description of every call is at
 `GET /muse-read/openapi.json`, and it needs the same token.
 
-Reads are capped at 60 an hour per person. That is generous for conversation and
-tight enough to notice a loop. If you are refused for going over, wait — do not
-retry in a circle.
+**Do not ask the same question in a loop.** A cap of 60 reads an hour per person
+is planned and is not switched on yet, so today nothing stops you but this
+sentence. When it lands you will start getting `rate_limited` instead of an answer.
+Either way: if a call is refused, wait. Do not retry in a circle.
 
 Every call is written to a log the household can read: which tool, which person,
 whether it worked, how long it took. Amounts are not logged. Assume they can see
@@ -79,7 +80,12 @@ everything you asked.
 
 ---
 
-## The six questions you can ask
+## The eleven questions you can ask
+
+**You never send a person.** The door works out whether it is Gino or Xinyan asking
+from the key you used, and it refuses the call outright if you put `person` in the
+body. The health answers come back stamped with the person, so you can still say
+whose they are.
 
 ### `finance.audit` — does the app disagree with itself?
 
@@ -193,9 +199,54 @@ short. Say it as given and do not try to reconstruct it. If a name ever does rea
 you with digits in it, treat them as part of a card number: do not read them out,
 and do not repeat them anywhere.
 
+### `finance.worth_a_look` — what looks off, as a judgement call?
+
+**Takes nothing.** `{}`
+
+The household's own review rules, run over the whole ledger. These are not errors
+the way a failed self-check is an error — they are things a person should look at
+and decide about.
+
+**What comes back:** `total`, how many the rules raised; `suggestions`, the ones
+safe to say, each with a ready-made `sentence`; and `left_out`, how many were held
+back because they could not be said without naming a charge or a merchant. A
+suggestion may also carry `rule`, `kind`, a whole-dollar `amount`, a `month`, a
+`bill` id and a `count`.
+
+**Say the sentence as it stands, and say the number that was left out.** "Three
+things worth a look, and two more that need the app to see" is the honest shape of
+this answer. Never guess at what was held back.
+
+**`dismissals_known` is always `false`, and it matters.** Waving a suggestion away
+is remembered on the phone that did it, in that phone's own storage. The door has
+no phone, so this list includes things one of them has already decided about. Say
+so — "this includes anything you have already dismissed" — or you will hand back
+something they settled last week as if it were new.
+
+**Not in it:** the charge, the merchant, the day. Two of the rules cannot be
+explained without naming a charge, and those come back as a count and "open the
+app".
+
+### `health.macros_today` — what is left to eat today?
+
+**Takes nothing.** `{}` — the person comes from your key.
+
+**What comes back:** the `target`, what has been `eaten`, and what is `remaining`,
+each as calories, protein, carbs and fat. Plus the `date` and `meals_logged`.
+
+**The trap, and it is the big one on the health side.** This is the **calendar day
+in Arizona**. He works nights. Anything eaten after midnight is filed under the
+next day, so on a night shift this number describes half a day. The reply says so
+in its own `note` — read that note out whenever `meals_logged` is low or the
+question comes in the small hours. Do not state remaining calories confidently to
+somebody halfway through a shift.
+
+**`meals_logged: 0`** means nothing has been logged, not that nothing has been
+eaten. Say which one of those you actually know.
+
 ### `health.weight_trend` — which way is the weight going?
 
-**Takes a person.** `{"person": "gino"}` or `{"person": "xinyan"}`
+**Takes nothing.** `{}` — the person comes from your key.
 
 **What comes back:** the latest weigh-in, this week's running average, how many
 days this week have an entry, and the trend in pounds per week. Weeks start
@@ -214,6 +265,59 @@ mornings, so it is steady and it is worth trusting.
   the latest number is a data point. Prefer the trend when someone asks how it is
   going.
 
+### `health.training_volume` — is each muscle getting enough work?
+
+**Takes an optional window.** `{}` for the last 7 days, or `{"days": 14}`. One to
+ninety.
+
+**What comes back:** one row per muscle that had any work in the window — the
+muscle's name, its `hard_sets`, and the `band` that count sits in. Muscles with no
+sets are left out rather than reported as zero. `sets_with_no_muscle_data` counts
+sets of lifts the library does not know, which are in the workout and in no row.
+
+**The traps:**
+- A set counts **once** for each muscle a lift works directly and **half** for each
+  one it helps, so `hard_sets` can be a half number. It is not a count of sets
+  performed and you must not present it as one. The reply says this in its `note`.
+- Say the band as given. Do not turn it into a verdict of your own, and do not tell
+  anybody to train more or less — that is a judgement, and rule 3 applies.
+- A short window makes everything look thin. Say the window in the same sentence as
+  the number.
+
+### `health.last_lift` — when was this last trained, and with what?
+
+**Takes the lift's name.** `{"exercise": "tricep pushdowns"}` — however he says it.
+The door matches the name the way the app does, so a near-miss still finds the lift.
+
+**What comes back:** `found`, and when it is true, the `date`, every set with its
+weight and reps and whether it was a warm-up, and the `top_set` with an
+`estimated_1rm_lb`.
+
+**When `found` is false, say that plainly** — no finished session with working sets
+of that lift. It does not mean he has never done it; it means nothing is on file.
+Do not offer a number from a different lift.
+
+**`estimated_1rm_lb` is a formula, not a lift he has done.** Say so every single
+time you read it out. The reply carries that sentence; use it.
+
+### `health.next_workout` — what is there to train, and what did it look like last time?
+
+**Takes nothing.** `{}` — the person comes from your key.
+
+**Nothing picks a workout.** `picks_one` is `false` and it is always false. The app
+lists routines and he chooses; there is no rotation and no "next" anywhere in the
+data. So this hands you the routines and what he lifted last time on each exercise,
+and **you must not choose for him.** Offering "today is push day" would be inventing
+a fact about his training and saying it with the app's authority.
+
+**What comes back:** up to eight routines, each with its name and up to twelve
+exercises. Each exercise carries its planned `sets` and `reps`, the date it was
+`last_done`, and the `last_top_set` from that day.
+
+**`last_done: null`** means that lift has no finished session on file. Say that
+rather than passing over it — an exercise nobody has logged is often the useful
+thing in this reply.
+
 ---
 
 ## When a call is refused
@@ -227,7 +331,7 @@ conversation.
 | `bad_request` | A date or a field was not understood. Nothing was read. | Fix the field and call once more. If it fails again, say what you sent. |
 | `unauthorized` | No key, the wrong key, or a key for a door this is not. Nothing was read. | Stop. Say the key was not recognised. **Never** try another key, another header, or another path. |
 | `unknown_tool` | There is no such tool here. It is not switched off — it does not exist. | Say the door cannot do that. Do not try a similar-looking path. |
-| `rate_limited` | Too many questions this hour. | Wait. Do not loop. Say plainly that the door is capped and it will work again shortly. |
+| `rate_limited` | Too many questions this hour. Not switched on yet on this door — but handle it, because it is coming. | Wait. Do not loop. Say plainly that the door is capped and it will work again shortly. |
 | `ledger_unreadable` | The door could not read the whole ledger, so it refused to compute from part of it. | Say exactly that and give **no** number. This is the door protecting them, working as designed. |
 
 A refusal is never a reason to guess. The right answer to "I could not read the
@@ -250,25 +354,26 @@ that the app can do it.
 - Change a debt balance or a savings goal.
 
 **Reads that are planned but not built yet.** Do not attempt them and do not
-approximate them from the six above:
+approximate them from the eleven above:
 
 - the lowest the balance gets and the day it happens
 - what is due before the next paycheck
 - how much is free each month to aim at the debt
-- what looks off but is a judgement call
-- macros left today, workout for today, last lift, training volume, logging streak
+- how many days were logged — the streak
+- a barcode looked up
 - bill dates in a shape that can go on a calendar
 
-**Writes are a separate door with a separate key, and it is not built yet.** When
-it is, three will land straight away: logging a weigh-in, logging one of the
-household's saved meals by name, and writing a reminder for a given time. Four
-more will be **queued**: categorising a charge, recording what a variable bill came
-to, adding a cash charge, and logging free-form food. Queued means the door writes
-down what was asked and **changes nothing** — the change happens when one of them
-taps it in the app, and it expires after a day if nobody does.
+**Writes are a separate door with a separate key.** You are holding the read key,
+and this door has no write verb anywhere in it. If you are asked to log or change
+anything with the key you have, say plainly that you can only read.
 
-Until that door exists, if you are asked to log or change anything, say that you
-can only read today.
+For when somebody asks what the other door does: three writes land straight away —
+logging a weigh-in, logging one of the household's saved meals by name, and writing
+a reminder for a given time. Four more are **queued**: categorising a charge,
+recording what a variable bill came to, adding a cash charge, and logging free-form
+food. Queued means that door writes down what was asked and **changes nothing** —
+the change happens when one of them taps it in the app, and it expires after a day
+if nobody does.
 
 ## Two habits that matter more than the rest
 

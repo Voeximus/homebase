@@ -34,6 +34,7 @@ import { LedgerUnreadable } from "./paging.ts";
 import { createLoader } from "./load.ts";
 import type { Db } from "./paging.ts";
 import { BadArgs, TOOL_BY_NAME, TOOLS, ABSENT, type Json } from "./tools.ts";
+import { scrubName } from "./scrub.ts";
 import { openApiDocument } from "./openapi.ts";
 import { setLangVar } from "./lib/i18n.ts";
 
@@ -48,14 +49,12 @@ export interface HandlerDeps {
   baseUrl?: string;
 }
 
+/** The only headers any reply carries. NO CORS, deliberately: a connector's request
+ *  comes from a server, not a browser, and a door that answered a preflight would be
+ *  reachable from any web page he happened to have open. Every reply — the answers,
+ *  the refusals and the door's own description — goes out through `finish` below, so
+ *  there is no reply that escapes the audit log. */
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
-
-/** No CORS. A connector's request comes from a server, not a browser, and a door
- *  that answered a preflight would be reachable from any web page he happened to
- *  have open. */
-function reply(body: { [k: string]: Json }, status: number): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
 
 /** The tool name out of the path, tolerant of the deployed prefix
  *  (/functions/v1/muse-read/<tool>) and of a trailing slash. */
@@ -72,7 +71,9 @@ function checkArgs(tool: { name: string; args?: { name: string }[] }, args: Reco
     if (key === "person") {
       throw new BadArgs("This door works out who is asking from the key you used, so leave person out.");
     }
-    if (!allowed.has(key)) throw new BadArgs(`${tool.name} does not take ${key}.`);
+    // scrubName, not the raw key: this sentence is repeated back to the assistant
+    // and stored in the audit log, and a field name is a string the caller chose.
+    if (!allowed.has(key)) throw new BadArgs(`${tool.name} does not take ${scrubName(key, 24) || "that"}.`);
   }
 }
 
@@ -84,11 +85,34 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   // Everything the audit row needs, filled in as it becomes known, written once at
   // the end. A single writer means no path can return without a row.
   let person = null as ReturnType<typeof callerOf>;
-  let toolName = segment || "(none)";
+  // Every assignment to toolName goes through scrubName, because this string is
+  // chosen by the caller and it lands in three places that matter: the routing
+  // lookup, the refusal sentence the assistant hears, and the `tool` column of the
+  // audit log that his settings screen renders. A real tool name comes through
+  // unchanged; anything appended to one is dropped rather than carried along. See
+  // scrub.ts for why a NAME is recognised instead of cleaned as prose.
+  let toolName = scrubName(segment, 60) || "(none)";
   let args: Record<string, unknown> = {};
 
   const finish = async (body: { [k: string]: Json }, status: number, outcome: Outcome): Promise<Response> => {
     const text = JSON.stringify(body);
+    // NO PERSON, NO ROW. A call with no recognised key cannot be attributed, and
+    // three things follow from that, all pointing the same way:
+    //   · `muse_audit.person` is NOT NULL and checked against the two names, so
+    //     there is no value a row like this could carry;
+    //   · this door is PUBLIC, so a row written for an anonymous caller lets a
+    //     stranger fill a table nobody is rate-limiting — and the rate limiter is
+    //     keyed on person, so it cannot count these either;
+    //   · muse-write made the same choice for the same reason, and one rule across
+    //     both doors is easier to trust than two.
+    // It goes to the function log instead, loudly. The consequence, said plainly
+    // for whoever runs the Phase 1 gates: a 401 shows up in the Supabase function
+    // logs, not in muse_audit. Everything a key opened is in the table, refusals
+    // included.
+    if (!person) {
+      console.error(`muse-read: denied, no recognized key (${outcome})`);
+      return new Response(text, { status, headers: JSON_HEADERS });
+    }
     try {
       await deps.audit.record({
         person,
@@ -109,33 +133,47 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     return new Response(text, { status, headers: JSON_HEADERS });
   };
 
-  // The description is the one thing served without a secret: it names the tools
-  // and says nothing about the household. A connector has to be able to read it
-  // before it has been given anything.
+  // THE KEY IS CHECKED BEFORE ANYTHING IS ROUTED. Every path, every method,
+  // including the description — so a stranger cannot learn which tools exist, and
+  // so there is no reply this door gives that is not counted in the audit log.
   //
-  // It is also the one reply that is NOT audited, deliberately. An unauthenticated
-  // request that writes a row lets anyone fill a table nobody is rate-limiting, and
-  // an audit log full of strangers fetching a fixed document is an audit log nobody
-  // reads. Everything that could touch household data is audited, refusals included.
+  // This is a settled disagreement, recorded because it is worth knowing which way
+  // it went. The door was first built serving its description openly, on the
+  // reasoning that a connector might need to read it before it has been given a
+  // key. Nobody has published whether that is true — PLAN.md §1 marks the whole
+  // question unverified — and the two costs are not the same size. An open path on
+  // a verify_jwt = false function is an anonymous, unrate-limited endpoint that
+  // names the household's whole tool surface, and _shared/callerAuth.ts exists
+  // because of what one of those cost last time. Against that, if an assistant
+  // really cannot fetch the description before it holds a key, SETUP.md's own
+  // fallback already covers it: paste API.md into the chat instead.
+  //
+  // So: fail closed everywhere, and reopen this with one line if a phone test ever
+  // shows it has to be open.
+  person = callerOf(req, deps.secrets);
+  if (!person) {
+    // One refusal for every kind of wrong key, so the body cannot be used to tell
+    // "no secret" from "wrong secret" from "the write door's secret" — nor a path
+    // that exists from one that does not.
+    return finish(
+      { error: "unauthorized", says: "That key does not open this door." },
+      401,
+      "denied",
+    );
+  }
+
+  // The description names the tools and their fields and says nothing about the
+  // household — no balance, no name, no date. It is generated from the catalogue in
+  // tools.ts rather than written beside it, so a tool that exists appears here and
+  // a tool that does not cannot.
   if (req.method === "GET" && segment === "openapi.json") {
-    return reply(openApiDocument(deps.baseUrl), 200);
+    return finish(openApiDocument(deps.baseUrl), 200, "ok");
   }
 
   if (req.method !== "POST") {
     return finish(
       { error: "use POST", says: "Ask by POSTing to this door. GET only serves openapi.json." },
       405,
-      "denied",
-    );
-  }
-
-  person = callerOf(req, deps.secrets);
-  if (!person) {
-    // One refusal for every kind of wrong key, so the body cannot be used to tell
-    // "no secret" from "wrong secret" from "the write door's secret".
-    return finish(
-      { error: "unauthorized", says: "That key does not open this door." },
-      401,
       "denied",
     );
   }
@@ -165,7 +203,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   // is refused rather than resolved, because guessing which one he meant is how a
   // door answers a question nobody asked.
   if (segment) {
-    toolName = segment;
+    toolName = scrubName(segment, 60);
     if (typeof envelope.tool === "string" && envelope.tool !== segment) {
       return finish(
         { error: "two tools", says: "The address and the body asked for different things." },
@@ -188,7 +226,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
         "denied",
       );
     }
-    toolName = envelope.tool;
+    toolName = scrubName(envelope.tool, 60);
     args =
       envelope.args && typeof envelope.args === "object" && !Array.isArray(envelope.args)
         ? (envelope.args as Record<string, unknown>)
@@ -202,7 +240,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     return finish(
       {
         error: "no such tool",
-        says: `There is no ${toolName} on this door.`,
+        says: `There is no ${toolName || "such tool"} on this door.`,
         tools: TOOLS.map((t) => t.name),
         never: ABSENT.map((a) => ({ name: a.name, why: a.why })),
       },

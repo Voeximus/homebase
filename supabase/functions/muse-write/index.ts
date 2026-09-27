@@ -28,7 +28,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/webpush.ts";
-import { clockNow } from "./az.ts";
+import { clockNow } from "../_shared/muse/az.ts";
 import { supabaseDb } from "./dbSupabase.ts";
 import { handleWrite, personFor, type Secrets } from "./handler.ts";
 import { openapi } from "./openapi.ts";
