@@ -1,0 +1,796 @@
+// GENERATED — DO NOT EDIT. Source: src/lib/plan.ts
+// Run: node scripts/gen-muse-shared.mjs   (checked by npm run build)
+//
+// Hand-editing this file is the drift the Muse doors exist to prevent: the
+// door would answer with one number while every screen in the app showed
+// another, in a chat, with no screen beside it to notice. Change src/lib/plan.ts
+// and re-run the generator.
+// "The 3-Month Plan" — Gino + Xinyan's lean, all-in, single-goal debt sprint.
+// Variable spend is rebuilt from a lean perspective to maximize debt firepower;
+// the four other life-goals (China / studio / emergency) are parked for now.
+//
+// These are the DESIGNED targets (locked with Gino 2026-06-16). Debts are read
+// LIVE from the store, so the countdown and progress update as he pays them down.
+
+import type { Debt, Recurring, Transaction } from "./types.ts";
+// householdMonthly is deliberately NOT used here: it prices every row at its
+// stored amount, which is exactly the drift plannedMonthly() exists to close.
+import { liveOn, monthlyAmount } from "./recurring.ts";
+import { CADENCE_TO_MONTHLY } from "./household.ts";
+import { isoDate, monthKeyOf, todayISO } from "./format.ts";
+
+export interface BudgetLine {
+  key: string;
+  label: string;
+  icon: string;
+  target: number;
+  cats: string[]; // app transaction categories this line tracks (a clean partition)
+  note?: string;
+}
+
+// Monthly variable budget — a $1,600 envelope, each line mapping cleanly to how
+// transactions categorize (so spent-vs-target is exact).
+//
+// RE-BASED 2026-07-28 from $1,250. The old number was aspirational: five months of
+// actuals never once came in under it (~$1,730 avg), so every month "failed" by
+// construction — which made the budget a source of friction rather than a decision
+// tool. Each line below is set at or just under REAL July spend, so the envelope is
+// a target he can actually hit. The debt payoff gets slower on purpose; Gino's
+// company (Knotted Studios) is the priority now, and a budget nobody can hold is
+// worth less than a slower plan that holds.
+export const LEAN_VARIABLE: BudgetLine[] = [
+  { key: "groceries", label: "Groceries", icon: "🛒", target: 600, cats: ["groceries"], note: "measured food" },
+  // $250 was set when gas was $4.89–4.99/gal. The Sam's Club card dropped it to
+  // ~$3.30 from July, and actual spend runs ~$95/mo — so $50 moves to Misc and this
+  // line still carries 2× the real burn.
+  { key: "gas", label: "Gas + convenience", icon: "⛽", target: 200, cats: ["transport"], note: "commute · rideshare" },
+  { key: "dining", label: "Dining out", icon: "🍽️", target: 250, cats: ["dining"], note: "meals + coffee/boba" },
+  // Household + Hygiene = the merged line (was separate "Household" + "Health/grooming").
+  // cats keeps the legacy "health" id so any un-migrated row still counts here.
+  //
+  // It also absorbs the retired "Subscriptions" line ($50): every live subscription
+  // (Claude Max / Claude Pro) is modeled as a recurring BILL, so a variable
+  // subscriptions line reads $0 by construction — the old one only ever caught
+  // cancelled trials (Replit, Grok, Prime, Kindle). Its cats fold in here, along with
+  // "housing", so a stray charge in any of them still COUNTS against the envelope
+  // instead of escaping it — an uncovered category is invisible to the budget.
+  { key: "household", label: "Household + Hygiene", icon: "🧴", target: 350, cats: ["shopping", "health", "subscriptions", "entertainment", "housing"], note: "supplies · hygiene · grooming" },
+  // 100 -> 75: five months of actuals run ~$40/mo. Trimmed to fund the lines that
+  // were genuinely under-set, not because the dog is getting less.
+  { key: "pets", label: "Dog / pets", icon: "🐾", target: 75, cats: ["pets"], note: "food · vet · toys" },
+  // The holding pen. "other" is what the categorizer assigns to a merchant it has
+  // never seen, so it can't be left off the lines: what's GRADED is what's on a
+  // line (see variableSpentThisMonth), and a category on no line would make the
+  // breakdown fail to reconcile with the total. The small target is deliberate —
+  // this isn't an allowance, it's a prompt: if Misc is over, something needs a
+  // real category, not a bigger envelope.
+  // 50 -> 125. It stopped being a pure holding pen once Knotted Studios started
+  // generating real costs (AZ e-corp filing, GoDaddy, CCA fees = $100 in July) that
+  // land here. Still worth watching: if Misc runs high on UNKNOWN merchants rather
+  // than company costs, those need real categories, not a bigger envelope.
+  { key: "misc", label: "Misc / uncategorized", icon: "📦", target: 125, cats: ["other", "kids"], note: "business costs · unknown merchants" },
+];
+
+/** Ungraded, but still real cash out the door — so it can't go at the debt either.
+ *  These skip the envelope and cut firepower directly. The common thread is NOT
+ *  "one-time": it is spending the envelope has no business grading, either
+ *  because it wasn't a discretionary choice or because grading it would blow a
+ *  month over a decision already made.
+ *
+ *   · `electronics` — Gino's original carve-out: "outside the budget, but it
+ *     still takes from what can go at debt".
+ *   · `car` — the Civic's down payment, its inspection, its registration.
+ *     One-time capital costs of a purchase already committed to.
+ *   · `utilities` — recurring, and the reason it is HERE rather than on a budget
+ *     line: you cannot choose not to pay the water bill, so folding it into the
+ *     discretionary Household + Hygiene envelope would make that line fail for a
+ *     charge nobody could have avoided. Until it was listed here it was on no
+ *     line AND not in this set, so a $180 city water charge the user categorised
+ *     as "Utilities" vanished from the budget bars, the donut AND firepower —
+ *     real cash gone, invisible on every finance screen.
+ *
+ *  Gas is NOT here — that's `transport`, ongoing consumption, graded every cycle.
+ *  `interest` is deliberately NOT here either: it never leaves checking — the
+ *  bank folds it into the card balance, which the debt total already reads, so
+ *  charging it against firepower too would count it twice.
+ *
+ *  KNOWN residual: a utility BILL that the categorizer failed to name-match has
+ *  no appliesTo, so it is already inside `fixed` via householdMonthly and will
+ *  now also cut firepower here. That double-count is the deliberate choice over
+ *  the alternative (grading a non-discretionary bill against a discretionary
+ *  envelope). The real fix is to model SW Gas / city water as recurring rows so
+ *  their payments get an appliesTo and land in `fixed` once.
+ *
+ *   · `bills` — an extra or catch-up payment on a modeled bill. Real cash, and
+ *     not a choice anyone made this month, so it cuts firepower without being
+ *     graded against a discretionary envelope. See the note in seed.ts.
+ *   · `travel` and `education` — a booked trip, a tuition fee. Same shape as
+ *     `car`: a decision already made, not week-to-week living spend. They were
+ *     briefly put ON the Misc line, on the reasoning that leaving them there moved
+ *     no money between lines. That was wrong in the way that matters — a $134
+ *     hotel and a $25 university fee drove "Misc / uncategorized" to 255% of its
+ *     half-cycle target, so the one bar that is supposed to mean "something here
+ *     needs a real category" read as a blown month over a trip already taken. The
+ *     label got better and the instrument got worse. Ungraded, still visible,
+ *     still cutting firepower.
+ */
+export const OUTSIDE_BUDGET_CASH_CATS = [
+  "electronics", "car", "utilities", "bills", "travel", "education",
+];
+
+/** Is this category graded against the lean budget? True iff some line claims it.
+ *  `electronics`, `car` and `interest` deliberately belong to NO line: electronics
+ *  and car are outside-the-budget by design (still cash out, so they cut firepower
+ *  — see buildVMs), and interest isn't spending you chose (it's already inside the
+ *  card balance the debt total reads from). */
+export function inAnyLine(catId: string): boolean {
+  return LEAN_VARIABLE.some((l) => l.cats.includes(catId));
+}
+
+// (Renters insurance used to be a hardcoded $10.59 constant here, on the premise
+// that it was "not yet in the live recurring table". That premise was false — the
+// LEMONADE INSURANCE row exists, active, $10.59 monthly, due on the 18th — so
+// planMath was adding it a second time on top of hh.bills and firepower read
+// $10.59/mo too low, disagreeing with the Bills and Forecast tabs which read the
+// row once. A fixed cost must never live only inside planMath: nothing else in
+// the app — not the calendar, not the forecast, not the bill reminders — can see
+// it there. If a bill is missing, add the recurring row.)
+
+// Debt attack order (Gino's snowball — smallest first; clears the Affirms,
+// Xinyan's card and the family debt fast, then crushes the 19.99% card).
+export const ATTACK_ORDER = [
+  "Affirm",
+  "Xinyan card (…6813)",
+  "Mom (China)",
+  "Credit card (…4728)",
+];
+
+/** Live debts sorted into the attack order (unknown names fall to the back, by balance). */
+export function orderedDebts(debts: Debt[]): Debt[] {
+  const rank = (d: Debt) => {
+    const i = ATTACK_ORDER.findIndex((n) => d.name === n);
+    return i === -1 ? 999 : i;
+  };
+  return [...debts].sort((a, b) => rank(a) - rank(b) || a.balance - b.balance);
+}
+
+export interface PlanMath {
+  income: number;
+  fixed: number;
+  fixedNonDebt: number;
+  debtPaymentsInFixed: number;
+  variable: number;
+  firepower: number; // monthly $ aimed at the debt
+  totalDebt: number;
+}
+
+// The recurring rows that are really debt payments — those dollars are firepower,
+// not living costs, so they're added back when computing what's aimed at the debt.
+//
+// This used to be a regex on the row's NAME — /card payment|affirm/i — which is a
+// guess about what someone typed, not a fact about the row. "Cherry (dental)" is a
+// $151.72/mo bill with linked_debt_id set, and it matched neither alternative: the
+// payment was counted as a living cost AND attacked as debt principal, so
+// firepower read $151.72/mo low every month while the payoff schedule spent the
+// same dollars again. `linkedDebtId` is the actual fact, it is what schedule.ts
+// already keys the same class of decision on, and it cannot silently miss the next
+// debt-linked bill somebody adds.
+
+/**
+ * What the PLAN prices one recurring row at, per month. The single source of that
+ * answer, so the plan and anything auditing the plan cannot drift apart.
+ *
+ * A variable bill is worth what it actually IS — known_amount, else the rolling
+ * average of real payments — exactly as the calendar and the forecast price it.
+ * Everything else is its contracted amount normalised to a month.
+ *
+ * MONTHLY cadence only for the variable branch, and that is deliberate:
+ * billExpected() returns a PER-CHARGE figure which monthlySchedule treats as the
+ * monthly one, and those coincide only when a bill charges once a month. For a
+ * periodic bill the calendar takes its payment from `r.amount` directly and never
+ * consults billExpected, so there is nothing to reconcile and applying it would
+ * introduce a fresh error — a semiannual charge counted as if it landed monthly.
+ */
+export function plannedMonthly(r: Recurring, transactions: Transaction[] = []): number {
+  if (r.direction === "out" && r.variable && (CADENCE_TO_MONTHLY[r.cadence] ?? 1) === 1) {
+    return billExpected(r, transactions);
+  }
+  return monthlyAmount(r);
+}
+
+export function planMath(
+  recurring: Recurring[],
+  debts: Debt[],
+  variable: number,
+  isoDate: string = todayISO(),
+  transactions: Transaction[] = [],
+): PlanMath {
+  // Computed here rather than via householdMonthly because the bills side must go
+  // through plannedMonthly(): householdMonthly prices every row at its stored
+  // amount, so a variable bill was counted at $85 by the plan while the calendar
+  // counted the $100 the user had actually read off it. The plan's figure being
+  // LOWER made firepower read TOO HIGH — overstating available cash, the more
+  // damaging direction. The self-audit caught it on live data.
+  const live = recurring.filter(
+    (r) => r.active && r.direction !== "transfer" && liveOn(r, isoDate),
+  );
+  const income = live
+    .filter((r) => r.direction === "in")
+    .reduce((s, r) => s + monthlyAmount(r), 0);
+  // A VARIABLE bill is worth what it actually is, on this path too.
+  //
+  // householdMonthly uses monthlyAmount(), i.e. the stored `amount`. But the
+  // calendar and the forecast both use billExpected(), which honours
+  // known_amount and otherwise the rolling average of real payments. So the two
+  // paths priced the same bill differently and nothing reconciled them — the
+  // self-audit caught it on live data: Electric (SRP) counted $85/mo by the plan
+  // and $100/mo by the calendar, Verizon $83 against $93.
+  //
+  // The direction matters. The plan's figure was LOWER, so `fixed` was lower,
+  // `fixedNonDebt` was lower and firepower read $25/month TOO HIGH — overstating
+  // available cash, which is the more damaging way to be wrong. It is the same
+  // shape as the window bug: a rule honoured on one path and ignored on another.
+  //
+  // Fixed here rather than in householdMonthly because billExpected lives in this
+  // module and recurring.ts is imported BY it — reaching back would be circular.
+  const fixed = live
+    .filter((r) => r.direction === "out")
+    .reduce((s, r) => s + plannedMonthly(r, transactions), 0);
+  // The SAME window guard householdMonthly now applies, and it has to be here or
+  // the fix makes things worse in the other direction: this reduce is subtracted
+  // (`fixedNonDebt = fixed - debtPaymentsInFixed`), so if `bills` stops counting a
+  // windowed-out card/Affirm row while this keeps subtracting it, fixedNonDebt
+  // falls below reality and firepower reads TOO HIGH — overstating available cash,
+  // which is the more damaging way to be wrong. Latent today (no row matching
+  // debt-linked row carries a window), live the moment a finite loan gets
+  // its ends_on — exactly what schema_v27 was written for.
+  const debtPaymentsInFixed = recurring
+    .filter(
+      (r) => r.active && liveOn(r, isoDate) && r.direction === "out" && r.linkedDebtId != null,
+    )
+    .reduce((s, r) => s + monthlyAmount(r), 0);
+  const fixedNonDebt = fixed - debtPaymentsInFixed;
+  const firepower = income - fixedNonDebt - variable;
+  const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
+  return { income, fixed, fixedNonDebt, debtPaymentsInFixed, variable, firepower, totalDebt };
+}
+
+export function sumTargets(lines: BudgetLine[]): number {
+  return lines.reduce((s, l) => s + l.target, 0);
+}
+
+/** What's been spent against a single budget line (sums its mapped categories). */
+export function lineSpent(line: BudgetLine, byCat: Record<string, number>): number {
+  return line.cats.reduce((s, c) => s + (byCat[c] ?? 0), 0);
+}
+
+/** The amount to PROJECT for a recurring bill this cycle.
+ *   - Fixed bills (!variable): the modeled amount — it doesn't move.
+ *   - Variable bills (Electric/SRP, a card payment): the rolling average of the
+ *     last 3 ACTUAL payments recorded for this bill, so the forecast tracks
+ *     reality. Falls back to the modeled amount until a real payment is seen.
+ *  An "actual" = a ledger row whose appliesTo links this bill — exactly the rows
+ *  the bank feed and the import path write. One source of truth (the ledger). */
+export function billExpected(bill: Recurring, transactions: Transaction[]): number {
+  if (!bill.variable) return bill.amount;
+  // You told us what it actually is. A rolling average of three past charges is a
+  // guess about the future; a bill you've read is not. The override wins until
+  // it's cleared — it's what stops a one-off catch-up payment (Verizon's $209
+  // covering two months) from reading as the new normal for a whole quarter.
+  if (bill.knownAmount != null) return bill.knownAmount;
+  const actuals = transactions
+    .filter(
+      (t) => t.appliesTo?.kind === "bill" && t.appliesTo.recurringId === bill.id && t.type === "expense",
+    )
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1; // most recent first
+      const am = a.appliesTo?.monthKey ?? "",
+        bm = b.appliesTo?.monthKey ?? "";
+      if (am !== bm) return am < bm ? 1 : -1;
+      return (b.appliesTo?.day ?? 0) - (a.appliesTo?.day ?? 0);
+    })
+    .slice(0, 3)
+    .map((t) => t.amount);
+  if (actuals.length < 1) return bill.amount;
+  return actuals.reduce((s, a) => s + a, 0) / actuals.length;
+}
+
+// --- The dollar-by-dollar payoff schedule ------------------------------------
+// Pay days land ~15th and ~29th. Each payday we throw half the monthly firepower
+// at the debts in attack order, accruing interest along the way, until $0.
+export interface PayoffPayment {
+  debtId: string;
+  name: string;
+  amount: number;
+  clears: boolean; // this payment zeroes the debt
+}
+export interface PayoffEvent {
+  date: Date;
+  payments: PayoffPayment[];
+  total: number; // total sent this payday (debt + savings)
+  toDebt: number; // portion to debts
+  toSavings: number; // portion skimmed for savings (0 before the split)
+  savingsKind: "emergency" | "investing" | null;
+  emergencyBalance: number; // running emergency-fund balance
+  interest: number; // interest that accrued before this payday
+  remaining: number; // total debt left after this payday
+}
+
+// The plan change (Gino + Xinyan, 2026-06-17): ONCE every debt except the …4728
+// card is cleared, skim $500/check into savings — emergency fund first to $1,500,
+// then it rolls into investing/goals — and the rest keeps hitting the card. Until
+// the card is the last one standing, every check stays all-at-debt (snowball).
+export interface SavingsSplit {
+  perCheck: number; // $ skimmed off each check for savings
+  emergencyTarget: number; // fill emergency to here, then redirect to investing
+}
+export const SAVINGS_SPLIT: SavingsSplit = { perCheck: 500, emergencyTarget: 1500 };
+
+// Pay-day model: Gino is paid semi-monthly — the 15th and month-end. A payDay of
+// 31 is the "month-end" sentinel: it resolves to the real last day (30/31, or
+// 28/29 in Feb). Actual deposits can drift ±2-3 days around it (weekends /
+// holidays); the bank feed reconciles to the true date when a check posts.
+export const PAY_DAYS = [15, 31];
+
+export function paydayDate(year: number, month: number, payDay: number): Date {
+  return payDay >= 31 ? new Date(year, month + 1, 0) : new Date(year, month, payDay);
+}
+
+// --- Pay cycles ---------------------------------------------------------------
+// The variable budget is graded per PAY CYCLE, not per calendar month. Gino's
+// observation, and it's the right unit: money lands on the 15th and the last day,
+// and rent hits the 1st — so a calendar month cuts one paycheck's spending in half
+// and reports the pieces in two different months. A charge made the evening of the
+// 31st, right after the check landed, belongs to the run that check funds.
+//
+// It also reads better mid-flight: half a cycle is ~7 days, so "51% spent, 8 days
+// to go" is actionable, where a month-end verdict arrives too late to change.
+// BILLS stay calendar-monthly — rent really is due on the 1st.
+
+export interface PayCycle {
+  start: string; // ISO date, inclusive — the payday that opens the cycle
+  end: string; // ISO date, inclusive — the day before the next payday
+  label: string; // "Jul 31 – Aug 14"
+  dayIndex: number; // 1-based position of `now` within the cycle
+  days: number; // length of the cycle in days
+}
+
+// The pay cycle's own dates must be spelled the same way the ledger's dates are,
+// or a cycle boundary and a transaction stamped on that boundary can disagree.
+// One shared helper is the only way to guarantee that.
+const iso = isoDate;
+
+/** The pay cycle containing `now`: from the most recent payday through the day
+ *  before the next one. Spans the month boundary by design. */
+export function payCycleFor(now: Date, payDays: number[] = PAY_DAYS): PayCycle {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // paydays across the previous, current and next month — enough to bracket `now`
+  const cands: Date[] = [];
+  for (const off of [-1, 0, 1]) {
+    for (const d of payDays) cands.push(paydayDate(now.getFullYear(), now.getMonth() + off, d));
+  }
+  cands.sort((a, b) => +a - +b);
+  let start = cands[0];
+  let next = cands[cands.length - 1];
+  for (let i = 0; i < cands.length; i++) {
+    if (+cands[i] <= +today) {
+      start = cands[i];
+      next = cands[i + 1] ?? new Date(+cands[i] + 15 * 86400000);
+    }
+  }
+  const end = new Date(+next - 86400000); // inclusive last day
+  const DAY = 86400000;
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return {
+    start: iso(start),
+    end: iso(end),
+    label: `${fmt(start)} – ${fmt(end)}`,
+    dayIndex: Math.floor((+today - +start) / DAY) + 1,
+    days: Math.round((+end - +start) / DAY) + 1,
+  };
+}
+
+/** How many pay cycles a month holds — the divisor turning a MONTHLY budget line
+ *  into a per-cycle allowance. Semimonthly paydays ⇒ 2. */
+export const CYCLES_PER_MONTH = PAY_DAYS.length;
+
+/** The per-cycle allowance for the whole envelope (or one line). */
+export function perCycle(monthlyAmount: number): number {
+  return monthlyAmount / CYCLES_PER_MONTH;
+}
+
+export function nextPayday(after: Date, payDays: number[] = PAY_DAYS): Date {
+  const y = after.getFullYear();
+  const m = after.getMonth();
+  const cands = payDays
+    .map((pd) => paydayDate(y, m, pd))
+    .sort((a, b) => a.getTime() - b.getTime());
+  for (const c of cands) if (c.getTime() > after.getTime()) return c;
+  return paydayDate(y, m + 1, payDays[0]); // none left this month → next month's first
+}
+
+/** The most recent payday on or before `before` — the start of the current pay
+ *  cycle (mirror of nextPayday). Used to gate the strategy dial: it opens only
+ *  once this cycle's paychecks have landed. */
+export function previousPayday(before: Date, payDays: number[] = PAY_DAYS): Date {
+  const y = before.getFullYear();
+  const m = before.getMonth();
+  const cands = payDays
+    .map((pd) => paydayDate(y, m, pd))
+    .filter((d) => d.getTime() <= before.getTime())
+    .sort((a, b) => b.getTime() - a.getTime());
+  if (cands.length) return cands[0];
+  return paydayDate(y, m - 1, payDays[payDays.length - 1]); // none yet this month → last month's final payday
+}
+
+/**
+ * Payday-by-payday snowball schedule. Returns one event per payday: the date,
+ * which debts got hit and by how much, the interest that accrued, and the total
+ * left. This is the concrete "here's exactly what to send, and when" plan.
+ *
+ * KNOWN LIMITATION — monthlyFirepower is a SCALAR, held constant across every
+ * projected payday, but it comes from planMath which now evaluates each bill's
+ * window at ONE date (today). So the projection is right about this month and
+ * wrong about later ones: as of Aug 2026 it cannot see the $573.33/mo of car
+ * lines that begin Sept 30, and the debt-free date reads optimistic by exactly
+ * that much. Before the window fix it read pessimistic instead — the error moved
+ * direction, it did not disappear.
+ *
+ * A single today-snapshot figure cannot be correct for both horizons. The real
+ * fix is to evaluate the window per projected month, which forecast.ts already
+ * does correctly by rebuilding monthlySchedule for each monthKey. Doing that here
+ * means giving payoffSchedule a per-month firepower series instead of a number.
+ */
+export function payoffSchedule(
+  debtsOrdered: Debt[],
+  monthlyFirepower: number,
+  from: Date,
+  payDays: number[] = PAY_DAYS,
+  split?: SavingsSplit,
+  // This month's budget overspend, applied as a ONE-TIME debit on the earliest
+  // paydays only (then full firepower resumes). Pass the SUSTAINABLE monthly
+  // firepower as `monthlyFirepower` so a single over-budget month dents the
+  // payoff now without projecting forward as if every future month is over.
+  oneTimeReduction = 0,
+): PayoffEvent[] {
+  if (monthlyFirepower <= 0) return [];
+  const perPay = monthlyFirepower / 2;
+  let reduction = Math.max(0, oneTimeReduction);
+  const bal = debtsOrdered.map((d) => ({
+    id: d.id,
+    name: d.name,
+    balance: d.balance,
+    rate: (d.apr ?? 0) / 100 / 24, // per-payday (~24 paydays/yr)
+  }));
+  const events: PayoffEvent[] = [];
+  let emergency = 0;
+  let date = nextPayday(from, payDays);
+  let guard = 0;
+
+  // 240 paydays = 10 years. Hitting it means the plan does NOT clear the debt —
+  // the balance is flat or growing. The caller must tell that apart from a
+  // finished schedule, and the only honest signal is the last event's
+  // `remaining`: > 0 means the loop gave up, not that the debt was paid. See
+  // the payoffClears() helper below, which every caller should use before
+  // printing a date.
+  while (bal.some((b) => b.balance > 0.005) && guard++ < 240) {
+    // The split only starts once the card is the ONLY debt left (everything
+    // smaller is snowballed away first). Then skim the savings slice off the top.
+    const cardOnly = bal.filter((b) => b.balance > 0.005).length === 1;
+    let toSavings = 0;
+    let savingsKind: "emergency" | "investing" | null = null;
+    if (split && cardOnly) {
+      // The skim can never take the whole payday.
+      //
+      // This was `Math.min(split.perCheck, perPay)`, which means: once one debt
+      // is left, if half the monthly firepower is at or under $500, savings takes
+      // ALL of it and the debt receives nothing — not less, nothing — on every
+      // payday from then on. The balance freezes, the loop below runs out its
+      // 240-payday guard, and the caller reads the last event's date as the
+      // debt-free date. Traced on the real debts: at $800/mo firepower the
+      // schedule "finishes" in Aug '36 with $739.51 still owed, and 240 of its
+      // 240 paydays sent $0.00 at the debt. It was even non-monotonic — more
+      // firepower could leave MORE debt, because a bigger perPay just meant a
+      // bigger skim.
+      //
+      // Halving is the smallest rule that cannot starve the debt, and it is a
+      // no-op at the firepower this plan actually runs at: perPay is $1,132
+      // today, so min(500, 566) is still the full $500. It only binds below
+      // $1,000/mo — exactly the tight months where a frozen payoff would have
+      // been most misleading.
+      toSavings = Math.min(split.perCheck, perPay / 2);
+      const emShare = Math.min(toSavings, Math.max(0, split.emergencyTarget - emergency));
+      emergency += emShare;
+      savingsKind = emShare > 0.005 ? "emergency" : "investing";
+    }
+    // Debit this month's overspend off the earliest paydays, then it's gone —
+    // a one-off over-budget month never compounds into the long-term timeline.
+    const reduce = Math.min(reduction, perPay - toSavings);
+    reduction -= reduce;
+    const debtFire = perPay - toSavings - reduce;
+
+    let interest = 0;
+    for (const b of bal)
+      if (b.balance > 0) {
+        const i = b.balance * b.rate;
+        b.balance += i;
+        interest += i;
+      }
+    let fire = debtFire;
+    const payments: PayoffPayment[] = [];
+    for (const b of bal) {
+      if (fire <= 0.005) break;
+      if (b.balance <= 0.005) continue;
+      const pay = Math.min(fire, b.balance);
+      b.balance -= pay;
+      fire -= pay;
+      payments.push({ debtId: b.id, name: b.name, amount: pay, clears: b.balance <= 0.005 });
+    }
+    const toDebt = debtFire - fire;
+    const remaining = bal.reduce((s, b) => s + Math.max(0, b.balance), 0);
+    events.push({
+      date: new Date(date),
+      payments,
+      total: toDebt + toSavings,
+      toDebt,
+      toSavings,
+      savingsKind,
+      emergencyBalance: emergency,
+      interest,
+      remaining,
+    });
+    date = nextPayday(date, payDays);
+  }
+  return events;
+}
+
+/**
+ * Does this schedule actually reach zero, or did the projection give up?
+ *
+ * `payoffSchedule` stops after 240 paydays whether or not the debt cleared, so a
+ * stalled plan and a finished one are the same shape: a non-empty array of
+ * events. Reading the last event's date without asking this question prints a
+ * debt-free date for a debt that never gets paid — a decade out, stated with the
+ * same confidence as a real one.
+ */
+export function payoffClears(schedule: PayoffEvent[]): boolean {
+  if (!schedule.length) return false;
+  return schedule[schedule.length - 1].remaining <= 0.005;
+}
+
+/**
+ * What's actually been spent on *variable* living this month — the free-form
+ * purchases (groceries, gas, dining, …) logged to the ledger. Excludes bill and
+ * debt payments (those have an appliesTo), so it measures the lean budget only.
+ * This is the live "actual" the budget targets are graded against.
+ */
+export function variableSpentThisMonth(
+  transactions: Transaction[],
+  monthKey: string,
+): number {
+  // Grade exactly what the LINES claim, so the per-line breakdown always sums to
+  // this number. Reusing spentByCategory also makes it split-aware: a Sam's run
+  // split across pets/groceries/household contributes each slice to its own line,
+  // not its whole amount to one. Categories on no line (electronics, interest) are
+  // real money but deliberately ungraded — see inAnyLine.
+  const byCat = spentByCategory(transactions, monthKey);
+  let total = 0;
+  for (const [catId, amount] of Object.entries(byCat)) {
+    if (inAnyLine(catId)) total += amount;
+  }
+  return total;
+}
+
+/** The SUSTAINABLE variable-spend pace: the average of actual variable spend over
+ *  the last `months` COMPLETE calendar months (the current, partial month is
+ *  excluded). The payoff timeline projects from this, so the debt-free date drifts
+ *  with real behavior — a one-off over-budget month is diluted by the others, a
+ *  sustained trend moves the date. Falls back to the budget target until at least
+ *  one complete month of spend history exists. */
+export function avgVariableSpend(
+  transactions: Transaction[],
+  now: Date,
+  months: number,
+  fallback: number,
+): number {
+  // Only count complete months from the lean-plan start onward — PRE-plan months
+  // were normal (higher) spending and would wrongly inflate the "sustainable pace".
+  // Until a real post-plan month is banked, fall back to the budget target.
+  const floor = PLAN_START.slice(0, 7);
+  const totals: number[] = [];
+  for (let m = 1; m <= months; m++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    const key = monthKeyOf(d);
+    if (key < floor) continue; // ignore pre-plan months
+    const spent = variableSpentThisMonth(transactions, key);
+    if (spent > 0) totals.push(spent); // a month with no data reads 0 → skip it
+  }
+  if (totals.length === 0) return fallback;
+  return totals.reduce((s, t) => s + t, 0) / totals.length;
+}
+
+/** This month's free-form spend grouped by category id (for the budget bars).
+ *  A split transaction fans its amount across its split categories; an unsplit
+ *  one lands wholly on its single category. The total is identical either way. */
+export function spentByCategory(
+  transactions: Transaction[],
+  monthKey: string,
+): Record<string, number> {
+  return spentByCategoryBetween(transactions, monthKey + "-01", monthKey + "-31");
+}
+
+/** Same partition as spentByCategory, over an arbitrary INCLUSIVE date range —
+ *  which is what a pay cycle needs, since it straddles the month boundary. */
+export function spentByCategoryBetween(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const t of transactions) {
+    // PENDING charges COUNT. They used to be excluded, and that made the budget
+    // incoherent with the cash it sits next to: account balances are the bank's
+    // AVAILABLE figure, which the bank has already reduced by every pending hold.
+    // So the money was subtracted from what you have and attributed to nothing you
+    // spent. Right after a heavy few days — exactly when the budget is the thing
+    // you want to look at — it read low by whatever had not cleared yet. On
+    // 2026-09-08 that was $1,005.19 in one cycle: Dining showed $110.98 of a $125
+    // target while the real figure was $432.17, nearly 3.5x the line.
+    //
+    // The earlier fix went the other way, hiding pending from the rows too so the
+    // rows and the bar at least agreed. They agreed on a number that was wrong.
+    // They agree on the right one now — buildVMs uses this same predicate.
+    if (
+      t.type === "expense" &&
+      t.date >= startISO &&
+      t.date <= endISO &&
+      !t.appliesTo
+    ) {
+      if (t.splits && t.splits.length) {
+        for (const s of t.splits) out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;
+      } else {
+        out[t.categoryId] = (out[t.categoryId] ?? 0) + t.amount;
+      }
+    }
+  }
+  return out;
+}
+
+export interface MonthNet {
+  monthKey: string;
+  in: number;
+  out: number;
+  net: number;
+}
+
+/**
+ * What ACTUALLY happened to the money, month by month, straight from the ledger.
+ *
+ * This exists to keep the forecast honest about its own blind spot. A projection
+ * is built from recurring bills plus a spending dial, so it cannot see anything
+ * irregular — a car down payment, an inspection, a vet bill, a flight. Those are
+ * exactly the months that dominate a real year, and leaving them out makes the
+ * line climb smoothly through lumpy reality. Every projection therefore looks
+ * better than the past it came from, and nothing on screen says so.
+ *
+ * Measured on this household: the model projects about +$500/month while the last
+ * four real months ran +$689, +$126, +$1,074 and −$3,145 — an average of −$314.
+ * The model is not wrong about the bills; it is blind to the rest.
+ *
+ * Complete months only, most recent last.
+ */
+export function actualMonthlyNet(
+  transactions: Transaction[],
+  now: Date = new Date(),
+  count = 4,
+): MonthNet[] {
+  const out: MonthNet[] = [];
+  for (let i = count; i >= 1; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    let inc = 0;
+    let exp = 0;
+    for (const t of transactions) {
+      if (t.date.slice(0, 7) !== monthKey || t.pending) continue;
+      // Transfers move money between their own accounts and are not income or
+      // spending — but a transfer OUT to an untracked account genuinely leaves,
+      // so they are counted rather than skipped, exactly as the bank sees them.
+      if (t.type === "income") inc += t.amount;
+      else exp += t.amount;
+    }
+    out.push({ monthKey, in: inc, out: exp, net: inc - exp });
+  }
+  return out;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+export interface CycleSpend {
+  start: string;
+  end: string;
+  label: string;
+  spent: number;
+}
+
+/**
+ * What was actually spent in each of the last `count` COMPLETE pay cycles.
+ *
+ * This exists to stop a dial being a number in a vacuum. The forecast's spending
+ * figure is an assumption the user types in, sitting beside bills that are
+ * measured from the bank — and presenting both as one surplus hides which half is
+ * a fact. A projection built on "$800 a cycle" and one built on "$1,050 a cycle"
+ * are different claims, and only the person who knows their own month can pick.
+ *
+ * Complete cycles only: the current one is partly spent and would read low,
+ * making the user's own history look better than it is at exactly the moment
+ * they are deciding what to spend.
+ */
+export function recentCycleSpend(
+  transactions: Transaction[],
+  now: Date = new Date(),
+  count = 6,
+): CycleSpend[] {
+  const out: CycleSpend[] = [];
+  // Walk back from the day before the current cycle opened, so the partial
+  // cycle in progress is never included.
+  let cursor = new Date(payCycleFor(now).start + "T12:00:00");
+  for (let i = 0; i < count; i++) {
+    cursor = new Date(+cursor - 86400000); // step into the previous cycle
+    const c = payCycleFor(cursor);
+    out.push({
+      start: c.start,
+      end: c.end,
+      label: c.label,
+      spent: variableSpentBetween(transactions, c.start, c.end),
+    });
+    cursor = new Date(c.start + "T12:00:00");
+  }
+  return out.reverse(); // oldest first, the way a history reads
+}
+
+/** The middle of `recentCycleSpend` — the honest "what you usually do" figure.
+ *  A median rather than a mean because one heavy cycle (a car down payment, a
+ *  trip) would drag an average somewhere the household never actually lives. */
+export function typicalCycleSpend(cycles: CycleSpend[]): number {
+  if (!cycles.length) return 0;
+  const s = cycles.map((c) => c.spent).sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/** Graded variable spend over a date range — the pay-cycle counterpart of
+ *  variableSpentThisMonth. Same rule: only categories a budget line claims. */
+export function variableSpentBetween(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+): number {
+  const byCat = spentByCategoryBetween(transactions, startISO, endISO);
+  let total = 0;
+  for (const [catId, amount] of Object.entries(byCat)) {
+    if (inAnyLine(catId)) total += amount;
+  }
+  return total;
+}
+
+// --- The 90-day commitment ---------------------------------------------------
+// The real point isn't a debt deadline — it's 90 days of dedicated good habits.
+// Debt-free is the scoreboard; the timeline can flex.
+export const PLAN_START = "2026-06-16"; // the day Gino + Xinyan committed
+export const PLAN_DAYS = 90;
+
+export interface Commitment {
+  day: number;
+  total: number;
+  pct: number;
+  endDate: Date;
+}
+
+export function commitmentProgress(now: Date): Commitment {
+  const start = new Date(PLAN_START + "T00:00:00");
+  const elapsed = Math.floor((now.getTime() - start.getTime()) / 864e5);
+  const day = Math.min(PLAN_DAYS, Math.max(1, elapsed + 1));
+  const endDate = new Date(start.getTime() + PLAN_DAYS * 864e5);
+  return { day, total: PLAN_DAYS, pct: (day / PLAN_DAYS) * 100, endDate };
+}
+

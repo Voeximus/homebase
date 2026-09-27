@@ -1,0 +1,63 @@
+// GENERATED — DO NOT EDIT. Source: src/lib/weightLog.ts
+// Run: node scripts/gen-muse-shared.mjs   (checked by npm run build)
+//
+// Hand-editing this file is the drift the Muse doors exist to prevent: the
+// door would answer with one number while every screen in the app showed
+// another, in a chat, with no screen beside it to notice. Change src/lib/weightLog.ts
+// and re-run the generator.
+// ── Body-weight log + automatic trend math ───────────────────────────────────
+// The user logs ONE number a day; the app does all the averaging + trend. No
+// "weeks on plan", no manual calibration. Weekly averages are Monday-start
+// calendar weeks; the trend rate is a least-squares slope (robust to daily
+// noise) in lb/week. Pure.
+
+import { isoDate } from "./format.ts";
+
+export type Person = "gino" | "xinyan";
+
+export interface BodyWeight {
+  person: Person;
+  date: string; // YYYY-MM-DD (local)
+  weight: number;
+}
+
+const parseDate = (d: string) => new Date(d + "T00:00:00").getTime();
+const ymd = isoDate; // shared spelling — see format.ts isoDate()
+
+/** The Monday that starts the week containing `date` (local). */
+export function weekStartOf(date: string): string {
+  const d = new Date(date + "T00:00:00");
+  const dow = (d.getDay() + 6) % 7; // days since Monday
+  d.setDate(d.getDate() - dow);
+  return ymd(d);
+}
+
+/** The running average for the week that contains `today` (the "end-of-week average"). */
+export function currentWeekAvg(entries: BodyWeight[], today: string): { avg: number; count: number } | null {
+  const wk = weekStartOf(today);
+  const ws = entries.filter((e) => weekStartOf(e.date) === wk).map((e) => e.weight);
+  if (!ws.length) return null;
+  return { avg: ws.reduce((a, b) => a + b, 0) / ws.length, count: ws.length };
+}
+
+/** Least-squares trend in lb/week (negative = losing). null if too little data. */
+export function ratePerWeek(entries: BodyWeight[]): number | null {
+  if (entries.length < 2) return null;
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const x0 = parseDate(sorted[0].date);
+  const xs = sorted.map((e) => (parseDate(e.date) - x0) / 86400000);
+  const ys = sorted.map((e) => e.weight);
+  const n = xs.length;
+  const sx = xs.reduce((a, b) => a + b, 0);
+  const sy = ys.reduce((a, b) => a + b, 0);
+  const sxx = xs.reduce((a, b) => a + b * b, 0);
+  const sxy = xs.reduce((a, b, i) => a + b * ys[i], 0);
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return null; // all on one day → no slope
+  return ((n * sxy - sx * sy) / denom) * 7;
+}
+
+export function latestWeight(entries: BodyWeight[]): number | null {
+  if (!entries.length) return null;
+  return [...entries].sort((a, b) => b.date.localeCompare(a.date))[0].weight;
+}
