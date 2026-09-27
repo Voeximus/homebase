@@ -193,6 +193,36 @@ const SHARED_ONLY = [
   // key. Two copies would let one door write a row the other cannot find, which reads
   // to a person as the assistant forgetting something it was told.
   "memory.ts",
+  // ── the rest of what phase 2 added to _shared, all for the same reason ──────────
+  //
+  // FOUR NAMES ARE DELIBERATELY NOT ON THIS LIST: handler.ts, openapi.ts, tools.ts and
+  // toolsFinance.ts. Each door legitimately has its own — that is the design, not drift —
+  // and this guard matches on the FILENAME, so listing one would fail the build for a file
+  // that is supposed to exist. What catches a divergence between those is
+  // tests/museCatalogue.test.ts, which compares the two registries against each other and
+  // against API.md.
+  //
+  // args.ts earns its place more than anything else here: it was written THREE TIMES in
+  // one week, twice at that path and once as reply.ts, because every author split the
+  // catalogue, needed the shared date and integer checks, and hit the import cycle. A
+  // door-private fourth copy is the next step of that same pattern, and a private copy of
+  // `dateArg` is a door that accepts a date the other one refuses.
+  "args.ts",
+  // undo.ts is the whole safety net phase 2 traded for letting an assistant change
+  // anything: the step kinds, the token shape, and the allowlist of tables AND columns a
+  // step may name. A second copy with a wider allowlist would be a door that can write a
+  // column it cannot put back, which is the one property the phase rests on.
+  "undo.ts",
+  // rows.ts is one mapping from a database row to what the door thinks that row is. It has
+  // already been forked once inside this phase — a private ReminderRow carrying
+  // `lastSentAt` — and a column mapped in one copy and forgotten in the other reads as a
+  // fact the door simply does not state.
+  "rows.ts",
+  "loadFinance.ts",
+  "memoryLoad.ts",
+  "worthALook.ts",
+  "healthRead.ts",
+  "memoryTools.ts",
 ];
 const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
 let privateCopies = false;

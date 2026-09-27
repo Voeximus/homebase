@@ -54,6 +54,7 @@
 // below is derived.
 
 import type { Ctx, Refusal, Tool, ToolOutcome } from "./tools.ts";
+import { UNDO_REGISTRY } from "./undoRegistry.ts";
 // A type-only import above, and this one from _shared: tools.ts imports THIS file's
 // registry as a value, so anything imported back out of it would close a runtime cycle.
 import { UUID } from "../_shared/muse/args.ts";
@@ -1668,6 +1669,21 @@ const systemUndo: Tool = {
           : (await db.countDebtPayments(rowId)) > 0,
       reverseMoneyEvent: (rowId) => db.reverseMoneyEvent(rowId),
       restoreMoneyEvent: (row) => db.restoreMoneyEvent(row),
+      // The fifth step kind: a named inverse out of the one registry. This is where the
+      // health half of phase 2 joins the core — 22 tools whose rows are documents rather
+      // than columns, so their inverse is code with the before-state as data.
+      //
+      // A handler the registry does not have is a REFUSAL with a sentence, not a throw.
+      // The case is real and survivable: a change recorded by an older deploy, naming a
+      // handler that has since been renamed. A rename orphans tokens, which is why a
+      // `kind` is treated as a migration and not a refactor — and when it happens anyway,
+      // the honest answer is "I cannot put that one back", not a 500.
+      runHandler: async (handler, before) => {
+        const h = UNDO_REGISTRY[handler];
+        if (!h) return { say: "I recorded how to put that back, but I no longer know how to run it. Have a look in the app." };
+        const out = await h.apply(before, ctx);
+        return out.ok ? "ok" : { say: out.say };
+      },
     };
 
     const outcome = await applyUndo(steps, applier);

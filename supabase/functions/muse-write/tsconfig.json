@@ -23,15 +23,24 @@
   // the same reason: it is the other half of the Supabase wiring and holds no
   // decisions. The interfaces and the tool files are checked, and they are where every
   // decision is.
+  // dbFinanceSupabase.ts and dbMemory.ts join index.ts and dbSupabase.ts on the excluded
+  // list, for the same reason: they are the other halves of the Supabase wiring and hold
+  // no decisions. Everything else is in here, one file per line so adding the next one is
+  // a one-line diff rather than a re-wrap.
   "include": [
     "db.ts",
     "dbFinance.ts",
+    "gated.ts",
     "handler.ts",
     "healthTools.ts",
     "kit.ts",
+    "memoryDb.ts",
+    "memoryWrites.ts",
     "openapi.ts",
     "tools.ts",
     "toolsFinance.ts",
+    "undoContract.ts",
+    "undoRegistry.ts",
     "../cron-reminders/schedule.ts"
   ]
 }

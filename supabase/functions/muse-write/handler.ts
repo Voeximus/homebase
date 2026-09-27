@@ -61,7 +61,7 @@ import { scrubName } from "../_shared/muse/scrub.ts";
 // every key on Object.prototype, so "constructor", "__proto__" and "toString" each found
 // an inherited value and got past the "no such tool" check.
 import { DISPLAY, TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
-import { undoToken } from "./undoContract.ts";
+import { mintToken, undoSummary } from "../_shared/muse/undo.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
  *  connectors, so this is ours. */
@@ -420,20 +420,50 @@ async function afterAuth(
       return deny(outcome.status, outcome.say);
     }
 
-    // THE UNDO RECORD IS STORED WITH THE CALL, and that is the whole of what this
-    // handler owes the undo core. The audit row is already keyed on (person, tool,
-    // idem_key) and already holds `result` for a replay, so the before-state rides
-    // along in it and the token is those three things — no new table, and no second
-    // place a change and its inverse could disagree about which change is which.
+    // THE UNDO RECORD GOES IN muse_undo, under a minted token, like every other change.
     //
-    // What is NOT here: looking a token up, refusing a second undo of the same
-    // change, and dispatching to the registry. Those are the undo core's, and
-    // undoContract.ts lists exactly what it owes in return.
+    // It used to ride along in the audit row, with the token being (tool, idem_key). That
+    // was a reasonable seam to code against while the core did not exist — but the core
+    // does exist, and two stores meant `system.undo` could not reach a change made this
+    // way and `system.changes` could not list one. One table, one token shape.
+    //
+    // ORDERING, SAID PLAINLY, because it is weaker here than on the finance side. A
+    // finance tool writes its muse_undo row BEFORE it changes anything, which is what
+    // lets `pending` mean "the door stopped mid-call and nobody knows whether it landed".
+    // A tool that returns its record afterwards cannot have that: the row is written
+    // after the change, already `undoable`, so a crash between the write and this line
+    // loses the undo record while keeping the change. That is a real gap and it is the
+    // narrower one of the two available — the alternative was no undo at all for 22
+    // tools. It is the same class as the insert-first gap the finance half documented
+    // and did not solve.
     //
     // A tool that leaves `undo` off is saying it could not honestly capture a
     // before-state, and the reply says so rather than implying one exists.
     const stored: Record<string, unknown> = { message: outcome.say, result: outcome.result };
-    if (outcome.undo) stored.undo = outcome.undo;
+    let undoTok: string | null = null;
+    if (outcome.undo) {
+      undoTok = mintToken((into) => crypto.getRandomValues(into));
+      await db.recordChange({
+        token: undoTok,
+        person,
+        tool,
+        summary: undoSummary(outcome.undo.says),
+        // ONE step, naming the inverse and carrying what it needs. The handler is code,
+        // by name, because these rows are documents rather than columns — see the
+        // `run_handler` note in _shared/muse/undo.ts.
+        steps: [{ kind: "run_handler", handler: outcome.undo.kind, before: outcome.undo.before }],
+      });
+      // Straight to `undoable`. A change row is BORN `pending`, because the finance tools
+      // write theirs before they touch anything and `pending` is how the log says "the
+      // door stopped mid-call and nobody knows whether it landed". This path is the other
+      // way round — the write has already returned — so `pending` would be a state that is
+      // never true here, and `system.changes` would tell him to go and check the app about
+      // a change it can see succeeded.
+      await db.setChangeState(undoTok, "undoable", {});
+      // Kept in the audit row too, so a REPLAY of the same idempotency key hands back
+      // the same token and the same sentence rather than minting a second one.
+      stored.undo = { ...outcome.undo, token: undoTok };
+    }
     await db.finishCall({
       person, tool, idemKey,
       outcome: "ok",
@@ -444,7 +474,7 @@ async function afterAuth(
     const body: Record<string, unknown> = { ok: true, tool, message: outcome.say, result: outcome.result };
     if (outcome.undo) {
       body.undo = {
-        token: undoToken(tool, idemKey),
+        token: undoTok,
         says: outcome.undo.says,
         ...(outcome.undo.fragile ? { only_until: outcome.undo.fragile } : {}),
       };
@@ -490,10 +520,15 @@ async function replayFor(
       message: stored.message,
       result: stored.result,
     };
-    const undo = stored.undo as { says?: unknown; fragile?: unknown } | undefined;
-    body.undo = undo
+    // The TOKEN COMES OUT OF THE STORED RECORD, not from the tool and the key. It used to
+    // be derived from (tool, idem_key), which made a replay reproduce it for free; now it
+    // is minted once and written into muse_undo, so the replay has to hand back the one
+    // that is actually in the table. Minting a second one here would give the assistant a
+    // token naming no change.
+    const undo = stored.undo as { says?: unknown; fragile?: unknown; token?: unknown } | undefined;
+    body.undo = undo && typeof undo.token === "string"
       ? {
-          token: undoToken(tool, idemKey),
+          token: undo.token,
           says: undo.says,
           ...(undo.fragile ? { only_until: undo.fragile } : {}),
         }

@@ -47,7 +47,11 @@ import {
   HEALTH_UNDO,
   __testables,
 } from "../supabase/functions/muse-write/healthTools.ts";
-import { parseUndoToken, undoToken, mergeUndo } from "../supabase/functions/muse-write/undoContract.ts";
+import { mergeUndo } from "../supabase/functions/muse-write/undoContract.ts";
+// The registry the DOOR dispatches through, and the step validator that reads a `kind`
+// back out of the database. Both are the merge's half of the undo story.
+import { UNDO_REGISTRY } from "../supabase/functions/muse-write/undoRegistry.ts";
+import { checkStep } from "../supabase/functions/_shared/muse/undo.ts";
 import type { Ctx, ToolOutcome } from "../supabase/functions/muse-write/kit.ts";
 import type {
   CallRecord,
@@ -314,8 +318,14 @@ describe("the catalogue", () => {
       expect(out.ok, `${name}: ${said(out)}`).toBe(true);
       if (out.ok && out.undo) kinds.add(out.undo.kind);
     }
+    // Checked against UNDO_REGISTRY, not HEALTH_UNDO. They hold the same handlers today,
+    // and the difference is the point: UNDO_REGISTRY is what `system.undo` actually
+    // dispatches through, so this asserts the kind is reachable THROUGH THE DOOR rather
+    // than merely present in this file's own object. That distinction was not academic —
+    // before the merge, every one of these kinds was in HEALTH_UNDO and none of them was
+    // reachable, because nothing had registered it.
     for (const kind of kinds) {
-      expect(HEALTH_UNDO[kind], `no undo handler for ${kind}`).toBeTruthy();
+      expect(UNDO_REGISTRY[kind], `no undo handler for ${kind}`).toBeTruthy();
     }
     // And the other way: a handler nothing reaches is dead code that looks like a
     // safety net. Two are shared inverses reached only from another tool's undo, so
@@ -330,6 +340,18 @@ describe("the catalogue", () => {
   it("merges into one registry without two handlers claiming a kind", () => {
     expect(() => mergeUndo(HEALTH_UNDO)).not.toThrow();
     expect(() => mergeUndo(HEALTH_UNDO, HEALTH_UNDO)).toThrow(/claim/);
+    // And the registry the door reads really is built from this file's handlers — the
+    // assertion that would have failed before the merge, when mergeUndo was never called.
+    expect(Object.keys(UNDO_REGISTRY).sort()).toEqual(Object.keys(HEALTH_UNDO).sort());
+  });
+
+  it("every kind a tool can return is a name the step validator accepts", () => {
+    // A `kind` is written into a database column and read back by checkStep, which
+    // refuses a name it cannot parse. A handler named `weight_set` or `Weight.Set` would
+    // pass every test in this file and then be unreadable the moment it was stored.
+    for (const kind of Object.keys(UNDO_REGISTRY)) {
+      expect(() => checkStep({ kind: "run_handler", handler: kind, before: null }), kind).not.toThrow();
+    }
   });
 });
 
@@ -1159,13 +1181,84 @@ describe("the handler carries the undo token out, and the before-state stays in 
     clock: clockNow(AT),
   });
 
-  it("hands back a token that names the tool and the key, and a sentence to read out", async () => {
+  it("hands back a minted token, in the one shape system.undo accepts", async () => {
+    // THIS TEST ASSERTED THE OPPOSITE UNTIL THE MERGE, and the change is the point of
+    // the merge rather than a correction to it. The health branch minted its token from
+    // (tool, idempotency-key) and stored the before-state in the audit row, which was a
+    // reasonable seam to code against while no undo core existed. One did exist, on
+    // another branch, with its own table and its own token shape — so these 22 tools were
+    // handing back tokens that `system.undo` would refuse to parse, for changes that
+    // `system.changes` could not list. The reply said "if he says undo, send the token
+    // back". It would not have worked.
     const r = await handleWrite(post("health.log_weight", { weight: 198.4 }, "key-weight-0001"), deps());
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     const undoBody = r.body.undo as { token: string; says: string };
-    expect(undoBody.token).toBe(undoToken("health.log_weight", "key-weight-0001"));
-    expect(parseUndoToken(undoBody.token)).toEqual({ tool: "health.log_weight", idemKey: "key-weight-0001" });
+    // The shape system.undo checks, spelled here rather than imported, because this is
+    // the claim: the two halves agree about what a token looks like.
+    expect(undoBody.token).toMatch(/^u-[0-9a-hjkmnp-tv-z]{8}$/);
     expect(undoBody.says).toMatch(/take the 198.4 lb weigh-in/i);
+    // And it names a real row in the change log, with the inverse recorded as one
+    // `run_handler` step — the fifth step kind, which is where this half joins the core.
+    const change = db.changes.find((c) => c.token === undoBody.token)!;
+    expect(change, "the token names no change").toBeTruthy();
+    expect(change.state).toBe("undoable");
+    expect(change.steps).toEqual([
+      { kind: "run_handler", handler: "weight.set", before: { date: TODAY, weight: null } },
+    ]);
+  });
+
+  it("system.undo reaches a health change, through the same token and the same table", async () => {
+    // THE CLAIM THIS WHOLE FILE COULD NOT MAKE BEFORE THE MERGE. Every test above drives
+    // the handlers in HEALTH_UNDO directly, which proves the inverses are right and proves
+    // nothing about whether anything can CALL them. It could not: HEALTH_UNDO was
+    // registered nowhere, mergeUndo was never called, and the token shape did not match
+    // the one system.undo parses. So this is the end-to-end path, through the door both
+    // times, with nothing reaching into the registry by hand.
+    db.weights.set(`gino|${TODAY}`, 199.2);
+    const wrote = await handleWrite(post("health.log_weight", { weight: 198.4 }, "e2e-0001"), deps());
+    expect(wrote.status, JSON.stringify(wrote.body)).toBe(200);
+    expect(db.weights.get(`gino|${TODAY}`)).toBe(198.4);
+    const token = (wrote.body.undo as { token: string }).token;
+
+    const back = await handleWrite(post("system.undo", { token }, "e2e-0002"), deps());
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+    // The weigh-in that was there before is back, to the tenth.
+    expect(db.weights.get(`gino|${TODAY}`)).toBe(199.2);
+    // And the change is marked undone, so a second undo of the same token is refused
+    // rather than putting back a weight that is already back.
+    expect(db.changes.find((c) => c.token === token)!.state).toBe("undone");
+    const twice = await handleWrite(post("system.undo", { token }, "e2e-0003"), deps());
+    expect(twice.status).toBe(409);
+  });
+
+  it("system.undo says the handler's own sentence when it cannot put it back", async () => {
+    // A handler knows things the core cannot: "that meal is not on that day any more".
+    // The refusal has to be ITS sentence, or the person cannot tell "I could not" from
+    // "it was already done" — and those need different next steps.
+    //
+    // A weigh-in is the wrong tool for this test and that is worth a line: `weight.set`
+    // deliberately has NO compare-and-set, because there is one weigh-in per day and
+    // putting the old number back IS the whole inverse. A meal is a row inside a
+    // document, so it can genuinely have gone.
+    const wrote = await handleWrite(
+      post("health.log_meal", { items: [{ name: "Rice", kcal: 260, p: 5, c: 56, f: 1, grams: 200 }] }, "e2e-0004"),
+      deps(),
+    );
+    expect(wrote.status, JSON.stringify(wrote.body)).toBe(200);
+    const token = (wrote.body.undo as { token: string }).token;
+
+    // The phone's turn: somebody takes that meal off the day themselves.
+    const doc = db.mealDays.get(`gino|${TODAY}`)!;
+    doc.meals = [];
+    doc.updatedAt = "v-phone";
+
+    const back = await handleWrite(post("system.undo", { token }, "e2e-0005"), deps());
+    expect(back.status).toBe(409);
+    expect(String(back.body.message)).toMatch(/not on .* any more/i);
+    // Nothing was written, and the change stays undoable rather than being marked done —
+    // so asking again after putting the day right in the app finishes the job.
+    expect(db.mealDays.get(`gino|${TODAY}`)!.meals).toEqual([]);
+    expect(db.changes.find((c) => c.token === token)!.state).toBe("undoable");
   });
 
   it("keeps the before-state in the audit row, where the undo core will read it", async () => {
@@ -1216,19 +1309,13 @@ describe("the handler carries the undo token out, and the before-state stays in 
 
 // ── the undo contract's own edges ────────────────────────────────────────────
 
-describe("the undo token", () => {
-  it("splits back apart exactly one way, whatever is in the key", () => {
-    for (const key of ["abcd1234", "a.b:c-d_1234", "0123456789"]) {
-      expect(parseUndoToken(undoToken("health.log_weight", key))).toEqual({
-        tool: "health.log_weight",
-        idemKey: key,
-      });
-    }
-  });
-
-  it("refuses anything that is not one", () => {
-    for (const bad of ["", "no-separator", "~key12345678", "health.log_weight~", 7, null, {}]) {
-      expect(parseUndoToken(bad), String(bad)).toBeNull();
-    }
-  });
-});
+// THE TOKEN'S OWN TESTS ARE NOT HERE ANY MORE.
+//
+// This branch minted its token from (tool, idempotency-key) and tested that it split back
+// apart exactly one way. That token shape is gone: `system.undo` accepts one shape,
+// `u-4k7m9qt2`, minted by _shared/muse/undo.ts and written into `muse_undo` — so a health
+// change and a finance change are found the same way, and `system.changes` lists both.
+// mintToken and TOKEN_SHAPE are tested in tests/museFinance.test.ts, against the core.
+//
+// What replaced it here is the end-to-end pair above: a weigh-in logged through the door
+// and put back through the door, and a refusal that carries the handler's own sentence.

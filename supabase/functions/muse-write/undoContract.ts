@@ -1,38 +1,32 @@
-// UNDO — the contract, not the core.
+// UNDO — what a NAMED inverse is, and how the registry of them is built.
 //
-// READ THIS FIRST IF YOU ARE MERGING PHASE 2
+// WHAT THIS FILE WAS, AND WHY IT SAYS SOMETHING ELSE NOW. It was written by the health
+// half of phase 2 as a SEAM: the undo core did not exist on that branch, so this file
+// described the shape its 22 tools coded against and listed four things the core would
+// owe it. All four are paid now, and the file is the contract for the part that stayed —
+// an inverse that is CODE rather than data.
 //
-// Phase 2 flips the rule the write door was built on. Phase 1 exposed what was
-// safe and made everything risky wait for a tap in the app. His instruction for
-// this phase is the opposite: "Muse has to have every functionality given in the
-// app and the app must become a database for patterns and information storage."
-// What makes that safe is not a smaller list of verbs — it is that every change
-// writes down what was there before it, so "undo that" is a real answer.
+// WHERE THE CORE IS. _shared/muse/undo.ts, backed by supabase/schema_v38_muse_undo.sql.
+// It holds the token (minted, `u-4k7m9qt2`), the `muse_undo` row, the four states, and
+// five step kinds. Four of those are DATA over an allowlist of tables AND columns, which
+// is the stricter thing and the one to reach for: the door can only write a column it can
+// also put back. The fifth, `run_handler`, names a handler in this file's registry, and it
+// exists because a day's meals are one JSON document — taking back the one meal the door
+// added, while keeping the one the phone added a second later, is not a column write.
 //
-// This file is the SEAM, written by the health/workout half of phase 2 so its
-// tools had something to compile against. The undo CORE — where the before-state
-// is stored, how a token is handed out and looked up, what stops a change being
-// undone twice, and the `undo` / `what did you change` tools themselves — belongs
-// to the phase's undo work and is NOT here. Four things the core owes this file,
-// and nothing else:
+// SO THE PIECES, IN ORDER, for a health write:
+//   1  the tool captures its before-state and returns an `UndoRecord` (below);
+//   2  handler.ts mints a token and writes ONE `run_handler` step into `muse_undo`;
+//   3  `system.changes` lists it beside a categorised charge, off the same table;
+//   4  `system.undo` looks the token up and dispatches through UNDO_REGISTRY
+//      (undoRegistry.ts) back into `apply()` below.
 //
-//   1  STORE the UndoRecord a tool returns, against the call that made it. The
-//      audit row already exists and is already keyed on (person, tool, idem_key),
-//      so the natural home is muse_audit.result and the natural token is
-//      undoToken(tool, idemKey) below. No new table is needed for that; a column
-//      or a flag IS needed for item 3.
-//   2  HAND the token back in the reply, with `undo.says`, so the assistant can
-//      repeat the sentence and the person can say "undo that".
-//   3  REFUSE A SECOND UNDO of the same change. Undoing twice is how a restore
-//      becomes a new wrong write: `restore-weight` would put back a weight that
-//      is already back, and `remove-meal` would find nothing and report success.
-//      One flag on the audit row, checked before dispatch.
-//   4  DISPATCH to the registry: look the record's `kind` up in the merged
-//      registry and call apply(). HEALTH_UNDO in healthTools.ts is one half of it.
-//
-// If the core lands with a different shape, this file is the only thing the health
-// tools need re-pointed: they return UndoRecord values and register handlers, and
-// they never reach into the audit log themselves.
+// THE ONE THING THIS IS WEAKER ABOUT, said out loud. A finance tool writes its row BEFORE
+// it changes anything, which is what lets `pending` mean "the door stopped mid-call and
+// nobody knows whether it landed". A tool that returns a record afterwards cannot have
+// that: the row is written after the change and goes straight to `undoable`, so a crash
+// in between loses the record and keeps the change. It is the narrower of the two gaps
+// that were available — the alternative was 22 tools with no undo at all.
 
 import type { Json } from "../_shared/muse/args.ts";
 import type { Ctx, ToolOutcome } from "./kit.ts";
@@ -80,39 +74,6 @@ export interface UndoHandler {
 }
 
 export type UndoRegistry = Readonly<Record<string, UndoHandler>>;
-
-/** The separator. Not a character a tool name or an idempotency key can contain:
- *  tool names are `[a-z_.]`, and the handler's own check bounds a key to
- *  `[A-Za-z0-9._:-]`. So a token splits back apart exactly one way. */
-const SEP = "~";
-
-/**
- * The token an assistant repeats to undo a change.
- *
- * It is the tool that made the change and the idempotency key it was made under,
- * which is exactly what the audit log is already keyed on — so looking one up is a
- * read of a row that already exists, and there is no second place a change and its
- * inverse could disagree about which change is which.
- *
- * It is NOT a secret and must not be treated as one: the door already knows who is
- * asking from the key in the header, and an undo can only reach a change that same
- * person made. A guessed token belonging to the other person is refused by the
- * person check, not by the token being hard to guess.
- */
-export function undoToken(tool: string, idemKey: string): string {
-  return `${tool}${SEP}${idemKey}`;
-}
-
-export function parseUndoToken(token: unknown): { tool: string; idemKey: string } | null {
-  if (typeof token !== "string") return null;
-  const i = token.indexOf(SEP);
-  if (i <= 0 || i === token.length - 1) return null;
-  const tool = token.slice(0, i);
-  const idemKey = token.slice(i + 1);
-  if (!/^[a-z][a-z_.]{1,60}$/.test(tool)) return null;
-  if (!/^[A-Za-z0-9._:-]{8,200}$/.test(idemKey)) return null;
-  return { tool, idemKey };
-}
 
 /** Merge the registries the two halves of phase 2 define. A `kind` defined twice
  *  is a bug worth stopping at load rather than resolving by whichever import came

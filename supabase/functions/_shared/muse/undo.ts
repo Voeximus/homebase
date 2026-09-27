@@ -121,7 +121,39 @@ export type UndoStep =
       guard?: "no_bill_payments" | "no_debt_payments";
     }
   | { kind: "reverse_money_event"; id: string }
-  | { kind: "restore_money_event"; row: Record<string, UndoValue> };
+  | { kind: "restore_money_event"; row: Record<string, UndoValue> }
+  | {
+      /**
+       * Run one NAMED inverse out of a registry, on the before-state recorded with it.
+       *
+       * WHY THERE IS A FIFTH KIND AT ALL, when the other four are the whole point. Those
+       * four are DATA over an allowlist of tables and columns, and that is what makes the
+       * money side safe: the door can only write a column it can also put back. It works
+       * because a ledger row IS columns.
+       *
+       * The health side is not columns. A day's meals are one JSON document, and taking
+       * back the one meal the door added — while keeping the meal the phone added a second
+       * later — is not a column write. It is a read, a surgical edit and a compare-and-set.
+       * Expressed as `set_columns` it would be a whole-document restore, which would
+       * silently throw away whatever the phone did in between: worse than no undo, because
+       * it reports success.
+       *
+       * So the inverse is CODE, named by a string, with the before-state as data. Three
+       * things keep that honest:
+       *
+       *   · a `kind` here is a NAME IN A DATABASE ROW, so renaming a handler orphans every
+       *     token already handed out — a rename is a migration, not a refactor;
+       *   · the registry is merged at module load by mergeUndo, which throws if two
+       *     handlers claim one name, so a token can never mean two different inverses;
+       *   · a handler the registry does not have is refused with a sentence, never guessed
+       *     at. That is the allowlist property in its own shape.
+       *
+       * Prefer the four data kinds. Reach for this one only when the row is a document.
+       */
+      kind: "run_handler";
+      handler: string;
+      before: UndoValue;
+    };
 
 /** A change, as it sits in muse_undo. */
 export interface UndoRecord {
@@ -216,6 +248,9 @@ function isPlainObject(v: unknown): v is Record<string, UndoValue> {
  * would be a door whose write surface is whatever is in that table. Fails closed,
  * loudly, with a sentence rather than a stack trace.
  */
+/** A handler name, as a `kind` in the registry spells one: `area.verb-object`. */
+const HANDLER_NAME = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/;
+
 export function checkStep(step: unknown): UndoStep {
   if (!isPlainObject(step)) throw new UndoRefused("That undo is not in a shape I can run.");
   const kind = step.kind;
@@ -232,6 +267,22 @@ export function checkStep(step: unknown): UndoStep {
       throw new UndoRefused("That undo names a charge I cannot read.");
     }
     return { kind, row };
+  }
+
+  if (kind === "run_handler") {
+    if (typeof step.handler !== "string" || !HANDLER_NAME.test(step.handler)) {
+      throw new UndoRefused("That undo names an inverse I cannot read.");
+    }
+    // `before` may be any JSON the handler recorded, including null — a handler whose
+    // inverse needs nothing but its own name is legitimate (an insert's inverse is a
+    // delete of a row the id already identifies). What it may NOT be is undefined,
+    // which is what a column that was never written looks like coming back out.
+    if (step.before === undefined) throw new UndoRefused("That undo does not say what to put back.");
+    // Whether the registry HAS this handler is checked where it is applied, not here:
+    // this function is also what reads a row back out of the database for
+    // system.changes, and a change made by an older deploy should still be readable
+    // and listed rather than making the whole list unreadable.
+    return { kind, handler: step.handler, before: step.before as UndoValue };
   }
 
   if (kind !== "set_columns" && kind !== "delete_row") {
@@ -314,6 +365,15 @@ export interface UndoApplier {
   /** Put a deleted charge back under its original id. "moved" means a row with that
    *  id is already there, so it has been put back already. */
   restoreMoneyEvent(row: Record<string, UndoValue>): Promise<"ok" | "moved">;
+  /**
+   * Run a named inverse out of the registry.
+   *
+   * It returns the handler's OWN sentence on failure rather than "moved", because a
+   * handler knows things this function cannot: "that meal is not there any more",
+   * "the day has been edited since", "it is already back". Those are different
+   * answers and a person can act on the difference.
+   */
+  runHandler(handler: string, before: UndoValue): Promise<"ok" | { say: string }>;
 }
 
 /** Why an undo stopped. `moved` is the interesting one: nothing was written. */
@@ -357,6 +417,18 @@ export async function applyUndo(steps: UndoStep[], apply: UndoApplier): Promise<
       done++;
       continue;
     }
+    if (step.kind === "run_handler") {
+      const hit = await apply.runHandler(step.handler, step.before);
+      if (hit !== "ok") {
+        // The handler's sentence stands as written — it is more specific than anything
+        // this function could say. What gets added is how far the undo got, because a
+        // partial undo has happened and saying otherwise is the worse answer.
+        return { ok: false, say: done === 0 ? hit.say : `${hit.say} ${sofar(done)}`.trim() };
+      }
+      done++;
+      continue;
+    }
+
     if (step.kind === "delete_row") {
       if (step.guard && (await apply.isReferenced(step.guard, step.id))) {
         return {
@@ -385,14 +457,18 @@ export async function applyUndo(steps: UndoStep[], apply: UndoApplier): Promise<
   return { ok: true, steps: done };
 }
 
+/** How far an undo got, in one clause. Split out of `stopped` because a handler step
+ *  brings its own sentence and only needs this half added to it. */
+function sofar(done: number): string {
+  return done === 0
+    ? "Nothing was changed."
+    : done === 1
+      ? "One part of it was already put back and stays put back."
+      : `${done} parts of it were already put back and stay put back.`;
+}
+
 function stopped(done: number, why: string): string {
-  const already =
-    done === 0
-      ? "Nothing was changed."
-      : done === 1
-        ? "One part of it was already put back and stays put back."
-        : `${done} parts of it were already put back and stay put back.`;
-  return `I stopped: ${why}. ${already} Have a look in the app before asking me again.`;
+  return `I stopped: ${why}. ${sofar(done)} Have a look in the app before asking me again.`;
 }
 
 // ── saying it back ───────────────────────────────────────────────────────────
