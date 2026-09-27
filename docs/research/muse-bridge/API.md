@@ -696,6 +696,35 @@ stale without making them look stale.
 ledger** — that is what stops them being counted twice when they post. The amount is
 signed the way the bank reports it: negative is money going out.
 
+### `system.heartbeat`
+
+**Is anything broken?** Not the same question as `finance.audit`, and the difference
+is the point: that one asks whether the numbers agree with each other, and every one
+of its checks keeps passing while the feed that supplies them is dead — a ledger that
+stopped receiving charges is perfectly consistent about last week. This asks whether
+anything is still *arriving*, and whether the unattended work actually happened.
+
+Takes an empty body. Returns `clean`, `alarms`, `unknown`, and a `checks` list where
+each entry carries a plain question, a status, and a sentence to say out loud.
+
+Three states, not two. `unknown` is a job that has never finished — which is neither
+passing nor failing, and is the state the original failure lived in for months.
+
+What it watches:
+
+- **each unattended job**, against its own schedule. One missed turn is quiet; two is
+  not. It reads the row each job writes about itself after its work, never pg_cron's
+  log — that log says the HTTP call was invoked, not that anything happened.
+- **whether charges are still arriving.** Alarms after 4 quiet days; the longest
+  ordinary quiet stretch measured over three months is 3.
+- **each bank connection separately**, never as a count — one login needing
+  re-authorising while the other is fine is the likely shape.
+- **whether reminders reached a phone.** A reminder is marked delivered *before* the
+  push goes out, so the delivery stamp proves the job ran and nothing more. This is
+  the only number that knows the difference.
+- **whether each person still has a device registered at all.**
+- **any reminder sitting more than 30 minutes past due** with nothing sent.
+
 ### `system.changes`
 
 **Takes nothing**, or `{"limit": 20, "undoable_only": true}`

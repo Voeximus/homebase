@@ -69,9 +69,21 @@ export interface BankConnection {
   refreshRequestedAt: string | null;
 }
 
+/** One recorded run of an unattended job, as job_runs stores it. */
+export interface JobRunRow {
+  job: string;
+  finishedAt: string | null;
+  ok: boolean | null;
+  detail: Record<string, unknown> | null;
+}
+
 export interface FinanceExtras {
   /** The bank's in-flight charges, newest first. */
   pendingCharges(): Promise<PendingCharge[]>;
+  /** Every unattended run recorded in the last 30 days. */
+  jobRuns(): Promise<JobRunRow[]>;
+  /** Devices reachable per person, keyed by the push table's own owner spelling. */
+  pushTargets(): Promise<Record<string, number>>;
   /** Every linked bank login and how its last sync went. */
   bankConnections(): Promise<BankConnection[]>;
   /**
@@ -132,11 +144,48 @@ export function createFinanceExtras(db: Db): FinanceExtras {
     );
   });
 
+  /** Every unattended run recorded in the last while, newest first.
+   *
+   *  Read whole and fail closed like every other table, which is affordable because
+   *  job_runs is pruned to 30 days by a scheduled job — four rows an hour from the
+   *  two quarter-hour jobs is roughly 3,000 rows, well under readAll's ceiling. If it
+   *  ever is not, the door refuses rather than answering from part of it, and a
+   *  heartbeat that silently read half the runs would be the exact failure it exists
+   *  to catch. */
+  const jobRuns = once(async () => {
+    const rows = await readAll(db, { table: "job_runs", orderBy: "id" });
+    return rows.map(
+      (r): JobRunRow => ({
+        job: str(r.job),
+        finishedAt: optStr(r.finished_at),
+        ok: typeof r.ok === "boolean" ? r.ok : null,
+        detail: (r.detail ?? null) as Record<string, unknown> | null,
+      }),
+    );
+  });
+
+  /** How many devices each person can actually be reached on.
+   *
+   *  The owner spelling is the table's own ("Gino", "Xinyan"), not the door's person
+   *  key, and it is left as it is rather than mapped — webpush.ts matches on this
+   *  string, so a mapping here would be a second opinion about who somebody is. */
+  const pushTargets = once(async () => {
+    const rows = await readAll(db, { table: "push_subscriptions", orderBy: "endpoint" });
+    const out: Record<string, number> = {};
+    for (const r of rows) {
+      const owner = str(r.owner) || "unknown";
+      out[owner] = (out[owner] ?? 0) + 1;
+    }
+    return out;
+  });
+
   const changeCache = new Map<Person, Promise<UndoRecord[]>>();
 
   return {
     pendingCharges,
     bankConnections,
+    jobRuns,
+    pushTargets,
     changes(person) {
       const hit = changeCache.get(person);
       if (hit) return hit;

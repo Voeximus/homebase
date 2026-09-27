@@ -457,6 +457,7 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "finance.bank_status", body: {} },
   { tool: "finance.bank_pending", body: {} },
   { tool: "system.changes", body: {} },
+  { tool: "system.heartbeat", body: {} },
   // ── phase 2: health and workout parity ──────────────────────────────────────
   // Every one of these answers about a row rather than a summary, which phase 1
   // deliberately refused to do. He asked for it: "Muse has to have every

@@ -50,6 +50,8 @@
 // does not, so there is still nothing to check a spoken number against. That is a
 // decision, not an oversight, and it keeps its entry in ABSENT.
 
+import { azDateISO, nowAZ} from "./az.ts";
+import { heartbeat, REMINDER_STUCK_MIN } from "./heartbeat.ts";
 import {
   BadArgs,
   dateArg,
@@ -640,6 +642,110 @@ const systemChanges: Tool = {
   },
 };
 
+// ── system.heartbeat ──────────────────────────────────────────────────────────
+//
+// "Is anything broken?" — and it is deliberately not finance.audit.
+//
+// finance.audit asks whether the numbers agree with each other, and every one of its
+// checks keeps passing while the feed that supplies them is dead: a ledger that has
+// stopped receiving charges is perfectly consistent about last week. This asks the
+// other question — is anything still arriving, and did the unattended work happen.
+// It is the check that would have caught the original failure, months with no
+// scheduled bank pull and every self-check green.
+//
+// WHERE THE READINGS COME FROM, and one of them is a deliberate refusal. pg_cron
+// keeps its own log and this does not read it: service_role holds no grant on that
+// schema, and it answers a weaker question anyway — that the http call was INVOKED,
+// not that the work happened. Each job writes its own row after its work instead.
+const systemHeartbeat: Tool = {
+  name: "system.heartbeat",
+  summary: "Is everything that should be running, running? Checks the unattended jobs, the bank feed and whether reminders can still reach a phone.",
+  async run({ load, now }) {
+    const [runs, conns, targets, data, gino, xin] = await Promise.all([
+      load.jobRuns(),
+      load.bankConnections(),
+      load.pushTargets(),
+      load.appData(),
+      load.reminders("gino"),
+      load.reminders("xinyan"),
+    ]);
+
+    // BOTH SIDES INTO THE SAME FRAME, and this is the one thing here that was wrong
+    // on the first live run. `now` is nowAZ()'s Date — its UTC fields hold Arizona
+    // wall-clock, which is what every calendar answer in this door needs and is
+    // exactly seven hours behind the real instant. Subtracting a UTC timestamp from
+    // it gave "finished -406 minutes ago" for a row written thirteen minutes
+    // earlier. Passing each stored instant through the same shift makes the
+    // difference honest, and it still reads no clock: nowAZ is pure and `now` is the
+    // one reading the handler took.
+    const minutesSince = (iso: string | null): number | null =>
+      iso ? (now.getTime() - nowAZ(new Date(iso)).getTime()) / 60000 : null;
+
+    // The schedule each job actually runs on. Written here rather than read from
+    // cron.job for the same reason as everything else in this tool: that table is
+    // unreadable from a function, and a job's cadence changing without this changing
+    // is caught by the check itself going quiet, which is the direction that shows.
+    const EVERY: Record<string, number> = {
+      "cron-bank-sync": 15,
+      "cron-reminders": 15,
+      "cron-notify": 1440,
+    };
+
+    const jobs = Object.entries(EVERY).map(([job, everyMinutes]) => {
+      const mine = runs.filter((r) => r.job === job && r.finishedAt);
+      const newest = mine.reduce<typeof mine[number] | null>(
+        (best, r) => (!best || (r.finishedAt ?? "") > (best.finishedAt ?? "") ? r : best),
+        null,
+      );
+      // Summed over everything kept, not over the newest run alone: a push that
+      // reached nobody two hours ago still means nobody was reached.
+      const reachedNobody = mine.reduce((sum, r) => {
+        const n = Number((r.detail ?? {})["reached_nobody"] ?? 0);
+        return sum + (Number.isFinite(n) ? n : 0);
+      }, 0);
+      return {
+        job,
+        minutesSinceFinish: minutesSince(newest?.finishedAt ?? null),
+        everyMinutes,
+        lastOk: newest ? newest.ok : null,
+        reachedNobody,
+      };
+    });
+
+    const newestCharge = data.transactions.reduce((d, t) => (t.date > d ? t.date : d), "");
+    const quietDays = newestCharge
+      ? Math.floor((Date.parse(`${azDateISO(now)}T00:00:00Z`) - Date.parse(`${newestCharge}T00:00:00Z`)) / 86400000)
+      : null;
+
+    const stuck = [...gino, ...xin].filter(
+      (r) => !r.sentAt && !r.canceledAt && (minutesSince(r.dueAt) ?? 0) > REMINDER_STUCK_MIN,
+    ).length;
+
+    const result = heartbeat({
+      jobs,
+      connections: conns.map((c) => ({
+        owner: c.owner,
+        institution: c.institution,
+        status: c.status,
+        minutesSinceSync: minutesSince(c.lastSyncAt),
+        consecutiveFailures: c.consecutiveFailures,
+      })),
+      quietDays,
+      stuckReminders: stuck,
+      pushTargets: targets,
+    });
+
+    return {
+      clean: result.clean,
+      alarms: result.alarms,
+      unknown: result.unknown,
+      checks: result.checks,
+      note:
+        "This is not finance.audit. That one asks whether the numbers agree with each other, and it keeps passing while the feed that supplies them is dead. This asks whether anything is still arriving.",
+    };
+  },
+};
+
 export const FINANCE_TOOLS: readonly Tool[] = [
   financeCategories,
   financeTransaction,
@@ -652,4 +758,5 @@ export const FINANCE_TOOLS: readonly Tool[] = [
   financeBankStatus,
   financeBankPending,
   systemChanges,
+  systemHeartbeat,
 ];
