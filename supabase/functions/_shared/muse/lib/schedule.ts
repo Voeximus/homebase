@@ -437,13 +437,17 @@ export function dueBeforeNextPayday(
   todayISO: string,
   cycleEndISO: string,
   cycleStartISO?: string,
-): { bills: (MonthCalBill & { overdue: boolean })[]; total: number; overdueTotal: number } {
+): {
+  bills: (MonthCalBill & { overdue: boolean; due: string })[];
+  total: number;
+  overdueTotal: number;
+} {
   const pad = (n: number) => String(n).padStart(2, "0");
   // Fall back to the old behaviour only if a caller has not been updated — never
   // silently widen to "all of history" if the start is missing.
   const from = cycleStartISO ?? todayISO;
   const seen = new Set<string>();
-  const bills: (MonthCalBill & { overdue: boolean })[] = [];
+  const bills: (MonthCalBill & { overdue: boolean; due: string })[] = [];
   for (const m of months) {
     for (const b of m.bills) {
       if (b.paid) continue;
@@ -455,7 +459,13 @@ export function dueBeforeNextPayday(
       const key = `${on}|${b.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      bills.push({ ...b, overdue: on < todayISO });
+      // `due` is the resolved date this row was placed on, carried out rather than
+      // thrown away. A caller that needs it — the Muse read door names the day a
+      // bill is due — would otherwise rebuild it from (month.year, month.month,
+      // b.day), which is a second spelling of the line above, in a caller that is
+      // forbidden from doing its own assembly. `b.day` alone cannot say it: the
+      // window crosses month boundaries, so day 1 here may be next month's.
+      bills.push({ ...b, overdue: on < todayISO, due: on });
     }
   }
   return {

@@ -1,4 +1,4 @@
-// The read door's catalogue. Eleven tools, and nothing else exists.
+// The read door's catalogue. What is in TOOLS exists; nothing else does.
 //
 // RULE 1 — no arithmetic in here. Every number below comes out of a function in
 // src/lib, imported through the generated copies in ./lib. The repo has the
@@ -18,11 +18,17 @@
 // allowed to fire. tests/museRead.test.ts runs every tool under UTC and under
 // Arizona and requires identical output.
 //
-// RULE 3 — no assembling a function's inputs. Where the app assembles something in
-// a view module, the tool is NOT here: `finance.firepower` and `finance.next_bills`
-// need src/lib/headline.ts to exist first, and `finance.forecast` needs the screen
-// back before there is any ground truth to match. Their absence is deliberate and
-// documented in ABSENT below.
+// RULE 3 — no assembling a function's inputs. Where the app assembles something in a
+// view module, the assembly is EXTRACTED into src/lib/headline.ts and both the screen
+// and the tool call it — the tool never re-runs the steps itself. Four sequences live
+// there now: the budget envelope, the firepower tile, "still due before payday", and
+// the forward projection's options. Three tools were absent from this file until they
+// did, and the reason is worth keeping: each one would have called only real functions,
+// computed every number honestly, and still disagreed with his screen.
+//
+// So no tool below reads `data` and works something out. It calls one assembly
+// function and reports its fields. If a figure needs a step that is not in headline.ts,
+// the step goes there first — not here.
 //
 // RULE 4 — every string out goes through scrub(). Including the ones that came
 // from the app's own source, so that "which strings were checked" is not a
@@ -48,7 +54,15 @@ import {
   sumTargets,
   spentByCategoryBetween,
 } from "./lib/plan.ts";
-import { envelopeStatus } from "./lib/headline.ts";
+import {
+  billsBeforeNextPayday,
+  envelopeStatus,
+  firepowerStatus,
+  FORECAST_MONTHS,
+  lowestPoint,
+  monthGetter,
+  runForecast,
+} from "./lib/headline.ts";
 import { cashAccounts, totalBalance, totalPendingHold } from "./lib/recurring.ts";
 import { isoDate } from "./lib/format.ts";
 import { reviewLedger } from "./lib/ledgerReview.ts";
@@ -515,6 +529,185 @@ const financeWorthALook: Tool = {
   },
 };
 
+// ── finance.firepower ─────────────────────────────────────────────────────────
+//
+// THE THREE MONEY QUESTIONS BELOW WERE ABSENT FOR ONE REASON, and it was Rule 3:
+// their inputs were assembled inside a screen. All three now import that assembly
+// from src/lib/headline.ts through the generated copy, which is the same function
+// the screen calls — so the figure spoken in a chat is the figure on his screen, and
+// the generator plus the build check make "the same function" literal rather than a
+// claim. Nothing below computes anything: every number is a field off what the
+// assembly returned, passed through money().
+//
+// WHY THIS ONE NEEDED IT. The hero tile's firepower is NOT planMath's firepower. The
+// screen applies two subtractions on top that planMath cannot see — month-to-date
+// overspend against the lean budget, and cash out in categories no budget line
+// grades — and then clamps at zero. A door that called planMath and stopped would
+// have been honestly computed and roughly $700 out on the household's own snapshot.
+const financeFirepower: Tool = {
+  name: "finance.firepower",
+  summary: "How much is free THIS month to aim at the debt, and what has already been taken out of it.",
+  async run({ load, now }) {
+    const data = await load.appData();
+    const head = firepowerStatus(data, now);
+    return {
+      month: head.monthKey,
+      // The tile's figure. Zero is a real answer and means nothing is available —
+      // the two subtractions below are where that story is told.
+      available: money(head.firepower),
+      plan: {
+        income: money(head.math.income),
+        living: money(head.math.fixedNonDebt),
+        budgeted_variable: money(head.math.variable),
+        before_subtractions: money(head.math.firepower),
+      },
+      taken_out: {
+        overspent_this_month: money(head.overspendThisMonth),
+        outside_the_budget: money(head.outsideBudgetCash),
+      },
+      spent_this_month: money(head.spentThisMonth),
+      monthly_budget: money(head.monthlyTarget),
+      // Two traps in one note, because an assistant may be holding nothing but the
+      // openapi description. The first is the horizon; the second is the one API.md
+      // calls out on its own, and this is the figure most likely to be mistaken for
+      // it: firepower LOOKS like spendable cash and is not.
+      note: "A whole month, not a pay cycle, and not money in the account — it is what is free to aim at the debt. The household's cash floor is not in it and this door does not know it, so never answer 'you can spend this'. Zero means nothing is available; the two figures under taken_out are why.",
+    };
+  },
+};
+
+// ── finance.next_bills ────────────────────────────────────────────────────────
+//
+// Bills stay CALENDAR-MONTHLY in the app — rent really is due on the 1st — so this
+// is deliberately not a re-scoped bill list. It answers the separate question a pay
+// cycle raises: of the paycheck already in the account, how much is still spoken for
+// before the next one arrives.
+//
+// A BILL IS NOT A CHARGE. Rule 2 of API.md forbids a merchant, a bank descriptor and
+// a single charge; a bill row is none of those — he named it, the app's own screens
+// show it, and `finance.audit` and `finance.worth_a_look` already say bill names. The
+// amount is what the CALENDAR expects, not what any charge was.
+const financeNextBills: Tool = {
+  name: "finance.next_bills",
+  summary: "What is still due before the next paycheck, and how much of it is already overdue.",
+  async run({ load, now }) {
+    const data = await load.appData();
+    const { cycle, daysLeft, bills, total, overdueTotal } = billsBeforeNextPayday(
+      monthGetter(data, now),
+      now,
+    );
+    return {
+      cycle: {
+        start: cycle.start,
+        end: cycle.end,
+        label: scrubOr(cycle.label, `${cycle.start} to ${cycle.end}`),
+        day: cycle.dayIndex,
+        days: cycle.days,
+        days_left: daysLeft,
+      },
+      total: money(total),
+      // Named separately because it is a different kind of fact: not "coming up" but
+      // "already past its date and still unpaid".
+      overdue_total: money(overdueTotal),
+      count: bills.length,
+      bills: bills.map((b) => ({
+        // The recurring row's id, spelled `bill` — the same word finance.worth_a_look
+        // uses for the same thing, so one vocabulary covers both replies.
+        bill: b.recurringId ?? null,
+        name: scrubOr(b.name, "a bill"),
+        amount: money(b.amount),
+        // The resolved calendar date, carried out of dueBeforeNextPayday rather than
+        // rebuilt here: the window crosses month boundaries, so a day number alone
+        // cannot say which month it is in, and building the date here would be the
+        // door assembling what the app already worked out.
+        due: b.due,
+        overdue: b.overdue,
+        // The amount is a rolling average of real payments, not a contracted figure.
+        estimate: b.variable,
+      })),
+      note: "The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills.",
+    };
+  },
+};
+
+// ── finance.forecast ──────────────────────────────────────────────────────────
+//
+// WHY THE LOW POINT IS THE ANSWER AND THE SURPLUS IS NOT. A surplus is income minus
+// outgoings inside one calendar month — but rent lands on the 1st, funded by the
+// paycheck from the 31st of the month BEFORE. So the month that earns the money and
+// the month that spends it are different months, and a healthy surplus can sit on top
+// of cash already promised to a bill three days later. The running balance crosses
+// that boundary; the surplus does not. Hence `low` per month, and `lowest` across the
+// run, and both are read off the app's own walk rather than worked out here.
+//
+// NO PAYOFF DATE, and the omission is deliberate rather than an oversight. forecast()
+// does set a flag on the month a simulated card balance clears, and this door does
+// not forward it. `finance.debts` refuses a payoff month in so many words — API.md
+// calls an invented one "the single most tempting wrong number in this whole system" —
+// and handing the same month back from here, computed from a spending DIAL's opening
+// position, would be that number wearing a projection's clothes.
+//
+// TWO OF THE FOUR ASSUMPTIONS WERE DIALS on a screen that no longer exists, so they
+// come back in the reply. A projection whose spending figure is an assumption sitting
+// beside bills measured from the bank has to say which half is which, or Rule 3 of
+// API.md ("say which half is measured") cannot be obeyed by anything reading it.
+const financeForecast: Tool = {
+  name: "finance.forecast",
+  summary: "The balance run forward month by month: the low point in each, and the worst one.",
+  args: [
+    {
+      name: "months",
+      type: "integer",
+      required: false,
+      description: `How many months, counting this one. Default ${FORECAST_MONTHS}.`,
+    },
+  ],
+  async run({ load, now, args }) {
+    const months = intArg(args, "months", FORECAST_MONTHS, 1, FORECAST_MONTHS);
+    const data = await load.appData();
+    const { plan, months: rows } = runForecast(data, now, months);
+    // The single worst moment. Picked by the app's own reduction, not here: which
+    // month is "worst" is a judgement (least cash? earliest of the tied ones?) and
+    // two callers deciding it separately is how two answers appear.
+    const worst = lowestPoint(rows);
+    return {
+      from: plan.startMonth,
+      months: rows.map((m) => ({
+        month: m.monthKey,
+        label: scrubOr(m.label, m.monthKey),
+        // The first row is THIS month counted from today forward, so its figures are
+        // "what is left" and must never be compared against a whole month's.
+        partial: !!m.partial,
+        income: money(m.income),
+        paychecks: m.incomeEvents,
+        bills: money(m.bills),
+        spend: money(m.spend),
+        surplus: money(m.surplus),
+        close: money(m.close ?? null),
+        low: m.low ? { day: m.low.day, balance: money(m.low.balance) } : null,
+      })),
+      lowest: worst
+        ? {
+            month: worst.monthKey,
+            label: scrubOr(worst.label, worst.monthKey),
+            day: worst.day,
+            balance: money(worst.balance),
+          }
+        : null,
+      assumed: {
+        spending_per_cycle: money(plan.opts.cycleSpend),
+        // Zero means the ledger held no complete pay cycle to take a median from, so
+        // the figure above is the app's fallback rather than their own history.
+        median_of_past_cycles: money(plan.typicalCycle),
+        complete_cycles_measured: plan.cycles.length,
+        to_the_card_per_month: money(plan.opts.cardPay ?? null),
+        opening_cash: money(plan.opts.openingCash ?? null),
+      },
+      note: "Bills and income are measured from the bank; the spending figure is an assumption, and it is in assumed — say which half is which. The low point is the number a monthly surplus cannot tell you, because rent on the 1st is paid out of the month before. The first month is only what is left of it. No payoff date, debt-free month or card-clear month is here: do not work one out.",
+    };
+  },
+};
+
 // ── health.macros_today ───────────────────────────────────────────────────────
 const healthMacrosToday: Tool = {
   name: "health.macros_today",
@@ -682,10 +875,17 @@ const healthNextWorkout: Tool = {
   },
 };
 
+// THE CATALOGUE. Every tool that exists, in the order an assistant meets them in the
+// OpenAPI description. Add to it; never reorder to make room, and never take a name
+// off it without moving that name into ABSENT below with a reason — "no such tool"
+// has to be checkable against an intention rather than an oversight.
 export const TOOLS: readonly Tool[] = [
   financeAudit,
   financePosition,
   financeBudgetStatus,
+  financeFirepower,
+  financeNextBills,
+  financeForecast,
   financeDebts,
   financeSpendByCategory,
   financeWorthALook,
@@ -713,16 +913,8 @@ export const ABSENT: readonly { name: string; why: string }[] = [
     why: "Returning individual ledger rows turns a chat into a copy of the ledger. Forbidden, not disabled.",
   },
   {
-    name: "finance.forecast",
-    why: "The function exists but the screen it came from does not, so there is nothing to check a spoken number against. It ships after the forecast screen is back.",
-  },
-  {
-    name: "finance.firepower",
-    why: "The screen's figure is planMath's firepower minus two subtractions made in a view module. Until that lives in a shared function, a door that computed it would disagree with his screen.",
-  },
-  {
-    name: "finance.next_bills",
-    why: "Its window is assembled in a view module, same reason as firepower.",
+    name: "a payoff date, a debt-free month or a card-clear month",
+    why: "No tool returns one and none may be worked out from a balance and a rate. finance.forecast simulates a card being paid down and deliberately does not forward the month it clears: that figure comes off a spending dial's opening position, and reading it out as a payoff date would be the most tempting wrong number in this system wearing a projection's clothes.",
   },
   { name: "anything that writes", why: "This is the read door. It has no write verb at all." },
   { name: "anything that deletes", why: "No door has a delete verb." },

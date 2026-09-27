@@ -5,9 +5,13 @@ called Homebase. Two people share it: Gino and Xinyan. It holds their bank
 accounts, bills, budget, debts, body weight and workouts, and it is the place
 those things are true.
 
-This door lets you **ask** Homebase questions. It changes nothing. Eleven questions
-can be asked today. Everything else in this document is either a rule about how to
-speak, or a plain statement that something does not exist yet.
+This door lets you **ask** Homebase questions. It changes nothing. The questions it
+answers are the ones with a `###` heading below, and there are no others. Everything
+else in this document is either a rule about how to speak, or a plain statement that
+something does not exist yet.
+
+(Counts are deliberately not written down here. The list grows, and a sentence saying
+"eleven" was already wrong once while three more were being built.)
 
 Read the six rules first. They are not style advice — the whole reason this door
 exists instead of handing you the database is that a wrong number said confidently
@@ -85,7 +89,7 @@ everything you asked.
 
 ---
 
-## The eleven questions you can ask
+## The questions you can ask
 
 **You never send a person.** The door works out whether it is Gino or Xinyan asking
 from the key you used, and it refuses the call outright if you put `person` in the
@@ -162,6 +166,90 @@ as "-31 left".
 **Use it** for "can I buy this", "how are we doing on groceries", "what's left".
 Use `finance.position` instead for "how much money is in the account" — the
 envelope and the bank balance are different questions and people mix them up.
+
+### `finance.firepower` — how much is free this month to aim at the debt?
+
+**Takes nothing.** `{}`
+
+**The trap first: this is not money you can spend.** It is what a whole month leaves
+free to throw at the debt, after income, bills and the budgeted variable envelope. The
+household holds a deliberate floor under their cash that **this door does not know**,
+so never put this figure beside `finance.position` and answer "you can spend X".
+
+**A whole month, not a pay cycle.** `finance.budget_status` is the pay-cycle question.
+Reporting this one as a cycle figure doubles it.
+
+**What comes back:** `available` — the figure their home screen shows — and then the
+parts, so you can say where it went. `plan` holds the monthly `income`, `living` (the
+bills that are not debt payments), the `budgeted_variable` envelope and
+`before_subtractions`. `taken_out` holds the two things the app subtracts on top:
+`overspent_this_month`, money already spent past the budget and therefore no longer
+available, and `outside_the_budget`, cash that left in categories no budget line
+grades at all.
+
+**`available: 0` is a real answer**, not a missing one. It means nothing is free this
+month, and the two figures under `taken_out` are why — say them.
+
+**Not in it:** anything per-cycle, anything per-payday, and any suggestion about what
+to send. What actually gets sent at the debt is decided in the app.
+
+### `finance.next_bills` — what is still due before the next paycheck?
+
+**Takes nothing.** `{}`
+
+Of the paycheck already in the account, how much is still spoken for before the next
+one lands.
+
+**The window opens when the pay cycle opened, not today.** So a bill whose date has
+already gone by and is still unpaid **is in this list** — that money still has to come
+out of the check already banked, and it is the most likely thing to be forgotten. Each
+row carries `overdue: true` when that is the case, and `overdue_total` is their sum.
+Say "already overdue" for those and "coming up" for the rest; do not merge the two.
+
+**What comes back:** the `cycle` (its `start`, `end`, a ready-to-say `label`, which
+`day` of it today is, and `days_left`), the `total`, the `overdue_total`, a `count`,
+and one row per bill with its `name`, `amount`, `due` date, `overdue` flag, an
+`estimate` flag and `bill` — the bill's id, the same id `finance.worth_a_look` uses.
+
+**`estimate: true` means the amount is a rolling average** of what that bill has
+really been costing, not a contracted figure. Say "about" for those.
+
+**This is not the whole month's bills.** Bills are calendar-monthly in the app — rent
+really is due on the 1st — and this is a pay-cycle window cut across them. If somebody
+asks "what are this month's bills", say that this answers a narrower question and the
+app has the month.
+
+### `finance.forecast` — how low does the balance get, and when?
+
+**Takes one optional number.** `{"months": 3}` — how many months, counting this one.
+Up to 12, and 12 is the default.
+
+**The low point is the answer; the surplus is not.** A surplus is income minus
+outgoings inside one calendar month — but rent lands on the 1st, paid out of the
+paycheck from the 31st of the month before. So a healthy surplus can sit on top of cash
+that is already promised three days later. `low` is `{day, balance}`: the lowest the
+balance actually gets inside that month, and the day it happens. `lowest` is the single
+worst moment across the whole run.
+
+**Half of this is measured and half is assumed, and the reply says which.** Bills and
+income come from the bank. The spending figure does not — it is `assumed`, holding
+`spending_per_cycle` (the household's own median of past complete cycles),
+`median_of_past_cycles`, `complete_cycles_measured`, `to_the_card_per_month` and
+`opening_cash`. **State the spending assumption before you read any surplus or low
+point out.** A projection presented as a measurement is the thing rule 3 exists for.
+
+**The first month is a fraction of a month.** It carries `partial: true` and counts
+from today forward — bills already paid and paychecks already banked are out of it.
+Never compare it against a whole month, and never call it the best or worst month.
+
+**Not in it, and do not compute it: a payoff date, a debt-free month, a card-clear
+month, or months remaining.** The projection does simulate the card being paid down and
+it does know the month the balance clears — **that month is deliberately not returned**,
+because it comes off a spending assumption and would be read as a promise. This is the
+same refusal `finance.debts` makes, and it holds here too.
+
+**Also not in it:** which bills make up a month's figure. The reply gives a month's
+`bills` total, not the rows behind it.
 
 ### `finance.spend_by_category` — where did the money go?
 
@@ -382,22 +470,27 @@ that the app can do it.
 - Change a debt balance or a savings goal.
 
 **Reads that are planned but not built yet.** Do not attempt them and do not
-approximate them from the eleven above:
+approximate them from the ones above:
 
-- the lowest the balance gets and the day it happens
-- what is due before the next paycheck
-- how much is free each month to aim at the debt
 - how many days were logged — the streak
 - a barcode looked up
 - bill dates in a shape that can go on a calendar
 
+**A payoff date, a debt-free month, a card-clear month, or months remaining.** Not
+planned — refused. `finance.debts` says so in its own reply and `finance.forecast`
+holds back the card-clear month it actually computes. An invented payoff date is the
+single most tempting wrong number in this whole system: a balance and a rate are all it
+takes to make one up, and you have both.
+
 **And the one worth naming on its own: "what can I spend?"** The household holds a
 deliberate floor under the cash — a paycheque amount that is not to be dipped into —
-and **this door does not know it**. Nothing here subtracts it, so `finance.position`
-is the bank's number and not a spendable one, and `finance.budget_status` is one
-envelope and not the whole picture. Do not put the two together and answer "you can
-spend X": say the two figures you were given, say the floor is not in either of them,
-and say the app is where that question is answered.
+and **this door does not know it**. Nothing here subtracts it, so `finance.position` is
+the bank's number and not a spendable one, `finance.budget_status` is one envelope and
+not the whole picture, and `finance.firepower` is money earmarked for the debt rather
+than money free to spend — it is the figure most likely to be mistaken for an answer
+here. Do not put any of them together and answer "you can spend X": say the figures you
+were given, say the floor is in none of them, and say the app is where that question is
+answered.
 
 **Writes are a separate door with a separate key.** You are holding the read key,
 and this door has no write verb anywhere in it. If you are asked to log or change

@@ -33,10 +33,11 @@ are what you reach for at a particular moment, and this says which moment.
 
 The other two documents are not steps:
 
-- **`API.md`** is written for the assistant, not for you. It is the rules and the
-  eleven questions in plain sentences. You paste it, or point Muse at it, if Muse
-  cannot fetch the door's own description before it holds a key. `MUSE-SKILL.md`
-  PASTE 1 is the shorter version of the same thing and is what you normally use.
+- **`API.md`** is written for the assistant, not for you. It is the rules and every
+  question the read door answers, in plain sentences. You paste it, or point Muse at
+  it, if Muse cannot fetch the door's own description before it holds a key.
+  `MUSE-SKILL.md` PASTE 1 is the shorter version of the same thing and is what you
+  normally use.
 - **`PLAN.md`** is why the doors are built the way they are — the research, the
   rejected options, the risks. Read it when you want to argue with a decision, not
   when you want to get something working.
@@ -228,8 +229,8 @@ Two more things to tell it, because they are how this stays safe:
 
 **Then paste PASTE 1 from `MUSE-SKILL.md`.** That is the next thing you do, before
 step 6, because step 6's checks are questions you ask Muse and it needs to know the
-tools and the rules first. PASTE 1 covers both doors, the eleven reads, the seven
-writes, the refusals and the nine rules. `API.md` is the same material written long,
+tools and the rules first. PASTE 1 covers both doors, every read, every write, the
+refusals and the nine rules. `API.md` is the same material written long,
 for the assistant — paste that instead if Muse asks for more detail, or if it cannot
 fetch the door's own description before it holds a key. There are no secrets in
 either file.
