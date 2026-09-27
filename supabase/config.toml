@@ -1,21 +1,30 @@
 # Supabase CLI config — the parts that MUST NOT live only in the dashboard.
 #
-# Three of the five edge functions are deliberately PUBLIC (verify_jwt = false).
-# They are not unguarded: each one checks its own shared secret from the query
-# string and fails CLOSED if that secret is missing or wrong. They have to be
-# public because their callers cannot present a Supabase JWT:
+# Several edge functions are deliberately PUBLIC (verify_jwt = false). They are not
+# unguarded: each one checks its own shared secret and fails CLOSED if that secret
+# is missing or wrong. They have to be public because their callers cannot present
+# a Supabase JWT:
 #
 #   announce-update  called by the GitHub Pages deploy workflow with plain curl
 #   plaid-webhook    called by Plaid's servers
 #   cron-notify      called by pg_cron via net.http_post
-#   muse-read        called by an assistant's server on his behalf
+#   cron-reminders   called by pg_cron via net.http_post
+#   muse-read        called by an assistant's cloud VM, which has no session
+#   muse-write       called by the same VM, through a separate door
 #
-# muse-read is the fourth caller of exactly that kind, and the most important one
-# to keep OUT of the JWT path: it must never be given a Supabase session, because
-# 17 of the 18 tables let any signed-in account read and write every row. Its own
-# guard is a per-person secret (MUSE_READ_GINO / MUSE_READ_XINYAN) compared in
-# constant time, and it fails closed when the secret is missing, empty, or too
-# short to be real. It has no write verb at all. See docs/research/muse-bridge.
+# The first four take their secret from the query string. The two Muse doors take a
+# per-person secret from a header instead, because a secret in a URL ends up in
+# logs — and because the secret is WHO is calling, not just a doorbell: it decides
+# which person is asking and which person every row is stamped with.
+#
+# The two doors are the most important callers to keep OUT of the JWT path: neither
+# may ever be given a Supabase session, because 17 of the 18 tables let any
+# signed-in account read and write every row. Each one's guard is its own
+# per-person secret (MUSE_READ_GINO / MUSE_READ_XINYAN, MUSE_WRITE_GINO /
+# MUSE_WRITE_XINYAN) compared in constant time, and each fails closed when the
+# secret is missing, empty, or too short to be real. The read door has no write
+# verb at all, and the write door has no delete verb and cannot move money.
+# See docs/research/muse-bridge.
 #
 # Before this file existed those settings lived ONLY in the Supabase dashboard,
 # which made them invisible to code review and — worse — resettable by any CLI
@@ -38,5 +47,11 @@ verify_jwt = false
 [functions.cron-notify]
 verify_jwt = false
 
+[functions.cron-reminders]
+verify_jwt = false
+
 [functions.muse-read]
+verify_jwt = false
+
+[functions.muse-write]
 verify_jwt = false
