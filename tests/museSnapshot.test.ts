@@ -39,6 +39,7 @@ import { handleMuseRead } from "../supabase/functions/_shared/muse/handler";
 import { createAuditSink, type AuditRow } from "../supabase/functions/_shared/muse/audit";
 import { PAGE, type Db, type DbQuery, type DbRow } from "../supabase/functions/_shared/muse/paging";
 import { TOOLS } from "../supabase/functions/_shared/muse/tools";
+import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
 import { toAppData } from "../supabase/functions/_shared/muse/rows";
 import { nowAZ } from "../supabase/functions/_shared/muse/az";
 import { cashAccounts, totalBalance, totalPendingHold } from "../src/lib/recurring";
@@ -177,7 +178,31 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     // tool that can be wrong against real data, and offset 0 with an explicit limit
     // is the call the assistant makes first.
     { tool: "schedule.list_reminders", body: { limit: 5, offset: 0 } },
+    // Phase 2's finance parity. These are the tools most worth running against the real
+    // ledger rather than a fixture, because two of them say a merchant name out loud —
+    // so the descriptor check below is now the check that matters, and it runs against
+    // the real descriptors rather than a canary somebody wrote.
+    { tool: "finance.categories", body: {} },
+    { tool: "finance.transaction", body: { id: firstChargeId() } },
+    { tool: "finance.search_transactions", body: { limit: 20 } },
+    { tool: "finance.accounts", body: {} },
+    { tool: "finance.bills", body: {} },
+    { tool: "finance.bill_calendar", body: { month } },
+    { tool: "finance.paid_bills", body: {} },
+    { tool: "finance.merchant_rules", body: {} },
+    { tool: "finance.bank_status", body: {} },
+    { tool: "finance.bank_pending", body: {} },
+    { tool: "system.changes", body: {} },
   ];
+}
+
+/** A real charge's id out of the snapshot, so finance.transaction has something to find.
+ *  The all-zero uuid when the snapshot has no charges: the tool answers `found: false`
+ *  rather than failing, which is itself worth exercising. */
+function firstChargeId(): string {
+  const rows = SNAP?.tables.transactions ?? [];
+  const id = rows[0]?.id;
+  return typeof id === "string" ? id : "00000000-0000-0000-0000-000000000000";
 }
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -241,7 +266,14 @@ describeSnapshot("the read door against the real ledger", () => {
   });
 
   it("refuses a tool it does not have, and names what it does", async () => {
-    const res = await ask("finance.search_transactions");
+    // This example has now been wrong twice, in opposite directions, which is worth a
+    // line. `finance.search_transactions` was it first, because phase 1 forbade the
+    // tool; he reversed that deliberately, so the branch changed it to
+    // `finance.forecast` — the read that was waiting on its screen. `main` had already
+    // shipped forecast by then. So the example is a name that is on the FORBIDDEN list
+    // for a reason that is not "not built yet": the payoff date, which no tool returns
+    // and none may be worked out from a balance and a rate.
+    const res = await ask("finance.payoff_date");
     expect(res.status).toBe(404);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.error).toBe("unknown_tool");
@@ -249,28 +281,44 @@ describeSnapshot("the read door against the real ledger", () => {
   });
 
   // ── Rule 4, against strings the bank wrote ──────────────────────────────────
-  it("lets no real bank descriptor out, under any tool", async () => {
+  // PHASE 2 SPLIT THIS IN TWO, because he changed one half of the promise and not the
+  // other, and the halves are now different tests against different columns.
+  //
+  //   `raw_description` — the untouched bank descriptor — still leaves no tool, ever.
+  //   `description` — Plaid's cleaned merchant name, or something one of them typed —
+  //   may leave the three tools that declare it in the door's own source.
+  //
+  // Which is why the first test below is the one that matters more now: it runs against
+  // the REAL descriptors out of his own ledger, not against a canary somebody wrote, and
+  // real descriptors are the strings a hand-written filter would have missed.
+  it("lets no RAW bank descriptor out, under any tool, including the ones that say a merchant", async () => {
     const replies = await allReplies();
-    // Every distinct string in `description` and `raw_description`. A descriptor is
-    // not URL-shaped or instruction-shaped, so the scrubber would pass it through
-    // untouched — the only thing keeping it out is that no tool reads the column.
-    const descriptors = new Set<string>();
+    // Only raw_description. It is written verbatim by whoever sent the money and cleaned
+    // nowhere in the app, so nothing about its shape would trip the scrubber — the only
+    // thing keeping it out is that no tool reads the column.
+    const raw = new Set<string>();
     for (const t of SNAP!.tables.transactions ?? []) {
-      for (const col of ["description", "raw_description"]) {
-        const v = t[col];
-        if (typeof v === "string" && v.trim().length >= 5) descriptors.add(v.trim());
-      }
+      const v = t.raw_description;
+      if (typeof v === "string" && v.trim().length >= 5) raw.add(v.trim());
     }
-    expect(descriptors.size).toBeGreaterThan(50);
+    expect(raw.size).toBeGreaterThan(20);
 
-    // A descriptor that is ALSO a bill, debt or account name is not evidence of a
-    // leak: those names are his, and the door is allowed to say them. Real case —
-    // a debt called "Affirm" and a charge described "Affirm" are the same eight
-    // characters, and the string in the reply came off the debt.
+    // A descriptor that is ALSO a string the door is allowed to say is not evidence of
+    // a leak. Real case — a debt called "Affirm" and a charge described "Affirm" are the
+    // same six characters, and the string in the reply came off the debt.
     const his: string[] = [];
     for (const r of SNAP!.tables.recurring ?? []) if (typeof r.name === "string") his.push(r.name.trim());
     for (const d of SNAP!.tables.debts ?? []) if (typeof d.name === "string") his.push(d.name.trim());
     for (const a of SNAP!.tables.accounts ?? []) if (typeof a.name === "string") his.push(a.name.trim());
+    // AND, FROM PHASE 2, the CLEAN merchant name. `description` legitimately leaves the
+    // three tools that declare it, and the bank sometimes writes a raw descriptor that is
+    // exactly the clean name — so without this, a real descriptor that equals a clean one
+    // reads as a leak from whichever tool correctly said the clean one. What stops that
+    // from hollowing the test out is the SECOND test below: which tools may say a
+    // description at all is checked separately, against the door's own exported list.
+    for (const t of SNAP!.tables.transactions ?? []) {
+      if (typeof t.description === "string") his.push(t.description.trim());
+    }
 
     // HIS NAMES ARE TAKEN OUT OF THE REPLY BEFORE THE SCAN, rather than compared
     // against each descriptor one for one. An equality check was not enough, and the
@@ -292,15 +340,63 @@ describeSnapshot("the read door against the real ledger", () => {
       return out;
     };
 
-    // Counted, never printed: a failure message must not be a second copy of the
-    // ledger. The tool name is enough to find it.
+    // Counted, never printed: a failure message must not be a second copy of the ledger.
+    // The tool name is enough to find it.
     const leaks: string[] = [];
-    for (const d of descriptors) {
+    for (const d of raw) {
       for (const [tool, text] of Object.entries(replies)) {
         if (withoutHisNames(text).includes(d)) leaks.push(tool);
       }
     }
-    expect(leaks, `descriptors reached: ${[...new Set(leaks)].join(", ")}`).toEqual([]);
+    expect(leaks, `raw descriptors reached: ${[...new Set(leaks)].join(", ")}`).toEqual([]);
+  });
+
+  it("says a merchant name ONLY from the tools that declare they do", async () => {
+    // The other half. A description reaching a tool that is not on SAYS_DESCRIPTION is a
+    // leak, and it is the kind that would happen by accident — somebody adds a field to a
+    // shared shaper and a summary tool starts carrying merchant names. The list lives in
+    // the door's source so this reads it rather than repeating it.
+    const replies = await allReplies();
+    const descriptions = new Set<string>();
+    for (const t of SNAP!.tables.transactions ?? []) {
+      const v = t.description;
+      if (typeof v === "string" && v.trim().length >= 8) descriptions.add(v.trim());
+    }
+    expect(descriptions.size).toBeGreaterThan(20);
+
+    // Same allowance as above, and for the same reason: a charge described "Affirm" and a
+    // debt called "Affirm" are one string, and the one in the summary reply came off the
+    // debt.
+    const hisNames = new Set<string>();
+    for (const r of SNAP!.tables.recurring ?? []) if (typeof r.name === "string") hisNames.add(r.name.trim());
+    for (const d of SNAP!.tables.debts ?? []) if (typeof d.name === "string") hisNames.add(d.name.trim());
+    for (const a of SNAP!.tables.accounts ?? []) if (typeof a.name === "string") hisNames.add(a.name.trim());
+    for (const m of SNAP!.tables.merchant_rules ?? []) {
+      if (typeof m.bill_name === "string") hisNames.add(m.bill_name.trim());
+    }
+
+    // SUBSTRING, not equality, and the real ledger is what taught this. A charge is
+    // described "Sam's Club" and the bill he typed is called "Sam's Club membership", so
+    // the bill's own name CONTAINS the description — and a reply carrying the bill name
+    // reads as carrying the description. The original test made the same allowance for
+    // "Affirm" as an exact match; the real data has the substring case as well.
+    const hisBlob = [...hisNames].join("\u0000");
+    const leaks: string[] = [];
+    for (const [tool, text] of Object.entries(replies)) {
+      if (SAYS_DESCRIPTION.has(tool)) continue;
+      for (const d of descriptions) {
+        if (hisBlob.includes(d)) continue;
+        if (text.includes(d)) leaks.push(tool);
+      }
+    }
+    expect(leaks, `merchant names reached: ${[...new Set(leaks)].join(", ")}`).toEqual([]);
+
+    // And the positive half, so this is not a test that would pass if the two tools
+    // silently stopped working: at least one real merchant name DOES come back from the
+    // search, because that is what he asked for.
+    const search = replies["finance.search_transactions"];
+    const said = [...descriptions].some((d) => search.includes(d));
+    expect(said, "finance.search_transactions said no merchant name at all").toBe(true);
   });
 
   it("sends no newline, no URL and no control character on real data", async () => {

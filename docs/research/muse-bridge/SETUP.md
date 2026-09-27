@@ -90,6 +90,14 @@ Five things have to be true already. None of them are code you write now.
    select column_name from information_schema.columns
     where table_name = 'reminders' and column_name = 'canceled_at';
    ```
+
+   **And then `schema_v38_muse_undo.sql`.** The change log, and `restore_money_event`.
+   **Every write records what it replaced in `muse_undo` before it changes anything, so
+   without that table every write fails** — which is the right direction to fail in: a
+   change nobody could put back would not be recorded as one.
+
+   All three are safe to re-run.
+
 5. **The doors' code is on `main`.** `supabase/functions/muse-read/`,
    `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/` and the
    shared modules both doors import, `supabase/functions/_shared/muse/`.

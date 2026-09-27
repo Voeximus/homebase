@@ -55,7 +55,19 @@ export type Landing = "answer" | "direct" | "queued";
 /** One argument, as the read door declares it. */
 export interface CatalogueArg {
   name: string;
-  type: "string" | "integer";
+  /**
+   * JSON Schema's own type names, passed straight into the served document.
+   *
+   * It is declared rather than guessed. openapi.ts used to read
+   * `name === "days" ? "integer" : "string"`, which was right about the one integer
+   * that existed and would have described the next one as a string.
+   *
+   * Phase 2 added the last two. `number` is a dollar figure in a search filter.
+   * `boolean` is a three-valued filter, and that is the one worth naming: absent is
+   * not the same instruction as false — `still_processing: false` means "only charges
+   * the bank HAS posted", and leaving it out means "do not filter on that at all".
+   */
+  type: "string" | "integer" | "number" | "boolean";
   required: boolean;
   description: string;
 }
@@ -95,7 +107,12 @@ export interface WriteToolShape {
  * write door, and in a markdown heading in API.md — and the test that compares those
  * three matches on the exact string.
  */
-const NAME = /^(finance|health|schedule)\.[a-z][a-z0-9_]*$/;
+// Phase 2 added two areas, and neither is a household subject the way the first three
+// are — which is the point of listing them rather than allowing any word. `system` is
+// the door talking about ITSELF (what it changed, and putting a change back), and
+// `memory` is what the assistant has been told to remember. A tool that belongs to
+// neither a subject nor one of those two is almost certainly misnamed.
+const NAME = /^(finance|health|schedule|system|memory)\.[a-z][a-z0-9_]*$/;
 const FIELD = /^[a-z][a-z0-9_]*$/;
 
 export function readEntries(tools: readonly ReadToolShape[]): CatalogueEntry[] {

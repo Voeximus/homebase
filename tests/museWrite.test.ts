@@ -22,6 +22,11 @@ import { REPEAT_LIMITS } from "../supabase/functions/_shared/muse/reminders.ts";
 import { callerOf, MIN_SECRET_LENGTH } from "../supabase/functions/_shared/muse/auth.ts";
 import { MAX_BODY_BYTES } from "../supabase/functions/_shared/muse/body.ts";
 import { REMIND_PER_DAY, TOOL_BY_NAME, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
+import { FINANCE_WRITE_TOOLS } from "../supabase/functions/muse-write/toolsFinance.ts";
+import { FinanceFake } from "./museFinanceFake.ts";
+// The READ door's registry, for the one claim that spans both: a write refusal that
+// tells the caller where to get an id is only true if that read tool exists.
+import { TOOLS as READ_TOOLS } from "../supabase/functions/_shared/muse/tools.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
 import type {
   CallRecord,
@@ -83,7 +88,12 @@ interface MealDoc {
   updatedAt: string;
 }
 
-class Fake implements Db {
+// Phase 2's finance half comes from tests/museFinanceFake.ts, and it is EXTENDED
+// rather than copied so both test files drive one in-memory ledger — the same reason
+// the two doors share one az.ts. The `ledger` field below stays this file's own: the
+// assertions that read it are proving that a PHASE 1 tool touches no money row, and
+// that is still true.
+class Fake extends FinanceFake implements Db {
   audit: AuditRow[] = [];
   calls = new Map<string, number>();
   /** The `at` every audit row this fake writes is stamped with. Tests move it back
@@ -108,6 +118,15 @@ class Fake implements Db {
   private id(prefix: string) {
     this.seq += 1;
     return `${prefix}-${String(this.seq).padStart(8, "0")}-0000-0000-0000-000000000000`.slice(0, 36);
+  }
+
+  constructor() {
+    super();
+    // The two rows Phase 1's tests seeded into `ledger` also belong in the shared
+    // ledger now, because the finance tools read from there. Same ids, so every
+    // existing assertion still names the same charge and the same bill.
+    this.tables.transactions.push({ ...this.ledger.transactions[0], description: "Parking", created_at: "2026-09-20T12:00:00Z" });
+    this.tables.recurring.push({ ...this.ledger.recurring[0], direction: "out", active: true, variable: false });
   }
 
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null> {
@@ -417,9 +436,11 @@ const EVERY_WRITE: {
     queued: false,
     did: (db) => db.reminders.filter((r) => r.dueAt === "2026-09-28T16:00:00.000Z").length,
   },
-  { tool: "finance.categorize_charge", args: { transaction_id: TXN_ID, category_id: "groceries" }, queued: true },
-  { tool: "finance.note_known_amount", args: { recurring_id: BILL_ID, amount: 123.45, month_key: "2026-09" }, queued: true },
-  { tool: "finance.add_transaction", args: { amount: 6, category_id: "transport", description: "parking" }, queued: true },
+  // THE THREE FINANCE TOOLS THAT WERE HERE MOVED TO tests/museFinance.test.ts, because
+  // they stopped being the same kind of thing: each one now records a before-state and
+  // hands back an undo token, and this loop asserts "queued" or "direct", which is a
+  // question they no longer answer. The catalogue check below compares the UNION of the
+  // two files' lists against the registry, so neither can fall behind it.
   { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: true },
 ];
 
@@ -442,7 +463,11 @@ function stocked(): Fake {
 
 describe("every tool in the catalogue, not just the first one", () => {
   it("names all of them, so this list cannot fall behind tools.ts", () => {
-    expect(EVERY_WRITE.map((w) => w.tool).sort()).toEqual([...TOOL_NAMES].sort());
+    // Both halves, against the registry. A tool added to Phase 1's file and to neither
+    // list fails here; a tool added to Phase 2's registry and not driven by
+    // tests/museFinance.test.ts fails that file's own catalogue check.
+    const covered = [...EVERY_WRITE.map((w) => w.tool), ...Object.keys(FINANCE_WRITE_TOOLS)];
+    expect(covered.sort()).toEqual([...TOOL_NAMES].sort());
   });
 
   for (const { tool, args, did } of EVERY_WRITE) {
@@ -530,13 +555,24 @@ describe("the caps hold", () => {
 
 // ── the queued path ──────────────────────────────────────────────────────────
 
+// PHASE 1 HAD FOUR QUEUED TOOLS. THREE OF THEM ARE GONE, and the tests that proved
+// they changed nothing went with them — because the reason they changed nothing was
+// that nothing in the app ever read the queue. Searching src/ for muse_pending finds no
+// hits, so a queued row sat there until cron-reminders marked it expired a day later.
+// They are direct writes with an undo now, and tests/museFinance.test.ts proves the
+// thing that actually matters about them: the before-state is recorded, the change
+// lands, and system.undo puts it back byte for byte.
+//
+// health.log_meal is still queued, so the machinery is still here and still tested. The
+// queued path was worth keeping for exactly one case: free-form food has no
+// before-state worth restoring, only a meal to take back out.
 describe("a queued write asks and changes nothing", () => {
-  it("categorize_charge writes one waiting row, pushes, and leaves the ledger identical", async () => {
+  it("log_meal writes one waiting row, pushes, and leaves the ledger identical", async () => {
     const db = new Fake();
     const before = JSON.stringify(db.ledger);
 
     const r = await handleWrite(
-      post("finance.categorize_charge", { transaction_id: TXN_ID, category_id: "groceries" }),
+      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
       deps(db),
     );
 
@@ -544,7 +580,7 @@ describe("a queued write asks and changes nothing", () => {
     expect(r.body.result).toMatchObject({ queued: true });
     expect(JSON.stringify(db.ledger)).toBe(before);
     expect(db.pending).toHaveLength(1);
-    expect(db.pending[0].tool).toBe("finance.categorize_charge");
+    expect(db.pending[0].tool).toBe("health.log_meal");
     expect(db.pending[0].person).toBe("gino");
     expect(db.pushes).toHaveLength(1);
     expect(db.pushes[0].owner).toBe("Gino");
@@ -553,43 +589,30 @@ describe("a queued write asks and changes nothing", () => {
     // does not exist.
     expect(db.pushes[0].title).not.toMatch(/\btap\b/i);
     expect(String(r.body.message)).toMatch(/no screen for these yet/i);
+    // A queued write writes NOTHING, including no undo row: there is nothing to undo
+    // until he taps it.
+    expect(db.changes).toHaveLength(0);
+    expect(db.mealDays.size).toBe(0);
   });
 
-  it("names the bill in a note_known_amount, and still touches nothing", async () => {
-    const db = new Fake();
-    const before = JSON.stringify(db.ledger);
-    const r = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 101.24, month_key: "2026-09" }),
-      deps(db),
-    );
-    expect(r.status).toBe(200);
-    expect(db.pending[0].summary).toBe("Record Electric for 2026-09 as $101.24.");
-    expect(JSON.stringify(db.ledger)).toBe(before);
-    expect(db.ledger.recurring[0].known_amount).toBeNull();
-  });
-
-  it("refuses a charge id that is not in the ledger", async () => {
-    const db = new Fake();
-    const r = await handleWrite(
-      post("finance.categorize_charge", { transaction_id: "00000000-0000-0000-0000-000000000000", category_id: "dining" }),
-      deps(db),
-    );
-    expect(r.status).toBe(404);
-    expect(db.pending).toHaveLength(0);
-  });
-
-  it("refuses an added charge that tries to settle a bill", async () => {
+  it("still refuses an added charge that tries to settle a bill, now that adding is direct", async () => {
+    // The per-tool field list is what refuses it, and the sentence is LOADED_FIELDS'.
+    // This is the guard that matters most in the whole door: a charge that can point at
+    // a bill settles a bill cycle on the way in, which is how a $6 parking charge
+    // marked a $1,732 rent paid. Making the write DIRECT did not widen it.
     const db = new Fake();
     const r = await handleWrite(
       post("finance.add_transaction", {
-        date: AZ_TODAY, amount: 6, category_id: "transport",
+        date: AZ_TODAY, amount: 6, category_id: "transport", description: "parking",
         applies_to: { kind: "bill", recurringId: BILL_ID, monthKey: "2026-09", day: 1 },
       }),
       deps(db),
     );
     expect(r.status).toBe(400);
     expect(String(r.body.message)).toContain("settle a bill");
-    expect(db.pending).toHaveLength(0);
+    // Only the seeded charge. Nothing was added and nothing was logged as a change.
+    expect(db.tables.transactions).toHaveLength(1);
+    expect(db.changes).toHaveLength(0);
   });
 });
 
@@ -1131,30 +1154,40 @@ describe("the body cap is bytes, and it is checked before the body is read", () 
 
 // ── the sentences that were not true ──────────────────────────────────────────
 describe("a refusal says where the thing it needs actually comes from", () => {
-  it("does not tell the caller the read door hands out charge ids", async () => {
-    // It does not. search_transactions is forbidden, and worth_a_look strips
-    // `evidence`, `fix` and `key` — the only three places a charge id lives. An
-    // assistant told otherwise loops on reads that contain no ids, or invents a uuid.
+  it("points at a read tool that really does hand out an id", async () => {
+    // THIS TEST WAS THE OPPOSITE ASSERTION IN PHASE 1, and the reversal is the whole
+    // point of the phase rather than a slip. The refusal used to say "which the read
+    // door gives you", that was a LIE — search_transactions was forbidden and
+    // worth_a_look strips `evidence`, `fix` and `key`, the only three places a charge id
+    // lived — and an assistant believing it looped on reads that contain no ids, or
+    // invented a uuid. So the sentence was taken out and a test held it out.
+    //
+    // He has since made the read door hand out ids deliberately. The sentence is true
+    // now, so the guard inverts: it says the words AND checks that the door being
+    // pointed at actually has a tool that returns one. A sentence naming a source is
+    // only as good as the source existing, which is the half that was missing before.
     const db = new Fake();
     const r = await handleWrite(
       post("finance.categorize_charge", { transaction_id: "not-a-uuid", category_id: "groceries" }),
       deps(db),
     );
     expect(r.status).toBe(400);
-    const say = String(r.body.message);
-    expect(say).not.toMatch(/the read door gives you/i);
-    expect(say).toMatch(/nothing on the read door hands one out/i);
-    expect(say).toMatch(/in the app/i);
+    expect(String(r.body.message)).toMatch(/the read door gives you/i);
+    const readNames = READ_TOOLS.map((t) => t.name);
+    expect(readNames).toContain("finance.transaction");
+    expect(readNames).toContain("finance.search_transactions");
   });
 
-  it("names the one place a bill id can be had", async () => {
+  it("names where a bill id comes from", async () => {
+    // finance.note_known_amount was the tool here. It became finance.set_bill_amount,
+    // which decides the column from the ROW rather than from the caller.
     const db = new Fake();
     const r = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: "nope", amount: 12 }),
+      post("finance.set_bill_amount", { bill_id: "nope", amount: 12 }),
       deps(db),
     );
     expect(r.status).toBe(400);
-    expect(String(r.body.message)).toMatch(/worth_a_look/);
+    expect(String(r.body.message)).toMatch(/read door/i);
   });
 });
 
@@ -1542,6 +1575,12 @@ describe("a reminder's time and words can be changed", () => {
 
 describe("the household does not do the same write twice by accident", () => {
   /** Her call, `minutes` ago, so his lands inside or outside the window. */
+  // DRIVEN THROUGH health.log_meal, which is the one QUEUED write left. That matters
+  // for the assertions rather than being incidental: a queued call's whole visible
+  // effect is one row in `pending`, so "it did NOT do it" can be counted instead of
+  // inferred. These tests used finance.note_known_amount until phase 2 turned it into
+  // finance.set_bill_amount — a direct write, where a second call would move a real
+  // figure and the count would no longer be the thing under test.
   async function herCall(db: Fake, tool: string, args: Record<string, unknown>, minutes: number) {
     db.stamp = new Date(AT.getTime() - minutes * 60_000).toISOString();
     const r = await handleWrite(post(tool, args, { secret: XINYAN_SECRET }), deps(db));
@@ -1551,12 +1590,12 @@ describe("the household does not do the same write twice by accident", () => {
 
   it("refuses his copy of a write she made four minutes ago, and names her", async () => {
     const db = new Fake();
-    const hers = await herCall(db, "finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }, 4);
+    const hers = await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 4);
     expect(hers.status, JSON.stringify(hers.body)).toBe(200);
     expect(db.pending).toHaveLength(1);
 
     const his = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }),
+      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
       deps(db),
     );
     expect(his.status).toBe(409);
@@ -1568,9 +1607,9 @@ describe("the household does not do the same write twice by accident", () => {
 
   it("does it anyway when the caller says so, and records that it was told to", async () => {
     const db = new Fake();
-    await herCall(db, "finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }, 4);
+    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 4);
     const his = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45, do_it_anyway: true }),
+      post("health.log_meal", { ...{ items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, do_it_anyway: true }),
       deps(db),
     );
     expect(his.status, JSON.stringify(his.body)).toBe(200);
@@ -1586,9 +1625,9 @@ describe("the household does not do the same write twice by accident", () => {
 
   it("lets the refused call through on the SAME key once the flag is added", async () => {
     const db = new Fake();
-    await herCall(db, "finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }, 2);
+    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 2);
     const refused = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }, { key: "his-key-0001" }),
+      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, { key: "his-key-0001" }),
       deps(db),
     );
     expect(refused.status).toBe(409);
@@ -1597,8 +1636,8 @@ describe("the household does not do the same write twice by accident", () => {
     // the retry would come back "that key was used for a different request".
     const done = await handleWrite(
       post(
-        "finance.note_known_amount",
-        { recurring_id: BILL_ID, amount: 123.45, do_it_anyway: true },
+        "health.log_meal",
+        { ...{ items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, do_it_anyway: true },
         { key: "his-key-0001" },
       ),
       deps(db),
@@ -1609,20 +1648,20 @@ describe("the household does not do the same write twice by accident", () => {
 
   it("lets the same write through once the window has gone by", async () => {
     const db = new Fake();
-    await herCall(db, "finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }, DUPLICATE_WINDOW_MIN + 1);
+    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, DUPLICATE_WINDOW_MIN + 1);
     const his = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }),
+      post("health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }),
       deps(db),
     );
     expect(his.status, JSON.stringify(his.body)).toBe(200);
     expect(db.pending).toHaveLength(2);
   });
 
-  it("does not mistake a different amount for the same write", async () => {
+  it("does not mistake a different meal for the same write", async () => {
     const db = new Fake();
-    await herCall(db, "finance.note_known_amount", { recurring_id: BILL_ID, amount: 123.45 }, 3);
+    await herCall(db, "health.log_meal", { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, 3);
     const his = await handleWrite(
-      post("finance.note_known_amount", { recurring_id: BILL_ID, amount: 99.99 }),
+      post("health.log_meal", { items: [{ name: "Chicken", kcal: 99, p: 20, c: 0, f: 2 }] }),
       deps(db),
     );
     expect(his.status, JSON.stringify(his.body)).toBe(200);

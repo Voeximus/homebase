@@ -24,19 +24,29 @@ export function openapi(url: URL): Record<string, unknown> {
   // TODAY — it used to promise a tap in an app screen that does not exist — and one
   // copy of it is the only way the two doors cannot end up describing the same split
   // two different ways.
+  //
+  // Phase 2's "and can be undone" is in that shared sentence too, for the same
+  // reason. This branch had written its own copy of the whole line here; a second
+  // spelling of what `direct` means is exactly the drift catalogue.ts exists to stop.
   const lines = toolLines(CATALOGUE);
 
   return {
     openapi: "3.1.0",
     info: {
       title: "Homebase write door",
-      version: "1.0.0",
+      version: "2.0.0",
       description: [
         // Counted, never typed. This sentence said "seven" while there were nine, in
         // two branches at once, because the number lived in five hand-written places.
         `The ${numberWord(CATALOGUE.length)} things an assistant may change in Homebase.`,
         "",
         ...lines,
+        "",
+        "EVERY CHANGE CAN BE PUT BACK. A tool that changes something records what it replaced and returns an `undo` token in its result, and the sentence it says carries the token too. Call system.undo with that token — or with no token at all, for the last change — and it goes back the way it was. system.changes on the READ door lists what has been changed, with each one's token and whether it can still be undone.",
+        "",
+        "An undo REFUSES rather than overwriting. If anything has changed the same row since — he edited it in the app, or the bank feed did — the undo stops and says so, and nothing is written. Say that plainly rather than trying again.",
+        "",
+        "Before you write a category anywhere, ask the read door for finance.categories. A category id that is not on the app's own list is refused, because a made-up one files the charge under no budget line at all.",
         "",
         "Every call needs the household secret, in Authorization: Bearer or in X-Muse-Token — the door takes either, because nobody has published which one a phone-built connector sends. It also needs an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
         `At most ${WRITES_PER_HOUR} writes an hour, ${REMIND_PER_DAY} new reminders a day, and ${REMIND_OPEN_MAX} reminders waiting at once.`,
@@ -45,7 +55,11 @@ export function openapi(url: URL): Record<string, unknown> {
         "",
         "Reminders: schedule.list_reminders on the READ door is where the ids come from. What a repeat can be:",
         ...REPEAT_LIMITS.map((l) => `  - ${l}`),
-        "There is no tool for moving money, deleting anything, settling a bill, or changing a debt balance. Those are not switched off; they do not exist here.",
+        // Phase 1's sentence here said "no tool for deleting anything", which phase 2
+        // made false — it deletes a weigh-in, a meal, a set, a hand-entered charge.
+        // Replaced rather than edited, because the honest version is not "fewer
+        // deletes" but a named list of what stays impossible and why.
+        "WHAT DOES NOT EXIST HERE, and is absent rather than switched off: moving money; touching the bank connection (disconnecting one hard-deletes the accounts and their whole transaction history, and nothing can put real bank history back — that takes a code he types in the app); deleting a bill (it gets turned off instead, because a deleted bill leaves every charge that paid it pointing at nothing); and deleting a bank-fed charge (the bank re-delivers it, and real history is the one thing the app cannot rebuild).",
       ].join("\n"),
     },
     servers: [{ url: `${url.origin}${url.pathname.replace(/\/openapi\.json$/, "")}` }],

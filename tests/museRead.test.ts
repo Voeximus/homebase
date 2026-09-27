@@ -37,6 +37,7 @@ import { ABSENT, TOOLS } from "../supabase/functions/_shared/muse/tools";
 // doors, so a field name printed in it may belong to either.
 import { TOOLS as WRITE_TOOLS } from "../supabase/functions/muse-write/tools";
 import { UNIVERSAL_FIELDS as WRITE_UNIVERSAL_FIELDS } from "../supabase/functions/muse-write/handler";
+import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
 import { redactSuggestions } from "../supabase/functions/_shared/muse/worthALook";
 import {
   toAccount,
@@ -379,6 +380,20 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "health.last_lift", body: { exercise: "leg press" } },
   { tool: "health.next_workout", body: {} },
   { tool: "schedule.list_reminders", body: {} },
+  // Phase 2's finance parity. Every one of them goes through the same two sweeps: the
+  // same answer under UTC and under Arizona, and nothing a person typed getting out
+  // that should not.
+  { tool: "finance.categories", body: {} },
+  { tool: "finance.transaction", body: { id: "t1" } },
+  { tool: "finance.search_transactions", body: {} },
+  { tool: "finance.accounts", body: {} },
+  { tool: "finance.bills", body: {} },
+  { tool: "finance.bill_calendar", body: { month: "2026-09" } },
+  { tool: "finance.paid_bills", body: {} },
+  { tool: "finance.merchant_rules", body: {} },
+  { tool: "finance.bank_status", body: {} },
+  { tool: "finance.bank_pending", body: {} },
+  { tool: "system.changes", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -767,10 +782,22 @@ describe("Rule 4 — every string out is scrubbed", () => {
   it("no reply from any tool contains a descriptor, a URL, a newline or an injection line", async () => {
     for (const { tool, body } of EVERY_TOOL) {
       const text = await (await ask(tool, body)).text();
-      // The absolute one: a ledger description never leaves the door under any
-      // tool. Not shortened, not scrubbed — absent. Every description, every meal
-      // name and every workout note in the fixture carries this string.
-      expect(text, `${tool} leaked the descriptor`).not.toContain("CANARY");
+      // PHASE 2 SPLIT THIS PROMISE IN TWO, because he changed one half of it and not
+      // the other.
+      //
+      // The half that changed: a charge's cleaned merchant name may now leave the
+      // door, from the tools that DECLARE it in the door's own source
+      // (SAYS_DESCRIPTION). He made that trade deliberately — the app shows him those
+      // rows, and an assistant that cannot see a charge cannot answer "what was that
+      // $47 on Tuesday". Checking the list here rather than hard-coding tool names is
+      // what keeps it a list a reader can look at rather than a habit.
+      //
+      // The half that did not change, asserted on EVERY tool including those: no URL,
+      // no injection line, no newline. Those are not privacy — they are the path from
+      // "words in a memo line" to "his assistant fetched something".
+      if (!SAYS_DESCRIPTION.has(tool)) {
+        expect(text, `${tool} leaked the descriptor`).not.toContain("CANARY");
+      }
       expect(text, `${tool} leaked a URL`).not.toContain("http");
       expect(text, `${tool} leaked a URL`).not.toContain("canary.example.com");
       expect(text, `${tool} leaked an injection line`).not.toMatch(/ignore previous/i);
@@ -1038,20 +1065,32 @@ describe("what exists and what never will", () => {
     const body = await jsonOf(res);
     expect(body.error).toBe("unknown_tool");
     expect(body.tools).toEqual(TOOLS.map((t) => t.name));
-    expect((body.never as { name: string }[]).map((n) => n.name)).toContain("finance.search_transactions");
+    // What never will, in Phase 2's words: the raw bank descriptor.
+    // `finance.search_transactions` used to be on this list and is a tool now — he
+    // reversed that deliberately, and tools.ts keeps a note saying so, because a
+    // reversal that leaves no trace reads later as an oversight.
+    expect((body.never as { name: string }[]).map((n) => n.name).join(" ")).toContain("raw_description");
   });
 
   for (const name of [
-    "finance.search_transactions",
+    // WHAT CAME OFF THIS LIST AT THE MERGE, because a name that 404s here has to be a
+    // name that does not exist anywhere:
+    //   · finance.search_transactions — real as of this phase, by his decision;
+    //   · finance.forecast — real on main already, which the finance branch did not
+    //     know when it wrote this list.
+    // The payoff figure is the one an assistant reaches for next, and it is the single
+    // most tempting wrong number in this system, so it stays under all three spellings.
+    "finance.payoff",
+    "finance.payoff_date",
+    "finance.debt_free_date",
+    // No write verb reaches this door, whatever it is called. system.undo is on the
+    // WRITE door: undoing is a change.
     "health.log_weight",
     "finance.categorize_charge",
-    // The three money questions SHIPPED, so the names that must still 404 are the
-    // ones an assistant would reach for next: the payoff figure API.md calls the
-    // single most tempting wrong number in this system.
-    "finance.payoff",
-    "finance.debt_free_date",
+    "finance.add_transaction",
+    "system.undo",
   ]) {
-    it(`${name} is absent, not disabled`, async () => {
+    it(`${name} is absent from the read door, not disabled`, async () => {
       const res = await ask(name);
       expect(res.status).toBe(404);
     });
@@ -1074,6 +1113,12 @@ describe("what exists and what never will", () => {
     // `update`, `create` and `cancel` were not on the old list at all.
     for (const t of TOOLS) {
       const verb = t.name.split(".")[1]?.split("_")[0] ?? "";
+      // Phase 2's names were checked against this list rather than the list being
+      // loosened to fit them. The one that looked like a problem is finance.paid_bills,
+      // a READ of the hand-set paid/unpaid overrides: its verb token is `paid`, and
+      // `pay` is anchored, so it does not trip. Where the promise is actually
+      // enforceable is the type — a read tool is handed a loader and a date and has no
+      // write seam to reach for — and this is the cheap check on top of that.
       expect(verb, t.name).not.toMatch(
         /^(log|add|set|update|create|delete|remove|cancel|pay|send|notify|remind|categorize|move|apply|settle)$/,
       );
@@ -1114,7 +1159,7 @@ describe("what exists and what never will", () => {
     // present and undescribed.
     const paths = Object.keys(doc.paths as object).sort();
     expect(paths).toEqual(TOOLS.map((t) => `/${t.name}`).sort());
-    expect(String((doc.info as { description: string }).description)).toContain("search_transactions");
+    expect(String((doc.info as { description: string }).description)).toContain("raw_description");
   });
 
   it("does not hand its description to a stranger", async () => {
@@ -1765,8 +1810,10 @@ describe("API.md's field names exist", () => {
     };
     for (const { tool, body } of EVERY_TOOL) walk(await jsonOf(await ask(tool, body)));
     for (const t of TOOLS) for (const a of t.args ?? []) keys.add(a.name);
-    // Fields a reply only carries in a state this fixture is not in.
-    for (const k of ["count", "bill", "month", "a", "b", "as_of"]) keys.add(k);
+    // Fields a reply only carries in a state this fixture is not in. `state` and
+    // `token` are on a system.changes ROW, and this fixture has made no changes, so the
+    // list comes back empty and the keys never appear.
+    for (const k of ["count", "bill", "month", "a", "b", "as_of", "state", "token"]) keys.add(k);
 
     // API.md DOCUMENTS BOTH DOORS, so the write door's field names are printed in
     // the same backticks and have to count too. Until this was here, `reminder_id`
@@ -1793,6 +1840,11 @@ describe("API.md's field names exist", () => {
       "authorization", "x-muse-token", "get", "post", "api.md",
       // Values a field takes, not fields: `status` is "ok" or "fail".
       "ok", "fail",
+      // The same thing again, from phase 2. These read as fields because they are
+      // lower-case words in backticks, and every one of them is a VALUE or a table
+      // heading: the four states a change can be in, the two merchant-rule kinds that
+      // are not also field names, and the "what it means" column of that table.
+      "undoable", "undone", "abandoned", "pending", "skip", "other", "means",
     ]);
     const printed = new Set(
       [...md.matchAll(/`([a-z][a-z0-9_]*)`/g)]

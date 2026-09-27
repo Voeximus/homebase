@@ -84,6 +84,10 @@ import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
 import { describe, pendingFor } from "./reminders.ts";
 import { catalogueOf, readEntries, type CatalogueArg } from "./catalogue.ts";
+// The argument readers, extracted out of this file by phase 2 so both halves of the
+// read door refuse a bad date, a bad integer and a bad string the same way.
+import { BadArgs, dateArg, intArg, lastDayOf, textArg } from "./args.ts";
+import { FINANCE_TOOLS } from "./toolsFinance.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import type { Loader } from "./load.ts";
 import type { Person } from "./auth.ts";
@@ -118,17 +122,14 @@ export interface Tool {
    * The shape is CatalogueArg, in catalogue.ts, because openapi.ts now builds the
    * served schema off the catalogue rather than off this array — one definition of
    * "an argument" for the door, its description and the test that compares them.
+   *
+   * Phase 2 widened the declared types to "number" (a dollar figure in a search
+   * filter) and "boolean" (a three-valued filter, where absent is not the same
+   * instruction as false). That widening lives on CatalogueArg, so the served
+   * schema and the door agree about it by construction.
    */
   args?: CatalogueArg[];
   run(ctx: ToolContext): Promise<{ [k: string]: Json }>;
-}
-
-/** A caller sent something the tool cannot answer. A 400, not a 500. */
-export class BadArgs extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BadArgs";
-  }
 }
 
 // ── ARGS ──────────────────────────────────────────────────────────────────────
@@ -147,41 +148,12 @@ export class BadArgs extends Error {
 // Every tool declares the arguments it takes, and the handler refuses any key that
 // is not on that list — so a misspelled argument is an error rather than a silently
 // ignored instruction, and `person` is refused everywhere at once.
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-function dateArg(args: Record<string, unknown>, name: string): string {
-  const v = args[name];
-  if (typeof v !== "string" || !DATE.test(v)) {
-    throw new BadArgs(`${name} has to be a date like 2026-09-01.`);
-  }
-  // A well-shaped string that is not a real day ("2026-02-31") would compare as a
-  // string against real dates and quietly include or exclude a day. Checked
-  // arithmetically rather than by building a Date, because building one here would
-  // trip the door's own no-clocks guard for no reason.
-  const [y, m, d] = v.split("-").map(Number);
-  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  const last = m === 2 && leap ? 29 : DAYS_IN_MONTH[m - 1];
-  if (m < 1 || m > 12 || d < 1 || !last || d > last) throw new BadArgs(`${v} is not a real date.`);
-  return v;
-}
-
-function intArg(args: Record<string, unknown>, name: string, fallback: number, min: number, max: number): number {
-  const v = args[name];
-  if (v == null) return fallback;
-  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
-    throw new BadArgs(`${name} has to be a whole number between ${min} and ${max}.`);
-  }
-  return v;
-}
-
-function textArg(args: Record<string, unknown>, name: string, max = 64): string {
-  const v = args[name];
-  if (typeof v !== "string" || !v.trim()) throw new BadArgs(`${name} is missing.`);
-  if (v.length > max) throw new BadArgs(`${name} is too long.`);
-  return v.trim();
-}
+//
+// THE VALIDATORS MOVED TO ./args.ts in Phase 2, when a second tool file appeared.
+// They are re-exported here because handler.ts and the tests import BadArgs from
+// the catalogue, and because a second copy of a date validator is the drift this
+// bridge exists to stop, in miniature.
+export { BadArgs } from "./args.ts";
 
 // ── finance.audit ─────────────────────────────────────────────────────────────
 //
@@ -441,15 +413,6 @@ function monthWindow(args: Record<string, unknown>, today: string): { from: stri
   return { from, to };
 }
 
-/** The last day of "YYYY-MM", as "YYYY-MM-DD". Arithmetic on the month number, not
- *  a Date — building one here would trip the door's own no-clocks guard. */
-function lastDayOf(monthKey: string): string {
-  const [y, m] = monthKey.split("-").map(Number);
-  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  const last = m === 2 && leap ? 29 : DAYS_IN_MONTH[m - 1];
-  return `${monthKey}-${String(last).padStart(2, "0")}`;
-}
-
 /** Whole months from one "YYYY-MM" to another. */
 function monthsBetween(a: string, b: string): number {
   const [ay, am] = a.split("-").map(Number);
@@ -478,6 +441,10 @@ const financeSpendByCategory: Tool = {
     // `now` is used for ONE thing: deciding whether `to` is today, so "this month so
     // far" can be asked. It never becomes part of an answer, which is why this tool
     // still gives the same numbers at any hour in any timezone.
+    //
+    // monthWindow already refuses a window that starts after it ends, so the
+    // phase-2 branch's separate check here would have been the second spelling of
+    // one rule.
     const { from, to } = monthWindow(args, isoDate(now));
     const data = await load.appData();
     // The month-key form of this function is deliberately not exposed: it is this one
@@ -986,6 +953,9 @@ export const TOOLS: readonly Tool[] = [
   healthLastLift,
   healthNextWorkout,
   scheduleListReminders,
+  // Phase 2's finance parity, in its own file so the two phases can be read apart.
+  // Same Tool shape, same rules, same handler.
+  ...FINANCE_TOOLS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
@@ -1012,17 +982,54 @@ export const CATALOGUE = catalogueOf(readEntries(TOOLS));
  */
 export const ABSENT: readonly { name: string; why: string }[] = [
   {
-    name: "finance.search_transactions",
-    why: "Returning individual ledger rows turns a chat into a copy of the ledger. Forbidden, not disabled.",
+    name: "raw bank descriptors (transactions.raw_description)",
+    why:
+      "The only string in a charge written verbatim by whoever sent the money, cleaned nowhere in " +
+      "the app. Its one use is a disambiguation the app does in code, so nothing an assistant asks " +
+      "needs it. Forbidden, not disabled: no tool reads the column.",
+  },
+  {
+    name: "account and card numbers",
+    why: "No tool reads them. Four digits of a card is four digits of a card; accounts are named.",
   },
   {
     name: "a payoff date, a debt-free month or a card-clear month",
     why: "No tool returns one and none may be worked out from a balance and a rate. finance.forecast simulates a card being paid down and deliberately does not forward the month it clears: that figure comes off a spending dial's opening position, and reading it out as a payoff date would be the most tempting wrong number in this system wearing a projection's clothes.",
   },
-  { name: "anything that writes", why: "This is the read door. It has no write verb at all." },
-  { name: "anything that deletes", why: "No door has a delete verb." },
   {
-    name: "account numbers and bank descriptors",
-    why: "No tool reads them. A charge's description never leaves either door under any name.",
+    name: "disconnecting a bank",
+    why:
+      "It hard-deletes the accounts and their whole transaction history, and no undo can put real " +
+      "bank history back. That takes a code he types in the app, not a chat message.",
+  },
+  {
+    name: "asking about the other person",
+    why: "Each key answers about its own owner. A key that could ask about both makes losing one phone cost two people's data.",
+  },
+  {
+    name: "anything that writes",
+    why: "This is the read door. It has no write verb at all. The write door has the changes, and every one of them records what it replaced.",
   },
 ];
+
+/**
+ * WHAT USED TO BE ON THIS LIST, AND WHY IT IS NOT — kept, because a reversal that
+ * leaves no trace reads later as an oversight.
+ *
+ * `finance.search_transactions` and one charge by id were both forbidden in Phase 1,
+ * in these words: "Returning individual ledger rows turns a chat into a copy of the
+ * ledger. Forbidden, not disabled." That was a privacy judgement and it was HIS to
+ * make. He has made it the other way, deliberately: the app shows him these rows,
+ * and an assistant that cannot see a charge cannot answer "what was that $47 on
+ * Tuesday", which is most of what he would ask. The trade he did NOT make is the
+ * bank descriptor, which stays at the top of the list above.
+ *
+ * `finance.forecast` was written onto this list by the phase-2 finance branch, whose
+ * reason was sound when it was written — the function existed and the screen it came
+ * off did not, so a spoken number had nothing to be checked against. It came off
+ * again at the merge rather than by a decision: main had already shipped the tool,
+ * through the same fix that branch predicted (the assembly moved into
+ * src/lib/headline.ts first). A name cannot be both absent and real, and
+ * tests/museCatalogue.test.ts is what says so.
+ */
+
