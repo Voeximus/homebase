@@ -92,6 +92,68 @@ everything you asked.
 
 ---
 
+## How old the answer is — the `fresh` line on every reply
+
+Every successful reply carries a `fresh` object. It is not about one tool; it is
+about the database all of them read.
+
+```json
+{
+  "tool": "finance.position",
+  "cash_available": 1193.77,
+  "fresh": {
+    "bank_last_sync_at": "2026-09-27T15:34:00+00:00",
+    "bank_synced_minutes_ago": 6,
+    "refresh_pending": false,
+    "needs_reauth": false,
+    "says": "Current as of the bank sync 6 minutes ago."
+  }
+}
+```
+
+**Read `says` and use it.** It is one sentence, written to be repeated as it
+stands, and it changes shape for the cases that matter:
+
+- a normal, current feed — it states the age and nothing more;
+- a feed that has stopped — it says the numbers are old and points at
+  `finance.bank_status`;
+- a connection that needs re-authorising in the app — it says that first, even
+  when another connection synced a moment ago, because a frozen connection is how
+  a stale balance hides behind a fresh-looking timestamp;
+- no bank connected at all — it says so, and nothing is going stale;
+- the age could not be read — it says the age is unknown. The figures themselves
+  are still whole; only the footnote gave up.
+
+Two things to actually do with it. **Say the age whenever the number is old** —
+`bank_synced_minutes_ago` past about an hour and a half is already phrased for you
+in `says`. And **never present a balance as current on the strength of having just
+called `finance.refresh_bank`** — see below for why.
+
+`refresh_pending` being true means somebody has asked for a pull and it has not
+landed. It is not a promise about the next few seconds.
+
+---
+
+## Asking for fresher numbers
+
+The bank feed is pulled on a schedule, roughly every fifteen minutes. That is what
+keeps these answers current, and it happens whether anybody asks or not.
+
+`finance.refresh_bank` — on the **write door** — asks for one now. Three things
+about it, and all three are in the sentence it hands back:
+
+1. **It is not instant, and the ledger has not moved when it answers.** It writes
+   the request down; a scheduled job carries it out, within about fifteen minutes,
+   and the bank itself may take a moment more.
+2. **So do not read a figure straight afterwards and call it new.** It will be the
+   same figure. Read it again later, and let the `fresh` line say when it changed.
+3. **There is a cooldown of ten minutes.** Inside it the call is refused with
+   `429` and a sentence saying how long is left. That is not a problem to route
+   around: the bank has nothing new that soon, and a second ask is a second call
+   to it, not fresher data.
+
+---
+
 ## The questions you can ask
 
 **You never send a person.** The door works out whether it is Gino or Xinyan asking

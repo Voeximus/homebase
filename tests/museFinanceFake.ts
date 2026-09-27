@@ -92,6 +92,17 @@ export class FinanceFake implements FinanceDb {
   /** Tokens handed out, in order, so a test can undo the first change by name. */
   tokens: string[] = [];
 
+  /**
+   * The bank connections, for the refresh tool. NOT in `tables` above, because that
+   * map is keyed by UndoTable — the six tables the undo fence allows — and
+   * bank_connections is deliberately not one of them: a refresh request is not a
+   * change anybody can want back.
+   */
+  connections: { id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[] = [];
+  /** Set to make bankSyncTimes throw the way PostgREST does on a database where
+   *  schema_v39 has not been run, so the tool's "not set up yet" path is real. */
+  noRefreshColumn = false;
+
   private seq = 0;
   newId(prefix = "aaaaaaaa"): string {
     this.seq += 1;
@@ -240,6 +251,24 @@ export class FinanceFake implements FinanceDb {
     return Promise.resolve(
       this.tables.transactions.filter((r) => (r.applies_to as Row | null)?.debtId === debtId).length,
     );
+  }
+
+  bankSyncTimes(): Promise<{ id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[]> {
+    if (this.noRefreshColumn) {
+      // PostgREST's own wording for an unknown column, because the tool branches on
+      // the column NAME appearing in the message. A prettier fake message here would
+      // make that branch pass on something the real database never says.
+      return Promise.reject(
+        new Error(`read bank sync times: column bank_connections.refresh_requested_at does not exist`),
+      );
+    }
+    return Promise.resolve(this.connections.map((c) => ({ ...c })));
+  }
+
+  requestBankRefresh(atISO: string): Promise<number> {
+    this.writes.push({ op: "requestBankRefresh", table: "bank_connections" });
+    for (const c of this.connections) c.refreshRequestedAt = atISO;
+    return Promise.resolve(this.connections.length);
   }
 
   // ── writes ────────────────────────────────────────────────────────────────

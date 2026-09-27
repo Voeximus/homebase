@@ -24,7 +24,7 @@ are what you reach for at a particular moment, and this says which moment.
 | Do this | In this document | Roughly |
 |---|---|---|
 | **1. Decide whether to go ahead at all.** Ask Xinyan, money and health separately, and get the answer in writing. Turn Muse's training setting off. Check that a connector you build in Muse is still there tomorrow. | **Before you start**, below | An evening, mostly waiting on her |
-| **2. Turn the doors on.** Make the two keys, put them on the project, deploy, schedule the 15-minute job. | **Steps 1–4** of this file | About an hour |
+| **2. Turn the doors on.** Make the two keys, put them on the project, deploy, schedule the two 15-minute jobs — the reminders one, and the bank pull that keeps every number current once nobody is opening the app. | **Steps 1–4b** of this file | About an hour |
 | **3. Teach Muse.** Hand it the key, then paste PASTE 1. | **Step 5** here, then `MUSE-SKILL.md` | 20 minutes |
 | **4. Prove it works.** Nine checks, on your phone. Checks 1–6 are the read door, 7–9 are the write door and the reminder. | **Step 6** of this file | Spread over a day, because check 3 needs both sides of midnight |
 | **5. Tell Muse about you.** Paste PASTE 2 — the schedule, the money floor, the meal plan. | `MUSE-SKILL.md`, at the bottom | 5 minutes |
@@ -99,7 +99,8 @@ Five things have to be true already. None of them are code you write now.
    All three are safe to re-run.
 
 5. **The doors' code is on `main`.** `supabase/functions/muse-read/`,
-   `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/` and the
+   `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/`,
+   `supabase/functions/cron-bank-sync/` and the
    shared modules both doors import, `supabase/functions/_shared/muse/`.
 
 ---
@@ -170,12 +171,14 @@ npx supabase functions deploy muse-write --project-ref ganzefaciiyibselizqi
 npx supabase functions deploy cron-reminders --project-ref ganzefaciiyibselizqi
 ```
 
+`cron-bank-sync` (Step 4b) is the fourth, and it can wait until you do that step.
+
 **One thing to fix once:** the deploy workflow lists every function by name
-(`.github/workflows/deploy.yml`, the `for fn in ...` line). None of these three are
+(`.github/workflows/deploy.yml`, the `for fn in ...` line). None of these four are
 in that list, so a later edit to a door will look shipped and will not be running.
-Add `muse-read`, `muse-write` and `cron-reminders` to that line, or deploy by hand
-every time you change one. This is the same trap that let `cron-notify` drift two
-schema versions behind the app.
+Add `muse-read`, `muse-write`, `cron-reminders` and `cron-bank-sync` to that line, or
+deploy by hand every time you change one. This is the same trap that let
+`cron-notify` drift two schema versions behind the app.
 
 ## Step 4 — schedule the 15-minute job
 
@@ -219,6 +222,62 @@ select jobname, schedule, active from cron.job where jobname = 'homebase-reminde
 One row, `*/15 * * * *`, active. If the token is wrong the job runs and the function
 answers 403 every 15 minutes and says nothing to you — which is why check 9 below is
 a reminder you actually wait for on a locked phone.
+
+## Step 4b — schedule the bank pull
+
+**Skip this and every number the doors give you slowly stops being true.** Not
+wrong — *old*, which is worse, because it still sounds current.
+
+Until now the bank feed was only ever pulled by a screen: `App.tsx` on launch, and
+pull-to-refresh on the finance tab. Those were the only two callers in the whole
+app. Once you stop opening the app, nothing calls them, and the ledger sits still
+while the doors go on answering off it.
+
+Three things, in this order.
+
+**1. Run the migration.** In the SQL editor, paste
+`supabase/schema_v39_bank_refresh.sql`. It adds one column,
+`bank_connections.refresh_requested_at`, and an index. Safe to re-run.
+
+**2. Deploy the function.**
+
+```powershell
+npx supabase functions deploy cron-bank-sync --project-ref ganzefaciiyibselizqi
+```
+
+It is a thin thing: it checks `?token=CRON_TOKEN`, decides whether anybody asked
+for a forced refresh, and calls the `plaid` function's existing `sync`. It exists
+rather than having pg_cron call `plaid` directly for one reason — `plaid` needs a
+real caller, so a cron job pointed at it would have to carry the **service-role
+key** in a row of `cron.job`, and that key reaches `disconnect`, which hard-deletes
+bank history. This way the database holds only `CRON_TOKEN`.
+
+**3. Schedule it.** Same editor, same token as Step 4:
+
+```sql
+do $g$ begin
+  if exists (select 1 from cron.job where jobname='homebase-bank-sync')
+    then perform cron.unschedule('homebase-bank-sync'); end if;
+end $g$;
+
+select cron.schedule('homebase-bank-sync', '*/15 * * * *',
+  $j$ select net.http_post(
+        url := 'https://ganzefaciiyibselizqi.supabase.co/functions/v1/cron-bank-sync?token=PASTE_CRON_TOKEN_HERE',
+        headers := '{"Content-Type":"application/json"}'::jsonb,
+        body := '{}'::jsonb) $j$);
+```
+
+Confirm, then wait twenty minutes and check the feed moved:
+
+```sql
+select jobname, schedule, active from cron.job where jobname = 'homebase-bank-sync';
+select institution, status, last_sync_at from public.bank_connections;
+```
+
+`last_sync_at` should be inside the last fifteen minutes. **You do not have to take
+that on trust from the database** — ask Muse anything about money and read the
+`fresh` line on the answer. Every reply now carries one, and it says how old the
+feed is in a sentence. If it says hours, one of these three steps did not take.
 
 ## Step 5 — give Muse the key
 

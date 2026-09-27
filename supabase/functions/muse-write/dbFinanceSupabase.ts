@@ -367,6 +367,45 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       return count;
     },
 
+    async bankSyncTimes() {
+      // `select("*")` is not used here on purpose — this table holds the item_id,
+      // the vault secret's NAME and the sync cursor, and none of them has any
+      // business being read by a door. Two columns and an id.
+      //
+      // `refresh_requested_at` is asked for by name, so on a database where
+      // schema_v39 has not been run PostgREST answers 42703 (undefined column)
+      // rather than quietly returning rows without it. That is the RIGHT failure:
+      // the tool turns it into "the database has not been set up for this yet"
+      // instead of silently accepting a refresh request it cannot store.
+      const { data, error } = await admin
+        .from("bank_connections")
+        .select("id, last_sync_at, refresh_requested_at");
+      must(error, "read bank sync times");
+      return (data ?? []).map((r) => ({
+        id: String(r.id),
+        lastSyncAt: typeof r.last_sync_at === "string" ? r.last_sync_at : null,
+        refreshRequestedAt: typeof r.refresh_requested_at === "string" ? r.refresh_requested_at : null,
+      }));
+    },
+
+    async requestBankRefresh(atISO) {
+      // EVERY connection, deliberately. The tool takes no arguments: "check the bank"
+      // is one instruction, and a per-connection version would need the door to hand
+      // out connection ids and then be told which one — a choice nobody asking the
+      // question has any way to make.
+      //
+      // `.not("id", "is", null)` is PostgREST's way of saying "all rows": an update
+      // with no filter is refused by the client, which is a good default and the
+      // wrong one here.
+      const { data, error } = await admin
+        .from("bank_connections")
+        .update({ refresh_requested_at: atISO })
+        .not("id", "is", null)
+        .select("id");
+      must(error, "request bank refresh");
+      return (data ?? []).length;
+    },
+
     // ── writes ──────────────────────────────────────────────────────────────
     async setColumns(table, id, patch, expect) {
       const t = fence(table, Object.keys(patch), false);

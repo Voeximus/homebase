@@ -178,6 +178,40 @@ export interface FinanceDb {
   /** How many charges point at this debt. Only ever compared against zero. */
   countDebtPayments(debtId: string): Promise<number>;
 
+  /**
+   * Every bank connection's two time columns, and NOTHING else.
+   *
+   * Read narrow, like every other read in this file: not the Plaid item_id, not the
+   * vault secret's name, not the cursor, not the bank's error text. The refresh tool
+   * needs to know when a pull was last asked for and when one last landed, and that
+   * is the whole of it.
+   *
+   * `refresh_requested_at` may be MISSING on a database where
+   * supabase/schema_v39_bank_refresh.sql has not been run. The implementation reads
+   * it as null in that case rather than failing, so the door still answers — see the
+   * tool's own refusal for what it says when the column is not there to write.
+   */
+  bankSyncTimes(): Promise<{ id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[]>;
+
+  /**
+   * Stamp "a pull was asked for" on every bank connection, and return how many rows
+   * it touched.
+   *
+   * WHY IT IS NOT A `setColumns` CALL. Every other write in this file goes through
+   * the undo-fenced compare-and-set, because every other write replaces a value
+   * somebody could want back. This one replaces nothing: it is a request for work,
+   * on a column no screen shows and no figure is computed from, and there is no
+   * before-state worth keeping. The fence exists to stop a tool writing a column
+   * outside the allowlist — so this stays OUTSIDE the fence and outside the
+   * allowlist, as its own named verb that can write exactly one column on exactly
+   * one table and nothing else.
+   *
+   * It is also why nothing here records an undo. "Un-ask the bank" is not a thing:
+   * the pull either happened or did not, and handing back a token that looked like
+   * it could reverse it would be the door promising something it cannot do.
+   */
+  requestBankRefresh(atISO: string): Promise<number>;
+
   // ── writes, fenced by the undo allowlist ──────────────────────────────────
   /**
    * UPDATE one row's allowlisted columns, but only while it still holds `expect`.

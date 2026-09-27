@@ -27,13 +27,14 @@
 // what an assistant may never do, and it is enforced by this file importing no
 // client and no URL.
 
-import { azDateISO, nowAZ } from "./az.ts";
+import { azDateISO, clockNow } from "./az.ts";
 import { callerOf, type Person, type ReadSecrets } from "./auth.ts";
 import type { AuditSink, Outcome } from "./audit.ts";
 import { BodyTooLarge, MAX_BODY_BYTES, readCappedText } from "./body.ts";
 import { LedgerUnreadable } from "./paging.ts";
-import { createLoader } from "./load.ts";
+import { createLoader, type Loader } from "./load.ts";
 import type { Db } from "./paging.ts";
+import { type Freshness, freshnessOf, freshnessUnknown } from "./freshness.ts";
 import { BadArgs, TOOL_BY_NAME, TOOLS, ABSENT, type Json } from "./tools.ts";
 import { scrubName } from "./scrub.ts";
 import { openApiDocument } from "./openapi.ts";
@@ -375,7 +376,16 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     throw e;
   }
 
-  const now = nowAZ(deps.at);
+  // BOTH halves of the clock, from ONE reading — which is what clockNow exists for.
+  //
+  // `az` is the Arizona calendar every tool answers about, and it is the only thing
+  // that used to be taken here. `instant` is the real moment on the wire, and the
+  // freshness stamp below cannot use the other one: nowAZ returns a Date whose LOCAL
+  // fields are Arizona's, so its epoch value is off by the runtime's own offset —
+  // seven hours, on the machine these doors actually run on. Subtracting a stored
+  // timestamptz from it would report every sync as seven hours fresher than it is,
+  // which is the one direction this stamp must never be wrong in.
+  const { at: instant, az: now } = clockNow(deps.at);
 
   // ── the cap ────────────────────────────────────────────────────────────────
   // Counted here rather than at the top of the request, so a malformed call cannot
@@ -410,8 +420,18 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   }
 
   try {
-    const result = await tool.run({ person, now, args, load: createLoader(deps.db) });
-    return finish({ tool: tool.name, ...result }, 200, "ok");
+    // ONE loader per request, held in a name rather than built inline, so the
+    // freshness stamp below reads `bank_connections` through the SAME memoised
+    // loader the tool just used. finance.bank_status therefore still costs one read
+    // of that table, not two.
+    const load = createLoader(deps.db);
+    const result = await tool.run({ person, now, args, load });
+    // THE STAMP GOES ON EVERY ANSWER, and this is the only place it is applied —
+    // there is exactly one success path out of this door, so there is exactly one
+    // place a reply can leave without it. `fresh` is spread LAST on purpose: it is
+    // the door's statement about the answer, and a tool must not be able to write
+    // its own.
+    return finish({ tool: tool.name, ...result, fresh: await stampOf(load, instant) }, 200, "ok");
   } catch (e) {
     if (e instanceof BadArgs) {
       return finish({ error: "bad_request", says: e.message }, 400, "denied");
@@ -439,6 +459,34 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
       500,
       "error",
     );
+  }
+}
+
+/**
+ * How old the answer is, as one line on the reply.
+ *
+ * WHY IT IS HERE AND NOT A TOOL. `finance.bank_status` already answers "is this
+ * current" — but only when somebody thinks to ask, and its own note says the quiet
+ * part: a connection sitting in `needs_reauth` "makes those numbers stale without
+ * making them look stale". Once Muse is the interface there is no screen beside the
+ * number to notice, and nobody opens the app, so nothing calls the bank sync at all
+ * (see supabase/schema_v39_bank_refresh.sql for that whole hole and the job that
+ * closes it). So the age stops being a question you have to know to ask.
+ *
+ * IT DOES NOT FAIL CLOSED, and that is the one deliberate exception in this file.
+ * Rule 5 still governs every FIGURE: the numbers in `result` came through the paged
+ * loader, and if that could not be read whole the tool has already refused long
+ * before this line. This is metadata ABOUT that answer. Refusing a correct, complete
+ * answer because a three-row table of sync times would not load would be trading the
+ * thing he asked for to protect the footnote — so the footnote says it does not know,
+ * which is both true and the safer thing for an assistant to read.
+ */
+async function stampOf(load: Loader, instant: Date): Promise<Freshness> {
+  try {
+    return freshnessOf(await load.bankConnections(), instant);
+  } catch (e) {
+    console.error("muse-read: freshness unreadable", String((e as Error)?.message ?? e));
+    return freshnessUnknown();
   }
 }
 

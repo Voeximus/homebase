@@ -9,16 +9,24 @@
 #   plaid-webhook    called by Plaid's servers
 #   cron-notify      called by pg_cron via net.http_post
 #   cron-reminders   called by pg_cron via net.http_post
+#   cron-bank-sync   called by pg_cron via net.http_post
 #   muse-read        called by an assistant's cloud VM, which has no session
 #   muse-write       called by the same VM, through a separate door
 #
-# Of the first four, cron-reminders compares its token in constant time, through the
-# same one-line helper both doors use (_shared/muse/safeEqual.ts). announce-update,
-# plaid-webhook and cron-notify still compare with `!==`, which returns as soon as two
-# characters differ — pre-existing, small over a network, and worth one line each the
-# next time one of those files is opened.
+# Of the first five, cron-reminders and cron-bank-sync compare their token in constant
+# time, through the same one-line helper both doors use (_shared/muse/safeEqual.ts).
+# announce-update, plaid-webhook and cron-notify still compare with `!==`, which returns
+# as soon as two characters differ — pre-existing, small over a network, and worth one
+# line each the next time one of those files is opened.
 #
-# The first four take their secret from the query string. The two Muse doors take a
+# cron-bank-sync is the one that calls ANOTHER function: it posts to `plaid` with the
+# service-role key the platform injects into its own environment. That is the whole
+# reason it exists rather than pg_cron calling `plaid` directly — a cron job pointed at
+# `plaid` would have to carry the service-role key in a row of the `cron.job` table, and
+# that key reaches `disconnect`, which hard-deletes bank history. The weak secret goes
+# in the database; the strong one stays in the function's environment.
+#
+# The first five take their secret from the query string. The two Muse doors take a
 # per-person secret from a header instead, because a secret in a URL ends up in
 # logs — and because the secret is WHO is calling, not just a doorbell: it decides
 # which person is asking and which person every row is stamped with.
@@ -54,6 +62,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cron-reminders]
+verify_jwt = false
+
+[functions.cron-bank-sync]
 verify_jwt = false
 
 [functions.muse-read]
