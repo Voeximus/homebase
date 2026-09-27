@@ -1,3 +1,10 @@
+// GENERATED — DO NOT EDIT. Source: src/lib/sessionOps.ts
+// Run: node scripts/gen-muse-shared.mjs   (checked by npm run build)
+//
+// Hand-editing this file is the drift the Muse doors exist to prevent: the
+// door would answer with one number while every screen in the app showed
+// another, in a chat, with no screen beside it to notice. Change src/lib/sessionOps.ts
+// and re-run the generator.
 // ── What one tap does in the set logger ──────────────────────────────────────
 // Pure edits to a running session, so every rule the logger follows can be
 // tested without React: the faint suggested numbers ("ghosts"), the tick, the
@@ -17,8 +24,8 @@
 // with {...set, ...patch} and adds one by copying the last. A `done: false` it
 // carried along would keep every set logged there from ever counting.
 
-import { findExercise, isDone, isLogged, isWarmup, recentRecords } from "./trainingMath";
-import type { Exercise, ExerciseEntry, Person, SetEntry, Workout } from "./workoutLog";
+import { findExercise, isDone, isLogged, isWarmup, recentRecords } from "./trainingMath.ts";
+import type { Exercise, ExerciseEntry, Person, SetEntry, Workout } from "./workoutLog.ts";
 
 // ── how a set is logged for this exercise ───────────────────────────────────────
 export type LogMode = NonNullable<Exercise["mode"]>;

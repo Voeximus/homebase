@@ -25,13 +25,15 @@ export function openapi(url: URL): Record<string, unknown> {
       title: "Homebase write door",
       version: "1.0.0",
       description: [
-        "The seven things an assistant may change in Homebase.",
+        `The ${names.length} things an assistant may change in Homebase.`,
         "",
         ...lines,
         "",
         "Every call needs the household secret, in Authorization: Bearer or in X-Muse-Token — the door takes either, because nobody has published which one a phone-built connector sends. It also needs an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
         `At most ${WRITES_PER_HOUR} writes an hour, ${REMIND_PER_DAY} new reminders a day, and ${REMIND_OPEN_MAX} reminders waiting at once.`,
-        "There is no tool for moving money, deleting anything, settling a bill, or changing a debt balance. Those are not switched off; they do not exist here.",
+        "",
+        "EVERY CHANGE CAN BE PUT BACK. A successful reply carries an `undo` object with a token and a sentence saying what undoing would do. Read that sentence out; if he says undo, send the token back. Some undos say `only_until`, which names the thing that could overwrite the restore — say that too rather than promising it holds for ever. A reply whose `undo` is null could not capture a before-state, and says so.",
+        "There is no tool for disconnecting the bank. That wipes the accounts and their whole transaction history, no undo can restore it, and it takes a code he types rather than anything said here.",
       ].join("\n"),
     },
     servers: [{ url: `${url.origin}${url.pathname.replace(/\/openapi\.json$/, "")}` }],
@@ -77,6 +79,19 @@ export function openapi(url: URL): Record<string, unknown> {
                       repeated: { type: "boolean", description: "True when this key had already been used." },
                       message: { type: "string", description: "One plain sentence. Say this out loud." },
                       result: { type: "object" },
+                      undo: {
+                        type: ["object", "null"],
+                        description:
+                          "How to put this change back, or null when it could not be captured.",
+                        properties: {
+                          token: { type: "string", description: "Send this back to undo the change." },
+                          says: { type: "string", description: "What undoing would do. Say this out loud." },
+                          only_until: {
+                            type: "string",
+                            description: "What could overwrite the restore. Present only when something can.",
+                          },
+                        },
+                      },
                     },
                   },
                 },

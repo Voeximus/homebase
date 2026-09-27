@@ -36,7 +36,7 @@ import type {
 import { DEFAULT_CATEGORIES } from "./lib/seed.ts";
 import type { BodyWeight } from "./lib/weightLog.ts";
 import type { DayLog, SavedMeal } from "./lib/mealLog.ts";
-import type { MacroTarget } from "./lib/nutrition.ts";
+import type { Food, MacroTarget } from "./lib/nutrition.ts";
 import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { DbRow } from "./paging.ts";
 
@@ -168,6 +168,55 @@ export function toDayLog(r: DbRow): DayLog {
 
 export function toSavedMeal(r: DbRow): SavedMeal {
   return { id: str(r.id), name: str(r.name), items: arr<SavedMeal["items"][number]>(r.items) };
+}
+
+/** A row of the shared food library. `custom: true` is not read off the row — the
+ *  table IS the custom library, which is exactly what src/store/FinanceStore.tsx's
+ *  mapFood does. The table has no `unit` column, so a library food is gram-only
+ *  unless nutrition.ts's unitFor() infers a countable unit from its name. */
+export function toFood(r: DbRow): Food {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    role: str(r.role) as Food["role"],
+    kcal: num(r.kcal),
+    p: num(r.p),
+    c: num(r.c),
+    f: num(r.f),
+    serving: optNum(r.serving),
+    note: opt(r.note),
+    barcode: opt(r.barcode),
+    custom: true,
+  };
+}
+
+/** One row of his own reminder list (schema_v36_muse_bridge.sql §4).
+ *
+ *  Not an app type: `reminders` is the bridge's own table and nothing in `src/`
+ *  reads it yet, so there is no shared shape to mirror. Kept here anyway, beside
+ *  every other mapper, so "which columns leave the door" is one file to read. */
+export interface ReminderRow {
+  id: string;
+  person: string;
+  dueAt: string;
+  repeats: string;
+  message: string;
+  source: string;
+  sentAt: string | null;
+  lastSentAt: string | null;
+}
+
+export function toReminder(r: DbRow): ReminderRow {
+  return {
+    id: str(r.id),
+    person: str(r.person),
+    dueAt: str(r.due_at),
+    repeats: str(r.repeats),
+    message: str(r.message),
+    source: str(r.source),
+    sentAt: opt(r.sent_at) ?? null,
+    lastSentAt: opt(r.last_sent_at) ?? null,
+  };
 }
 
 export function toMacroTarget(r: DbRow): MacroTarget {

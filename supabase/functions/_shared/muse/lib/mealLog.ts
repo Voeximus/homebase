@@ -84,6 +84,108 @@ export interface DayLog {
   note?: string; // the rough "what did you eat" description for an estimated day
 }
 
+// ── building a logged portion ─────────────────────────────────────────────────
+//
+// THESE THREE FUNCTIONS USED TO BE INLINE IN src/views/MealBuilder.tsx, and they
+// moved here so the Muse write door can use them. That is not a refactor for
+// tidiness. The door's rule is that it does no arithmetic of its own — every
+// number it writes or speaks comes from a function the screens use too, because a
+// door with its own copy of a rule drifts from the screen and nobody notices in a
+// chat. `grams = qty × unit.grams` and "per-100g from a portion's totals" were
+// both rules that existed only inside a view file, so the door could not have had
+// them without copying them.
+//
+// The id is passed IN rather than generated here. rowId() reads the clock, and the
+// door is forbidden from reading one — it passes crypto.randomUUID(); the app
+// passes rowId(), exactly as before.
+
+/** How much of a food — either a gram weight, or a count of its natural unit. */
+export interface Amount {
+  grams: number;
+  qty?: number;
+  unit?: FoodUnit;
+}
+
+/** Grams is canonical. A counted amount resolves to qty × the weight of one. */
+export function gramsOf(a: Amount): number {
+  return a.qty != null && a.unit ? a.qty * a.unit.grams : a.grams;
+}
+
+/** A portion of a library food. The per-100g values are SNAPSHOTTED off the food,
+ *  which is why the log stays correct after that library food is edited. */
+export function itemFromFood(food: Food, a: Amount, id: string): LoggedItem {
+  return {
+    id,
+    foodId: food.id,
+    name: food.name,
+    role: food.role,
+    grams: gramsOf(a),
+    per100: { kcal: food.kcal, p: food.p, c: food.c, f: food.f },
+    qty: a.qty,
+    unit: a.unit,
+  };
+}
+
+/**
+ * A portion of something that is not in the library: its weight, and what that
+ * weight actually contained.
+ *
+ * Stored as per-100g because that is the only shape the log has, and because the
+ * gram figure is the source of truth for every macro in it — the app's own copy
+ * footer says so in those words (src/lib/mealText.ts). So the totals are divided
+ * back to 100 g here, ONCE, in the same file as contribution() that multiplies
+ * them out again, and the round trip is exact: contribution(itemFromTotals(x)) is
+ * x's macros.
+ *
+ * `grams` must be above zero. A zero-gram portion would make every macro infinite,
+ * and the caller has to decide what to do about that rather than be handed a NaN.
+ */
+export function itemFromTotals(
+  x: { name: string; role?: Food["role"]; grams: number; kcal: number; p: number; c: number; f: number },
+  id: string,
+): LoggedItem {
+  const k = 100 / x.grams;
+  return {
+    id,
+    // Not a library food, so there is no id to point at. Empty rather than a made-up
+    // one: a foodId that resolves to nothing would look like a deleted food.
+    foodId: "",
+    name: x.name,
+    role: x.role ?? "other",
+    grams: x.grams,
+    per100: { kcal: x.kcal * k, p: x.p * k, c: x.c * k, f: x.f * k },
+  };
+}
+
+/**
+ * The weight an UNWEIGHED portion is stored as. See itemFromServing.
+ *
+ * 100 is not a guess about the food; it is the only number that makes the round
+ * trip exact, because per-100g values scaled by 100 g give back themselves.
+ */
+export const SERVING_GRAMS = 100;
+
+/**
+ * A portion nobody weighed — what it contained, logged as ONE SERVING.
+ *
+ * Every portion in the log needs a weight, because macros are per-100g values
+ * scaled by grams. Somebody saying "a chicken breast, about 330 calories" knows the
+ * macros and not the weight, so the portion is stored as one 100 g serving whose
+ * per-100g values ARE its totals: contribution() gives back exactly the macros that
+ * went in, and the amount reads "1 serving" rather than a gram figure nobody
+ * measured. The macros are exact; the weight is explicitly a serving, not a claim.
+ */
+export function itemFromServing(
+  x: { name: string; role?: Food["role"]; kcal: number; p: number; c: number; f: number },
+  id: string,
+): LoggedItem {
+  return {
+    ...itemFromTotals({ ...x, grams: SERVING_GRAMS }, id),
+    qty: 1,
+    unit: { name: "serving", grams: SERVING_GRAMS },
+  };
+}
+
 /** What this portion actually contributes (per-100g snapshot scaled by grams). */
 export function contribution(item: LoggedItem): Macros {
   const k = item.grams / 100;

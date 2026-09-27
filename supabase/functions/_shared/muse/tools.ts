@@ -62,47 +62,16 @@ import { BUNDLED_EXERCISES } from "./lib/exerciseData.ts";
 import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
-import type { Loader } from "./load.ts";
-import type { Person } from "./auth.ts";
 import { redactSuggestions } from "./worthALook.ts";
+import { BadArgs, dateArg, intArg, textArg, type Json, type Tool } from "./args.ts";
+import { HEALTH_ABSENT, HEALTH_READS } from "./healthRead.ts";
 
-export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
-
-export interface ToolContext {
-  /** Forced from the secret. Never read from the request body — see ARGS below. */
-  person: Person;
-  /** The Arizona "now", built once per request. The door's only clock reading. */
-  now: Date;
-  load: Loader;
-  args: Record<string, unknown>;
-}
-
-export interface Tool {
-  name: string;
-  /** One plain sentence, used in the catalogue and in the OpenAPI description. */
-  summary: string;
-  /**
-   * The arguments, for the OpenAPI description and for the handler's own refusal
-   * of a key that is not on the list. `person` is never one of them.
-   *
-   * `type` is declared HERE rather than guessed in openapi.ts, which used to read
-   * `name === "days" ? "integer" : "string"`. That worked for the one integer
-   * argument that exists and would have quietly described the next one as a
-   * string — and the plan already names it (`finance.forecast`, months ahead). An
-   * assistant told "string" sends "3", and intArg refuses it, and the refusal
-   * reads like the assistant's mistake.
-   */
-  args?: { name: string; type: "string" | "integer"; required: boolean; description: string }[];
-  run(ctx: ToolContext): Promise<{ [k: string]: Json }>;
-}
-
-/** A caller sent something the tool cannot answer. A 400, not a 500. */
-export class BadArgs extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BadArgs";
-  }
-}
+// The shape of a tool, the argument checks, and BadArgs now live in args.ts, so
+// this catalogue and healthRead.ts can both use them without one importing the
+// other. Re-exported here because handler.ts, openapi.ts and the tests have always
+// asked tools.ts for them, and moving a file should not move a door's front door.
+export type { Json, Tool, ToolContext } from "./args.ts";
+export { BadArgs } from "./args.ts";
 
 // ── ARGS ──────────────────────────────────────────────────────────────────────
 //
@@ -120,41 +89,6 @@ export class BadArgs extends Error {
 // Every tool declares the arguments it takes, and the handler refuses any key that
 // is not on that list — so a misspelled argument is an error rather than a silently
 // ignored instruction, and `person` is refused everywhere at once.
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-function dateArg(args: Record<string, unknown>, name: string): string {
-  const v = args[name];
-  if (typeof v !== "string" || !DATE.test(v)) {
-    throw new BadArgs(`${name} has to be a date like 2026-09-01.`);
-  }
-  // A well-shaped string that is not a real day ("2026-02-31") would compare as a
-  // string against real dates and quietly include or exclude a day. Checked
-  // arithmetically rather than by building a Date, because building one here would
-  // trip the door's own no-clocks guard for no reason.
-  const [y, m, d] = v.split("-").map(Number);
-  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  const last = m === 2 && leap ? 29 : DAYS_IN_MONTH[m - 1];
-  if (m < 1 || m > 12 || d < 1 || !last || d > last) throw new BadArgs(`${v} is not a real date.`);
-  return v;
-}
-
-function intArg(args: Record<string, unknown>, name: string, fallback: number, min: number, max: number): number {
-  const v = args[name];
-  if (v == null) return fallback;
-  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
-    throw new BadArgs(`${name} has to be a whole number between ${min} and ${max}.`);
-  }
-  return v;
-}
-
-function textArg(args: Record<string, unknown>, name: string, max = 64): string {
-  const v = args[name];
-  if (typeof v !== "string" || !v.trim()) throw new BadArgs(`${name} is missing.`);
-  if (v.length > max) throw new BadArgs(`${name} is too long.`);
-  return v.trim();
-}
 
 // ── finance.audit ─────────────────────────────────────────────────────────────
 //
@@ -609,6 +543,10 @@ export const TOOLS: readonly Tool[] = [
   healthTrainingVolume,
   healthLastLift,
   healthNextWorkout,
+  // Phase 2's health and workout parity, defined in healthRead.ts. They are
+  // appended rather than interleaved so the eleven tools he has already read the
+  // wording of keep the order he read them in.
+  ...HEALTH_READS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
@@ -640,9 +578,20 @@ export const ABSENT: readonly { name: string; why: string }[] = [
     why: "Its window is assembled in a view module, same reason as firepower.",
   },
   { name: "anything that writes", why: "This is the read door. It has no write verb at all." },
-  { name: "anything that deletes", why: "No door has a delete verb." },
+  {
+    // Phase 1 said "no door has a delete verb", and that stopped being true the
+    // day the write door grew one. It is stated accurately instead of quietly
+    // dropped, because an assistant that reads a promise and finds the opposite
+    // stops trusting the whole list. The write door deletes only where the row it
+    // removes can be put back byte for byte; the one thing no undo can restore —
+    // disconnecting the bank, which wipes the accounts and their whole transaction
+    // history — takes a code he types, not a chat command.
+    name: "anything that deletes, on this door",
+    why: "Deleting lives on the write door, and only where the before-state was captured first so 'undo that' can put it back.",
+  },
   {
     name: "account numbers and bank descriptors",
     why: "No tool reads them. A charge's description never leaves either door under any name.",
   },
+  ...HEALTH_ABSENT,
 ];

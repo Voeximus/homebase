@@ -19,5 +19,5 @@
   // that decides anything is in the files below, and tests/museWrite.test.ts runs
   // those for real.
   "extends": "../_shared/muse/tsconfig.json",
-  "include": ["db.ts", "handler.ts", "openapi.ts", "tools.ts", "../cron-reminders/schedule.ts"]
+  "include": ["db.ts", "handler.ts", "healthTools.ts", "kit.ts", "openapi.ts", "tools.ts", "undoContract.ts", "../cron-reminders/schedule.ts"]
 }

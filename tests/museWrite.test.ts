@@ -19,11 +19,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { azDateISO, clockNow, nowAZ } from "../supabase/functions/_shared/muse/az.ts";
 import { handleWrite, WRITES_PER_HOUR, type Deps, type Secrets } from "../supabase/functions/muse-write/handler.ts";
 import { REMIND_PER_DAY, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
+import { HEALTH_TOOLS } from "../supabase/functions/muse-write/healthTools.ts";
+import { HealthRows } from "./helpers/museHealthDb.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
 import type {
   CallRecord,
   Db,
-  MealDayRow,
   Outcome,
   Person,
 } from "../supabase/functions/muse-write/db.ts";
@@ -52,21 +53,15 @@ interface AuditRow {
   note?: string;
 }
 
-interface MealDoc {
-  id: string;
-  meals: unknown[];
-  status: string | null;
-  note: string | null;
-  updatedAt: string;
-}
-
-class Fake implements Db {
+// The health half of the seam — weigh-ins, saved meals, the day and session
+// documents, the food library, macro targets, workouts and routines — lives in
+// tests/helpers/museHealthDb.ts and is SHARED with tests/museHealth.test.ts. Two
+// fakes that disagreed about what a stale compare-and-set means would make one of
+// the two suites lie, which is the same reason the two doors share one clock.
+class Fake extends HealthRows implements Db {
   audit: AuditRow[] = [];
   calls = new Map<string, number>();
   reminders: { id: string; person: Person; dueAt: string; repeats: string; message: string; sentAt: string | null }[] = [];
-  weights = new Map<string, number>();
-  savedMeals: { id: string; name: string; items: unknown[] }[] = [];
-  mealDays = new Map<string, MealDoc>();
   pending: { id: string; person: Person; tool: string; payload: Record<string, unknown>; summary: string }[] = [];
   pushes: { title: string; body: string; owner: string }[] = [];
   /** The ledger the queued path must never touch. */
@@ -77,12 +72,6 @@ class Fake implements Db {
   /** Fires right after the door reads a day document, so a test can be the phone
    *  writing in the gap. */
   onReadMealDay: ((date: string) => void) | null = null;
-
-  private seq = 0;
-  private id(prefix: string) {
-    this.seq += 1;
-    return `${prefix}-${String(this.seq).padStart(8, "0")}-0000-0000-0000-000000000000`.slice(0, 36);
-  }
 
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null> {
     const row = this.audit.find((r) => r.person === person && r.tool === tool && r.idemKey === idemKey);
@@ -127,46 +116,6 @@ class Fake implements Db {
     const id = this.id("rem");
     this.reminders.push({ id, person: r.person, dueAt: r.dueAt, repeats: r.repeats, message: r.message, sentAt: null });
     return Promise.resolve(id);
-  }
-  readWeight(person: Person, date: string): Promise<number | null> {
-    return Promise.resolve(this.weights.get(`${person}|${date}`) ?? null);
-  }
-  upsertWeight(person: Person, date: string, weight: number): Promise<void> {
-    this.weights.set(`${person}|${date}`, weight);
-    return Promise.resolve();
-  }
-  findSavedMealsByName(name: string) {
-    const want = name.trim().toLowerCase();
-    return Promise.resolve(this.savedMeals.filter((m) => m.name.trim().toLowerCase() === want));
-  }
-  listSavedMealNames(limit: number): Promise<string[]> {
-    return Promise.resolve(this.savedMeals.map((m) => m.name).slice(0, limit));
-  }
-  readMealDay(person: Person, date: string): Promise<MealDayRow | null> {
-    const doc = this.mealDays.get(`${person}|${date}`);
-    const snapshot: MealDayRow | null = doc
-      ? { id: doc.id, meals: [...doc.meals], status: doc.status, note: doc.note, updatedAt: doc.updatedAt }
-      : null;
-    // The phone's turn. Fired AFTER the snapshot is taken, so what the door holds
-    // is genuinely stale from here on.
-    this.onReadMealDay?.(date);
-    return Promise.resolve(snapshot);
-  }
-  insertMealDay(r: { person: Person; date: string; meals: unknown[]; atISO: string }) {
-    const k = `${r.person}|${r.date}`;
-    if (this.mealDays.has(k)) return Promise.resolve<"ok" | "conflict">("conflict");
-    this.mealDays.set(k, { id: this.id("day"), meals: r.meals, status: null, note: null, updatedAt: r.atISO });
-    return Promise.resolve<"ok" | "conflict">("ok");
-  }
-  updateMealDayIfUnchanged(id: string, seenUpdatedAt: string, patch: { meals: unknown[]; atISO: string }) {
-    for (const doc of this.mealDays.values()) {
-      if (doc.id !== id) continue;
-      if (doc.updatedAt !== seenUpdatedAt) return Promise.resolve<"ok" | "stale">("stale");
-      doc.meals = patch.meals;
-      doc.updatedAt = patch.atISO;
-      return Promise.resolve<"ok" | "stale">("ok");
-    }
-    return Promise.resolve<"ok" | "stale">("stale");
   }
   transactionExists(id: string): Promise<boolean> {
     return Promise.resolve(this.ledger.transactions.some((t) => t.id === id));
@@ -312,27 +261,47 @@ describe("a retry does not write twice", () => {
 // tool added to tools.ts and not to this list fails the first test here, the same
 // way the read door's own catalogue check works.
 
-/** A call that each tool accepts, so the loops below can drive all seven. */
+/** A call that each tool accepts, so the loops below can drive them. */
 const EVERY_WRITE: { tool: string; args: Record<string, unknown>; queued: boolean }[] = [
   { tool: "health.log_weight", args: { weight: 198.4 }, queued: false },
   { tool: "health.log_saved_meal", args: { name: "Usual breakfast" }, queued: false },
+  // Phase 2: this one was queued, and nothing in src/ ever read the queue, so the
+  // tap it was waiting for did not exist. It lands now, with an undo record.
+  { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: false },
   { tool: "schedule.remind", args: { message: "read the electric bill", at: "2026-09-27T09:00" }, queued: false },
   { tool: "finance.categorize_charge", args: { transaction_id: TXN_ID, category_id: "groceries" }, queued: true },
   { tool: "finance.note_known_amount", args: { recurring_id: BILL_ID, amount: 123.45, month_key: "2026-09" }, queued: true },
   { tool: "finance.add_transaction", args: { amount: 6, category_id: "transport", description: "parking" }, queued: true },
-  { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: true },
 ];
 
 /** A Fake with the one saved meal `health.log_saved_meal` needs to find. */
 function stocked(): Fake {
   const db = new Fake();
-  db.savedMeals.push({ id: "sm-1", name: "Usual breakfast", items: [{ name: "Oats", kcal: 300, p: 10, c: 54, f: 5 }] });
+  // A REAL logged portion, not a loose bag of macros: the log stores per-100g values
+  // scaled by grams (src/lib/mealLog.ts), and the door's reply now says what the meal
+  // came to — so a fixture in the wrong shape would be testing a shape the app
+  // cannot store.
+  db.savedMeals.push({
+    id: "sm-1",
+    name: "Usual breakfast",
+    items: [
+      { id: "it-1", foodId: "oats", name: "Oats", role: "carb", grams: 80, per100: { kcal: 379, p: 13, c: 67, f: 7 } },
+    ],
+  });
   return db;
 }
 
 describe("every tool in the catalogue, not just the first one", () => {
   it("names all of them, so this list cannot fall behind tools.ts", () => {
-    expect(EVERY_WRITE.map((w) => w.tool).sort()).toEqual([...TOOL_NAMES].sort());
+    // Phase 2 added the health and workout tools, and they are driven end to end in
+    // tests/museHealth.test.ts instead of here, because they need the richer fixture
+    // that file builds: a day document with meals in it, a session with sets, a
+    // routine, a food library. The guard still holds — a tool in NEITHER list fails
+    // this — and the union is taken from the health registry itself rather than from
+    // a hand-kept list of exceptions.
+    const here = EVERY_WRITE.map((w) => w.tool);
+    const elsewhere = Object.keys(HEALTH_TOOLS);
+    expect([...new Set([...here, ...elsewhere])].sort()).toEqual([...TOOL_NAMES].sort());
   });
 
   for (const { tool, args } of EVERY_WRITE) {

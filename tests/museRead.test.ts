@@ -32,6 +32,7 @@ import { NAME_MAX, money, scrub } from "../supabase/functions/_shared/muse/scrub
 import { LedgerUnreadable, readAll, type Db, type DbRow } from "../supabase/functions/_shared/muse/paging";
 import { redactArgs, type AuditRow } from "../supabase/functions/_shared/muse/audit";
 import { ABSENT, TOOLS } from "../supabase/functions/_shared/muse/tools";
+import { TOOL_NAMES as WRITE_TOOL_NAMES } from "../supabase/functions/muse-write/tools";
 import { redactSuggestions } from "../supabase/functions/_shared/muse/worthALook";
 import {
   toAccount,
@@ -197,15 +198,23 @@ const TABLES = (): Record<string, DbRow[]> => ({
       id: "m1",
       person: "gino",
       date: "2026-09-30",
+      // NAME_CANARY, not CANARY_TEXT, and the difference is the promise being
+      // tested. A meal name and a food name are NAMES — he typed them, or a barcode
+      // lookup did — so phase 2's health.day is allowed to say them, scrubbed, the
+      // same way finance.position says an account name. What must not survive is the
+      // URL and the injection line inside them. The DESCRIPTOR canary belongs only
+      // in columns no tool may read at all, which is why it stays in `description`.
+      // Phase 1 could put CANARY_TEXT here because no tool read a meal name; the
+      // moment one did, this fixture was testing the wrong promise.
       meals: [
         {
           id: "meal1",
-          name: CANARY_TEXT,
+          name: NAME_CANARY,
           items: [
             {
               id: "i1",
               foodId: "chicken-breast",
-              name: CANARY_TEXT,
+              name: NAME_CANARY,
               role: "protein",
               grams: 200,
               per100: { kcal: 165, p: 31, c: 0, f: 3.6 },
@@ -215,14 +224,28 @@ const TABLES = (): Record<string, DbRow[]> => ({
       ],
     },
   ],
+  saved_meals: [
+    { id: "sm1", name: NAME_CANARY, items: [{ id: "i2", foodId: "oats", name: NAME_CANARY, role: "carb", grams: 80, per100: { kcal: 379, p: 13, c: 67, f: 7 } }] },
+  ],
+  foods: [
+    // A household food row. `name` comes from a barcode lookup as often as from his
+    // own typing, so it is exactly the kind of third-party string scrub() exists for.
+    { id: "f1", name: NAME_CANARY, role: "protein", kcal: "120", p: "22", c: "1", f: "3", serving: "150", note: NAME_CANARY, barcode: "0123456789012" },
+  ],
+  reminders: [
+    { id: "rm1", person: "gino", due_at: "2026-10-01T16:00:00Z", repeats: "once", message: "Muse: read the electric bill", source: "muse", sent_at: null, last_sent_at: null },
+  ],
   macro_targets: [{ person: "gino", kcal: "2800", p: "130", c: "410", f: "70" }],
   workouts: [
     {
       id: "wk1",
       person: "gino",
       date: "2026-09-26",
-      name: CANARY_TEXT,
-      notes: CANARY_TEXT,
+      // NAME_CANARY for the same reason the meal fixture uses it: a session's name
+      // and its notes are HIS words, and phase 2's health.workouts / health.workout
+      // say them. What must not survive is the link and the injection line in them.
+      name: NAME_CANARY,
+      notes: NAME_CANARY,
       done: true,
       exercises: [
         {
@@ -315,6 +338,24 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "health.training_volume", body: {} },
   { tool: "health.last_lift", body: { exercise: "leg press" } },
   { tool: "health.next_workout", body: {} },
+  // ── phase 2: health and workout parity ──────────────────────────────────────
+  // Every one of these answers about a row rather than a summary, which phase 1
+  // deliberately refused to do. He asked for it: "Muse has to have every
+  // functionality given in the app." The canary tests below run this whole list, so
+  // the privacy promise that DID survive — no bank descriptor, ever — is checked on
+  // each of them too.
+  { tool: "health.day", body: {} },
+  { tool: "health.saved_meals", body: {} },
+  { tool: "health.foods", body: { query: "chicken" } },
+  { tool: "health.macro_targets", body: {} },
+  { tool: "health.weight_log", body: {} },
+  { tool: "health.adherence", body: {} },
+  { tool: "health.workouts", body: {} },
+  { tool: "health.workout", body: { id: "wk1" } },
+  { tool: "health.exercise_progress", body: { exercise: "leg press" } },
+  { tool: "health.records", body: {} },
+  { tool: "health.exercises", body: { query: "press" } },
+  { tool: "schedule.reminders", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -815,9 +856,20 @@ describe("what exists and what never will", () => {
     });
   }
 
-  it("has no write verb: the forbidden names are not in the catalogue at all", () => {
+  it("has no write verb: no name on this door is a name on the write door", () => {
+    // This was a regex over write-shaped words, and phase 2 caught it out: the new
+    // `schedule.reminders` READ matched /remind/ and failed a test about writing.
+    // The check is exact now — the two catalogues are compared directly — which is
+    // what the regex was approximating and is one fewer heuristic to argue with.
+    const writeNames = new Set<string>(WRITE_TOOL_NAMES);
     for (const t of TOOLS) {
-      expect(t.name).not.toMatch(/log_|add_|set_|categorize|delete|remove|pay|notify|remind/);
+      expect(writeNames.has(t.name), `${t.name} is also a write tool`).toBe(false);
+    }
+    // And the verbs that are not tool names on either door still must not appear:
+    // a read called `health.delete_day` would pass the check above and still be a
+    // lie about what this door is.
+    for (const t of TOOLS) {
+      expect(t.name).not.toMatch(/\.(log|add|set|save|mark|start|finish|edit|update|delete|remove|pay|notify)_/);
     }
     expect(ABSENT.length).toBeGreaterThan(0);
   });
