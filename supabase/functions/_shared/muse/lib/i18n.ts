@@ -1,4 +1,11 @@
-import { ZH } from "./i18n_zh";
+// GENERATED — DO NOT EDIT. Source: src/lib/i18n.ts
+// Run: node scripts/gen-muse-shared.mjs   (checked by npm run build)
+//
+// Hand-editing this file is the drift the Muse doors exist to prevent: the
+// door would answer with one number while every screen in the app showed
+// another, in a chat, with no screen beside it to notice. Change src/lib/i18n.ts
+// and re-run the generator.
+import { ZH } from "./i18n_zh.ts";
 
 // Lightweight i18n. Components call t("English string"); when the language is
 // Simplified Chinese, t() returns the ZH translation (falling back to English

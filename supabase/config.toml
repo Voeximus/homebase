@@ -8,6 +8,14 @@
 #   announce-update  called by the GitHub Pages deploy workflow with plain curl
 #   plaid-webhook    called by Plaid's servers
 #   cron-notify      called by pg_cron via net.http_post
+#   muse-read        called by an assistant's server on his behalf
+#
+# muse-read is the fourth caller of exactly that kind, and the most important one
+# to keep OUT of the JWT path: it must never be given a Supabase session, because
+# 17 of the 18 tables let any signed-in account read and write every row. Its own
+# guard is a per-person secret (MUSE_READ_GINO / MUSE_READ_XINYAN) compared in
+# constant time, and it fails closed when the secret is missing, empty, or too
+# short to be real. It has no write verb at all. See docs/research/muse-bridge.
 #
 # Before this file existed those settings lived ONLY in the Supabase dashboard,
 # which made them invisible to code review and — worse — resettable by any CLI
@@ -28,4 +36,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cron-notify]
+verify_jwt = false
+
+[functions.muse-read]
 verify_jwt = false

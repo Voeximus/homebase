@@ -1,0 +1,34 @@
+{
+  // The door's own type check. It exists because NOTHING in the repo type-checked
+  // supabase/functions before this: tsconfig.app.json ends with `"include": ["src"]`,
+  // so every edge function has shipped unchecked, and the only automated guard that
+  // touched edge code was the categorizer drift script.
+  //
+  // For a door that speaks numbers into a chat, that is the wrong place to have no
+  // compiler. A dropped optional field in a row mapper is not a crash — it is a
+  // quietly different number with no screen beside it to disagree. So this config
+  // covers the hand-written door modules AND the generated copies, and
+  // scripts/check-categorizer-sync.mjs runs it as part of `npm run build`.
+  //
+  // muse-read/index.ts is deliberately NOT in here: it imports `jsr:@supabase/…`
+  // and uses Deno globals, which plain tsc cannot resolve. That file is kept thin
+  // for exactly this reason — it holds the runtime and no decisions.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "types": [],
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["**/*.ts"]
+}
