@@ -53,6 +53,11 @@ const MODULES = [
   "src/lib/household.ts",
   "src/lib/recurring.ts",
   "src/lib/plan.ts",
+  // Rule 3: the sequences a SCREEN assembles, in one place both the screen and the
+  // door call. Without it the door held its own copy of the five steps behind the
+  // budget envelope, which is a copy of the arithmetic with the arithmetic hidden
+  // in the order of the calls.
+  "src/lib/headline.ts",
   "src/lib/schedule.ts",
   "src/lib/forecast.ts",
   "src/lib/selfAudit.ts",

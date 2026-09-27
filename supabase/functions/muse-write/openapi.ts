@@ -13,9 +13,13 @@ export function openapi(url: URL): Record<string, unknown> {
   const names = Object.keys(TOOLS);
   const lines = names.map((n) => {
     const t = TOOLS[n];
+    // The queued half says what is TRUE TODAY. It used to say the request waits for
+    // a tap in the app; the app has no screen for these rows, so nothing can tap one
+    // and nothing applies one. Telling an assistant otherwise sends a person looking
+    // for a screen that is not there.
     const lands = t.kind === "direct"
       ? "takes effect right away"
-      : "only asks — it waits for a tap in the app and changes nothing until then";
+      : "only writes the request down. The app has no screen for these yet, so it will NOT be applied and it clears itself after 24 hours. Say that plainly, and say the app is where the change actually gets made";
     return `- ${n}: ${t.does} Fields: ${t.fields.join(", ")}. This one ${lands}.`;
   });
 

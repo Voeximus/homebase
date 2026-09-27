@@ -45,13 +45,10 @@ import {
   LEAN_VARIABLE,
   orderedDebts,
   planMath,
-  payCycleFor,
-  perCycle,
-  lineSpent,
   sumTargets,
   spentByCategoryBetween,
-  variableSpentBetween,
 } from "./lib/plan.ts";
+import { envelopeStatus } from "./lib/headline.ts";
 import { cashAccounts, totalBalance, totalPendingHold } from "./lib/recurring.ts";
 import { isoDate } from "./lib/format.ts";
 import { reviewLedger } from "./lib/ledgerReview.ts";
@@ -287,15 +284,14 @@ const financeBudgetStatus: Tool = {
   summary: "What is left in the variable budget this pay cycle, in total and per line.",
   async run({ load, now }) {
     const data = await load.appData();
-    // The identical sequence src/views/redesign/buildVMs.ts runs, with `now` handed
-    // in instead of read: monthly envelope, this cycle's window, the cycle's
-    // allowance, the cycle's graded spend, and the per-category partition the lines
-    // read. Same functions, same order, so the numbers are the screen's numbers.
-    const monthlyTarget = sumTargets(LEAN_VARIABLE);
-    const cycle = payCycleFor(now);
-    const target = perCycle(monthlyTarget);
-    const spent = variableSpentBetween(data.transactions, cycle.start, cycle.end);
-    const byCat = spentByCategoryBetween(data.transactions, cycle.start, cycle.end);
+    // ONE call, not five. This tool used to hold its own copy of the sequence
+    // buildVMs.ts runs — monthly envelope, this cycle's window, the cycle's
+    // allowance, the cycle's graded spend, the per-category partition — and a copy
+    // of a sequence drifts exactly the way a copy of a formula does, with the
+    // arithmetic hidden in the ORDER of the calls. Rule 3: the assembly lives in
+    // src/lib/headline.ts, which the screen calls too, so the number here is the
+    // number there. `now` is handed in rather than read.
+    const { cycle, target, spent, lines } = envelopeStatus(data.transactions, now);
     return {
       cycle: {
         start: cycle.start,
@@ -305,17 +301,17 @@ const financeBudgetStatus: Tool = {
         days: cycle.days,
       },
       envelope: { target: money(target), spent: money(spent), left: money(target - spent) },
-      lines: LEAN_VARIABLE.map((l) => {
-        const lineTarget = perCycle(l.target);
-        const lineSpend = lineSpent(l, byCat);
-        return {
-          key: l.key,
-          label: scrubOr(l.label, l.key),
-          target: money(lineTarget),
-          spent: money(lineSpend),
-          left: money(lineTarget - lineSpend),
-        };
-      }),
+      lines: lines.map((l) => ({
+        key: l.key,
+        label: scrubOr(l.label, l.key),
+        target: money(l.target),
+        spent: money(l.spent),
+        left: money(l.target - l.spent),
+      })),
+      // The trap, travelling in the reply itself rather than only in API.md — the
+      // assistant may have been given the openapi description and nothing else.
+      // Reported as a monthly budget, every one of these figures is wrong by half.
+      note: "This is a pay cycle, not a month: each target is one cycle's share of a monthly figure. A negative `left` means over by that much.",
     };
   },
 };
@@ -352,25 +348,109 @@ const financeDebts: Tool = {
         apr: d.apr == null ? null : money(d.apr),
         min_payment: d.minPayment == null ? null : money(d.minPayment),
       })),
+      // In the reply, not only in API.md, because API.md calls a made-up payoff date
+      // "the single most tempting wrong number in this whole system" and an
+      // assistant may be holding nothing but the openapi description. A balance and
+      // an APR are exactly the two numbers it takes to invent one.
+      note: "No payoff date, debt-free month or months-remaining is computed here. Do not work one out from the balance and the rate. A name may carry the last digits of a card: do not read them out.",
     };
   },
 };
 
 // ── finance.spend_by_category ─────────────────────────────────────────────────
+/** How far back a window may reach. Two years is more history than the ledger has
+ *  and more than any question asks for. */
+const WINDOW_MAX_MONTHS = 24;
+
+/**
+ * The windows this tool will answer about, and why it is not any window.
+ *
+ * THE HOLE THIS CLOSES. `finance.search_transactions` is FORBIDDEN because
+ * "returning individual ledger rows turns a chat into a copy of the ledger". With
+ * a free choice of window, this tool rebuilt most of it: ask one day at a time, and
+ * for most days a category's total IS one charge's exact amount on its exact date.
+ * Measured against the household's own snapshot, 96 single-day calls returned 246
+ * (day, category, amount) cells and 157 of them were a single charge. That is the
+ * banned tool, minus the merchant string, through a different door.
+ *
+ * A minimum LENGTH does not fix it, because two windows one day apart can be
+ * subtracted: 1–28 and 1–29 differ by exactly the 29th. What fixes it is taking away
+ * the choice of BOUNDARY. A window here is whole calendar months, or a month so far,
+ * and nothing else — so every answerable window lines up on the same grid, and
+ * subtracting two of them gives another month's total rather than one day's.
+ *
+ * WHAT IT COSTS: "the last 30 days" and "since Tuesday" cannot be asked. "This
+ * month so far", "last month", "the last three months" and "August" all can, which
+ * are the questions that actually get asked — and the pay-cycle question has its own
+ * tool in `finance.budget_status`.
+ *
+ * WHAT IT DOES NOT CLOSE, said plainly: a category with only one charge in a whole
+ * month still shows that charge's amount, dated no closer than the month. And asking
+ * the same month-so-far window on two different days still shows the day between
+ * them. The hourly read cap is what bounds the rest.
+ */
+function monthWindow(args: Record<string, unknown>, today: string): { from: string; to: string } {
+  const from = dateArg(args, "from");
+  const to = dateArg(args, "to");
+  if (from.slice(8) !== "01") {
+    throw new BadArgs(
+      `from has to be the first of a month, like ${from.slice(0, 7)}-01. This door answers about whole months, or a month so far.`,
+    );
+  }
+  if (from > to) throw new BadArgs("The window starts after it ends.");
+  const endsMonth = to === lastDayOf(to.slice(0, 7));
+  if (!endsMonth && to !== today) {
+    throw new BadArgs(
+      `to has to be the last day of a month (${lastDayOf(to.slice(0, 7))}) or today (${today}). This door answers about whole months, or a month so far.`,
+    );
+  }
+  const months = monthsBetween(from.slice(0, 7), to.slice(0, 7)) + 1;
+  if (months > WINDOW_MAX_MONTHS) {
+    throw new BadArgs(`That window is ${months} months. I go back ${WINDOW_MAX_MONTHS} at most.`);
+  }
+  return { from, to };
+}
+
+/** The last day of "YYYY-MM", as "YYYY-MM-DD". Arithmetic on the month number, not
+ *  a Date — building one here would trip the door's own no-clocks guard. */
+function lastDayOf(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const last = m === 2 && leap ? 29 : DAYS_IN_MONTH[m - 1];
+  return `${monthKey}-${String(last).padStart(2, "0")}`;
+}
+
+/** Whole months from one "YYYY-MM" to another. */
+function monthsBetween(a: string, b: string): number {
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  return (by - ay) * 12 + (bm - am);
+}
+
 const financeSpendByCategory: Tool = {
   name: "finance.spend_by_category",
-  summary: "Where the money went over a window — category totals only, never rows.",
+  summary: "Where the money went over whole months — category totals only, never rows.",
   args: [
-    { name: "from", type: "string", required: true, description: "First day of the window, YYYY-MM-DD." },
-    { name: "to", type: "string", required: true, description: "Last day of the window, YYYY-MM-DD, inclusive." },
+    {
+      name: "from",
+      type: "string",
+      required: true,
+      description: "First day of the window, YYYY-MM-DD. It has to be the first of a month.",
+    },
+    {
+      name: "to",
+      type: "string",
+      required: true,
+      description: "Last day of the window, YYYY-MM-DD, inclusive. The last day of a month, or today.",
+    },
   ],
-  async run({ load, args }) {
-    const from = dateArg(args, "from");
-    const to = dateArg(args, "to");
-    if (from > to) throw new BadArgs("The window starts after it ends.");
+  async run({ load, now, args }) {
+    // `now` is used for ONE thing: deciding whether `to` is today, so "this month so
+    // far" can be asked. It never becomes part of an answer, which is why this tool
+    // still gives the same numbers at any hour in any timezone.
+    const { from, to } = monthWindow(args, isoDate(now));
     const data = await load.appData();
-    // Both ends come from the request, so the clock is not involved at all. The
-    // month-key form of this function is deliberately not exposed: it is this one
+    // The month-key form of this function is deliberately not exposed: it is this one
     // with the days filled in, and one way in is one thing to get wrong.
     const totals = spentByCategoryBetween(data.transactions, from, to);
     // The KEYS of this object are `transactions.category_id`, straight out of the
@@ -396,7 +476,12 @@ const financeSpendByCategory: Tool = {
       else out[key] = money(((out[key] as number | null) ?? 0) + amount);
     }
     if (unnamed) out["(no category id I can say)"] = money(unnamed);
-    return { from, to, totals: out };
+    return {
+      from,
+      to,
+      totals: out,
+      note: "Whole months only, so say the months you asked about. A category with nothing in it is absent, which means zero. The charges behind a total are not available here at all.",
+    };
   },
 };
 

@@ -123,6 +123,10 @@ function deps(shortPage?: string) {
         return Promise.resolve();
       },
     }),
+    // The hourly read cap. Every call in this file is a fresh count of 1, because
+    // what is being measured here is the numbers against the real ledger; the cap
+    // itself is exercised in tests/museRead.test.ts.
+    limit: { bump: () => Promise.resolve(1) },
   };
 }
 
@@ -289,8 +293,11 @@ describeSnapshot("the read door against the real ledger", () => {
     for (const a of SNAP!.tables.accounts ?? []) {
       const l4 = a.last4;
       if (typeof l4 !== "string" || !l4) continue;
+      // Both spellings of the "card ending" prefix are excused, because every
+      // outbound string is NFKC-normalised now (see scrub.ts) and that folds a
+      // stored "…" into three dots on the way out.
       const fromAccountsOnly = Object.entries(replies).filter(
-        ([, text]) => text.includes(l4) && !text.includes(`…${l4}`),
+        ([, text]) => text.includes(l4) && !text.includes(`…${l4}`) && !text.includes(`...${l4}`),
       );
       expect(fromAccountsOnly.map(([t]) => t), "a bare account last4 got out").toEqual([]);
     }

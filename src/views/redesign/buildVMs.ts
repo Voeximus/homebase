@@ -11,15 +11,10 @@ import {
   payoffClears,
   PAY_DAYS,
   SAVINGS_SPLIT,
-  sumTargets,
   LEAN_VARIABLE,
   OUTSIDE_BUDGET_CASH_CATS,
-  lineSpent,
   spentByCategory,
-  spentByCategoryBetween,
   variableSpentBetween,
-  payCycleFor,
-  perCycle,
   variableSpentThisMonth,
   avgVariableSpend,
   commitmentProgress,
@@ -27,6 +22,7 @@ import {
   previousPayday,
   type PayoffEvent,
 } from "../../lib/plan";
+import { envelopeStatus } from "../../lib/headline";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
@@ -100,17 +96,21 @@ export function buildFinanceVMs(
   // and bills are monthly. The BUDGET is graded per PAY CYCLE, because that's the
   // unit money actually arrives in — a calendar month splits one paycheck's
   // spending across two reports and hides where you stand until it's too late.
-  const monthlyTarget = sumTargets(LEAN_VARIABLE);
+  // The envelope sequence — monthly target, the cycle, its allowance, its graded
+  // spend, the per-category partition — now lives in src/lib/headline.ts, because
+  // the Muse read door needs the SAME five steps in the same order and a copy of a
+  // sequence drifts exactly the way a copy of a formula does. Same functions, same
+  // order, same numbers on this screen as before.
+  const envelope = envelopeStatus(data.transactions, now);
+  const { monthlyTarget, cycle } = envelope;
+  const target = envelope.target; // the allowance for THIS cycle
+  const spent = envelope.spent;
+  const lineFor = new Map(envelope.lines.map((l) => [l.key, l]));
   // transactions are passed so a VARIABLE bill is priced the way the calendar
   // prices it (known_amount, else the rolling average) rather than by its stale
   // stored amount — without them the plan and the calendar disagree.
   const math = planMath(data.recurring, data.debts, monthlyTarget, undefined, data.transactions);
   const spentMonth = variableSpentThisMonth(data.transactions, monthKey);
-
-  const cycle = payCycleFor(now);
-  const target = perCycle(monthlyTarget); // the allowance for THIS cycle
-  const spent = variableSpentBetween(data.transactions, cycle.start, cycle.end);
-  const byCat = spentByCategoryBetween(data.transactions, cycle.start, cycle.end);
   // Overspending the lean budget is real cash that can NO LONGER go at the debt,
   // so it reduces firepower live as you spend. (Under-spending does NOT inflate
   // firepower — the budget stays reserved, and a mid-period "under" is just the
@@ -193,9 +193,11 @@ export function buildFinanceVMs(
       key: l.key,
       label: l.label,
       catId: l.cats[0],
-      spent: lineSpent(l, byCat),
+      // Both figures come from the one shared assembly above, so the bar, the rows
+      // behind it and the door all read the same two numbers.
+      spent: lineFor.get(l.key)!.spent,
       pending: pendingAmt,
-      target: perCycle(l.target),
+      target: lineFor.get(l.key)!.target,
       txns: raw.map((r) => ({
         id: r.id,
         name: r.name,

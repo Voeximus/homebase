@@ -15,6 +15,43 @@ door is deployed.
 
 ---
 
+## In what order do I do this
+
+**Start here.** There are six documents in this folder and this is the front door
+to all of them. Read this section, then do the steps in this file. The other five
+are what you reach for at a particular moment, and this says which moment.
+
+| Do this | In this document | Roughly |
+|---|---|---|
+| **1. Decide whether to go ahead at all.** Ask Xinyan, money and health separately, and get the answer in writing. Turn Muse's training setting off. Check that a connector you build in Muse is still there tomorrow. | **Before you start**, below | An evening, mostly waiting on her |
+| **2. Turn the doors on.** Make the two keys, put them on the project, deploy, schedule the 15-minute job. | **Steps 1–4** of this file | About an hour |
+| **3. Teach Muse.** Hand it the key, then paste PASTE 1. | **Step 5** here, then `MUSE-SKILL.md` | 20 minutes |
+| **4. Prove it works.** Nine checks, on your phone. Checks 1–6 are the read door, 7–9 are the write door and the reminder. | **Step 6** of this file | Spread over a day, because check 3 needs both sides of midnight |
+| **5. Tell Muse about you.** Paste PASTE 2 — the schedule, the money floor, the meal plan. | `MUSE-SKILL.md`, at the bottom | 5 minutes |
+| **6. Set up the day.** The alarms, the calendar events, the scheduled checks. Five items first, not thirty. | `ROUTINES.md` §10, then the rest of it | An evening |
+| **7. Only then think about removing screens.** | `RETIRE.md`, Stage 0 first | Months |
+
+The other two documents are not steps:
+
+- **`API.md`** is written for the assistant, not for you. It is the rules and the
+  eleven questions in plain sentences. You paste it, or point Muse at it, if Muse
+  cannot fetch the door's own description before it holds a key. `MUSE-SKILL.md`
+  PASTE 1 is the shorter version of the same thing and is what you normally use.
+- **`PLAN.md`** is why the doors are built the way they are — the research, the
+  rejected options, the risks. Read it when you want to argue with a decision, not
+  when you want to get something working.
+
+**Two things that are true today and worth knowing before you start**, because both
+appear further down and neither is a fault:
+
+- **Four of the seven write tools cannot be applied yet.** They write the request
+  down and stop. Step 6's note and `RETIRE.md` Stage 2 cover it.
+- **Three of the reads he asks for most are not built** — the low point of the
+  balance, what is due before the next paycheck, and how much is free each month to
+  aim at the debt. `RETIRE.md` Stage 1 is where they get built.
+
+---
+
 ## Before you start
 
 Five things have to be true already. None of them are code you write now.
@@ -95,7 +132,7 @@ hers and not yours.
 npx supabase functions deploy muse-read --project-ref ganzefaciiyibselizqi
 ```
 
-No Docker needed. Start with the read door alone and do Step 5 against it, because
+No Docker needed. Start with the read door alone and do Step 6 against it, because
 a read that is wrong tells you something and costs nothing. When those checks pass,
 the other two go the same way:
 
@@ -111,17 +148,61 @@ Add `muse-read`, `muse-write` and `cron-reminders` to that line, or deploy by ha
 every time you change one. This is the same trap that let `cron-notify` drift two
 schema versions behind the app.
 
-## Step 4 — give Muse the key
+## Step 4 — schedule the 15-minute job
+
+**Skip this and two things fail silently.** Reminders never arrive — the door still
+says "your phone gets this within about 15 minutes of 3 PM", and nothing sends it —
+and queued writes are never expired, so "it clears itself after 24 hours" is a
+sentence rather than a rule. Both live in the same job, and nothing else creates it:
+the block is commented out in `schema_v36_muse_bridge.sql` because it needs your real
+`CRON_TOKEN`, which does not belong in a committed file.
+
+`CRON_TOKEN` already exists on the project — it is the same secret `cron-notify`
+uses. Print the names to confirm it is there (this shows names, never values):
+
+```powershell
+npx supabase secrets list --project-ref ganzefaciiyibselizqi
+```
+
+Then, in the Supabase SQL editor, paste this and **replace `PASTE_CRON_TOKEN_HERE`
+with the real token** (from your password manager — not from the dashboard, which
+does not show it):
+
+```sql
+do $g$ begin
+  if exists (select 1 from cron.job where jobname='homebase-reminders')
+    then perform cron.unschedule('homebase-reminders'); end if;
+end $g$;
+
+select cron.schedule('homebase-reminders', '*/15 * * * *',
+  $j$ select net.http_post(
+        url := 'https://ganzefaciiyibselizqi.supabase.co/functions/v1/cron-reminders?token=PASTE_CRON_TOKEN_HERE',
+        headers := '{"Content-Type":"application/json"}'::jsonb,
+        body := '{}'::jsonb) $j$);
+```
+
+Confirm it exists:
+
+```sql
+select jobname, schedule, active from cron.job where jobname = 'homebase-reminders';
+```
+
+One row, `*/15 * * * *`, active. If the token is wrong the job runs and the function
+answers 403 every 15 minutes and says nothing to you — which is why check 9 below is
+a reminder you actually wait for on a locked phone.
+
+## Step 5 — give Muse the key
 
 On your phone, in Muse, ask for a custom connector and give it the address and the
 key. Something like:
 
 > Build me a connector to my own API. The base address is
 > `https://ganzefaciiyibselizqi.supabase.co/functions/v1`. Every call is a POST
-> with a JSON body. Authenticate with a bearer token in the `Authorization`
-> header — I will give you the token in your secure credential entry, not in this
-> chat. The description of every call is at `/muse-read/openapi.json`, fetched
-> with the same token. Read that first.
+> with a JSON body. Authenticate with a bearer key in the `Authorization` header,
+> or in `X-Muse-Token` if you cannot set `Authorization` — the door takes either.
+> I will give you the key in your secure credential entry, not in this chat. The
+> description of every call is at `/muse-read/openapi.json`, fetched with the same
+> key. Read that first.
 
 Then paste the read key **only** into Muse's secure credential store, where it
 keeps the key out of the model's sight. If Muse asks you to type the key into the
@@ -145,16 +226,28 @@ Two more things to tell it, because they are how this stays safe:
 > Do not use "always allow" on this connector. And every number you tell me comes
 > from the API — if a figure isn't there, say so instead of working it out.
 
-The plain-English rules the assistant should follow are in `API.md` beside this
-file. Paste that in too, or point Muse at it; it is written to be read by the
-assistant, not by you.
+**Then paste PASTE 1 from `MUSE-SKILL.md`.** That is the next thing you do, before
+step 6, because step 6's checks are questions you ask Muse and it needs to know the
+tools and the rules first. PASTE 1 covers both doors, the eleven reads, the seven
+writes, the refusals and the nine rules. `API.md` is the same material written long,
+for the assistant — paste that instead if Muse asks for more detail, or if it cannot
+fetch the door's own description before it holds a key. There are no secrets in
+either file.
+
+Leave PASTE 2 until checks 1–6 have passed. It is the part about him — the night
+shift, the sleep window, the $1,400 floor, the meal plan — and there is no point
+teaching Muse his schedule before you know the door answers at all.
 
 ---
 
-## Step 5 — the six checks
+## Step 6 — the nine checks
 
 Do these on your phone. A check passes when **you** see it pass — not when a
 script says so. If a probe and your phone disagree, your phone is right.
+
+Checks 1–6 are the read door. Checks 7–9 are the write door and the reminder
+pipeline, and they only run once Step 3's second deploy and Step 4 are done. Until
+7–9 have passed you have no evidence the half that CHANGES things works at all.
 
 **1. It answers at all.**
 Ask: *"Ask Homebase whether the app disagrees with itself."*
@@ -197,22 +290,63 @@ dollar amounts anywhere in the logged arguments.
 Fail: missing rows (the log is not being written, so there is no accountability),
 or amounts in the arguments (the log has become a second copy of the ledger).
 
-Six passes and the door is real. Anything else, stop and fix that one thing before
-adding the next tool.
+**7. A weigh-in lands, and you can see it.**
+Ask: *"Tell Homebase I weighed 198.4 this morning."*
+Pass: it says it logged 198.4 lb for Gino for today, and the number is on the weight
+screen in the app when you open it.
+Fail: it says it cannot write (the write key is not wired up, or the connector is
+pointed at the read door), or it says it logged something and the app does not show
+it. Also read the sentence back: if it says the weight was *queued* or *waiting for a
+tap*, something is wrong — a weigh-in lands straight away.
+
+**8. The same write twice is one row.**
+Ask the same weigh-in again in the same words, in the same conversation.
+Pass: either it says it already did that one, or the weight screen still shows a
+single entry for today.
+Fail: two entries, or two of anything. That means the connector is sending a fresh
+`Idempotency-Key` each time and a retry on a slow reply will duplicate a write. It is
+the assistant's side that has to send the same key — tell it so.
+
+**9. A reminder reaches a locked phone.**
+Ask: *"Remind me in five minutes to check the electric bill."* Then lock the phone,
+put it down, and do not touch it.
+Pass: within about fifteen minutes a notification arrives beginning `Muse: `.
+Fail: nothing arrives. In order of likelihood: Step 4's job does not exist, or its
+token is wrong (check `cron.job` and then the function's logs in the dashboard), or
+this phone has no push subscription for Gino, or the phone is on Do Not Disturb —
+which silences it, because this is a notification and not an alarm. Nothing in any
+cloud can set an alarm.
+
+Nine passes and the whole bridge is real. Anything else, stop and fix that one thing
+before adding the next tool.
+
+**Four of the seven writes cannot actually happen yet, and the door says so.**
+Categorising a charge, recording what a bill came to, adding a cash charge and
+logging free-form food all write the request down and stop — the app has no screen
+for those rows yet, so nothing applies one and it clears itself after a day. The
+assistant will tell you that in as many words. It is not a fault; it is the app half
+of Phase 4, and it is not built.
 
 ---
 
 ## When a call is refused
 
-Muse will say the door's own sentence out loud. This is what each one means.
+Muse will say the door's own sentence out loud. These are the sentences **as the
+doors actually say them**, copied out of the source — so you can match what you hear
+against this table word for word instead of guessing whether a paraphrase is the same
+thing.
 
 | What you hear | What happened | What to do |
 |---|---|---|
-| "did not recognise the key" | Wrong key, no key, or the write key used on the read door. | Check step 2 landed, then redeploy (step 3). Secrets take effect on a fresh start. |
-| "has no such tool" | It asked for something that does not exist here. | Nothing is broken. If it keeps trying, tell it to read the description again. |
-| "as many questions as this door answers in an hour" | Too many calls in an hour. The write door counts these today; the read door's own cap is not switched on yet, so a runaway read loop will not be stopped for you. | Wait. If you were not asking that much, something is looping — check `muse_audit` for repeats. |
-| "could not read the ledger cleanly" | The door could not read the whole ledger, so it refused to answer from part of it. | Working as designed. Ask again in a minute. If it keeps happening, the ledger has outgrown a page size and the door needs a look. |
-| "Dates must look like..." | It sent a date the door did not understand. | Ask your question again with explicit dates. |
+| "That key does not open this door." | Wrong key, no key, a key too short to be real, or the write key used on the read door. Every one of those gives this same sentence on purpose. | Check step 2 landed, then redeploy (step 3). Secrets take effect on a fresh start. |
+| "There is no … on this door." | It asked for something that does not exist here. The reply also lists what does exist and what never will. | Nothing is broken. If it keeps trying, tell it to read the description again. |
+| "That is 60 questions this hour already. Wait for the hour to turn, or open the app." | The read cap, per person per Arizona hour. | Wait. If you were not asking that much, something is looping — check `muse_audit` for repeats. |
+| "That is 10 writes this hour already. Give it an hour, or do this one in the app." | The write cap. Reminders have their own: 10 a day, 20 waiting at once. | Same. Reminders say "reminders for today already" instead. |
+| "I could not read the whole ledger just now, so I am not going to give you a number." | The door could not read the whole ledger, so it refused to answer from part of it. | Working as designed. Ask again in a minute. If it keeps happening, the ledger has outgrown a page size and the door needs a look. |
+| "from has to be a date like 2026-09-01." | A date was missing or the wrong shape. | Ask again with explicit dates. |
+| "from has to be the first of a month…" / "to has to be the last day of a month … or today…" | `finance.spend_by_category` answers about whole months, or a month so far, and nothing else. A free choice of dates would turn category totals into a list of individual charges. | Ask about a month. For a pay cycle, the budget question needs no dates at all. |
+| "Nothing has changed, and nothing will: the app has no screen for these yet." | One of the four queued writes. The request is written down and will not be applied. | Do it in the app. This is the app half of Phase 4, and it is not built. |
+| "That request is far bigger than any of these tools needs." | Over 16 KB of body. Nothing was read. | Nothing here needs a body that size; something is sending the wrong thing. |
 
 Nothing on that list is ever a reason to accept an estimate. A refused call means
 no number, not a best guess.

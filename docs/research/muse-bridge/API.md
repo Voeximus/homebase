@@ -69,10 +69,15 @@ or the other, never both.
 The machine-readable description of every call is at
 `GET /muse-read/openapi.json`, and it needs the same token.
 
-**Do not ask the same question in a loop.** A cap of 60 reads an hour per person
-is planned and is not switched on yet, so today nothing stops you but this
-sentence. When it lands you will start getting `rate_limited` instead of an answer.
-Either way: if a call is refused, wait. Do not retry in a circle.
+**Do not ask the same question in a loop.** There is a cap of **60 reads an hour
+per person** and it is switched on. Over it, every call comes back `rate_limited`
+until the hour turns — including the ones somebody is waiting on. If a call is
+refused, wait. Do not retry in a circle, and do not walk a date window one step at
+a time to build up a picture: that is the thing the cap and the whole-month rule
+below exist to stop.
+
+**Do not send a body bigger than 16 KB.** Nothing here needs one. A larger one
+comes back `too_large` and is not read at all.
 
 Every call is written to a log the household can read: which tool, which person,
 whether it worked, how long it took. Amounts are not logged. Assume they can see
@@ -100,9 +105,10 @@ or before you quote several figures at once — a failing check tells you some o
 the other numbers are built on sand.
 
 **What comes back:** a list of checks, each with a stable `id`, the `question` in
-plain words, a `status`, and one cleaned sentence of `detail`. Some checks add a
-`count` of how many things failed. One check adds `a` and `b`, the two figures it
-was comparing, and its job was to prove they are equal.
+plain words, a `status`, and one cleaned sentence of `detail`. Some checks add `a`
+and `b`, the two figures they were comparing, and their job was to prove the two are
+equal. There is no count of how many things failed — `failures` counts failing
+**checks**, not failing rows, so do not read it out as "three problems".
 
 **Not in it:** which charge, which merchant, which day. A failing check names a
 bill, a budget line or a category at most, and often ends by pointing at the app.
@@ -123,13 +129,13 @@ is in front of you.
 Cash across the accounts that hold money. Credit cards are deliberately absent:
 a card is a debt, and debts are their own question.
 
-**What comes back:** `available`, `pending_hold`, and one entry per cash account
+**What comes back:** `available`, `still_processing`, and one entry per cash account
 with a short name, whose it is, and its balance.
 
 **The trap, and it is the important one on this tool:** `available` is the figure
 the bank calls available, and it has **already** been reduced by everything still
-processing. `pending_hold` is shown beside it only so a person can see how much of
-that reduction is recent. **Never add them together. Never call `available` a
+processing. `still_processing` is shown beside it only so a person can see how much
+of that reduction is recent. **Never add them together. Never call `available` a
 posted balance.** There is no posted figure in this system, so if someone asks for
 one, say it is not something the app exposes.
 
@@ -147,7 +153,8 @@ figure. If you report a target as a monthly budget you will be wrong by half.
 
 **What comes back:** the cycle's `start`, `end`, a ready-to-say `label`, which
 `day` of the cycle it is; the whole envelope's target and spend; then each line
-with `target`, `spent` and `left`.
+with `target`, `spent` and `left`. The reply carries that trap in its own `note` —
+read the note before you say a target out loud.
 
 `left` can be negative. Say "over by $31" — do not soften it and do not write it
 as "-31 left".
@@ -158,17 +165,31 @@ envelope and the bank balance are different questions and people mix them up.
 
 ### `finance.spend_by_category` — where did the money go?
 
-**Takes two dates.** `{"from": "2026-04-01", "to": "2026-04-02"}` — both
-required, both `YYYY-MM-DD`, both included in the range.
+**Takes two dates, and they have to be whole months.** `from` is the **first of a
+month**. `to` is the **last day of a month**, or **today**. Both `YYYY-MM-DD`, both
+included in the range, up to 24 months in one call.
 
-**You** choose the window, so **say** the window. If the request was "this month"
-or "last week", state the exact dates you used before you say any number. The door
-will not guess dates for you, and a silent guess is how a wrong month gets
-believed.
+```
+{"from": "2026-09-01", "to": "2026-09-30"}   last month, whole
+{"from": "2026-09-01", "to": "2026-09-26"}   this month so far — only if today is the 26th
+{"from": "2026-07-01", "to": "2026-09-30"}   three whole months
+```
+
+**"The last 30 days" and "since Tuesday" cannot be asked here, and that is
+deliberate.** With a free choice of dates, asking one day at a time turns category
+totals into a list of individual charges — which is exactly what the forbidden
+`finance.search_transactions` is forbidden for. So the boundaries are fixed to
+months. If somebody asks about a week, either answer about the month and say so, or
+use `finance.budget_status`, which is the pay-cycle question and does not need dates
+at all. **Never** work a shorter window out by asking twice and subtracting.
+
+**You** choose the months, so **say** the months. State the exact dates you used
+before you say any number. The door will not guess dates for you, and a silent guess
+is how a wrong month gets believed.
 
 **What comes back:** a category name against a total, for the categories that had
-spending. A category with nothing spent may simply be missing — that means zero,
-not unknown.
+spending, plus a `note`. A category with nothing spent may simply be missing — that
+means zero, not unknown.
 
 **Not in it:** the charges behind a total. There is no way to get them and no
 merchant-level question to ask. Charges still processing are counted here, on
@@ -191,13 +212,12 @@ missing, read the individual balances and stop. **Do not add them up yourself.**
 **Not in it, and do not compute it:** a payoff date, a debt-free month, months
 remaining, or what happens if they pay extra. The app has that maths; this door
 does not expose it yet. An invented payoff date is the single most tempting wrong
-number in this whole system.
+number in this whole system. The reply says so in its own `note`.
 
-**Names are trimmed.** Some of these names carry the last digits of a card, so
-runs of digits are stripped on the way to you and a name may arrive looking cut
-short. Say it as given and do not try to reconstruct it. If a name ever does reach
-you with digits in it, treat them as part of a card number: do not read them out,
-and do not repeat them anywhere.
+**A name may carry the last digits of a card, exactly as the app stores it.** A debt
+called "Credit card (…4728)" arrives with those digits in it — nothing strips them.
+Say the name as given if you must, but **do not read the digits out and do not repeat
+them anywhere**: treat them as part of a card number. Prefer "the card" to the name.
 
 ### `finance.worth_a_look` — what looks off, as a judgement call?
 
@@ -327,7 +347,7 @@ Say it. Do not dress it up, and do not fall back on a number from earlier in the
 conversation.
 
 The sentence is in `says`. The code below is in `error`, and it is the field to
-branch on — there are exactly seven of them and there will never be one that is
+branch on — there are exactly eight of them and there will never be one that is
 not on this list. A test checks this table against the door's own source both
 ways, so a code added to one and not the other fails the build.
 
@@ -337,7 +357,8 @@ ways, so a code added to one and not the other fails the build.
 | `unauthorized` | 401 | No key, the wrong key, or a key for a door this is not. Nothing was read. | Stop. Say the key was not recognised. **Never** try another key, another header, or another path. |
 | `unknown_tool` | 404 | There is no such tool here. It is not switched off — it does not exist. | Say the door cannot do that. Do not try a similar-looking path. |
 | `use_post` | 405 | You used something other than POST. Only `GET /openapi.json` is not a POST. | Send the same call as a POST. |
-| `rate_limited` | 429 | Too many questions this hour. Not switched on yet on this door — but handle it, because it is coming. | Wait. Do not loop. Say plainly that the door is capped and it will work again shortly. |
+| `too_large` | 413 | The body was over 16 KB. It was not read. | Do not send it again. No question here needs a body that size. |
+| `rate_limited` | 429 | 60 questions already this hour, per person. Nothing was read. | Wait for the hour to turn. Do not loop, and do not retry with a different window. Say plainly that the door is capped and it will work again shortly. |
 | `ledger_unreadable` | 503 | The door could not read the whole ledger, so it refused to compute from part of it. | Say exactly that and give **no** number. This is the door protecting them, working as designed. |
 | `failed` | 500 | Something broke inside the door working the answer out. | Say that it could not work the number out. Give no number. Try once, then stop. |
 
@@ -370,6 +391,14 @@ approximate them from the eleven above:
 - a barcode looked up
 - bill dates in a shape that can go on a calendar
 
+**And the one worth naming on its own: "what can I spend?"** The household holds a
+deliberate floor under the cash — a paycheque amount that is not to be dipped into —
+and **this door does not know it**. Nothing here subtracts it, so `finance.position`
+is the bank's number and not a spendable one, and `finance.budget_status` is one
+envelope and not the whole picture. Do not put the two together and answer "you can
+spend X": say the two figures you were given, say the floor is not in either of them,
+and say the app is where that question is answered.
+
 **Writes are a separate door with a separate key.** You are holding the read key,
 and this door has no write verb anywhere in it. If you are asked to log or change
 anything with the key you have, say plainly that you can only read.
@@ -378,9 +407,11 @@ For when somebody asks what the other door does: three writes land straight away
 logging a weigh-in, logging one of the household's saved meals by name, and writing
 a reminder for a given time. Four more are **queued**: categorising a charge,
 recording what a variable bill came to, adding a cash charge, and logging free-form
-food. Queued means that door writes down what was asked and **changes nothing** —
-the change happens when one of them taps it in the app, and it expires after a day
-if nobody does.
+food. Queued means that door writes the request down and **changes nothing** — and
+today it stays that way, because the app has no screen for these rows yet, so nothing
+applies one and it clears itself after a day. If somebody asks for one of those four,
+say it can be written down but it will not take effect, and that the app is where the
+change actually gets made.
 
 ## Two habits that matter more than the rest
 

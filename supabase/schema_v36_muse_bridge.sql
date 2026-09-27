@@ -44,11 +44,27 @@
 --                 policy. The app never needs to see a counter.
 --   muse_audit    the household may READ it (the settings screen shows the log).
 --                 Only the door writes it.
---   muse_pending  the household may read it and record a decision on a row that
---                 is still waiting. Only the door creates one. The `using
---                 (state = 'waiting')` on the update policy is what makes an
---                 expired row un-applyable in the DATABASE rather than only in
---                 the app's code.
+--   muse_pending  the household may read it, and may write exactly two columns on
+--                 a row that is still waiting: `state` and `decided_at`. Only the
+--                 door creates one, and only the door writes the payload, the tool
+--                 name or the summary.
+--
+--                 The update policy has BOTH halves spelled out, and it has to.
+--                 `using (state = 'waiting')` is what makes an expired row
+--                 un-applyable in the DATABASE rather than only in the app's code —
+--                 but with no `with check`, Postgres reuses the USING expression for
+--                 the new row too, which means the state would have to STILL be
+--                 'waiting' after the update. That is every approve and every reject
+--                 refused, for every row, with an error naming row-level security
+--                 rather than the missing clause. So the check names the transition:
+--                 a waiting row may become applied or rejected, and nothing may go
+--                 back to waiting.
+--
+--                 And the grant is two columns rather than the table, because
+--                 `summary` is the sentence the app is told to show him verbatim. If
+--                 a session could rewrite `payload` and `tool` while leaving
+--                 `summary` alone, what he approves and what gets applied could be
+--                 pulled apart.
 --   reminders     the household's own list — read, add, edit, delete in the app.
 -- ---------------------------------------------------------------------------
 
@@ -190,14 +206,24 @@ drop policy if exists "muse_audit read" on public.muse_audit;
 create policy "muse_audit read" on public.muse_audit
   for select to authenticated using (true);
 
--- the app shows queued writes and records his decision
-grant select, update on public.muse_pending to authenticated;
+-- the app shows queued writes and records his decision — and writes NOTHING else:
+-- the decision is two columns, so the payload, the tool and the summary he is shown
+-- are writable only by the service role inside the door.
+grant select on public.muse_pending to authenticated;
+grant update (state, decided_at) on public.muse_pending to authenticated;
 drop policy if exists "muse_pending read" on public.muse_pending;
 create policy "muse_pending read" on public.muse_pending
   for select to authenticated using (true);
 drop policy if exists "muse_pending decide" on public.muse_pending;
+-- BOTH halves, and the second one is the transition rather than a copy of the first.
+-- With `using` alone, Postgres applies it to the new row as well, so `state` would
+-- have to still be 'waiting' after the update — i.e. the app could never record a
+-- decision at all. `with check (true)` would be the opposite mistake: it would let a
+-- session re-arm an expired or rejected row back to 'waiting'.
 create policy "muse_pending decide" on public.muse_pending
-  for update to authenticated using (state = 'waiting');
+  for update to authenticated
+  using (state = 'waiting')
+  with check (state in ('applied','rejected'));
 
 -- reminders are his own list, editable in the app
 grant select, insert, update, delete on public.reminders to authenticated;
@@ -216,7 +242,26 @@ do $$ begin
   alter publication supabase_realtime add table public.reminders;
 exception when duplicate_object then null; end $$;
 
--- ── 8. the scheduled job (run with the real CRON_TOKEN) ──────────────────────
+-- ── 8. the scheduled job — NOT CREATED BY RUNNING THIS FILE ──────────────────
+--
+-- ⚠ THIS IS THE ONE THING IN THIS FILE THAT PASTING THE FILE DOES NOT DO, and
+-- nothing else in the bridge works without it. The statement is commented out
+-- because it needs two values that must not be committed: the project ref and the
+-- real CRON_TOKEN. So it lives, filled in, as its own step in
+-- docs/research/muse-bridge/SETUP.md ("Schedule the 15-minute job"), with a check
+-- you can feel on a locked phone.
+--
+-- WHAT IS SILENTLY BROKEN UNTIL THAT STEP IS DONE — and it is silent, which is the
+-- problem:
+--   · `schedule.remind` writes its row, answers "his phone gets this within about
+--     15 minutes of 3:00 PM", and no push is ever sent. The tool exists because an
+--     assistant's own reminders cannot reach a lock screen, so a reminder that does
+--     not arrive is invisible until something that mattered has been missed.
+--   · muse_pending rows are never expired, so "it clears itself after 24 hours" is
+--     a sentence rather than a rule. The expiry lives in the same job.
+--
+-- Check it landed with:  select jobname, schedule from cron.job;
+--
 -- cron-reminders does two things every 15 minutes: delivers reminders that are
 -- due, and marks queued writes that nobody tapped as expired. 15 minutes is the
 -- delivery grain, so the door tells the caller a reminder "arrives within about

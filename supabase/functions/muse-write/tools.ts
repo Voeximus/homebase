@@ -138,6 +138,20 @@ function dateFor(
  * One row in muse_pending, one push, and nothing else. This function is the
  * whole of the queued path, which is the point: there is no branch anywhere in
  * it that touches the ledger.
+ *
+ * WHAT THE SENTENCE USED TO SAY, AND WHY IT HAD TO CHANGE. It said the request was
+ * "waiting in the app for your tap". Nothing in the app reads muse_pending — there
+ * is no list, no screen and no tap, and no code path anywhere that applies one of
+ * these rows. PLAN.md Phase 4 puts the app half and the door half in the same phase
+ * and only the door half was built. So the door was sending him to a screen that
+ * does not exist, four times out of seven, and "go and tap it" is the one sentence
+ * in the whole bridge a person cannot check without walking into the app and finding
+ * nothing.
+ *
+ * The sentence now says what is true TODAY: the request is written down, the ledger
+ * has not moved, and nothing will move it until the app grows the screen. When that
+ * screen lands, this is the line to change back — and PLAN.md's Phase 4 gate ("undo
+ * each in the app and confirm it undoes cleanly") is what proves it.
  */
 async function queue(
   ctx: Ctx,
@@ -148,7 +162,9 @@ async function queue(
   const row = await ctx.db.insertPending({ person: ctx.person, tool, payload, summary });
   await ctx.push(
     {
-      title: "Waiting for your tap",
+      // Not "Waiting for your tap": there is nothing to tap yet, and a notification
+      // that sends him looking for a screen that is not there is worse than none.
+      title: "Written down, not applied",
       body: summary,
       url: ctx.appUrl,
       tag: "muse-pending",
@@ -157,11 +173,19 @@ async function queue(
   );
   return {
     ok: true,
-    result: { queued: true, id: row.id, expires_at: row.expiresAt, summary },
+    result: {
+      queued: true,
+      id: row.id,
+      expires_at: row.expiresAt,
+      summary,
+      applied: false,
+      can_be_applied_yet: false,
+    },
     rowIds: [row.id],
     say:
-      `${summary} Nothing has changed yet — it is waiting in the app for your tap, ` +
-      `and it expires in 24 hours if nobody taps it.`,
+      `${summary} Nothing has changed, and nothing will: the app has no screen for ` +
+      `these yet, so this is only written down. It clears itself after 24 hours. ` +
+      `Do it in the app if it needs to actually happen.`,
   };
 }
 
@@ -416,7 +440,19 @@ const categorizeCharge: Tool = {
   fields: ["transaction_id", "category_id", "learn_merchant"],
   async run(payload, ctx) {
     const id = typeof payload.transaction_id === "string" ? payload.transaction_id : "";
-    if (!UUID.test(id)) return refuse(400, "I need the charge's id, which the read door gives you.");
+    // THE SENTENCE USED TO SAY "which the read door gives you". It does not. No tool
+    // on the read door returns a transaction id — `finance.search_transactions` is
+    // forbidden, and worth_a_look strips `evidence`, `fix` and `key`, which are the
+    // only three places a charge id lives. So an assistant read that sentence,
+    // concluded it had missed a call, and either looped on reads that contain no ids
+    // or invented a uuid. Saying where the id actually has to come from is what stops
+    // the loop.
+    if (!UUID.test(id)) {
+      return refuse(
+        400,
+        "I need the charge's id, and nothing on the read door hands one out — so this cannot be done from here today. Categorise it in the app.",
+      );
+    }
     const category = typeof payload.category_id === "string" ? payload.category_id : "";
     if (!SLUG.test(category)) return refuse(400, "I need a category id, like groceries or transport.");
     const learn = payload.learn_merchant;
@@ -444,7 +480,16 @@ const noteKnownAmount: Tool = {
   fields: ["recurring_id", "amount", "month_key"],
   async run(payload, ctx) {
     const id = typeof payload.recurring_id === "string" ? payload.recurring_id : "";
-    if (!UUID.test(id)) return refuse(400, "I need the bill's id, which the read door gives you.");
+    // The read door hands out a bill id in exactly one place: the `bill` field on a
+    // `finance.worth_a_look` suggestion, and only for bills that happened to raise
+    // one. Said precisely, because "the read door gives you" sent an assistant
+    // hunting through tools that carry no ids at all.
+    if (!UUID.test(id)) {
+      return refuse(
+        400,
+        "I need the bill's id. The only place to get one is the `bill` field on a worth_a_look suggestion — otherwise do it in the app.",
+      );
+    }
     const amount = money(payload.amount);
     if (amount === null || amount < 0 || amount > 100_000) {
       return refuse(400, "I need the amount off the bill as a number.");
@@ -548,7 +593,7 @@ const logMeal: Tool = {
 
 // ── the registry ─────────────────────────────────────────────────────────────
 
-export const TOOLS: Record<string, Tool> = {
+const REGISTRY: Record<string, Tool> = {
   "health.log_weight": logWeight,
   "health.log_saved_meal": logSavedMeal,
   "schedule.remind": remind,
@@ -558,4 +603,20 @@ export const TOOLS: Record<string, Tool> = {
   "health.log_meal": logMeal,
 };
 
-export const TOOL_NAMES = Object.keys(TOOLS);
+/**
+ * The catalogue, as a Map — which is the lookup the door uses.
+ *
+ * WHY NOT THE OBJECT. `REGISTRY[name]` answers for every key on Object.prototype,
+ * so "constructor", "__proto__", "toString", "valueOf" and "hasOwnProperty" each
+ * found an inherited value and got past the door's "no such tool" check. A Map has
+ * no inherited keys, so the only names in it are the seven below. The read door has
+ * always been a Map; this is the same shape.
+ */
+export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(Object.entries(REGISTRY));
+
+/** The seven names, for the OpenAPI description and the "no such tool" reply. */
+export const TOOL_NAMES = [...TOOL_BY_NAME.keys()];
+
+/** The catalogue by name, for the description builder and the tests. Reading it is
+ *  safe; ROUTING goes through TOOL_BY_NAME above. */
+export const TOOLS: Readonly<Record<string, Tool>> = REGISTRY;

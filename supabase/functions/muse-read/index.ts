@@ -75,4 +75,19 @@ const audit = createAuditSink({
   },
 });
 
-Deno.serve((req) => handleMuseRead(req, { db, secrets: SECRETS, audit, baseUrl: BASE_URL }));
+/** The hourly read cap, counted in `muse_calls`. One statement, so two calls that
+ *  arrive together cannot both read the same number — the counting is the database's
+ *  job, and `muse_bump` is executable by the service role only. A count that comes
+ *  back unreadable throws, and the handler turns that into a refusal rather than
+ *  treating it as room to spare. */
+const limit = {
+  async bump(person: "gino" | "xinyan", bucket: string) {
+    const { data, error } = await admin.rpc("muse_bump", { p_person: person, p_bucket: bucket });
+    if (error) throw new Error(error.message);
+    const n = Number(data);
+    if (!Number.isFinite(n)) throw new Error("muse_bump returned no count");
+    return n;
+  },
+};
+
+Deno.serve((req) => handleMuseRead(req, { db, secrets: SECRETS, audit, limit, baseUrl: BASE_URL }));

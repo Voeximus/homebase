@@ -12,6 +12,12 @@
 #   muse-read        called by an assistant's cloud VM, which has no session
 #   muse-write       called by the same VM, through a separate door
 #
+# Of the first four, cron-reminders compares its token in constant time, through the
+# same one-line helper both doors use (_shared/muse/safeEqual.ts). announce-update,
+# plaid-webhook and cron-notify still compare with `!==`, which returns as soon as two
+# characters differ — pre-existing, small over a network, and worth one line each the
+# next time one of those files is opened.
+#
 # The first four take their secret from the query string. The two Muse doors take a
 # per-person secret from a header instead, because a secret in a URL ends up in
 # logs — and because the secret is WHO is calling, not just a doorbell: it decides

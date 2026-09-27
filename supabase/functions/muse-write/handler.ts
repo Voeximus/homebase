@@ -33,15 +33,14 @@
 
 import type { Db, Person, Push } from "./db.ts";
 import { azDateISO, ticks } from "../_shared/muse/az.ts";
+import { callerOf } from "../_shared/muse/auth.ts";
+import { BodyTooLarge, MAX_BODY_BYTES, readCappedText } from "../_shared/muse/body.ts";
 import { scrubName } from "../_shared/muse/scrub.ts";
-import { TOOL_NAMES, TOOLS } from "./tools.ts";
+import { TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
  *  connectors, so this is ours. */
 export const WRITES_PER_HOUR = 10;
-
-/** The biggest body the door will read. A write request is a handful of fields. */
-const MAX_BODY_BYTES = 16 * 1024;
 
 export interface Secrets {
   gino: string;
@@ -62,35 +61,32 @@ export interface Reply {
   body: Record<string, unknown>;
 }
 
-/** Length-independent comparison, so a wrong secret cannot be recovered by
- *  timing. Same function as supabase/functions/_shared/callerAuth.ts — copied
- *  rather than imported because that file reads Deno's environment as it loads,
- *  which would take the whole door down in any other runtime. */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 /**
  * Which person's secret is this? Never the request body — the body is written by
  * a model that may have been talked into writing anything, and `sendPush` fans
  * out to EVERY stored subscription when the owner is undefined, so a missing
  * field would not mean "Gino", it would mean the whole household.
  *
+ * ONE ANSWER FOR BOTH DOORS, and this is the third thing the two doors stopped
+ * spelling twice (after az.ts and scrub.ts). This function used to have its own
+ * comparison and its own rules, and it had drifted in two ways that both mattered
+ * on the door that CHANGES things:
+ *
+ *   · it accepted any non-empty configured secret, while the read door refuses
+ *     anything under 24 characters (MIN_SECRET_LENGTH) precisely so a placeholder
+ *     or a half-pasted value locks the door instead of opening it. So "changeme"
+ *     would have opened the write door and been refused by the read door, and
+ *     supabase/config.toml claimed both doors checked;
+ *   · it returned on the first match, which makes "is this Gino's secret"
+ *     measurably faster to test than "is this Xinyan's". callerOf compares every
+ *     candidate before answering.
+ *
  * Two headers are accepted for now because nobody outside Meta has published what
  * a phone-built connector puts a static secret in. PLAN.md's Phone Test 2 settles
- * it on his phone; when it does, delete the losing branch.
+ * it on his phone; when it does, delete the losing branch in auth.ts.
  */
 export function personFor(req: Request, secrets: Secrets): Person | null {
-  const presented = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim()
-    || (req.headers.get("X-Muse-Token") ?? "").trim();
-  if (!presented) return null;
-  // A configured value that is empty must never match an empty header.
-  if (secrets.gino && safeEqual(presented, secrets.gino)) return "gino";
-  if (secrets.xinyan && safeEqual(presented, secrets.xinyan)) return "xinyan";
-  return null;
+  return callerOf(req, secrets);
 }
 
 /** Key order must not change a fingerprint, or the same request sent twice looks
@@ -139,7 +135,6 @@ const LOADED_FIELDS: Record<string, string> = {
 
 export async function handleWrite(req: Request, deps: Deps): Promise<Reply> {
   const started = ticks();
-  const { db, clock } = deps;
   const ms = () => ticks() - started;
 
   if (req.method !== "POST") {
@@ -154,10 +149,52 @@ export async function handleWrite(req: Request, deps: Deps): Promise<Reply> {
     return deny(401, "Unauthorized.");
   }
 
-  const text = await req.text();
-  if (text.length > MAX_BODY_BYTES) {
-    await db.logCall({ person, tool: "?", args: {}, outcome: "denied", note: "body too large", ms: ms() });
-    return deny(413, "That request is far bigger than any of these tools needs.");
+  // ── the belt under the whole request ────────────────────────────────────────
+  // This file's own first line promises "a row in the audit log for every call",
+  // and a crafted tool name used to break that promise: `TOOLS[tool]` found an
+  // inherited value for "constructor", `def.fields` was undefined, the TypeError
+  // escaped this function entirely, and index.ts answered 503 "I could not reach
+  // the ledger cleanly" — blaming the database, with NO row written anywhere. An
+  // audit log a string can skip is not an audit log. The lookup is own-property
+  // only now (below), and this catch is the belt under it: anything unexpected
+  // from here on is recorded against the person whose key opened the door.
+  try {
+    return await afterAuth(req, deps, person, ms);
+  } catch (e) {
+    const why = String((e as Error)?.message ?? e).slice(0, 200);
+    console.error("muse-write: unhandled", why);
+    try {
+      await deps.db.logCall({ person, tool: "?", args: {}, outcome: "error", note: why, ms: ms() });
+    } catch (logErr) {
+      console.error("muse-write: audit row not written", String((logErr as Error)?.message ?? logErr));
+    }
+    return deny(500, "Something went wrong on my side and I stopped. Nothing was retried. Check the app.");
+  }
+}
+
+async function afterAuth(
+  req: Request,
+  deps: Deps,
+  person: Person,
+  ms: () => number,
+): Promise<Reply> {
+  const { db, clock } = deps;
+
+  // Capped before it is read, and counted in BYTES as it arrives — see body.ts.
+  // The old check read the whole body first and then measured `text.length`, which
+  // counts UTF-16 units, so 16,000 four-byte characters passed a cap named BYTES.
+  let text: string;
+  try {
+    text = await readCappedText(req);
+  } catch (e) {
+    if (e instanceof BodyTooLarge) {
+      await db.logCall({ person, tool: "?", args: {}, outcome: "denied", note: "body too large", ms: ms() });
+      return deny(
+        413,
+        `That request is far bigger than any of these tools needs. Nothing over ${MAX_BODY_BYTES / 1024} KB is read.`,
+      );
+    }
+    throw e;
   }
   let parsed: unknown;
   try {
@@ -182,7 +219,15 @@ export async function handleWrite(req: Request, deps: Deps): Promise<Reply> {
     return deny(400, "Name the tool.", { tools: TOOL_NAMES });
   }
 
-  const def = TOOLS[tool];
+  // A Map, not `TOOLS[tool]`. The registry is a plain object, so an object-literal
+  // lookup answers for every key on Object.prototype: "constructor", "__proto__",
+  // "toString", "valueOf" and "hasOwnProperty" all found an inherited value and
+  // sailed past this check, and scrubName passes them through because they are made
+  // of the characters a name is made of. One of them then crashed on `def.fields`
+  // with no audit row at all; another spent a rate-limit slot, wrote a row naming a
+  // tool that does not exist, and burned the caller's Idempotency-Key. The read door
+  // has always used a Map (_shared/muse/tools.ts); this one does now.
+  const def = TOOL_BY_NAME.get(tool);
   if (!def) {
     await db.logCall({ person, tool, args: {}, outcome: "denied", note: "no such tool", ms: ms() });
     return deny(404, `There is no ${tool} on this door.`, { tools: TOOL_NAMES });

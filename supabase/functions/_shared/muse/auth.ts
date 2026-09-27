@@ -26,16 +26,10 @@
 // string is deliberately NOT accepted, even though the three existing public
 // functions use one — query strings end up in logs.
 
-/** Length-independent comparison, so a wrong secret can't be recovered by timing.
- *  The same implementation as `safeEqual` in _shared/callerAuth.ts, spelled again
- *  here because that one is module-private and exporting it would mean editing a
- *  file this change does not own. A fixed algorithm cannot drift. */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
+// One comparison, in safeEqual.ts, for every secret in the bridge. It used to be
+// spelled here and again in the write door, which is how the write door ended up
+// without the length floor below.
+import { safeEqual } from "./safeEqual.ts";
 
 export type Person = "gino" | "xinyan";
 

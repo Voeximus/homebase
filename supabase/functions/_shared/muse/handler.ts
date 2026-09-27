@@ -27,9 +27,10 @@
 // what an assistant may never do, and it is enforced by this file importing no
 // client and no URL.
 
-import { nowAZ } from "./az.ts";
-import { callerOf, type ReadSecrets } from "./auth.ts";
+import { azDateISO, nowAZ } from "./az.ts";
+import { callerOf, type Person, type ReadSecrets } from "./auth.ts";
 import type { AuditSink, Outcome } from "./audit.ts";
+import { BodyTooLarge, MAX_BODY_BYTES, readCappedText } from "./body.ts";
 import { LedgerUnreadable } from "./paging.ts";
 import { createLoader } from "./load.ts";
 import type { Db } from "./paging.ts";
@@ -38,10 +39,36 @@ import { scrubName } from "./scrub.ts";
 import { openApiDocument } from "./openapi.ts";
 import { setLangVar } from "./lib/i18n.ts";
 
+/**
+ * Reads per person per Arizona hour.
+ *
+ * WHY THIS NUMBER IS THE TOOL IT IS. Meta publishes no rate limits for connectors,
+ * so this is ours, and PLAN.md §4 makes it a control rather than a suggestion. It
+ * is not only about cost. `finance.spend_by_category` answers about a window the
+ * caller chooses, and a caller who can ask about enough windows can rebuild a good
+ * part of the ledger a question at a time — which is what `search_transactions` is
+ * forbidden for. The window rules in tools.ts take the granularity away; this takes
+ * the volume away. Until it shipped, the only thing standing there was a polite
+ * sentence in API.md asking an assistant not to loop, which is exactly what a
+ * prompt injection overrides.
+ */
+export const READS_PER_HOUR = 60;
+
+/** The counter, in the locked-down `muse_calls` table. One statement per call, so
+ *  two arriving together cannot both read 59. Implemented over `muse_bump` in the
+ *  door's entry file — the same seam the write door uses. */
+export interface RateLimit {
+  /** Increment one bucket and return its new value. */
+  bump(person: Person, bucket: string): Promise<number>;
+}
+
 export interface HandlerDeps {
   db: Db;
   secrets: ReadSecrets;
   audit: AuditSink;
+  /** Not optional, deliberately: a missing limiter has to be a build error rather
+   *  than a door with no cap on it. */
+  limit: RateLimit;
   /** The instant to answer about. Defaults to the real clock — the door's ONLY
    *  clock reading, and it lives behind nowAZ() so a test can hand in a moment. */
   at?: Date;
@@ -69,13 +96,14 @@ export interface HandlerDeps {
  * what it repeats — and API.md's standing instruction is to say the sentence as it
  * stands. A code per sentence would be a vocabulary to keep in step for no gain.
  *
- * `rate_limited` is on the list and is never sent yet: the read cap is Phase 3
- * work. It is here, and named in API.md, so the branch exists before the day it
- * starts firing.
+ * `too_large` is its own code rather than another 400, because the right response
+ * to it is different: a `bad_request` is fixed and sent again, and a body over the
+ * cap must not be sent again at all.
  */
 export const ERROR_CODES = [
   "unauthorized",
   "bad_request",
+  "too_large",
   "unknown_tool",
   "rate_limited",
   "ledger_unreadable",
@@ -200,6 +228,11 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   // household — no balance, no name, no date. It is generated from the catalogue in
   // tools.ts rather than written beside it, so a tool that exists appears here and
   // a tool that does not cannot.
+  // It does NOT count against the hourly cap, and that is a choice rather than an
+  // oversight: a connector may have to fetch this several times while it is being
+  // built on his phone, and spending his reading allowance on the door's own
+  // description would look like the door being broken during setup. It reads no
+  // table, so the only thing a loop on it costs is an audit row.
   if (req.method === "GET" && segment === "openapi.json") {
     return finish(openApiDocument(deps.baseUrl), 200, "ok");
   }
@@ -219,14 +252,32 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   // Phase 3 work and belongs here when her secret exists.
   setLangVar("en");
 
-  let body: unknown = {};
-  if (req.headers.get("Content-Length") !== "0") {
-    try {
-      const text = await req.text();
-      body = text ? JSON.parse(text) : {};
-    } catch {
-      return finish({ error: "bad_request", says: "The body was not JSON I could read." }, 400, "denied");
+  // The body is read through a counted reader with a cap on it (body.ts), so a
+  // caller holding a key cannot hand the isolate more than it has memory for. The
+  // declared size is refused before a byte is read; a chunked body is refused as it
+  // arrives.
+  let body: unknown;
+  let text: string;
+  try {
+    text = await readCappedText(req);
+  } catch (e) {
+    if (e instanceof BodyTooLarge) {
+      return finish(
+        {
+          error: "too_large",
+          says: `That request is far bigger than any question here needs. Nothing over ${MAX_BODY_BYTES / 1024} KB is read.`,
+        },
+        413,
+        "denied",
+      );
     }
+    console.error("muse-read: body not readable", String((e as Error)?.message ?? e));
+    return finish({ error: "bad_request", says: "I could not read the body of that request." }, 400, "denied");
+  }
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    return finish({ error: "bad_request", says: "The body was not JSON I could read." }, 400, "denied");
   }
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     return finish({ error: "bad_request", says: "The body has to be a JSON object." }, 400, "denied");
@@ -291,6 +342,38 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   }
 
   const now = nowAZ(deps.at);
+
+  // ── the cap ────────────────────────────────────────────────────────────────
+  // Counted here rather than at the top of the request, so a malformed call cannot
+  // spend somebody's hour — the same place the write door counts, and the same
+  // bucket spelling the migration names. A counter that will not answer is a
+  // REFUSAL, never "plenty left": the cap exists for the case where something is
+  // looping, which is exactly when the database is under load.
+  const bucket = `read:${azDateISO(now)}T${String(now.getHours()).padStart(2, "0")}`;
+  let used: number;
+  try {
+    used = await deps.limit.bump(person, bucket);
+  } catch (e) {
+    console.error("muse-read: rate counter unreadable", String((e as Error)?.message ?? e));
+    return finish(
+      {
+        error: "failed",
+        says: "I could not check my own call count just now, so I stopped rather than answer.",
+      },
+      500,
+      "error",
+    );
+  }
+  if (used > READS_PER_HOUR) {
+    return finish(
+      {
+        error: "rate_limited",
+        says: `That is ${READS_PER_HOUR} questions this hour already. Wait for the hour to turn, or open the app.`,
+      },
+      429,
+      "rate_limited",
+    );
+  }
 
   try {
     const result = await tool.run({ person, now, args, load: createLoader(deps.db) });

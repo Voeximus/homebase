@@ -33,6 +33,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/webpush.ts";
+import { safeEqual } from "../_shared/muse/safeEqual.ts";
 import { planFor, type Repeats } from "./schedule.ts";
 
 const admin = createClient(
@@ -59,8 +60,12 @@ interface ReminderRow {
 
 Deno.serve(async (req) => {
   // Fail CLOSED: a missing or empty CRON_TOKEN denies everything. It never
-  // disables the check.
-  if (!TOKEN || new URL(req.url).searchParams.get("token") !== TOKEN) {
+  // disables the check. Compared in constant time, like both doors' secrets and
+  // unlike `!==` — this endpoint pushes text to two lock screens, and a comparison
+  // that returns on the first wrong character says in timing how much of a guess
+  // was right. config.toml now tells the reader these functions compare in constant
+  // time, and that sentence has to be true of every one of them.
+  if (!TOKEN || !safeEqual(new URL(req.url).searchParams.get("token") ?? "", TOKEN)) {
     return new Response("forbidden", { status: 403 });
   }
 

@@ -17,8 +17,10 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { azDateISO, clockNow, nowAZ } from "../supabase/functions/_shared/muse/az.ts";
-import { handleWrite, WRITES_PER_HOUR, type Deps, type Secrets } from "../supabase/functions/muse-write/handler.ts";
-import { REMIND_PER_DAY, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
+import { handleWrite, personFor, WRITES_PER_HOUR, type Deps, type Secrets } from "../supabase/functions/muse-write/handler.ts";
+import { callerOf, MIN_SECRET_LENGTH } from "../supabase/functions/_shared/muse/auth.ts";
+import { MAX_BODY_BYTES } from "../supabase/functions/_shared/muse/body.ts";
+import { REMIND_PER_DAY, TOOL_BY_NAME, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
 import type {
   CallRecord,
@@ -32,8 +34,12 @@ import type {
 const AT = new Date("2026-09-27T02:00:00Z");
 const AZ_TODAY = "2026-09-26";
 
-const GINO_SECRET = "gino-secret-0123456789";
-const XINYAN_SECRET = "xinyan-secret-0123456789";
+// Long enough to be real secrets: the doors refuse a configured value under
+// MIN_SECRET_LENGTH (24), so that a placeholder or a half-pasted key locks the door
+// instead of opening it. The write door used to have no such rule and these two
+// fixtures were 22 characters, which is how the gap stayed invisible.
+const GINO_SECRET = "gino-write-secret-0123456789";
+const XINYAN_SECRET = "xinyan-write-secret-0123456789";
 const SECRETS: Secrets = { gino: GINO_SECRET, xinyan: XINYAN_SECRET };
 
 const TXN_ID = "11111111-2222-3333-4444-555555555555";
@@ -360,8 +366,19 @@ describe("every tool in the catalogue, not just the first one", () => {
       const before = JSON.stringify(db.ledger);
       const r = await handleWrite(post(tool, args), deps(db));
       expect(r.status, JSON.stringify(r.body)).toBe(200);
-      expect(r.body.result).toMatchObject({ queued: true });
-      expect(String(r.body.message)).toContain("Nothing has changed yet");
+      expect(r.body.result).toMatchObject({ queued: true, applied: false, can_be_applied_yet: false });
+      // WHAT THE SENTENCE MAY NOT SAY. It used to say the request was "waiting in
+      // the app for your tap". Nothing in src/ reads muse_pending — there is no
+      // list, no screen, no tap and no code path that applies one of these rows —
+      // so four of the seven writes were sending him to look for something that is
+      // not there, which is the one sentence in the bridge a person cannot check
+      // without walking into the app and finding nothing. When the app grows that
+      // screen, this is the test to change, in the same commit as the screen.
+      const say = String(r.body.message);
+      expect(say).toContain("Nothing has changed, and nothing will");
+      expect(say).toMatch(/no screen for these yet/i);
+      expect(say).not.toMatch(/\btap\b/i);
+      expect(say).not.toMatch(/waiting (in|for)/i);
       expect(db.pending).toHaveLength(1);
       expect(db.pending[0].tool).toBe(tool);
       expect(db.pushes).toHaveLength(1);
@@ -425,7 +442,11 @@ describe("a queued write asks and changes nothing", () => {
     expect(db.pending[0].person).toBe("gino");
     expect(db.pushes).toHaveLength(1);
     expect(db.pushes[0].owner).toBe("Gino");
-    expect(String(r.body.message)).toContain("waiting in the app");
+    // The push may not promise a tap either: its title is what lands on a lock
+    // screen, and "Waiting for your tap" is an instruction to go somewhere that
+    // does not exist.
+    expect(db.pushes[0].title).not.toMatch(/\btap\b/i);
+    expect(String(r.body.message)).toMatch(/no screen for these yet/i);
   });
 
   it("names the bill in a note_known_amount, and still touches nothing", async () => {
@@ -859,5 +880,226 @@ describe("one spelling of the clock", () => {
     expect(src).toContain("export function scrub(");
     expect(src).toContain("export function scrubCap(");
     expect(src).toContain("function clean(");
+  });
+});
+
+// ── the secret has to be a real one ───────────────────────────────────────────
+//
+// The read door refuses any configured value under MIN_SECRET_LENGTH, so that a
+// placeholder or a half-pasted key LOCKS the door instead of opening it. The write
+// door — the one that changes things — accepted any non-empty string, and
+// supabase/config.toml said of both doors that each "fails closed when the secret is
+// missing, empty, or too short to be real". That sentence was true of one of them.
+describe("a placeholder secret locks the write door", () => {
+  const withSecret = (configured: string, presented: string) => {
+    const req = new Request("https://ref.supabase.co/functions/v1/muse-write", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${presented}` },
+    });
+    return personFor(req, { gino: configured, xinyan: "" });
+  };
+
+  it("refuses a configured secret too short to be real", () => {
+    for (const placeholder of ["changeme", "tbd", "test", "x".repeat(MIN_SECRET_LENGTH - 1)]) {
+      expect(withSecret(placeholder, placeholder), placeholder).toBeNull();
+    }
+  });
+
+  it("accepts one long enough", () => {
+    const real = "x".repeat(MIN_SECRET_LENGTH);
+    expect(withSecret(real, real)).toBe("gino");
+  });
+
+  it("answers the same way the read door does, because it is the same function", () => {
+    // Two spellings of "who is at the door" is how the length rule came to exist on
+    // one door and not the other.
+    const short = "changeme";
+    const req = new Request("https://ref.supabase.co/functions/v1/muse-write", {
+      headers: { Authorization: `Bearer ${short}` },
+    });
+    expect(personFor(req, { gino: short, xinyan: "" })).toBe(callerOf(req, { gino: short, xinyan: "" }));
+    const src = readFileSync("supabase/functions/muse-write/handler.ts", "utf8");
+    // No second comparison in this file — it used to carry its own safeEqual.
+    expect(src).not.toMatch(/function safeEqual/);
+  });
+
+  it("does not answer faster for one person than the other", () => {
+    // callerOf compares every candidate before returning. An early return on the
+    // first match makes "is this Gino's secret" measurably cheaper to test than
+    // "is this Xinyan's", which tells an attacker which half of the keyspace to work.
+    const src = readFileSync("supabase/functions/_shared/muse/auth.ts", "utf8");
+    const body = /export function callerOf[\s\S]*?\n}/.exec(src)![0];
+    expect(body).toContain("found === null");
+    expect(body).toContain("MIN_SECRET_LENGTH");
+  });
+});
+
+// ── a tool name that is not a tool ────────────────────────────────────────────
+//
+// `TOOLS[tool]` is an object-literal lookup, so every key on Object.prototype found
+// an inherited value and got past the door's "no such tool" check. Two shapes came
+// out of that, and both broke a promise this file makes in its own first line:
+// "a row in the audit log for every call".
+describe("Object.prototype is not a catalogue", () => {
+  const INHERITED = ["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"];
+
+  for (const name of INHERITED) {
+    it(`has no tool called ${name}, and says so with a row in the log`, async () => {
+      const db = new Fake();
+      const r = await handleWrite(post(name, { weight: 180 }), deps(db));
+      expect(r.status).toBe(404);
+      expect(String(r.body.message)).toContain(`There is no ${name} on this door`);
+      // The row that used to be missing entirely: `def.fields` was undefined, the
+      // TypeError escaped handleWrite, and index.ts answered 503 "I could not reach
+      // the ledger cleanly" — blaming the database for a crafted string, with
+      // nothing written anywhere.
+      expect(db.audit).toHaveLength(1);
+      expect(db.audit[0]).toMatchObject({ tool: name, outcome: "denied" });
+      // And nothing was spent on it: no rate-limit slot, and no Idempotency-Key
+      // burned, so a corrected retry with the same key still works.
+      expect(db.calls.size).toBe(0);
+      expect(db.audit[0].idemKey).toBeNull();
+      expect(db.pending).toHaveLength(0);
+      expect(db.weights.size).toBe(0);
+    });
+  }
+
+  it("still finds the seven real tools", async () => {
+    expect([...TOOL_BY_NAME.keys()].sort()).toEqual([...TOOL_NAMES].sort());
+    expect(TOOL_BY_NAME.get("constructor")).toBeUndefined();
+    expect(TOOL_BY_NAME.size).toBe(7);
+  });
+
+  it("writes a row rather than a 503 if anything else in the door throws", async () => {
+    // The belt under the whole request. Whatever the next shape error turns out to
+    // be, it is recorded against the person whose key opened the door instead of
+    // escaping as "the ledger could not be reached".
+    class Broken extends Fake {
+      override bump(): Promise<number> {
+        throw new Error("muse_calls exploded");
+      }
+    }
+    const db = new Broken();
+    const r = await handleWrite(post("health.log_weight", { weight: 198.4 }), deps(db));
+    expect(r.status).toBe(500);
+    expect(db.audit.some((a) => a.outcome === "error")).toBe(true);
+    expect(db.weights.size).toBe(0);
+  });
+});
+
+// ── how much of a request the write door will read ────────────────────────────
+describe("the body cap is bytes, and it is checked before the body is read", () => {
+  const withBody = (body: string) =>
+    new Request("https://ref.supabase.co/functions/v1/muse-write", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GINO_SECRET}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "key-body-abcdefgh",
+      },
+      body,
+    });
+
+  it("refuses a body over the cap", async () => {
+    const db = new Fake();
+    const r = await handleWrite(withBody(JSON.stringify({ tool: "health.log_weight", pad: "x".repeat(MAX_BODY_BYTES) })), deps(db));
+    expect(r.status).toBe(413);
+    expect(db.audit[0]).toMatchObject({ outcome: "denied", note: "body too large" });
+  });
+
+  it("counts bytes rather than UTF-16 units", async () => {
+    // 5,000 four-byte characters is 20 KB. `text.length` reads it as 10,000, which is
+    // under a cap named MAX_BODY_BYTES — so this body used to be accepted whole.
+    const db = new Fake();
+    const pad = "\u{1D518}".repeat(5_000);
+    const r = await handleWrite(withBody(JSON.stringify({ tool: "health.log_weight", pad })), deps(db));
+    expect(r.status).toBe(413);
+  });
+});
+
+// ── the sentences that were not true ──────────────────────────────────────────
+describe("a refusal says where the thing it needs actually comes from", () => {
+  it("does not tell the caller the read door hands out charge ids", async () => {
+    // It does not. search_transactions is forbidden, and worth_a_look strips
+    // `evidence`, `fix` and `key` — the only three places a charge id lives. An
+    // assistant told otherwise loops on reads that contain no ids, or invents a uuid.
+    const db = new Fake();
+    const r = await handleWrite(
+      post("finance.categorize_charge", { transaction_id: "not-a-uuid", category_id: "groceries" }),
+      deps(db),
+    );
+    expect(r.status).toBe(400);
+    const say = String(r.body.message);
+    expect(say).not.toMatch(/the read door gives you/i);
+    expect(say).toMatch(/nothing on the read door hands one out/i);
+    expect(say).toMatch(/in the app/i);
+  });
+
+  it("names the one place a bill id can be had", async () => {
+    const db = new Fake();
+    const r = await handleWrite(
+      post("finance.note_known_amount", { recurring_id: "nope", amount: 12 }),
+      deps(db),
+    );
+    expect(r.status).toBe(400);
+    expect(String(r.body.message)).toMatch(/worth_a_look/);
+  });
+});
+
+// ── the database side, read as text ───────────────────────────────────────────
+//
+// Nothing in the test suite can run SQL, and the two things below are the kind that
+// look right and are not. They are checked as text because the alternative is
+// checking them by hand on the day the app's approval screen is written, which is
+// the day they would be found the hard way.
+describe("schema_v36_muse_bridge.sql", () => {
+  const sql = () => readFileSync("supabase/schema_v36_muse_bridge.sql", "utf8");
+
+  it("spells out the WITH CHECK on muse_pending, or the app can never record a decision", () => {
+    // Postgres reuses the USING expression as the WITH CHECK when one is not given.
+    // So `using (state = 'waiting')` alone means the NEW row must also be 'waiting' —
+    // every approve and every reject refused, for every row, with an error naming
+    // row-level security rather than the missing clause.
+    const policy = /create policy "muse_pending decide"[\s\S]*?;/.exec(sql())![0];
+    expect(policy).toContain("using (state = 'waiting')");
+    expect(policy).toMatch(/with check \(state in \('applied','rejected'\)\)/);
+    // `with check (true)` would be the opposite mistake: a rejected or expired row
+    // could be put back to 'waiting'.
+    expect(policy).not.toMatch(/with check \(true\)/);
+  });
+
+  it("grants the app the two columns a decision needs, not the whole row", () => {
+    // `summary` is the sentence the app is told to show him verbatim. If a session
+    // could rewrite `payload` and `tool` while leaving `summary` alone, what he
+    // approves and what gets applied could be pulled apart.
+    const text = sql();
+    expect(text).toMatch(/grant update \(state, decided_at\) on public\.muse_pending to authenticated;/);
+    expect(text).not.toMatch(/grant select, update on public\.muse_pending/);
+  });
+
+  it("tells the reader that pasting the file does not create the cron job", () => {
+    // The job is commented out because it needs the real CRON_TOKEN. Without it,
+    // schedule.remind promises a push nothing sends and muse_pending is never
+    // expired — both silent. SETUP.md owns the step; this is the pointer to it.
+    const text = sql();
+    expect(text).toMatch(/NOT CREATED BY RUNNING THIS FILE/);
+    expect(text).toContain("SETUP.md");
+    const setup = readFileSync("docs/research/muse-bridge/SETUP.md", "utf8");
+    expect(setup).toMatch(/cron\.schedule\('homebase-reminders'/);
+    expect(setup).toMatch(/select jobname, schedule/);
+  });
+});
+
+// ── the reminder job's own door ───────────────────────────────────────────────
+describe("cron-reminders", () => {
+  it("compares its token in constant time, like both doors", () => {
+    // It is a public endpoint that pushes text to two lock screens and expires
+    // queued writes. `!==` returns as soon as two characters differ; the helper both
+    // doors use does not. One line, and it makes config.toml's sentence true.
+    const src = readFileSync("supabase/functions/cron-reminders/index.ts", "utf8");
+    expect(src).toContain("safeEqual");
+    expect(src).not.toMatch(/searchParams\.get\("token"\) !== TOKEN/);
+    // And it still fails closed on a missing token.
+    expect(src).toMatch(/!TOKEN \|\|/);
   });
 });

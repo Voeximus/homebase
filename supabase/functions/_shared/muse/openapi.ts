@@ -70,6 +70,8 @@ export function openApiDocument(baseUrl: string = DEFAULT_BASE): { [k: string]: 
           "400": { description: "An argument was missing or not a shape this tool takes." },
           "401": { description: "The key does not open this door." },
           "404": { description: "No such tool. The reply lists what exists and what never will." },
+          "413": { description: "The body was bigger than the door will read. Do not send it again." },
+          "429": { description: "Too many questions this hour. Wait rather than retrying." },
           "503": { description: "A table could not be read in full, so no number was computed." },
         },
       },
