@@ -5,15 +5,12 @@
 
 import type { AppData, Transaction, Debt } from "../../types";
 import {
-  planMath,
   orderedDebts,
   payoffSchedule,
   payoffClears,
   PAY_DAYS,
   SAVINGS_SPLIT,
   LEAN_VARIABLE,
-  OUTSIDE_BUDGET_CASH_CATS,
-  spentByCategory,
   variableSpentBetween,
   variableSpentThisMonth,
   avgVariableSpend,
@@ -22,7 +19,7 @@ import {
   previousPayday,
   type PayoffEvent,
 } from "../../lib/plan";
-import { envelopeStatus } from "../../lib/headline";
+import { firepowerStatus } from "../../lib/headline";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
@@ -96,36 +93,30 @@ export function buildFinanceVMs(
   // and bills are monthly. The BUDGET is graded per PAY CYCLE, because that's the
   // unit money actually arrives in — a calendar month splits one paycheck's
   // spending across two reports and hides where you stand until it's too late.
-  // The envelope sequence — monthly target, the cycle, its allowance, its graded
-  // spend, the per-category partition — now lives in src/lib/headline.ts, because
-  // the Muse read door needs the SAME five steps in the same order and a copy of a
-  // sequence drifts exactly the way a copy of a formula does. Same functions, same
-  // order, same numbers on this screen as before.
-  const envelope = envelopeStatus(data.transactions, now);
-  const { monthlyTarget, cycle } = envelope;
+  //
+  // ONE call, not a dozen. BOTH sequences this module used to spell out itself now
+  // live in src/lib/headline.ts:
+  //   · the envelope — monthly target, the cycle, its allowance, its graded spend,
+  //     the per-category partition;
+  //   · the hero tile's firepower — planMath, then the two subtractions planMath
+  //     cannot see (month-to-date overspend, and cash out in categories no line
+  //     grades) and the clamp at zero.
+  // They live there because the Muse read door answers both questions, and a door
+  // that re-applied those steps would be honestly computed and still disagree with
+  // this screen — in a chat, with no screen beside the number to notice. A copy of a
+  // sequence drifts exactly the way a copy of a formula does, with the arithmetic
+  // hidden in the ORDER of the calls. Same functions, same order, same numbers on
+  // this screen as before.
+  const head = firepowerStatus(data, now);
+  const { math, envelope, monthlyTarget, firepower } = head;
+  const spentMonth = head.spentThisMonth;
+  // The same idea on the cycle horizon — what the budget bar shows. NOT the same
+  // number as head.overspendThisMonth: one grades a month, the other a pay cycle.
+  const overspend = head.overspendThisCycle;
+  const cycle = envelope.cycle;
   const target = envelope.target; // the allowance for THIS cycle
   const spent = envelope.spent;
   const lineFor = new Map(envelope.lines.map((l) => [l.key, l]));
-  // transactions are passed so a VARIABLE bill is priced the way the calendar
-  // prices it (known_amount, else the rolling average) rather than by its stale
-  // stored amount — without them the plan and the calendar disagree.
-  const math = planMath(data.recurring, data.debts, monthlyTarget, undefined, data.transactions);
-  const spentMonth = variableSpentThisMonth(data.transactions, monthKey);
-  // Overspending the lean budget is real cash that can NO LONGER go at the debt,
-  // so it reduces firepower live as you spend. (Under-spending does NOT inflate
-  // firepower — the budget stays reserved, and a mid-period "under" is just the
-  // period not being over yet.) Measured MONTHLY here on purpose: firepower is a
-  // monthly figure (monthly income less monthly bills), so mixing a per-cycle
-  // overspend into it would compare half a period against a whole one.
-  const overspendMonth = Math.max(0, spentMonth - monthlyTarget);
-  // The same idea on the cycle horizon — what the budget bar shows.
-  const overspend = Math.max(0, spent - target);
-  // Cash that left but is NOT graded against the envelope (electronics). It never
-  // shows as "overspend" — there's no line to blow — but it's still money that
-  // can't go at the debt, so it comes off firepower directly. Monthly, to match.
-  const byCatMonth = spentByCategory(data.transactions, monthKey);
-  const outsideBudgetCash = OUTSIDE_BUDGET_CASH_CATS.reduce((s, c) => s + (byCatMonth[c] ?? 0), 0);
-  const firepower = Math.max(0, math.firepower - overspendMonth - outsideBudgetCash); // "available THIS month" (the hero tile)
   const ordered = orderedDebts(data.debts);
   // Project the payoff from the SUSTAINABLE pace — a trailing average of ACTUAL
   // variable spend — so the debt-free date tracks real behavior: a one-off
@@ -388,10 +379,10 @@ export function buildFinanceVMs(
   // too. This used to read the per-CYCLE `spent`, comparing half a period against
   // a whole one — a ~15-day total almost never clears a 30-day pace, so the dent
   // came out 0 for essentially every input and a blown month never moved the
-  // debt-free date at all. NOT the same number as the hero tile's `overspendMonth`
-  // (line 117): that grades the month against the budget TARGET, this grades it
-  // against the SUSTAINABLE pace. Two different questions about one month — they
-  // are meant to differ.
+  // debt-free date at all. NOT the same number as the hero tile's
+  // `overspendThisMonth` (src/lib/headline.ts): that grades the month against the
+  // budget TARGET, this grades it against the SUSTAINABLE pace. Two different
+  // questions about one month — they are meant to differ.
   const monthDent = Math.max(0, spentMonth - projVariable);
   const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
   const next = schedule[0] ?? null;

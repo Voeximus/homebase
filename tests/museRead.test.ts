@@ -54,6 +54,14 @@ import {
 } from "../src/lib/plan";
 import { totalBalance, totalPendingHold } from "../src/lib/recurring";
 import { ratePerWeek } from "../src/lib/weightLog";
+import {
+  billsBeforeNextPayday,
+  firepowerStatus,
+  FORECAST_MONTHS,
+  lowestPoint,
+  monthGetter,
+  runForecast,
+} from "../src/lib/headline";
 
 // ── the instant ───────────────────────────────────────────────────────────────
 // 1 Oct 2026, 05:00 UTC. In Arizona that is 30 Sep, 22:00 — a different day AND a
@@ -324,6 +332,10 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "finance.audit", body: {} },
   { tool: "finance.position", body: {} },
   { tool: "finance.budget_status", body: {} },
+  { tool: "finance.firepower", body: {} },
+  { tool: "finance.next_bills", body: {} },
+  // A short run, so the Rule 2 comparison stays quick; the default is checked below.
+  { tool: "finance.forecast", body: { months: 3 } },
   { tool: "finance.debts", body: {} },
   { tool: "finance.spend_by_category", body: { from: "2026-09-01", to: "2026-09-30" } },
   { tool: "finance.worth_a_look", body: {} },
@@ -345,6 +357,16 @@ async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
 }
 
 const jsonOf = async (r: Response) => (await r.json()) as Record<string, unknown>;
+
+/** A reply without its `note`, for the checks that scan for a word the note is
+ *  supposed to contain. A refusal that says "no payoff date" has the words "payoff
+ *  date" in it, so scanning the whole reply for them fails on the sentence doing the
+ *  refusing. The DATA beside it is where a leak would actually be. */
+const withoutNote = (body: Record<string, unknown>) => {
+  const out = { ...body };
+  delete out.note;
+  return out;
+};
 
 beforeEach(() => {
   audited = [];
@@ -476,6 +498,160 @@ describe("Rule 1 — every number comes from the app's own function", () => {
     // No payoff month: payoffSchedule's seven inputs are assembled in a view.
     expect(body).not.toHaveProperty("payoff_month");
     expect(body).not.toHaveProperty("debt_free_date");
+  });
+
+  // ── the three money questions ───────────────────────────────────────────────
+  //
+  // Each was ABSENT until src/lib/headline.ts held its assembly, and each is checked
+  // against that assembly called directly on the same fixture — never against a
+  // literal, and never against the door's own re-spelling of the steps.
+  it("finance.firepower is the hero tile's figure, not planMath's", async () => {
+    const body = await jsonOf(await ask("finance.firepower"));
+    const head = firepowerStatus(app(), nowAZ(AT));
+    expect(body.available).toBe(money(head.firepower));
+    expect(body.month).toBe(head.monthKey);
+    expect(body.plan).toEqual({
+      income: money(head.math.income),
+      living: money(head.math.fixedNonDebt),
+      budgeted_variable: money(head.math.variable),
+      before_subtractions: money(head.math.firepower),
+    });
+    expect(body.taken_out).toEqual({
+      overspent_this_month: money(head.overspendThisMonth),
+      outside_the_budget: money(head.outsideBudgetCash),
+    });
+    // The two subtractions are what made this tool impossible before, and the claim is
+    // the identity rather than an inequality: THIS fixture spends nothing outside the
+    // budget and nothing over it, so both come out zero and the two figures agree. The
+    // case where they differ — and by how much — is pinned in tests/headline.test.ts
+    // on a fixture built for it, and against the real ledger in museSnapshot.test.ts.
+    expect(money(head.math.firepower - head.overspendThisMonth - head.outsideBudgetCash)).toBe(
+      body.available,
+    );
+    // And it must never read as spendable cash — the household's floor is not in it.
+    expect(String(body.note)).toMatch(/cash floor/i);
+    expect(String(body.note)).toMatch(/whole month/i);
+  });
+
+  it("finance.next_bills is the cycle window, and keeps the overdue rows in it", async () => {
+    const body = await jsonOf(await ask("finance.next_bills"));
+    const data = app();
+    const az = nowAZ(AT);
+    const want = billsBeforeNextPayday(monthGetter(data, az), az);
+    expect(body.total).toBe(money(want.total));
+    expect(body.overdue_total).toBe(money(want.overdueTotal));
+    expect(body.count).toBe(want.bills.length);
+    const cycle = body.cycle as Record<string, unknown>;
+    expect(cycle.start).toBe(want.cycle.start);
+    expect(cycle.end).toBe(want.cycle.end);
+    expect(cycle.days_left).toBe(want.daysLeft);
+    const bills = body.bills as Record<string, unknown>[];
+    expect(bills.map((b) => b.due)).toEqual(want.bills.map((b) => b.due));
+    expect(bills.map((b) => b.amount)).toEqual(want.bills.map((b) => money(b.amount)));
+    // The window opens at the cycle start, not at today — the door does not get to
+    // narrow it, and the note has to say so or a reader will assume "upcoming".
+    expect(String(body.note)).toMatch(/opens when the current pay cycle opened/i);
+    // A bill row, never a charge: no description, no merchant, no charge amount.
+    for (const b of bills) {
+      expect(Object.keys(b).sort()).toEqual(
+        ["amount", "bill", "due", "estimate", "name", "overdue"].sort(),
+      );
+    }
+  });
+
+  it("finance.forecast reports the app's own low point, per month and overall", async () => {
+    const body = await jsonOf(await ask("finance.forecast", { months: 3 }));
+    const az = nowAZ(AT);
+    const { plan, months } = runForecast(app(), az, 3);
+    const worst = lowestPoint(months);
+    const rows = body.months as Record<string, unknown>[];
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.month)).toEqual(months.map((m) => m.monthKey));
+    expect(rows[0].partial).toBe(true);
+    // To the cent, per month, and shaped exactly {day, balance}.
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i];
+      expect(rows[i].surplus).toBe(money(m.surplus));
+      expect(rows[i].close).toBe(money(m.close ?? null));
+      expect(rows[i].low).toEqual(m.low ? { day: m.low.day, balance: money(m.low.balance) } : null);
+    }
+    expect(body.lowest).toEqual(
+      worst ? { month: worst.monthKey, label: worst.label, day: worst.day, balance: money(worst.balance) } : null,
+    );
+    // The assumption is labelled as one, so Rule 3 of API.md is obeyable.
+    const assumed = body.assumed as Record<string, unknown>;
+    expect(assumed.spending_per_cycle).toBe(money(plan.opts.cycleSpend));
+    expect(assumed.opening_cash).toBe(money(plan.opts.openingCash ?? null));
+    expect(assumed.complete_cycles_measured).toBe(plan.cycles.length);
+  });
+
+  it("finance.forecast invents no payoff date, and no card-clear month", async () => {
+    const body = await jsonOf(await ask("finance.forecast", { months: 12 }));
+    // The NOTE has to contain these words — it is where the refusal is stated — so the
+    // scan is on the data beside it, which is where a leak would actually be.
+    expect(JSON.stringify(withoutNote(body))).not.toMatch(
+      /cardCleared|card_cleared|clears_on|clearsOn|payoff|debt_free|months_to_go/i,
+    );
+    // Field by field, so a key added to ForecastMonth later cannot ride along: the
+    // reply is built key by key and this is what proves it stayed that way.
+    for (const row of body.months as Record<string, unknown>[]) {
+      expect(Object.keys(row).sort()).toEqual(
+        ["bills", "close", "income", "label", "low", "month", "paychecks", "partial", "spend", "surplus"].sort(),
+      );
+    }
+    expect(String(body.note)).toMatch(/no payoff date/i);
+  });
+
+  it("holds back the card-clear month even when the projection has worked one out", async () => {
+    // The fixture above never clears the card in twelve months, so the check before
+    // this one only proves nothing happened to be there. This one makes the leak
+    // available: a small card balance with a payment bill attached to it, which is
+    // exactly the shape that makes forecast() set its cardCleared flag.
+    const tables = TABLES();
+    tables.debts = [
+      { ...(tables.debts[0] as DbRow), balance: "500.00" },
+      ...tables.debts.slice(1),
+    ];
+    tables.recurring = [
+      ...tables.recurring,
+      recurring({
+        id: "r3",
+        name: "Card payment (…4728)",
+        amount: "400.00",
+        due_days: [15],
+        category_id: "debt",
+        linked_debt_id: "d-visa",
+      }),
+    ];
+
+    const data = toAppData({
+      transactions: tables.transactions,
+      debts: tables.debts,
+      goals: tables.savings_goals,
+      accounts: tables.accounts,
+      recurring: tables.recurring,
+      paidBills: tables.paid_bills,
+      merchantRules: tables.merchant_rules,
+    });
+    const { months } = runForecast(data, nowAZ(AT), 12);
+    // The app really does know the month, or there is nothing here to hold back.
+    expect(months.some((m) => m.cardCleared)).toBe(true);
+
+    const body = await jsonOf(await ask("finance.forecast", { months: 12 }, GINO_SECRET, {}, tables));
+    expect(JSON.stringify(withoutNote(body))).not.toMatch(/cleared|clears|payoff|debt_free/i);
+    for (const row of body.months as Record<string, unknown>[]) {
+      expect(row).not.toHaveProperty("cardCleared");
+      expect(row).not.toHaveProperty("card_cleared");
+    }
+  });
+
+  it("finance.forecast defaults to the run the screen made, and refuses a bad count", async () => {
+    const body = await jsonOf(await ask("finance.forecast"));
+    expect((body.months as unknown[]).length).toBe(FORECAST_MONTHS);
+    for (const months of [0, 13, 2.5, "3", -1]) {
+      const res = await ask("finance.forecast", { months });
+      expect(res.status, `months=${months}`).toBe(400);
+    }
   });
 
   it("finance.spend_by_category matches spentByCategoryBetween exactly", async () => {
@@ -832,17 +1008,27 @@ describe("what exists and what never will", () => {
 
   for (const name of [
     "finance.search_transactions",
-    "finance.forecast",
-    "finance.firepower",
-    "finance.next_bills",
     "health.log_weight",
     "finance.categorize_charge",
+    // The three money questions SHIPPED, so the names that must still 404 are the
+    // ones an assistant would reach for next: the payoff figure API.md calls the
+    // single most tempting wrong number in this system.
+    "finance.payoff",
+    "finance.debt_free_date",
   ]) {
     it(`${name} is absent, not disabled`, async () => {
       const res = await ask(name);
       expect(res.status).toBe(404);
     });
   }
+
+  it("still says no to a payoff date, now that a projection is answerable", () => {
+    // finance.forecast simulates the card being paid down and knows the month it
+    // clears. That month is NOT forwarded: it comes off a spending dial's opening
+    // position, and reading it out as a payoff date would be the one number
+    // finance.debts refuses, arriving through a different tool.
+    expect(ABSENT.map((a) => a.name).join(" ")).toMatch(/payoff/i);
+  });
 
   it("has no write verb: the forbidden names are not in the catalogue at all", () => {
     for (const t of TOOLS) {

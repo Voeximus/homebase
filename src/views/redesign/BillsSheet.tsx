@@ -2,10 +2,9 @@ import { useState } from "react";
 import { Receipt, X, CalendarDays, ChevronDown, ChevronRight } from "lucide-react";
 import { t } from "../../lib/i18n";
 import { catColor, catIcon } from "../../lib/catColor";
-import { dueBeforeNextPayday, type MonthCalendar, type MonthCalBill } from "../../lib/schedule";
+import type { MonthCalendar, MonthCalBill } from "../../lib/schedule";
 import { BillCalendar } from "./BillCalendar";
-import { payCycleFor } from "../../lib/plan";
-import { isoDate } from "../../lib/format";
+import { billsBeforeNextPayday } from "../../lib/headline";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -124,26 +123,24 @@ export function BillsSheet({
   const [openPaid, setOpenPaid] = useState(false);
   if (!open) return null;
   const base = baseDate ?? new Date();
-  const mc = getMonth(base.getFullYear(), base.getMonth());
-  const unpaid = mc.bills.filter((b) => !b.paid);
-  const paid = mc.bills.filter((b) => b.paid);
 
   // The list below stays CALENDAR-MONTHLY on purpose — rent really is due on the
   // 1st, and that decision is why bills didn't move to pay cycles with the budget.
   // What the cycle answers here is a different question: of the check that's
   // already landed, how much is still spoken for before the next one arrives.
-  const cycle = payCycleFor(base);
-  const daysLeft = Math.max(0, cycle.days - cycle.dayIndex);
-  // Shared spelling, not a local copy — this window is compared against ledger
-  // dates, so the two conversions have to be the same function.
-  const todayISO = isoDate(base);
-  // The window can cross a month boundary, so hand over every month it touches.
-  const [endY, endM] = cycle.end.split("-").map(Number);
-  const windowMonths =
-    endY === mc.year && endM - 1 === mc.month ? [mc] : [mc, getMonth(endY, endM - 1)];
-  // cycle.start, not today — an unpaid bill whose due day has already passed
-  // inside this cycle still comes out of the paycheck already in the account.
-  const beforePayday = dueBeforeNextPayday(windowMonths, todayISO, cycle.end, cycle.start);
+  //
+  // ONE call. The four arguments dueBeforeNextPayday needs — every month the window
+  // touches, today, the cycle's end, the cycle's start — were assembled right here,
+  // and three of the four are the kind of thing that fails quietly (a window opening
+  // at today instead of the cycle start silently drops the overdue rows; a window
+  // that crosses a month end under-reports unless both months are handed over). The
+  // Muse read door answers this same question, so the assembly moved to
+  // src/lib/headline.ts and both callers run it. Same numbers on this sheet as
+  // before — and `month` below is the very calendar the total was computed from, so
+  // the list and the figure above it can never come from two different builds of it.
+  const { month: mc, cycle, daysLeft, ...beforePayday } = billsBeforeNextPayday(getMonth, base);
+  const unpaid = mc.bills.filter((b) => !b.paid);
+  const paid = mc.bills.filter((b) => b.paid);
 
   return (
     <div

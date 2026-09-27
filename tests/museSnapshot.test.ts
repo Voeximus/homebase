@@ -54,6 +54,14 @@ import {
 } from "../src/lib/plan";
 import { selfAudit } from "../src/lib/selfAudit";
 import { isoDate } from "../src/lib/format";
+import {
+  billsBeforeNextPayday,
+  FALLBACK_CYCLE_SPEND,
+  firepowerStatus,
+  lowestPoint,
+  monthGetter,
+  runForecast,
+} from "../src/lib/headline";
 
 const SNAP_DIR = "docs/snapshots";
 const GINO = "gino-read-secret-that-is-long-enough-1234";
@@ -149,6 +157,9 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     { tool: "finance.audit", body: {} },
     { tool: "finance.position", body: {} },
     { tool: "finance.budget_status", body: {} },
+    { tool: "finance.firepower", body: {} },
+    { tool: "finance.next_bills", body: {} },
+    { tool: "finance.forecast", body: { months: 12 } },
     { tool: "finance.debts", body: {} },
     { tool: "finance.spend_by_category", body: { from: `${month}-01`, to: `${month}-${lastDay}` } },
     { tool: "finance.worth_a_look", body: {} },
@@ -247,18 +258,37 @@ describeSnapshot("the read door against the real ledger", () => {
     // leak: those names are his, and the door is allowed to say them. Real case —
     // a debt called "Affirm" and a charge described "Affirm" are the same eight
     // characters, and the string in the reply came off the debt.
-    const his = new Set<string>();
-    for (const r of SNAP!.tables.recurring ?? []) if (typeof r.name === "string") his.add(r.name.trim());
-    for (const d of SNAP!.tables.debts ?? []) if (typeof d.name === "string") his.add(d.name.trim());
-    for (const a of SNAP!.tables.accounts ?? []) if (typeof a.name === "string") his.add(a.name.trim());
+    const his: string[] = [];
+    for (const r of SNAP!.tables.recurring ?? []) if (typeof r.name === "string") his.push(r.name.trim());
+    for (const d of SNAP!.tables.debts ?? []) if (typeof d.name === "string") his.push(d.name.trim());
+    for (const a of SNAP!.tables.accounts ?? []) if (typeof a.name === "string") his.push(a.name.trim());
+
+    // HIS NAMES ARE TAKEN OUT OF THE REPLY BEFORE THE SCAN, rather than compared
+    // against each descriptor one for one. An equality check was not enough, and the
+    // real case that broke it is worth writing down: a bill he calls "Amazon Prime"
+    // reached finance.next_bills, correctly — and the ledger separately holds a bank
+    // descriptor that is the single word "Amazon". The descriptor is not equal to any
+    // of his names, so the excuse list missed it, and the reply "contained a
+    // descriptor" only because one of his own names has that word inside it.
+    //
+    // Removing his names first is the precise version of the claim: the reply may say
+    // anything he named, and NOTHING ELSE it says may be a descriptor. It weakens
+    // nothing — a descriptor sitting anywhere his names do not account for still fails.
+    // Longest name first, so a short name that is a prefix of a longer one cannot eat
+    // half of it and leave the tail behind.
+    const byLength = [...new Set(his)].filter(Boolean).sort((a, b) => b.length - a.length);
+    const withoutHisNames = (text: string) => {
+      let out = text;
+      for (const name of byLength) out = out.split(name).join("·");
+      return out;
+    };
 
     // Counted, never printed: a failure message must not be a second copy of the
     // ledger. The tool name is enough to find it.
     const leaks: string[] = [];
     for (const d of descriptors) {
-      if (his.has(d)) continue;
       for (const [tool, text] of Object.entries(replies)) {
-        if (text.includes(d)) leaks.push(tool);
+        if (withoutHisNames(text).includes(d)) leaks.push(tool);
       }
     }
     expect(leaks, `descriptors reached: ${[...new Set(leaks)].join(", ")}`).toEqual([]);
@@ -420,6 +450,105 @@ describeSnapshot("Rule 1 — the door's number is the app's number", () => {
       expect(shown.spent, l.key).toBe(cents(lineSpent(l, byCat)));
       expect(shown.left, l.key).toBe(cents(perCycle(l.target) - lineSpent(l, byCat)));
     }
+  });
+
+  // ── the three money questions, against data nobody designed ─────────────────
+  //
+  // These three were ABSENT until their assembly lived in src/lib/headline.ts, and the
+  // reason was not caution: each one would have called only real functions, computed
+  // every number honestly, and still disagreed with his screen. So the claim to prove
+  // is not "the numbers are plausible" — it is "the door's number IS the screen's", on
+  // the household's own ledger, to the cent. The oracle is the same headline.ts
+  // function the screen calls, run directly on the same snapshot.
+  it("5 — firepower is the hero tile's figure, subtractions and all", async () => {
+    const body = JSON.parse(await (await ask("finance.firepower")).text()) as Record<string, unknown>;
+    const head = firepowerStatus(appData(), nowAZ(AT));
+    expect(body.available).toBe(cents(head.firepower));
+    expect(body.month).toBe(head.monthKey);
+    expect((body.plan as Record<string, unknown>).before_subtractions).toBe(cents(head.math.firepower));
+    expect((body.taken_out as Record<string, unknown>).overspent_this_month).toBe(
+      cents(head.overspendThisMonth),
+    );
+    expect((body.taken_out as Record<string, unknown>).outside_the_budget).toBe(
+      cents(head.outsideBudgetCash),
+    );
+    // On the real ledger the two subtractions are NOT zero — this household runs over
+    // its lean budget and spends outside it — so a door that had called planMath and
+    // stopped would have been wrong here by a figure worth naming. That is the whole
+    // reason this tool could not exist before, measured rather than asserted.
+    const naive = head.math.firepower;
+    expect(head.overspendThisMonth + head.outsideBudgetCash).toBeGreaterThan(0);
+    expect(cents(naive)).not.toBe(body.available);
+  });
+
+  it("6 — next_bills is the cycle window the Bills sheet shows, to the cent", async () => {
+    const body = JSON.parse(await (await ask("finance.next_bills")).text()) as Record<string, unknown>;
+    const data = appData();
+    const az = nowAZ(AT);
+    const want = billsBeforeNextPayday(monthGetter(data, az), az);
+    expect(body.total).toBe(cents(want.total));
+    expect(body.overdue_total).toBe(cents(want.overdueTotal));
+    expect(body.count).toBe(want.bills.length);
+    const cycle = body.cycle as Record<string, unknown>;
+    expect(cycle.start).toBe(want.cycle.start);
+    expect(cycle.end).toBe(want.cycle.end);
+    expect(cycle.days_left).toBe(want.daysLeft);
+    const bills = body.bills as Record<string, unknown>[];
+    expect(bills.map((b) => b.due)).toEqual(want.bills.map((b) => b.due));
+    expect(bills.map((b) => b.amount)).toEqual(want.bills.map((b) => cents(b.amount)));
+    // Every row's date really is inside the cycle, which is the one thing a caller
+    // assembling its own window got wrong in both directions.
+    for (const b of bills) {
+      expect(String(b.due) >= String(cycle.start), `${b.due} is before the cycle`).toBe(true);
+      expect(String(b.due) <= String(cycle.end), `${b.due} is after the cycle`).toBe(true);
+    }
+  });
+
+  it("7 — the forecast's low point matches the app's own walk, month by month", async () => {
+    const body = JSON.parse(await (await ask("finance.forecast", { months: 12 })).text()) as Record<string, unknown>;
+    const az = nowAZ(AT);
+    const { plan, months } = runForecast(appData(), az, 12);
+    const rows = body.months as Record<string, unknown>[];
+    expect(rows).toHaveLength(months.length);
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i];
+      expect(rows[i].month, `row ${i}`).toBe(m.monthKey);
+      expect(rows[i].income, m.monthKey).toBe(cents(m.income));
+      expect(rows[i].bills, m.monthKey).toBe(cents(m.bills));
+      expect(rows[i].spend, m.monthKey).toBe(cents(m.spend));
+      expect(rows[i].surplus, m.monthKey).toBe(cents(m.surplus));
+      expect(rows[i].close, m.monthKey).toBe(cents(m.close!));
+      // The shape the question asks for, and the number to the cent.
+      expect(rows[i].low, m.monthKey).toEqual({ day: m.low!.day, balance: cents(m.low!.balance) });
+    }
+    // The single worst moment, from the app's own reduction.
+    const worst = lowestPoint(months)!;
+    expect(body.lowest).toEqual({
+      month: worst.monthKey,
+      label: worst.label,
+      day: worst.day,
+      balance: cents(worst.balance),
+    });
+    // It really is the minimum across the run, checked without reusing lowestPoint —
+    // a third leg, so an agreeing pair cannot both be wrong the same way.
+    const lows = months.map((m) => m.low!.balance);
+    expect(cents(Math.min(...lows))).toBe((body.lowest as Record<string, unknown>).balance);
+    // The assumed half is labelled, and it came from the household's own history
+    // rather than the fallback — which is what the retired screen's dial did.
+    const assumed = body.assumed as Record<string, unknown>;
+    expect(assumed.spending_per_cycle).toBe(cents(plan.opts.cycleSpend));
+    expect(assumed.complete_cycles_measured).toBe(plan.cycles.length);
+    expect(plan.typicalCycle).toBeGreaterThan(0);
+    expect(assumed.spending_per_cycle).not.toBe(FALLBACK_CYCLE_SPEND);
+  });
+
+  it("8 — and still returns no payoff date from the real ledger", async () => {
+    const body = JSON.parse(await (await ask("finance.forecast", { months: 12 })).text()) as Record<string, unknown>;
+    // The note is left out of the scan: it is the sentence that says "no payoff date",
+    // so it contains the words on purpose. The data beside it must not.
+    const rest = { ...body };
+    delete rest.note;
+    expect(JSON.stringify(rest)).not.toMatch(/cleared|clears|payoff|debt_free|months_to_go/i);
   });
 
   it("4 — the self-audit passes and fails on exactly the checks the app's does", async () => {
