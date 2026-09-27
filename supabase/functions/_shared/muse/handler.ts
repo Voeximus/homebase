@@ -116,7 +116,18 @@ export const ERROR_CODES = [
  *  reachable from any web page he happened to have open. Every reply — the answers,
  *  the refusals and the door's own description — goes out through `finish` below, so
  *  there is no reply that escapes the audit log. */
-const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
+// An assistant's setup screen runs in a browser, so it asks permission first with
+// an OPTIONS request and refuses to continue unless the answer allows the header
+// the key travels in. Without these the connector reports "check your API key",
+// which is the one thing that is not wrong. Allowing any origin costs nothing
+// here: the key, not the origin, is what opens this door.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-muse-token, content-type, idempotency-key, apikey",
+  "Access-Control-Max-Age": "86400",
+};
+const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8", ...CORS_HEADERS };
 
 /** The tool name out of the path, tolerant of the deployed prefix
  *  (/functions/v1/muse-read/<tool>) and of a trailing slash. */
@@ -143,6 +154,14 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   const started = performance.now();
   const url = new URL(req.url);
   const segment = toolFromPath(url.pathname);
+
+  // The permission question a browser asks before the real request. It carries no
+  // key by design, so it is answered before the key is checked and it reads
+  // nothing: an empty yes, and the real request that follows still has to hold a
+  // key like every other call.
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
 
   // Everything the audit row needs, filled in as it becomes known, written once at
   // the end. A single writer means no path can return without a row.
@@ -235,6 +254,21 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   // table, so the only thing a loop on it costs is an audit row.
   if (req.method === "GET" && segment === "openapi.json") {
     return finish(openApiDocument(deps.baseUrl), 200, "ok");
+  }
+
+  // A connector setup screen proves a key works by fetching the door itself, with
+  // no path and no body. Answering 405 there reads as "this address is broken" and
+  // the key gets blamed — which is exactly what happened on the first attempt to
+  // connect the write door. So a bare GET, once the key is good, says yes and
+  // points at the description. It reads no table and names no figure.
+  if (req.method === "GET" || req.method === "HEAD") {
+    if (segment === "" || segment === undefined) {
+      return finish(
+        { ok: true, door: "homebase", openapi: `${deps.baseUrl ?? ""}/openapi.json` },
+        200,
+        "ok",
+      );
+    }
   }
 
   if (req.method !== "POST") {

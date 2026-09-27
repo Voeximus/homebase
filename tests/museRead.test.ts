@@ -1266,28 +1266,41 @@ describe("what exists and what never will", () => {
     expect(toolFromPath("/something-else/finance.audit")).toBe("");
   });
 
-  it("refuses anything but POST, and never answers a preflight", async () => {
-    // A preflight with no key gets the same 401 every other keyless request gets:
-    // the key is checked before the method, so a browser cannot use OPTIONS to find
-    // out which paths are real. With a key it is a 405 — a wrong method, not a
-    // wrong caller. Neither reply carries a CORS header, so no web page can read
-    // this door at all.
+  it("answers a preflight, so a browser-based connector can be set up", async () => {
+    // This reverses an earlier decision, and the reason is worth keeping: the
+    // door used to refuse every preflight so that "no web page can read this
+    // door at all". Then the real connector turned up. Muse's setup screen runs
+    // in a browser, asks permission with OPTIONS before it sends the key, and
+    // reports "check your API key" when that question goes unanswered — the one
+    // explanation that is not true. The failure was unreadable from the phone.
+    //
+    // Allowing it costs little, because the ORIGIN was never what opened this
+    // door: the key is. A page that lacks the key gets a 401 on the real request
+    // whatever its origin, and a preflight carries no key, reads no table and
+    // names no figure — so it is answered before the key is checked.
     const stranger = await handleMuseRead(
       new Request("https://example.test/functions/v1/muse-read/finance.audit", { method: "OPTIONS" }),
       deps(),
     );
-    expect(stranger.status).toBe(401);
-    expect(stranger.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(stranger.status).toBe(204);
+    expect(stranger.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(String(stranger.headers.get("Access-Control-Allow-Headers"))).toMatch(/authorization/i);
 
-    const keyed = await handleMuseRead(
+    // The real request behind it is unchanged: still POST, still keyed.
+    const keyless = await handleMuseRead(
+      new Request("https://example.test/functions/v1/muse-read/finance.audit", { method: "POST" }),
+      deps(),
+    );
+    expect(keyless.status).toBe(401);
+
+    const wrongMethod = await handleMuseRead(
       new Request("https://example.test/functions/v1/muse-read/finance.audit", {
-        method: "OPTIONS",
+        method: "PUT",
         headers: { Authorization: `Bearer ${GINO_SECRET}` },
       }),
       deps(),
     );
-    expect(keyed.status).toBe(405);
-    expect(keyed.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(wrongMethod.status).toBe(405);
   });
 });
 

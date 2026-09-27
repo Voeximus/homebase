@@ -44,10 +44,25 @@ const SECRETS: Secrets = {
 };
 const APP = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
 
-const JSON_HEADERS = { "Content-Type": "application/json" };
+// See the note in _shared/muse/handler.ts: a connector's setup screen runs in a
+// browser, asks permission with an OPTIONS request first, and reports "check your
+// API key" when the answer does not allow the header the key travels in.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-muse-token, content-type, idempotency-key, apikey",
+  "Access-Control-Max-Age": "86400",
+};
+const JSON_HEADERS = { "Content-Type": "application/json", ...CORS_HEADERS };
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+
+  // Answered before the key is checked: it carries no key by design and reads
+  // nothing. The real request behind it still needs one.
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
 
   // The description of the door. Behind the same secret as the door itself: a
   // connector that cannot authenticate has no business reading the tool list.
@@ -61,6 +76,25 @@ Deno.serve(async (req) => {
       });
     }
     return new Response(JSON.stringify(openapi(url), null, 2), { headers: JSON_HEADERS });
+  }
+
+  // A connector setup screen proves a key works by fetching the door itself, with
+  // no path and no body. Answering "send a POST" there reads as a broken address
+  // and the key gets blamed — which is what happened the first time this door was
+  // connected. A bare GET now answers yes when the key is good, 401 when it is
+  // not. It reads no table and names no figure.
+  if (req.method === "GET" || req.method === "HEAD") {
+    const who = personFor(req, SECRETS);
+    if (!who) {
+      return new Response(JSON.stringify({ ok: false, message: "Unauthorized." }), {
+        status: 401,
+        headers: JSON_HEADERS,
+      });
+    }
+    return new Response(
+      JSON.stringify({ ok: true, door: "homebase-write", openapi: `${url.origin}${url.pathname.replace(/\/$/, "")}/openapi.json` }),
+      { headers: JSON_HEADERS },
+    );
   }
 
   try {
