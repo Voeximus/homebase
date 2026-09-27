@@ -3,6 +3,8 @@
 //   • Bills:  a heads-up for bills due today / tomorrow that aren't recorded paid.
 // PUBLIC (verify_jwt=false), guarded by ?token=CRON_TOKEN (pg_cron passes it).
 
+import { recordFinished } from "../_shared/jobRun.ts";
+import { safeEqual } from "../_shared/muse/safeEqual.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/webpush.ts";
 
@@ -94,8 +96,16 @@ function billExpectedMonthly(r: Row, txns: Row[]): number {
 }
 
 Deno.serve(async (req) => {
-  // fail CLOSED: a missing/empty CRON_TOKEN denies everything (never disables auth)
-  if (!TOKEN || new URL(req.url).searchParams.get("token") !== TOKEN) {
+  // fail CLOSED: a missing/empty CRON_TOKEN denies everything (never disables auth).
+  //
+  // CONSTANT TIME, like its two siblings. This was the odd one out: cron-bank-sync
+  // and cron-reminders both compare with safeEqual, and cron-reminders' own comment
+  // says the claim "has to be true of every one of them" — while this line was a
+  // plain !==, which returns on the first wrong character and says in timing how
+  // much of a guess was right. Small, because network jitter buries the signal in
+  // practice. Worth closing anyway, because a comment asserting something about all
+  // three of these functions should not be false about one of them.
+  if (!TOKEN || !safeEqual(new URL(req.url).searchParams.get("token") ?? "", TOKEN)) {
     return new Response("forbidden", { status: 403 });
   }
   // Arizona local time (UTC-7, no DST) — meal_days/bills are keyed to local date.
@@ -107,6 +117,7 @@ Deno.serve(async (req) => {
 
   let mealNudges = 0;
   let billPings = 0;
+  let caught: string | null = null;
 
   try {
     // 1) meal-log nudge — per person, no meals logged today → push to that person
@@ -210,8 +221,18 @@ Deno.serve(async (req) => {
       billPings = due.length;
     }
   } catch (e) {
-    console.error("cron-notify", String((e as Error)?.message ?? e));
+    caught = String((e as Error)?.message ?? e).slice(0, 200);
+    console.error("cron-notify", caught);
   }
+
+  // Recorded after the catch, for the same reason cron-reminders is: this function
+  // swallows its own failure so one bad day cannot stop tomorrow's run, and answers
+  // ok:true regardless. The row carries the truth the response cannot.
+  await recordFinished(admin, "cron-notify", {
+    ok: caught === null,
+    detail: { today, meal_nudges: mealNudges, bill_pings: billPings },
+    error: caught,
+  });
 
   return new Response(JSON.stringify({ ok: true, today, mealNudges, billPings }), {
     headers: { "Content-Type": "application/json" },
