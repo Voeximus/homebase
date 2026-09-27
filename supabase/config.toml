@@ -15,7 +15,7 @@
 #
 # Of the first five, cron-reminders and cron-bank-sync compare their token in constant
 # time, through the same one-line helper both doors use (_shared/muse/safeEqual.ts).
-# announce-update, plaid-webhook and cron-notify still compare with `!==`, which returns
+# announce-update and plaid-webhook still compare with `!==` (cron-notify was brought into line 2026-09-27), which returns
 # as soon as two characters differ — pre-existing, small over a network, and worth one
 # line each the next time one of those files is opened.
 #
@@ -65,6 +65,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cron-bank-sync]
+verify_jwt = false
+
+[functions.cron-heartbeat]
 verify_jwt = false
 
 [functions.muse-read]
