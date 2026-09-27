@@ -14,6 +14,21 @@
 // The forbidden list is in the description too, in words. An assistant that has
 // read why it cannot search transactions asks a different question; one that only
 // gets a 404 tries another spelling.
+//
+// IS IT VALID 3.1? Yes, checked against the spec itself rather than by reading it:
+// the served document validates against the official OpenAPI 3.1 meta-schema
+// (spec.openapis.org/oas/3.1/schema/2022-10-07) and Redocly's linter reports it
+// valid with one style warning (no `license` in `info`, which is deliberate — this
+// is one household's private door).
+//
+// One trap for whoever repeats that check. ajv 8 cannot bind the meta-schema's
+// `$dynamicRef: "#meta"` to its own placeholder at `$defs/schema`; it falls through
+// to the document root, which carries `unevaluatedProperties: false`, so EVERY
+// Schema Object under a requestBody is reported invalid. That is the validator, not
+// the document — a textbook-minimal 3.1 file fails identically. Point that one
+// reference at `#/$defs/schema` and both the minimal file and this one pass. The
+// checks that live in the repo are in tests/museRead.test.ts: the served paths
+// against the tool catalogue both ways, and each argument's declared type.
 
 import { ABSENT, TOOLS, type Json } from "./tools.ts";
 
@@ -26,7 +41,10 @@ export function openApiDocument(baseUrl: string = DEFAULT_BASE): { [k: string]: 
     const properties: { [k: string]: Json } = {};
     const required: string[] = [];
     for (const a of tool.args ?? []) {
-      properties[a.name] = { type: a.name === "days" ? "integer" : "string", description: a.description };
+      // The type comes off the argument's own declaration in tools.ts. It used to
+      // be guessed from the name here, which was right for the one integer
+      // argument that exists and would have been wrong for the next one.
+      properties[a.name] = { type: a.type, description: a.description };
       if (a.required) required.push(a.name);
     }
     paths[`/${tool.name}`] = {

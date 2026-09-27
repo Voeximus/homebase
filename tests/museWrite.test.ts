@@ -18,7 +18,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { azDateISO, clockNow, nowAZ } from "../supabase/functions/_shared/muse/az.ts";
 import { handleWrite, WRITES_PER_HOUR, type Deps, type Secrets } from "../supabase/functions/muse-write/handler.ts";
-import { REMIND_PER_DAY } from "../supabase/functions/muse-write/tools.ts";
+import { REMIND_PER_DAY, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
 import { nextDue, planFor } from "../supabase/functions/cron-reminders/schedule.ts";
 import type {
   CallRecord,
@@ -301,6 +301,92 @@ describe("a retry does not write twice", () => {
     expect(good.status).toBe(200);
     expect(db.weights.get(`gino|${AZ_TODAY}`)).toBe(198.4);
   });
+});
+
+// ── the whole catalogue, not one tool out of it ───────────────────────────────
+//
+// Everything above tests `health.log_weight` because it is the simplest write, and
+// the queued tests below test two of the four queued tools. That leaves the two
+// promises that matter most — "every write is idempotent" and "a queued write
+// leaves the ledger untouched" — proved for a sample rather than for the door. A
+// tool added to tools.ts and not to this list fails the first test here, the same
+// way the read door's own catalogue check works.
+
+/** A call that each tool accepts, so the loops below can drive all seven. */
+const EVERY_WRITE: { tool: string; args: Record<string, unknown>; queued: boolean }[] = [
+  { tool: "health.log_weight", args: { weight: 198.4 }, queued: false },
+  { tool: "health.log_saved_meal", args: { name: "Usual breakfast" }, queued: false },
+  { tool: "schedule.remind", args: { message: "read the electric bill", at: "2026-09-27T09:00" }, queued: false },
+  { tool: "finance.categorize_charge", args: { transaction_id: TXN_ID, category_id: "groceries" }, queued: true },
+  { tool: "finance.note_known_amount", args: { recurring_id: BILL_ID, amount: 123.45, month_key: "2026-09" }, queued: true },
+  { tool: "finance.add_transaction", args: { amount: 6, category_id: "transport", description: "parking" }, queued: true },
+  { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: true },
+];
+
+/** A Fake with the one saved meal `health.log_saved_meal` needs to find. */
+function stocked(): Fake {
+  const db = new Fake();
+  db.savedMeals.push({ id: "sm-1", name: "Usual breakfast", items: [{ name: "Oats", kcal: 300, p: 10, c: 54, f: 5 }] });
+  return db;
+}
+
+describe("every tool in the catalogue, not just the first one", () => {
+  it("names all of them, so this list cannot fall behind tools.ts", () => {
+    expect(EVERY_WRITE.map((w) => w.tool).sort()).toEqual([...TOOL_NAMES].sort());
+  });
+
+  for (const { tool, args } of EVERY_WRITE) {
+    it(`${tool} is idempotent: the same key twice writes once and replays the answer`, async () => {
+      const db = stocked();
+      const key = `every-${tool.replace(/\W/g, "-")}`;
+      const first = await handleWrite(post(tool, args, { key }), deps(db));
+      const again = await handleWrite(post(tool, args, { key }), deps(db));
+      expect(first.status, JSON.stringify(first.body)).toBe(200);
+      expect(again.status).toBe(200);
+      expect(again.body.repeated).toBe(true);
+      expect(again.body.message).toBe(first.body.message);
+      expect(again.body.result).toEqual(first.body.result);
+      // One claimed audit row, and the repeat spent no rate-limit slot.
+      expect(db.audit.filter((a) => a.idemKey === key)).toHaveLength(1);
+      expect(db.calls.size).toBe(tool === "schedule.remind" ? 2 : 1);
+      // Whatever the tool writes, it wrote it once.
+      expect(db.pending.length + db.reminders.length + db.weights.size + db.mealDays.size).toBe(1);
+    });
+  }
+
+  for (const { tool, args } of EVERY_WRITE.filter((w) => w.queued)) {
+    it(`${tool} only asks: one waiting row, one push, and the ledger byte-identical`, async () => {
+      const db = stocked();
+      const before = JSON.stringify(db.ledger);
+      const r = await handleWrite(post(tool, args), deps(db));
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(r.body.result).toMatchObject({ queued: true });
+      expect(String(r.body.message)).toContain("Nothing has changed yet");
+      expect(db.pending).toHaveLength(1);
+      expect(db.pending[0].tool).toBe(tool);
+      expect(db.pushes).toHaveLength(1);
+      // Nothing else moved. The Db interface has no verb that could touch the
+      // ledger, and these are the four rows that exist to prove it stayed that way.
+      expect(JSON.stringify(db.ledger)).toBe(before);
+      expect(db.weights.size).toBe(0);
+      expect(db.mealDays.size).toBe(0);
+      expect(db.reminders).toHaveLength(0);
+    });
+  }
+
+  for (const { tool, args } of EVERY_WRITE.filter((w) => !w.queued)) {
+    it(`${tool} lands straight away and queues nothing`, async () => {
+      const db = stocked();
+      const before = JSON.stringify(db.ledger);
+      const r = await handleWrite(post(tool, args), deps(db));
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(r.body.result).not.toMatchObject({ queued: true });
+      expect(db.pending).toHaveLength(0);
+      // A direct write is still not a ledger write: no transaction, no bill, no
+      // debt. The three of them touch body_weights, meal_days and reminders.
+      expect(JSON.stringify(db.ledger)).toBe(before);
+    });
+  }
 });
 
 // ── the caps ─────────────────────────────────────────────────────────────────

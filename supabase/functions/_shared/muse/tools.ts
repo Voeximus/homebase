@@ -61,7 +61,7 @@ import { bestSet, SEED_ROUTINES, type Routine } from "./lib/workoutLog.ts";
 import { BUNDLED_EXERCISES } from "./lib/exerciseData.ts";
 import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
-import { LABEL_MAX, money, scrub, scrubOr } from "./scrub.ts";
+import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import type { Loader } from "./load.ts";
 import type { Person } from "./auth.ts";
 import { redactSuggestions } from "./worthALook.ts";
@@ -81,8 +81,18 @@ export interface Tool {
   name: string;
   /** One plain sentence, used in the catalogue and in the OpenAPI description. */
   summary: string;
-  /** Argument names, for the OpenAPI description. `person` is never one of them. */
-  args?: { name: string; required: boolean; description: string }[];
+  /**
+   * The arguments, for the OpenAPI description and for the handler's own refusal
+   * of a key that is not on the list. `person` is never one of them.
+   *
+   * `type` is declared HERE rather than guessed in openapi.ts, which used to read
+   * `name === "days" ? "integer" : "string"`. That worked for the one integer
+   * argument that exists and would have quietly described the next one as a
+   * string — and the plan already names it (`finance.forecast`, months ahead). An
+   * assistant told "string" sends "3", and intArg refuses it, and the refusal
+   * reads like the assistant's mistake.
+   */
+  args?: { name: string; type: "string" | "integer"; required: boolean; description: string }[];
   run(ctx: ToolContext): Promise<{ [k: string]: Json }>;
 }
 
@@ -351,8 +361,8 @@ const financeSpendByCategory: Tool = {
   name: "finance.spend_by_category",
   summary: "Where the money went over a window — category totals only, never rows.",
   args: [
-    { name: "from", required: true, description: "First day of the window, YYYY-MM-DD." },
-    { name: "to", required: true, description: "Last day of the window, YYYY-MM-DD, inclusive." },
+    { name: "from", type: "string", required: true, description: "First day of the window, YYYY-MM-DD." },
+    { name: "to", type: "string", required: true, description: "Last day of the window, YYYY-MM-DD, inclusive." },
   ],
   async run({ load, args }) {
     const from = dateArg(args, "from");
@@ -363,8 +373,29 @@ const financeSpendByCategory: Tool = {
     // month-key form of this function is deliberately not exposed: it is this one
     // with the days filled in, and one way in is one thing to get wrong.
     const totals = spentByCategoryBetween(data.transactions, from, to);
+    // The KEYS of this object are `transactions.category_id`, straight out of the
+    // database — and that column is plain text with no constraint on it, so it is
+    // no more trusted than any other stored string even though the app only ever
+    // writes a slug from its own list. This was the one string leaving the door
+    // that nothing checked, which is exactly the "is this one safe?" judgement
+    // call Rule 4 exists to remove.
+    //
+    // A category id is an IDENTIFIER, not prose, so it is recognised rather than
+    // cleaned — the same reasoning as a tool name. Anything appended to a slug is
+    // dropped whole, and a value with no slug at the front is reported under one
+    // fixed key rather than under itself.
+    //
+    // Two ids that come back as the same key are ADDED, never overwritten. A
+    // silently dropped total would make the spending smaller than it was, and this
+    // is the tool whose whole job is where the money went.
     const out: { [k: string]: Json } = {};
-    for (const [catId, amount] of Object.entries(totals)) out[catId] = money(amount);
+    let unnamed = 0;
+    for (const [catId, amount] of Object.entries(totals)) {
+      const key = scrubName(catId, NAME_MAX);
+      if (!key) unnamed += amount;
+      else out[key] = money(((out[key] as number | null) ?? 0) + amount);
+    }
+    if (unnamed) out["(no category id I can say)"] = money(unnamed);
     return { from, to, totals: out };
   },
 };
@@ -462,7 +493,7 @@ const healthWeightTrend: Tool = {
 const healthTrainingVolume: Tool = {
   name: "health.training_volume",
   summary: "Hard sets per muscle over the last few days, with the band each one sits in.",
-  args: [{ name: "days", required: false, description: "How many days back, today included. Default 7." }],
+  args: [{ name: "days", type: "integer", required: false, description: "How many days back, today included. Default 7." }],
   async run({ load, now, person, args }) {
     const days = intArg(args, "days", 7, 1, 90);
     const workouts = await load.workouts(person);
@@ -490,7 +521,7 @@ const healthTrainingVolume: Tool = {
 const healthLastLift: Tool = {
   name: "health.last_lift",
   summary: "When this lift was last trained, the sets done, and the best set.",
-  args: [{ name: "exercise", required: true, description: "The lift's name, however he says it." }],
+  args: [{ name: "exercise", type: "string", required: true, description: "The lift's name, however he says it." }],
   async run({ load, person, args }) {
     const name = textArg(args, "exercise");
     const workouts = await load.workouts(person);

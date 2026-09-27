@@ -49,6 +49,40 @@ export interface HandlerDeps {
   baseUrl?: string;
 }
 
+/**
+ * The `error` code on every refusal this door can give.
+ *
+ * WHY THIS LIST EXISTS. docs/research/muse-bridge/API.md tells the assistant what
+ * to do for each kind of refusal, branching on this field — and it was branching on
+ * `bad_request`, `unknown_tool`, `rate_limited` and `ledger_unreadable`, none of
+ * which the door sent. It sent "bad json", "no such tool", "bad arguments" and
+ * "ledger unreadable". One of the five rows matched. An assistant reading that
+ * table would have fallen through every branch and improvised, which is the exact
+ * failure the hand-written openapi.json was deleted for: a description that
+ * disagrees with the door is worse than none.
+ *
+ * So the codes are here, once, in the door's own source, and a test in
+ * tests/museRead.test.ts compares this list against API.md's table both ways.
+ *
+ * The codes are COARSE on purpose. Four different 400s share `bad_request`,
+ * because the field is what an assistant branches on and the `says` sentence is
+ * what it repeats — and API.md's standing instruction is to say the sentence as it
+ * stands. A code per sentence would be a vocabulary to keep in step for no gain.
+ *
+ * `rate_limited` is on the list and is never sent yet: the read cap is Phase 3
+ * work. It is here, and named in API.md, so the branch exists before the day it
+ * starts firing.
+ */
+export const ERROR_CODES = [
+  "unauthorized",
+  "bad_request",
+  "unknown_tool",
+  "rate_limited",
+  "ledger_unreadable",
+  "use_post",
+  "failed",
+] as const;
+
 /** The only headers any reply carries. NO CORS, deliberately: a connector's request
  *  comes from a server, not a browser, and a door that answered a preflight would be
  *  reachable from any web page he happened to have open. Every reply — the answers,
@@ -172,7 +206,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
 
   if (req.method !== "POST") {
     return finish(
-      { error: "use POST", says: "Ask by POSTing to this door. GET only serves openapi.json." },
+      { error: "use_post", says: "Ask by POSTing to this door. GET only serves openapi.json." },
       405,
       "denied",
     );
@@ -191,11 +225,11 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
       const text = await req.text();
       body = text ? JSON.parse(text) : {};
     } catch {
-      return finish({ error: "bad json", says: "The body was not JSON I could read." }, 400, "denied");
+      return finish({ error: "bad_request", says: "The body was not JSON I could read." }, 400, "denied");
     }
   }
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
-    return finish({ error: "bad body", says: "The body has to be a JSON object." }, 400, "denied");
+    return finish({ error: "bad_request", says: "The body has to be a JSON object." }, 400, "denied");
   }
   const envelope = body as Record<string, unknown>;
 
@@ -206,7 +240,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     toolName = scrubName(segment, 60);
     if (typeof envelope.tool === "string" && envelope.tool !== segment) {
       return finish(
-        { error: "two tools", says: "The address and the body asked for different things." },
+        { error: "bad_request", says: "The address and the body asked for different things." },
         400,
         "denied",
       );
@@ -218,7 +252,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     if (typeof envelope.tool !== "string" || !envelope.tool) {
       return finish(
         {
-          error: "no tool",
+          error: "bad_request",
           says: "Name the tool, either in the address or as \"tool\" in the body.",
           tools: TOOLS.map((t) => t.name),
         },
@@ -239,7 +273,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     // is handed the list and the reasons stops asking.
     return finish(
       {
-        error: "no such tool",
+        error: "unknown_tool",
         says: `There is no ${toolName || "such tool"} on this door.`,
         tools: TOOLS.map((t) => t.name),
         never: ABSENT.map((a) => ({ name: a.name, why: a.why })),
@@ -252,7 +286,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   try {
     checkArgs(tool, args);
   } catch (e) {
-    if (e instanceof BadArgs) return finish({ error: "bad arguments", says: e.message }, 400, "denied");
+    if (e instanceof BadArgs) return finish({ error: "bad_request", says: e.message }, 400, "denied");
     throw e;
   }
 
@@ -263,7 +297,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     return finish({ tool: tool.name, ...result }, 200, "ok");
   } catch (e) {
     if (e instanceof BadArgs) {
-      return finish({ error: "bad arguments", says: e.message }, 400, "denied");
+      return finish({ error: "bad_request", says: e.message }, 400, "denied");
     }
     if (e instanceof LedgerUnreadable) {
       // Rule 5, out loud. No number goes out, and the sentence says which it is:
@@ -271,7 +305,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
       console.error("muse-read: ledger unreadable", e.message);
       return finish(
         {
-          error: "ledger unreadable",
+          error: "ledger_unreadable",
           says: "I could not read the whole ledger just now, so I am not going to give you a number. Try again in a moment, and check the app if it keeps happening.",
           table: e.table,
         },

@@ -326,13 +326,20 @@ Every refusal comes back with one plain sentence written to be said as it stands
 Say it. Do not dress it up, and do not fall back on a number from earlier in the
 conversation.
 
-| What you get | What it means | What you do |
-|---|---|---|
-| `bad_request` | A date or a field was not understood. Nothing was read. | Fix the field and call once more. If it fails again, say what you sent. |
-| `unauthorized` | No key, the wrong key, or a key for a door this is not. Nothing was read. | Stop. Say the key was not recognised. **Never** try another key, another header, or another path. |
-| `unknown_tool` | There is no such tool here. It is not switched off — it does not exist. | Say the door cannot do that. Do not try a similar-looking path. |
-| `rate_limited` | Too many questions this hour. Not switched on yet on this door — but handle it, because it is coming. | Wait. Do not loop. Say plainly that the door is capped and it will work again shortly. |
-| `ledger_unreadable` | The door could not read the whole ledger, so it refused to compute from part of it. | Say exactly that and give **no** number. This is the door protecting them, working as designed. |
+The sentence is in `says`. The code below is in `error`, and it is the field to
+branch on — there are exactly seven of them and there will never be one that is
+not on this list. A test checks this table against the door's own source both
+ways, so a code added to one and not the other fails the build.
+
+| `error` | HTTP | What it means | What you do |
+|---|---|---|---|
+| `bad_request` | 400 | A date, a field, the body or the tool name was not understood. Nothing was read. | Fix it and call once more. If it fails again, say what you sent. |
+| `unauthorized` | 401 | No key, the wrong key, or a key for a door this is not. Nothing was read. | Stop. Say the key was not recognised. **Never** try another key, another header, or another path. |
+| `unknown_tool` | 404 | There is no such tool here. It is not switched off — it does not exist. | Say the door cannot do that. Do not try a similar-looking path. |
+| `use_post` | 405 | You used something other than POST. Only `GET /openapi.json` is not a POST. | Send the same call as a POST. |
+| `rate_limited` | 429 | Too many questions this hour. Not switched on yet on this door — but handle it, because it is coming. | Wait. Do not loop. Say plainly that the door is capped and it will work again shortly. |
+| `ledger_unreadable` | 503 | The door could not read the whole ledger, so it refused to compute from part of it. | Say exactly that and give **no** number. This is the door protecting them, working as designed. |
+| `failed` | 500 | Something broke inside the door working the answer out. | Say that it could not work the number out. Give no number. Try once, then stop. |
 
 A refusal is never a reason to guess. The right answer to "I could not read the
 ledger cleanly" is silence about the number, not a best effort.
