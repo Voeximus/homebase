@@ -86,6 +86,13 @@ language sql security definer set search_path = public as $$
   delete from public.job_runs where started_at < now() - interval '30 days';
 $$;
 
+-- AND IT IS SCHEDULED, which is not a detail. A function that prunes and is never
+-- called is this table's own failure mode wearing the fix's clothes — exactly the
+-- thing it was built to catch, one level up. Sunday 04:17, off the quarter-hour so
+-- it never lands in the same minute as the two */15 jobs.
+select cron.schedule('homebase-prune-job-runs', '17 4 * * 0', 'select public.prune_job_runs()')
+ where not exists (select 1 from cron.job where jobname = 'homebase-prune-job-runs');
+
 comment on table public.job_runs is
   'One row per run of an unattended job, written by the job itself after the work. Read by system.heartbeat.';
 comment on column public.job_runs.detail is
