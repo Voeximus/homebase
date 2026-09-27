@@ -19,6 +19,11 @@
 // with a hard `limit`. A read that could be truncated at 1,000 rows does not
 // exist in this door.
 
+// The memory store brings its own four statements. They are extended in rather
+// than listed here so the memory table's operations sit beside the tools that use
+// them, and so nothing in this file has to know how a memory works.
+import type { MemoryDb } from "./memoryDb.ts";
+
 export type Person = "gino" | "xinyan";
 
 export type Outcome = "pending" | "ok" | "denied" | "rate_limited" | "error";
@@ -64,7 +69,7 @@ export interface PendingInsert {
   summary: string;
 }
 
-export interface Db {
+export interface Db extends MemoryDb {
   // ── the audit log, which is also the duplicate guard ──────────────────────
   /** The earlier call under this idempotency key, or null. */
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null>;

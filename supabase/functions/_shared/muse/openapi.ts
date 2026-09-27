@@ -82,9 +82,22 @@ export function openApiDocument(baseUrl: string = DEFAULT_BASE): { [k: string]: 
       title: "Homebase read door",
       version: "1",
       description: [
-        "Read-only access to one household's own finance and health figures.",
+        "Read-only access to one household's own finance and health figures, and to",
+        "the things the assistant itself has been told to remember.",
         "Every number comes from the app's own functions, so an answer here is the",
         "number on the app's screen. Nothing here writes, deletes, or moves money.",
+        "",
+        // Said in the description because it is the one distinction an assistant
+        // reading this document could not work out for itself, and getting it wrong
+        // is how a standing rule he stated once gets spoken as a measured figure.
+        "TWO KINDS OF ANSWER COME OUT OF THIS DOOR, and they are not the same claim.",
+        "The finance and health tools return MEASURED figures: the app computed them,",
+        "and they are true as of now. The memory.* tools return things HE SAID —",
+        "standing rules, preferences, routines, decisions already made. Attribute",
+        "those to him, never to the app, and never treat a number inside one as",
+        "current: a figure in a memory was true the day it was stored and nothing has",
+        "updated it since. If a memory and a finance tool disagree, the finance tool",
+        "is right and the memory needs correcting.",
         "",
         "What this door will never have:",
         ...ABSENT.map((a) => `  - ${a.name}: ${a.why}`),

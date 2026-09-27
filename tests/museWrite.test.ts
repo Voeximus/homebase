@@ -27,6 +27,7 @@ import type {
   Outcome,
   Person,
 } from "../supabase/functions/muse-write/db.ts";
+import type { MemoryRecord, MemoryUpsert } from "../supabase/functions/muse-write/memoryDb.ts";
 
 // 7 PM Arizona on 26 Sep 2026, spelled as the instant a UTC runtime would see.
 const AT = new Date("2026-09-27T02:00:00Z");
@@ -78,10 +79,73 @@ class Fake implements Db {
    *  writing in the gap. */
   onReadMealDay: ((date: string) => void) | null = null;
 
+  /**
+   * Everything this fake holds that a tool could have written, as one string.
+   *
+   * It replaces a hand-kept sum of four table sizes, which had already fallen
+   * behind: the memory store writes to none of the four, so "the repeat wrote
+   * nothing" passed for those tools by counting zero both times. A snapshot cannot
+   * fall behind — a table added to this fake is in it automatically, and so is the
+   * push log, which turns "a retry must not buzz his phone again" into something
+   * the same assertion covers.
+   */
+  snapshot(): string {
+    const entries = (m: Map<string, unknown>) => [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return JSON.stringify({
+      ledger: this.ledger,
+      pending: this.pending,
+      reminders: this.reminders,
+      pushes: this.pushes,
+      weights: entries(this.weights),
+      mealDays: entries(this.mealDays),
+      memories: entries(this.memories),
+    });
+  }
+
   private seq = 0;
   private id(prefix: string) {
     this.seq += 1;
     return `${prefix}-${String(this.seq).padStart(8, "0")}-0000-0000-0000-000000000000`.slice(0, 36);
+  }
+
+  // ── the memory store ───────────────────────────────────────────────────────
+  // Four statements, same as the real ones. `memories` is keyed the way the table
+  // is — one row per person per key, forever — so the fake cannot accidentally
+  // allow the duplicate the unique index forbids. tests/museMemory.test.ts drives
+  // these hard; they are here so this file's own catalogue loops can reach the
+  // three memory tools like any other write.
+  memories = new Map<string, MemoryRecord & { person: Person }>();
+
+  readMemory(person: Person, key: string): Promise<MemoryRecord | null> {
+    return Promise.resolve(this.memories.get(`${person}|${key}`) ?? null);
+  }
+  countMemories(person: Person): Promise<number> {
+    let n = 0;
+    for (const m of this.memories.values()) if (m.person === person && !m.forgottenAt) n += 1;
+    return Promise.resolve(n);
+  }
+  upsertMemory(m: MemoryUpsert): Promise<string> {
+    const k = `${m.person}|${m.key}`;
+    const id = this.memories.get(k)?.id ?? this.id("mem");
+    this.memories.set(k, {
+      id,
+      person: m.person,
+      key: m.key,
+      kind: m.kind,
+      value: m.value,
+      tags: m.tags,
+      // Every upsert clears it, which is what makes remembering a forgotten key
+      // revive that row rather than leaving a live row still wearing the stamp.
+      forgottenAt: null,
+      previous: m.previous,
+    });
+    return Promise.resolve(id);
+  }
+  forgetMemory(person: Person, key: string, atISO: string): Promise<"ok" | "missing"> {
+    const row = this.memories.get(`${person}|${key}`);
+    if (!row || row.forgottenAt) return Promise.resolve("missing");
+    row.forgottenAt = atISO;
+    return Promise.resolve("ok");
   }
 
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null> {
@@ -321,12 +385,34 @@ const EVERY_WRITE: { tool: string; args: Record<string, unknown>; queued: boolea
   { tool: "finance.note_known_amount", args: { recurring_id: BILL_ID, amount: 123.45, month_key: "2026-09" }, queued: true },
   { tool: "finance.add_transaction", args: { amount: 6, category_id: "transport", description: "parking" }, queued: true },
   { tool: "health.log_meal", args: { items: [{ name: "Chicken", kcal: 330, p: 62, c: 0, f: 7 }] }, queued: true },
+  // The memory store. `memory.forget` and `memory.restore` both need a row to act
+  // on, which `stocked()` plants — the loops below drive each tool twice under one
+  // key, and a tool that refused because there was nothing there would pass the
+  // idempotency check for the wrong reason.
+  {
+    tool: "memory.remember",
+    args: { key: "pay-floor", kind: "standing", value: "A floor of fourteen hundred a check — never raise it." },
+    queued: false,
+  },
+  { tool: "memory.forget", args: { key: "stale-note" }, queued: false },
+  { tool: "memory.restore", args: { key: "was-forgotten" }, queued: false },
 ];
 
-/** A Fake with the one saved meal `health.log_saved_meal` needs to find. */
+/** A Fake with the rows the catalogue loops need to find: the one saved meal
+ *  `health.log_saved_meal` looks up, and the two memories `memory.forget` and
+ *  `memory.restore` act on. */
 function stocked(): Fake {
   const db = new Fake();
   db.savedMeals.push({ id: "sm-1", name: "Usual breakfast", items: [{ name: "Oats", kcal: 300, p: 10, c: 54, f: 5 }] });
+  db.memories.set("gino|stale-note", {
+    id: "mem-stale", person: "gino", key: "stale-note", kind: "fact",
+    value: "Something to drop.", tags: [], forgottenAt: null, previous: null,
+  });
+  db.memories.set("gino|was-forgotten", {
+    id: "mem-back", person: "gino", key: "was-forgotten", kind: "routine",
+    value: "Works nights, roughly six in the evening to six in the morning.",
+    tags: [], forgottenAt: "2026-09-20T04:00:00Z", previous: null,
+  });
   return db;
 }
 
@@ -339,9 +425,15 @@ describe("every tool in the catalogue, not just the first one", () => {
     it(`${tool} is idempotent: the same key twice writes once and replays the answer`, async () => {
       const db = stocked();
       const key = `every-${tool.replace(/\W/g, "-")}`;
+      const untouched = db.snapshot();
       const first = await handleWrite(post(tool, args, { key }), deps(db));
-      const again = await handleWrite(post(tool, args, { key }), deps(db));
       expect(first.status, JSON.stringify(first.body)).toBe(200);
+      // The first call actually did something — otherwise everything below would
+      // pass by writing nothing twice.
+      const afterFirst = db.snapshot();
+      expect(afterFirst).not.toBe(untouched);
+
+      const again = await handleWrite(post(tool, args, { key }), deps(db));
       expect(again.status).toBe(200);
       expect(again.body.repeated).toBe(true);
       expect(again.body.message).toBe(first.body.message);
@@ -349,8 +441,8 @@ describe("every tool in the catalogue, not just the first one", () => {
       // One claimed audit row, and the repeat spent no rate-limit slot.
       expect(db.audit.filter((a) => a.idemKey === key)).toHaveLength(1);
       expect(db.calls.size).toBe(tool === "schedule.remind" ? 2 : 1);
-      // Whatever the tool writes, it wrote it once.
-      expect(db.pending.length + db.reminders.length + db.weights.size + db.mealDays.size).toBe(1);
+      // And the repeat changed nothing whatsoever — no second row, no second push.
+      expect(db.snapshot()).toBe(afterFirst);
     });
   }
 

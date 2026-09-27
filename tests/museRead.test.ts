@@ -241,6 +241,46 @@ const TABLES = (): Record<string, DbRow[]> => ({
   workout_routines: [
     { id: "rt1", person: "gino", name: NAME_CANARY, meta: NAME_CANARY, exercises: [{ name: "Leg press", muscle: "legs", sets: 4, reps: "6–10" }] },
   ],
+  // The memory store. Four rows, each one carrying a promise the loops below check:
+  //
+  //   mm1  a live memory, and its timestamp is 7 PM Arizona on the 26th spelled as
+  //        the instant a UTC runtime sees — 02:00Z on the 27th. So the two-clock
+  //        loop is not vacuous for these tools: a reply that dated it to the 27th
+  //        would differ between UTC and Arizona, which is the whole Rule 2 trap.
+  //   mm2  a value with a link and an injection line in it, so the Rule 4 loop
+  //        proves a memory is cleaned on the way OUT as well as refused on the way
+  //        in. This is the table where that matters most: its contents are read
+  //        straight back into a model's context as trusted output.
+  //   mm3  forgotten, so a recall can say WHEN instead of "never heard of it".
+  //   mm4  HERS. It must not appear in any reply to his key.
+  muse_memory: [
+    {
+      id: "mm1", person: "gino", key: "pay-floor", kind: "standing",
+      value: "A floor of fourteen hundred a check — never raise it.",
+      tags: ["money", "paycheck"], source: "muse",
+      learned_at: "2026-09-27T02:00:00Z", updated_at: "2026-09-27T02:00:00Z",
+      forgotten_at: null, previous: null,
+    },
+    {
+      id: "mm2", person: "gino", key: "no-jargon", kind: "preference",
+      value: NAME_CANARY, tags: ["writing"], source: "muse",
+      learned_at: "2026-09-20T02:00:00Z", updated_at: "2026-09-27T02:00:00Z",
+      forgotten_at: null,
+      previous: { value: "Plain words.", kind: "preference", tags: [], at: "2026-09-27T02:00:00Z" },
+    },
+    {
+      id: "mm3", person: "gino", key: "old-thing", kind: "fact",
+      value: "Something he told me to drop.", tags: [], source: "muse",
+      learned_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-20T04:00:00Z",
+      forgotten_at: "2026-09-20T04:00:00Z", previous: null,
+    },
+    {
+      id: "mm4", person: "xinyan", key: "her-thing", kind: "preference",
+      value: "Hers, and not his.", tags: [], source: "muse",
+      learned_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-01T10:00:00Z",
+      forgotten_at: null, previous: null,
+    },
+  ],
 });
 
 // ── the fake seams ────────────────────────────────────────────────────────────
@@ -315,6 +355,9 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "health.training_volume", body: {} },
   { tool: "health.last_lift", body: { exercise: "leg press" } },
   { tool: "health.next_workout", body: {} },
+  { tool: "memory.recall", body: { key: "pay-floor" } },
+  { tool: "memory.search", body: { text: "floor" } },
+  { tool: "memory.list", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {

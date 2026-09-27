@@ -8,6 +8,7 @@
 
 import { REMIND_OPEN_MAX, REMIND_PER_DAY, TOOLS } from "./tools.ts";
 import { WRITES_PER_HOUR } from "./handler.ts";
+import { GATED } from "./gated.ts";
 
 export function openapi(url: URL): Record<string, unknown> {
   const names = Object.keys(TOOLS);
@@ -25,13 +26,22 @@ export function openapi(url: URL): Record<string, unknown> {
       title: "Homebase write door",
       version: "1.0.0",
       description: [
-        "The seven things an assistant may change in Homebase.",
+        // COUNTED, not spelled. This line read "The seven things an assistant may
+        // change" while the tool list grew past seven, which is the drift the
+        // generated document exists to stop — and the worse half of it: a
+        // description that under-claims teaches an assistant not to ask for
+        // something that works.
+        `The ${names.length} things an assistant may change in Homebase.`,
         "",
         ...lines,
         "",
         "Every call needs the household secret, in Authorization: Bearer or in X-Muse-Token — the door takes either, because nobody has published which one a phone-built connector sends. It also needs an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
         `At most ${WRITES_PER_HOUR} writes an hour, ${REMIND_PER_DAY} new reminders a day, and ${REMIND_OPEN_MAX} reminders waiting at once.`,
-        "There is no tool for moving money, deleting anything, settling a bill, or changing a debt balance. Those are not switched off; they do not exist here.",
+        "",
+        // Also data rather than a sentence, for the same reason. Three clauses of
+        // the sentence this replaced stopped being true in one afternoon.
+        "What this door will not do, whoever asks and however it is phrased:",
+        ...GATED.map((g) => `  - ${g.name}: ${g.why}`),
       ].join("\n"),
     },
     servers: [{ url: `${url.origin}${url.pathname.replace(/\/openapi\.json$/, "")}` }],

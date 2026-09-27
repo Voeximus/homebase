@@ -19,6 +19,9 @@ import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { Db } from "./paging.ts";
 import { readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
+// The memory store reads its own table and nothing else, so it brings its own
+// loader rather than three more lines in here. See memoryLoad.ts.
+import { createMemoryLoader, type MemoryLoader } from "./memoryLoad.ts";
 import {
   toAppData,
   toBodyWeight,
@@ -34,7 +37,7 @@ function once<T>(make: () => Promise<T>): () => Promise<T> {
   return () => (p ??= make());
 }
 
-export interface Loader {
+export interface Loader extends MemoryLoader {
   /** Everything the finance maths modules take. */
   appData(): Promise<AppData>;
   /** One person's weigh-ins, oldest first — the same filter and sort the weight
@@ -109,6 +112,7 @@ export function createLoader(db: Db): Loader {
   const days = new Map<string, Promise<DayLog>>();
 
   return {
+    ...createMemoryLoader(db),
     appData,
     weights,
     macroTarget,

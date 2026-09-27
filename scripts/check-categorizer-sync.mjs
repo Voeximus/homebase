@@ -157,7 +157,11 @@ console.log("✓ muse doors read no clock");
 //    So the helper names below may exist in exactly one place, _shared/muse/. A
 //    door folder that grows one again fails the build, which is the same
 //    instrument that stops the categorizer copies drifting at the top of this file.
-const SHARED_ONLY = ["az.ts", "scrub.ts", "auth.ts", "paging.ts", "audit.ts", "load.ts"];
+//    `memory.ts` is on the list for the same reason as the rest: it is the one
+//    spelling of what a memory is — the kinds, the key shape, the caps — and the
+//    read door and the write door both depend on agreeing about it. Two copies
+//    would let one door store a row the other cannot find.
+const SHARED_ONLY = ["az.ts", "scrub.ts", "auth.ts", "paging.ts", "audit.ts", "load.ts", "memory.ts"];
 const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
 let privateCopies = false;
 for (const dir of DOOR_DIRS) {

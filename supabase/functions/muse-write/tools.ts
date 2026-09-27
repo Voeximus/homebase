@@ -1,6 +1,9 @@
-// The seven things an assistant may change, and nothing else.
+// What an assistant may change, and nothing else. The ledger and health writes are
+// below; the memory store's three are registered from ./memoryWrites.ts. The count
+// is whatever TOOLS holds — a number spelled in a comment here was already wrong
+// once, and openapi.ts now counts instead of spelling too.
 //
-// THREE LAND STRAIGHT AWAY ("direct")
+// THE LEDGER AND HEALTH WRITES THAT LAND STRAIGHT AWAY ("direct")
 //   health.log_weight       one number, one row, visible on the weight screen,
 //                           deletable in two taps.
 //   health.log_saved_meal   a meal the household already saved, by name. The
@@ -43,6 +46,9 @@
 import type { Db, MealDayRow, Person, Push } from "./db.ts";
 import { addDays, azDateISO, azWallClock, daysBetweenISO, isDateISO, parseInstant } from "../_shared/muse/az.ts";
 import { MESSAGE_CAP, MUSE_MARKER, scrubCap, wasChanged } from "../_shared/muse/scrub.ts";
+// The memory store's three writes. Their own file, so nothing about how a memory
+// works lives in here and nothing about the ledger lives in there.
+import { MEMORY_WRITE_TOOLS } from "./memoryWrites.ts";
 
 /** The push_subscriptions "owner" spelling, and the name a sentence uses. */
 export const DISPLAY: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -556,6 +562,10 @@ export const TOOLS: Record<string, Tool> = {
   "finance.note_known_amount": noteKnownAmount,
   "finance.add_transaction": addTransaction,
   "health.log_meal": logMeal,
+  // remember / forget / restore. All three land straight away and all three are
+  // reversible: see memoryWrites.ts for why memory's undo is a tool of its own
+  // rather than a token read back out of the audit log.
+  ...MEMORY_WRITE_TOOLS,
 };
 
 export const TOOL_NAMES = Object.keys(TOOLS);

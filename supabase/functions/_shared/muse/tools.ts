@@ -1,4 +1,7 @@
-// The read door's catalogue. Eleven tools, and nothing else exists.
+// The read door's catalogue, and nothing outside it exists. The finance and health
+// tools are below; the memory store's three are registered from ./memoryTools.ts,
+// so the count is whatever TOOLS holds rather than a number spelled in a comment
+// that a later tool would make wrong.
 //
 // RULE 1 — no arithmetic in here. Every number below comes out of a function in
 // src/lib, imported through the generated copies in ./lib. The repo has the
@@ -65,8 +68,19 @@ import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.t
 import type { Loader } from "./load.ts";
 import type { Person } from "./auth.ts";
 import { redactSuggestions } from "./worthALook.ts";
+import { BadArgs } from "./reply.ts";
+// The memory store's three read tools. Their own file, so nothing about how a
+// memory works lives in here and nothing about finance or health lives in there.
+import { MEMORY_READ_TOOLS } from "./memoryTools.ts";
+import type { Json } from "./reply.ts";
 
-export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
+// `Json` and `BadArgs` moved to ./reply.ts when the memory store added a second
+// tool file: two tool files importing them out of each other is an import cycle
+// whose failure mode is an uninitialised binding at load time, not a compile
+// error. They are re-exported here so handler.ts and the tests keep importing
+// them from where they always did.
+export type { Json } from "./reply.ts";
+export { BadArgs };
 
 export interface ToolContext {
   /** Forced from the secret. Never read from the request body — see ARGS below. */
@@ -94,14 +108,6 @@ export interface Tool {
    */
   args?: { name: string; type: "string" | "integer"; required: boolean; description: string }[];
   run(ctx: ToolContext): Promise<{ [k: string]: Json }>;
-}
-
-/** A caller sent something the tool cannot answer. A 400, not a 500. */
-export class BadArgs extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BadArgs";
-  }
 }
 
 // ── ARGS ──────────────────────────────────────────────────────────────────────
@@ -609,6 +615,7 @@ export const TOOLS: readonly Tool[] = [
   healthTrainingVolume,
   healthLastLift,
   healthNextWorkout,
+  ...MEMORY_READ_TOOLS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
@@ -640,7 +647,11 @@ export const ABSENT: readonly { name: string; why: string }[] = [
     why: "Its window is assembled in a view module, same reason as firepower.",
   },
   { name: "anything that writes", why: "This is the read door. It has no write verb at all." },
-  { name: "anything that deletes", why: "No door has a delete verb." },
+  {
+    name: "anything that deletes beyond recovery",
+    why:
+      "A removal here is recorded with what it removed, so it can be put back. The one thing no undo could restore is disconnecting the bank, which wipes every account and its whole history — that takes a code he types, not a chat command.",
+  },
   {
     name: "account numbers and bank descriptors",
     why: "No tool reads them. A charge's description never leaves either door under any name.",

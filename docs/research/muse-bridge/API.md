@@ -1,21 +1,30 @@
-# The Homebase read door — a guide for the assistant using it
+# The Homebase doors — a guide for the assistant using them
 
 You are reading this because you have been given a key to a private household app
 called Homebase. Two people share it: Gino and Xinyan. It holds their bank
-accounts, bills, budget, debts, body weight and workouts, and it is the place
-those things are true.
+accounts, bills, budget, debts, body weight, workouts — and now a memory of its
+own, which is where the things you learn about them are kept.
 
-This door lets you **ask** Homebase questions. It changes nothing. Eleven questions
-can be asked today. Everything else in this document is either a rule about how to
-speak, or a plain statement that something does not exist yet.
+There are **two doors**, each with its own key.
 
-Read the six rules first. They are not style advice — the whole reason this door
-exists instead of handing you the database is that a wrong number said confidently
+- The **read door** answers questions. It changes nothing. Fourteen questions can
+  be asked today.
+- The **write door** changes things. Ten tools today. Three land straight away,
+  four wait for a tap in the app, and three are the memory store.
+
+Read the rules first. They are not style advice — the whole reason these doors
+exist instead of handing you the database is that a wrong number said confidently
 in a conversation has nothing beside it to correct it.
+
+> **The list in front of you is not the list.** The doors generate their own
+> descriptions from their own code, at `GET /muse-read/openapi.json` and
+> `GET /muse-write/openapi.json`. If this document and a door disagree, **the door
+> is right**. The last section of this file names the tools that are planned and
+> were not built when this was written; do not call those.
 
 ---
 
-## The six rules
+## The rules
 
 **1. Never re-derive a number.** Every figure that comes back was computed by the
 same code the household's own screens use. If you add, subtract, average or
@@ -29,63 +38,97 @@ screen in the app said "$100". That is the exact failure you are being kept away
 from.
 
 **2. Never quote a merchant, a bank descriptor, or a single charge.** None of them
-come out of this door, and you must not ask for them another way. When someone
-wants to know which charge, the answer is: open the app. That is not a limitation
-to apologise for; it is the design.
+come out of the read door today, and you must not ask for them another way. When
+someone wants to know which charge, the answer is: open the app.
+
+This rule is being deliberately relaxed later in this phase — he has decided that
+being able to ask about one charge is worth the privacy trade. Until the tool for
+it exists and this line changes, the rule stands as written.
 
 **3. Say which half is measured.** The numbers are measured. Anything you build
 around them — a reason, a prediction, a suggestion — is your judgement. Label it
 as yours, every time, in the same breath.
 
-**4. Use the door's own words where it gives you words.** Each self-check comes
+**4. A memory is a third thing, and it is neither.** Anything from a `memory.*`
+tool is **what he told you**. It was not measured and it is not your judgement, so
+say it as his: "you told me you never raise the floor," not "your floor is." A
+number inside a memory was true the day it was stored and nothing has updated it
+since — if a memory and a finance tool disagree, the finance tool is right and the
+memory needs correcting.
+
+**5. Use the door's own words where it gives you words.** Each self-check comes
 with a question written in plain English, and each refusal comes with one plain
 sentence meant to be said as it stands. Prefer those to your own phrasing.
 
-**5. One clock, and it is Arizona.** Arizona does not change with daylight saving.
+**6. One clock, and it is Arizona.** Arizona does not change with daylight saving.
 The door works out "now" itself. Do not send it your own idea of today, and do not
 convert anything. If a reply carries `as_of` and that date is not today in
 Arizona, the answer is stale — say so rather than reading it out.
 
-**6. Plain language.** No jargon without a short meaning beside it. Short
+**7. Plain language.** No jargon without a short meaning beside it. Short
 sentences. Round nothing that came rounded.
+
+**8. Say what you changed, and say it can be undone.** Every write tells you in
+one sentence what it did. Say that sentence. Where a write can be reversed, the
+reply names the call that reverses it — mention that too, once, in the same
+breath. He should never have to wonder whether something is now stuck.
 
 ---
 
-## How to call it
+## How to call them
 
-One POST per question. The body is JSON. The key goes in a header:
+One POST per tool. The body is JSON. The key goes in a header.
+
+The read door takes the tool name in the address:
 
 ```
 POST https://<project>.supabase.co/functions/v1/muse-read/finance.audit
-Authorization: Bearer <the token you were given>
+Authorization: Bearer <your READ token>
 Content-Type: application/json
 
 {}
 ```
 
+The write door takes it in the body, and needs one extra header:
+
+```
+POST https://<project>.supabase.co/functions/v1/muse-write
+Authorization: Bearer <your WRITE token>
+Idempotency-Key: a-fresh-key-per-request
+Content-Type: application/json
+
+{ "tool": "memory.remember", "args": { "key": "pay-floor", "kind": "standing", "value": "..." } }
+```
+
 If you cannot set `Authorization`, send the same token as `X-Muse-Token`. Send one
 or the other, never both.
 
-The machine-readable description of every call is at
-`GET /muse-read/openapi.json`, and it needs the same token.
+**The two keys are different on purpose.** The read key cannot write and the write
+key cannot read. If you are asked to change something and you only hold the read
+key, say plainly that you can only read.
 
-**Do not ask the same question in a loop.** A cap of 60 reads an hour per person
-is planned and is not switched on yet, so today nothing stops you but this
-sentence. When it lands you will start getting `rate_limited` instead of an answer.
-Either way: if a call is refused, wait. Do not retry in a circle.
+**The Idempotency-Key.** Every write needs one: 8 to 200 characters, letters,
+numbers, dots, colons or dashes. Send a **fresh** one per request, and **the same
+one** if you retry the same request after a timeout. A repeat under the same key
+returns the first answer and writes nothing. The same key with different arguments
+is refused — that is the guard working, not a bug.
 
-Every call is written to a log the household can read: which tool, which person,
-whether it worked, how long it took. Amounts are not logged. Assume they can see
-everything you asked.
+**You never send a person.** Both doors work out whether it is Gino or Xinyan from
+the key you used, and refuse the call outright if you put `person`, `owner` or
+`for` in the body. There is no way to ask about, or write for, the other person.
+
+**Caps.** Ten writes an hour per person, ten new reminders a day, twenty reminders
+waiting at once, two hundred things remembered. A cap of sixty reads an hour is
+planned and not switched on yet. If a call is refused, wait. Do not retry in a
+circle.
+
+Every call on both doors is written to a log the household can read: which tool,
+which person, whether it worked, how long it took. No amounts and no memory words
+are logged. Assume they can see everything you asked.
 
 ---
 
-## The eleven questions you can ask
-
-**You never send a person.** The door works out whether it is Gino or Xinyan asking
-from the key you used, and it refuses the call outright if you put `person` in the
-body. The health answers come back stamped with the person, so you can still say
-whose they are.
+## The fourteen questions you can ask
 
 ### `finance.audit` — does the app disagree with itself?
 
@@ -318,6 +361,243 @@ exercises. Each exercise carries its planned `sets` and `reps`, the date it was
 rather than passing over it — an exercise nobody has logged is often the useful
 thing in this reply.
 
+### `memory.recall` — what was I told about this?
+
+**Takes a key.** `{"key": "pay-floor"}` — the handle the thing was remembered
+under. Lower case, dashes, no spaces.
+
+**What comes back:** `found`, and when it is true, the `memory` — its `key`,
+`kind`, `value`, `tags`, the day it was `learned_on`, and `previous` when it has
+been corrected at least once.
+
+**Three answers, and they are different claims:**
+- `found: true` — you were told this. Say it as his (rule 4).
+- `found: false` with no `forgotten` — **nothing is stored under that key.** Say
+  that, and do not offer something close to it. A half-remembered standing rule
+  read out with the app's authority is worse than admitting you do not have it.
+- `found: false` with `forgotten: true` — he told you to drop it, and the reply
+  says which day. It is kept, so it can come back: `memory.restore` on the write
+  door does that in one call.
+
+### `memory.search` — find what I was told, by words
+
+**Takes at least one of three.** `{"text": "sleep"}`, `{"kind": "preference"}`,
+`{"tag": "money"}` — and any combination of them. A search with none of the three
+is refused, because that is `memory.list`.
+
+`text` matches inside the key, the value and the tags, ignoring case. `tag` must
+match a whole tag.
+
+**What comes back:** `total`, up to fifty `memories`, and `left_out` — how many
+matched and were not sent. **If `left_out` is above zero, say so** or narrow the
+search; an answer that silently saw half the matches is worse than one that says it
+did.
+
+Forgotten memories are never in a search. Use `memory.recall` with the exact key
+for those.
+
+### `memory.list` — everything you were told
+
+**Takes two optional things.** `{}` for all of it, `{"kind": "standing"}` for one
+kind, `{"offset": 100}` for the second page.
+
+**Call this at the start of a conversation about them** rather than working from
+what you think you remember. It is the cheapest single call on either door and it
+is the thing that stops you contradicting a standing rule he set last month.
+
+**What comes back:** `total`, `of_each_kind` (a count per kind, which is the useful
+first sentence — "eleven standing rules, four preferences"), the `memories`
+themselves, `offset`, `returned`, and `left_out`.
+
+A page is a hundred and there are never more than two hundred, so two calls reach
+all of it. Forgotten memories are not in the list.
+
+---
+
+## The ten things you can change
+
+Every one of these is on the **write door**, needs the write key, and needs an
+`Idempotency-Key`. Every reply carries one sentence in `message` — say it.
+
+### The three that land straight away
+
+#### `health.log_weight`
+
+Fields: `weight`, `date` (optional, defaults to today in Arizona, up to a few days
+back). One row on the weight screen, deletable in two taps. If a weigh-in was
+already saved for that day the reply says what it replaced — say that too.
+
+#### `health.log_saved_meal`
+
+Fields: `name`, `date` (optional). Logs one of the household's own saved meals by
+name, exactly as it is stored — the macros are already known, so there is nothing
+to parse and nothing to get wrong. If the name is not found the reply lists the
+saved meals; read a couple of them back rather than guessing.
+
+#### `schedule.remind`
+
+Fields: `message`, `at`, `repeats` (`once`, `daily`, `weekly`). Writes a reminder
+into Homebase's own list, which Homebase delivers as a real push notification —
+not a chat message. `at` is either an instant with an offset (`2026-09-27T09:00Z`)
+or Arizona wall-clock time (`2026-09-27T09:00`). **A bare date is refused**, because
+a reminder that silently means midnight arrives at the wrong end of the day.
+
+Delivery is checked every fifteen minutes, so say "within about fifteen minutes of
+that time" rather than promising the minute. The message is capped and cleaned, and
+the reply says so when it had to shorten it.
+
+### The four that only ask
+
+These write down what was asked and **change nothing**. The change happens when one
+of them taps it in the app, where the app's own guards run and they can see both
+numbers. It expires after a day if nobody taps it.
+
+**Say that out loud every time.** "I have put that in front of you in the app —
+nothing has changed yet" is the honest sentence. The reply's own `message` says it;
+use that.
+
+#### `finance.categorize_charge`
+
+Fields: `transaction_id`, `category_id`. Asks for one charge to be filed under one
+category.
+
+#### `finance.note_known_amount`
+
+Fields: `recurring_id`, `amount`, `month_key`. Asks to record what a variable bill
+actually came to for one month.
+
+#### `finance.add_transaction`
+
+Fields: `amount`, `category_id`, `description`, `date` (optional). Asks to add one
+cash expense. It only ever adds an expense — a `type` field is refused, because
+income goes in the app.
+
+#### `health.log_meal`
+
+Fields: `items` (each with `name`, `kcal`, `p`, `c`, `f`, and `grams` optionally),
+`date` (optional). Asks to log free-form food. The door adds nothing up; the app
+does that when he taps, with the same code that draws the screen.
+
+### The three that are the memory store
+
+#### `memory.remember`
+
+Fields: `key`, `kind`, `value`, `tags` (optional).
+
+- `key` — a short handle in lower case with dashes: `pay-floor`, `works-nights`,
+  `no-jargon`. **Reuse the same key to correct something you already know.** A
+  second key for the same fact is how a store ends up holding two answers.
+- `kind` — one of `standing`, `preference`, `routine`, `decided`, `fact`. See the
+  next section for what each one means.
+- `value` — the fact, in one line, up to 300 characters.
+- `tags` — up to six short words, for narrowing a search later.
+
+**Three refusals worth knowing before you call it:**
+- A value with a web address or an instruction-shaped phrase in it is **refused**,
+  not cleaned. Say the fact in plain words instead.
+- A value with no words in it — `$1,193.77`, `2026-09-26` — is refused. That is a
+  figure, and figures do not belong here (next section).
+- If it already knows exactly that, under that key, it says so and writes nothing.
+  That is not an error; do not call it again.
+
+The reply names the call that undoes it: `memory.restore` with the same key.
+
+#### `memory.forget`
+
+Fields: `key`. Stops using one remembered thing. It is **kept**, not deleted, so it
+can come back — say that when you confirm it. A key that was never there, or was
+already forgotten, is refused rather than shrugged off, because "I forgot it" about
+something that was never there hides a mistyped key.
+
+#### `memory.restore`
+
+Fields: `key`. **This is the undo for the memory store.** It reverses the last
+change to that key:
+
+- forgotten → brought back, exactly as it was;
+- corrected → the wording swaps back to what it was before. Calling it again swaps
+  forward, so "no, the other one" is the same call twice;
+- never changed → refused, and it says so rather than inventing a change.
+
+It works from a conversation started a month later, because the before-state is
+kept in the row itself rather than in a log. There is no token to carry.
+
+---
+
+## The memory store — what it is for
+
+This is the part of the system that exists so that what you learn about him is
+**his**, in his own database, in five plain columns. Anything you remember in your
+own store on Meta's side is a black box: he cannot read it, cannot correct it,
+cannot copy it, and it stops existing for him the day he stops using you. What goes
+in here survives that. If he moves to another assistant tomorrow, one statement
+hands the new one everything you knew.
+
+So treat it as his notebook, not your scratchpad.
+
+### What belongs in it
+
+The things the app **cannot work out**, with the kind to file each under:
+
+- **`standing`** — a rule that does not expire. *"$1,400 a check is a floor, never
+  raise it."* *"Never push him through a break."*
+- **`preference`** — how he wants things done. *"Plain language, no jargon."*
+  *"One thing at a time, not a list."*
+- **`routine`** — what he does, and when. *"Works nights, roughly 6 PM to 6 AM."*
+  *"Weighs in most mornings, not all."*
+- **`decided`** — a question already settled, so nobody reopens it every month.
+  *"The paycheck floor was decided deliberately; it is not an oversight."*
+- **`fact`** — a standing fact the app has no column for. *"Both of them are on the
+  car's title."*
+
+A good test: **if you would be annoyed to be told it again next month, remember
+it.**
+
+### What must never go in it
+
+**Anything a tool can answer.** A balance. A bill amount. What is left in
+groceries. A weigh-in. Yesterday's macros. A payoff date.
+
+Those things are measured, they change under him, and a copy in here is a number
+that was true once and will be read back as though it still is — for ever, with no
+screen beside it to disagree. That failure has already happened in this app once,
+from a figure copied by hand: every phone said "Electric $85" while every screen
+said "$100".
+
+The door refuses the obvious spelling of the mistake — a value with no words in it.
+It cannot refuse *"we have $1,193.77 available"* by inspection, because *"$1,400 a
+check is a floor"* has to be allowed, and the difference between those two is what
+the sentence **means**. That part is yours to get right.
+
+Also not in it: a reminder (`schedule.remind` has its own list and its own push), a
+running to-do, a conversation summary, or anything you would call a note.
+
+### How to use it in a conversation
+
+1. **Read before you assume.** `memory.list` at the start, rather than working from
+   what you think you remember from last time.
+2. **Correct, do not add.** When something he said before turns out to be wrong or
+   has changed, call `memory.remember` with the **same key**. The old wording is
+   kept as the undo.
+3. **Ask before you store a rule.** "Do you want me to remember that?" costs one
+   sentence. A store full of things he did not ask you to keep is a store he stops
+   trusting.
+4. **Say the key.** When you confirm, name the handle — "I have that under
+   `pay-floor`" — so he can ask you to drop it by name later.
+5. **Never quote a memory as a measurement.** Rule 4.
+
+### What he can do with it without you
+
+Read the whole of it:
+
+```sql
+select key, kind, value, tags from public.muse_memory
+ where person = 'gino' and forgotten_at is null
+ order by kind, key;
+```
+
+That statement is the portability promise, and it is why this table exists at all.
+
 ---
 
 ## When a call is refused
@@ -326,10 +606,10 @@ Every refusal comes back with one plain sentence written to be said as it stands
 Say it. Do not dress it up, and do not fall back on a number from earlier in the
 conversation.
 
-The sentence is in `says`. The code below is in `error`, and it is the field to
-branch on — there are exactly seven of them and there will never be one that is
-not on this list. A test checks this table against the door's own source both
-ways, so a code added to one and not the other fails the build.
+On the **read door** the sentence is in `says` and the code is in `error`, and it is
+the field to branch on — there are exactly seven of them and there will never be one
+that is not on this list. A test checks this table against the door's own source
+both ways, so a code added to one and not the other fails the build.
 
 | `error` | HTTP | What it means | What you do |
 |---|---|---|---|
@@ -341,10 +621,20 @@ ways, so a code added to one and not the other fails the build.
 | `ledger_unreadable` | 503 | The door could not read the whole ledger, so it refused to compute from part of it. | Say exactly that and give **no** number. This is the door protecting them, working as designed. |
 | `failed` | 500 | Something broke inside the door working the answer out. | Say that it could not work the number out. Give no number. Try once, then stop. |
 
+On the **write door** the sentence is in `message` and there is no code — the status
+carries it. 400 means something about the request was wrong. 401 means no usable
+key. 404 means no such tool, or the row it named does not exist. 409 means that
+idempotency key was already used, or something changed underneath while the door was
+working. 429 means a cap. 503 means the ledger could not be read or written cleanly,
+and **nothing changed**.
+
 A refusal is never a reason to guess. The right answer to "I could not read the
 ledger cleanly" is silence about the number, not a best effort.
 
----
+**A refused write gives its key back.** Nothing happened, so a corrected retry under
+the same key works. A write that came back 500 keeps the key: we cannot prove nothing
+landed, so a retry needs a new one — and the honest thing to say is that you do not
+know whether it went through and the app is where to look.
 
 ## What does not exist
 
@@ -354,38 +644,76 @@ that the app can do it.
 
 **Never, at any point, by anyone:**
 
-- Move money, pay a bill, or touch the bank connection.
-- Mark a bill as paid, or settle a bill cycle.
-- Delete anything.
-- Return the list of transactions, or anything about one merchant or one charge.
-- Change a debt balance or a savings goal.
+- Move money, or pay a bill. Homebase has never moved money; it records what
+  happened, and the bank is where money moves.
+- Disconnect the bank. That wipes every account on the connection and its whole
+  transaction history, and no undo could restore it — the bank will not re-deliver
+  it. It takes a code he types, not a chat command.
+- Delete a charge the bank delivered. That is real history, and it is the one thing
+  this app cannot rebuild.
+- Aim anything at the other person. Every read and every write lands on whoever's
+  key was used.
+- Reach another part of the system. Neither door can call another function; each one
+  talks to the database and to nothing else.
+- Return a bank descriptor or an account number. No tool reads those columns at all.
 
-**Reads that are planned but not built yet.** Do not attempt them and do not
-approximate them from the eleven above:
+## What is planned and is not there yet
 
-- the lowest the balance gets and the day it happens
-- what is due before the next paycheck
-- how much is free each month to aim at the debt
-- how many days were logged — the streak
-- a barcode looked up
-- bill dates in a shape that can go on a calendar
+**Everything in this section was named in the plan for this phase and was not in the
+doors when this document was written. I could not verify any of it exists.** Do not
+call these. Ask `GET /muse-read/openapi.json` and `GET /muse-write/openapi.json` for
+what is actually there — those are generated from the doors' own code and cannot be
+out of date.
 
-**Writes are a separate door with a separate key.** You are holding the read key,
-and this door has no write verb anywhere in it. If you are asked to log or change
-anything with the key you have, say plainly that you can only read.
+The names below are the ones the plan used. A tool that lands may be spelled
+differently.
 
-For when somebody asks what the other door does: three writes land straight away —
-logging a weigh-in, logging one of the household's saved meals by name, and writing
-a reminder for a given time. Four more are **queued**: categorising a charge,
-recording what a variable bill came to, adding a cash charge, and logging free-form
-food. Queued means that door writes down what was asked and **changes nothing** —
-the change happens when one of them taps it in the app, and it expires after a day
-if nobody does.
+**Reads — finance:** one charge by its id; searching charges by window, amount,
+category, merchant text or flag; the list of categories (`finance.categories`); all
+accounts including cards; the recurring rows in full; the bill calendar; paid-bill
+overrides; learned merchant rules; spendable-after-bills and what is due next
+(`finance.firepower`, `finance.next_bills` — these two wait on a shared function, so
+that a spoken figure matches the screen); the bank's pending preview; the bank
+connection's status and last sync; and "what did you change", read out of the audit
+log.
+
+**Reads — health:** a meal day other than today; the meals in a day with per-item
+macros; a day's status and note; the saved-meals list; the foods library; weigh-in
+history rather than three numbers; the macro targets themselves; workout history, one
+session, and per-exercise progress; and the reminder list.
+
+**Writes — finance:** the four queued tools above becoming direct writes with an
+undo; adding and deleting a cash charge; splitting a charge; linking a charge to a
+bill cycle and unlinking it again; marking a bill paid as a reconciliation marker;
+setting and clearing a paid-bill override; dismissing the unusual-purchase flag;
+taking a charge out of the budget; setting aside, settling and unsettling a
+reimbursable; promoting a charge to a bill; flagging a bill variable; editing a
+bill's amount; turning a bill off; ending an income or setting a bill window; adding
+a bill from repeating charges; learning a merchant rule; setting an account balance;
+and adding a debt.
+
+**One caveat on that last list, said plainly:** the plan I was working from was cut
+off partway through the finance writes, at linking and unlinking a debt. So there are
+almost certainly a few more finance writes than the list above, and I do not know
+what they are. The write door's own description is the list.
+
+**Undo across the ledger.** The plan is that every one of those writes records what
+it replaced and hands back an undo, and that "undo that" and "what did you change"
+become tools of their own. Only the memory store's undo exists today, and it is
+`memory.restore` — a tool, not a token, because a memory's before-state is kept in its
+own row rather than in the audit log. **A general "undo the last thing" tool that
+reads the audit log will not cover the three memory writes.** Use `memory.restore` for
+those.
+
+**Never coming:** a forecast or a payoff date. The maths exists and the screen it came
+from does not, so there would be nothing to check a spoken number against. That is a
+decision, not an oversight.
 
 ## Two habits that matter more than the rest
 
 **Say the date and the window.** "This pay cycle, Mar 31 to Apr 14" is a different
 claim from "this month", and the difference is what makes a number checkable.
 
-**When the door and your memory disagree, the door is right.** Do not remember
-last hour's balance. Ask again.
+**When a door and your memory disagree, the door is right.** Do not remember last
+hour's balance. Ask again. And when a `memory.*` answer disagrees with a finance or
+health answer, the measured one wins and the memory needs correcting.

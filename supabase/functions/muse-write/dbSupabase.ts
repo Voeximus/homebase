@@ -18,6 +18,7 @@
 // because no such function exists here to call.
 
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { memoryDb } from "./dbMemory.ts";
 import type {
   CallRecord,
   Db,
@@ -67,6 +68,10 @@ export function supabaseDb(admin: SupabaseClient): Db {
   }
 
   return {
+    // The memory store's four statements, implemented in their own file beside the
+    // tools that use them. Spread in, so this file stays the ledger's wiring.
+    ...memoryDb(admin),
+
     async findCall(person, tool, idemKey) {
       const { data, error } = await audit()
         .select("outcome, args, result, note")
