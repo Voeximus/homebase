@@ -10,27 +10,19 @@ before the read door is deployed; there is nothing for Muse to call.
 - **Paste 1** is the long one below. It teaches Muse the doors and the rules.
 - **Paste 2** is short, at the bottom. It tells Muse about you and Xinyan.
 
-Before you paste anything, the keys have to live somewhere Muse can reach them
-without asking you. Two places, in order of preference:
+Before you paste anything: put each key in Muse's secure credential box, through
+its custom-connector screen. That box is where a credential belongs — Muse holds it,
+Muse never reads it back, and you are never asked to type it again.
 
-1. **Muse's secure credential box**, reached through its custom-connector screen.
-   This is the better one: the box holds the key and the model itself never reads
-   it. Use it if the screen will take the key.
-2. **The skill's own storage** — the workspace Muse keeps across conversations and
-   devices. Use this when the connector screen refuses, which it has done four
-   times on these doors while Muse's own calls to the same doors with the same key
-   returned 200. The paste at the bottom of this file tells Muse to do it.
+If the screen refuses a door, the fault is in that door's own description and not in
+your key. It refused the write door four times while every hand-made call to the same
+door with the same key returned 200; the cause was the document advertising an address
+that 404s and declaring nowhere to put the secret. Both fixed. So a refusal is a bug
+report, not a reason to start typing keys into the chat — say what the screen said and
+have it looked at.
 
-Option 2 is a real trade and worth naming: the model can read a key it stores
-itself, so it may end up quoted in a transcript. What that costs is bounded. These
-keys cannot move money — they read and change records. Every write is logged with
-a before-state and an undo token. And revoking is one secret change plus a
-redeploy, under a minute, and it cannot half-work. Against that: being asked to
-type a key by hand on every single write, on a system whose whole point is that
-there is no app to open.
-
-What is NOT acceptable either way: a key in a web address, a key sent to the other
-door, or a key you re-type into the chat every time because nothing is holding it.
+Never put a key in a web address, never send the read key to the write door or the
+other way round, and never keep one in a message you can scroll back to.
 
 If a paste is too long for one message, break it at a heading. Muse keeps the
 whole conversation, so two messages read the same as one.
@@ -495,39 +487,28 @@ something the door gives me" than a good guess. If I am wrong, say so.
 
 ---
 
-# PASTE 3 — hold the keys yourself
+# PASTE 3 — when the setup screen refuses a door
 
-**When.** The moment Muse asks you to type a key by hand for a second time. The
-connector screen has refused these doors four times while Muse's own calls to the
-same doors with the same key returned 200 — the screen is the broken part, not the
-key and not the door.
+**When.** A connector screen says "check your API key" and you have not mistyped it.
+
+**Do not** ask Muse to store the key itself instead. It will refuse, correctly — its
+own rules say a credential lives in the vault or nowhere — and asking it to work
+around that is asking it to be worse at its job.
 
 ---
 
-Stop asking me for a key. You have proved the key works: your own call to the write
-door returned 200 with the full OpenAPI document. So the key is not the problem —
-holding it is.
+The setup screen refused that door. Before we blame the key: call the door yourself,
+with the key, and tell me the status code and the first line of the body. Then read
+its description at <door-address>/openapi.json and tell me two things from it:
 
-Store both keys in your own skill storage, the workspace you keep across
-conversations and devices, under exactly these two names:
+1. What `servers` says the door's address is. It must start with `https://` and
+   contain `/functions/v1/`. Anything else and the screen is being sent to an
+   address that does not answer.
+2. Whether `components.securitySchemes` exists and what it names. If it is missing,
+   the screen has nowhere to put the key, so it calls without one and reports the
+   401 as a bad key.
 
-- `homebase_read_key`
-- `homebase_write_key`
-
-Then load them from there on every call, and never ask me for one again. If the
-connector screen ever starts working, move them into the secure credential box
-instead and delete your own copies — that is the better home, because then you
-cannot read them.
-
-Two rules that do not change:
-
-1. **Never print a key back to me** unless I ask for it in so many words. Not in a
-   summary, not in an example call, not when something fails.
-2. **Never put a key in a web address.** Header only —
-   `Authorization: Bearer <key>` is what the doors prefer, and they also read
-   `X-Muse-Token`, `X-API-Key` and `apikey`.
-
-If storing it is genuinely not something you can do, say that plainly instead of
-working around it, and say what you *can* do. Do not quietly go back to asking me.
+Both of those have been wrong on this system before. Tell me what you find rather
+than trying another key or another spelling.
 
 ## PASTE 3 — ends here
