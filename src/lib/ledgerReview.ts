@@ -2,7 +2,7 @@ import type { AppData, Cadence, Recurring, Transaction } from "../types";
 import { billKey, merchantKey } from "./categorize";
 import { formatDate, formatMoney, monthKeyOf, monthLabel } from "./format";
 import { addMonths } from "./forecast";
-import { t } from "./i18n";
+import { getLang, t } from "./i18n";
 import { liveOn, monthlyAmount } from "./recurring";
 import { DUE_DAYS, billCycleFor, firesInMonth } from "./schedule";
 import { cycleKeyOf } from "./selfAudit";
@@ -211,6 +211,25 @@ function modelledOf(r: Recurring): number {
   return r.knownAmount != null ? r.knownAmount : r.amount;
 }
 
+/**
+ * What the calendar plans for ONE payment of this row.
+ *
+ * A row with two due days is paid in installments: schedule.ts places
+ * `monthly / dueDays.length` on each day, so the row's own figure is the MONTH's
+ * total and not one payment. Mom is $300 a month on the 15th and the 30th, which
+ * is $150 a payment. Comparing a single charge against the undivided figure is
+ * comparing two different quantities.
+ *
+ * A biweekly row is the exception — it charges its full amount each time — and
+ * it is the only exception among the cadences this is used for, because both
+ * callers are already gated to CYCLE_CADENCES.
+ */
+function perChargeOf(r: Recurring, amount: number): number {
+  if (r.cadence === "biweekly") return amount;
+  const days = dueDaysOf(r).length;
+  return days > 1 ? amount / days : amount;
+}
+
 const cents = (n: number) => Math.round(n * 100);
 const money = (n: number) => formatMoney(n);
 
@@ -244,6 +263,10 @@ function todayOf(now: Date): string {
 
 /** "1st", "2nd", "17th" — bills are spoken about by their due day. */
 function ordinal(day: number): string {
+  // Chinese says the day as a bare number in front of its own marker, so both ZH
+  // templates read "{day} 号" — an English suffix wedged in there is a typo on
+  // Xinyan's phone: "每月 23rd 号到期".
+  if (getLang() === "zh") return String(day);
   const rem100 = day % 100;
   if (rem100 >= 11 && rem100 <= 13) return `${day}th`;
   switch (day % 10) {
@@ -445,8 +468,8 @@ export function reviewLedger(
  *  checked for coverage and nothing ships untranslated by accident. */
 export const REVIEW_STRINGS: string[] = [
   // W1
-  "{name} now charges more than the app expects",
-  "{name} now charges less than the app expects",
+  "{name}'s last charge was more than the app expects",
+  "{name}'s last charge was less than the app expects",
   "The app plans {modelled} a month. The last charge, on {date}, was {actual} — {gap} more.",
   "The app plans {modelled} a month. The last charge, on {date}, was {actual} — {gap} less.",
   "Use {amount} from now on",
@@ -456,7 +479,9 @@ export const REVIEW_STRINGS: string[] = [
   "Turn this bill off",
   // W3
   "{name} looks like a monthly subscription",
+  "A repeat charge looks like a monthly subscription",
   "{amount} charged in {months}, always the same amount. It is not in your bills, so nothing plans for it.",
+  "{amount} at {name}, charged in {months}, always the same amount. It is not in your bills, so nothing plans for it.",
   "Add it as a monthly bill",
   "Give it a category first",
   // W4
@@ -464,6 +489,9 @@ export const REVIEW_STRINGS: string[] = [
   "{name} is {amount}, due on the {day}. It was charged in {months}, and for {month} nothing matches it. Either it has not gone out yet or the charge is not in the app.",
   // W5a
   "This charge may be in twice",
+  "This deposit may be in twice",
+  "Two charges of {amount} on {date} in the same account — one from the bank, one entered by hand. If they are the same money, the hand-entered one is the extra.",
+  "Two deposits of {amount} on {date} in the same account — one from the bank, one entered by hand. If they are the same money, the hand-entered one is the extra.",
   "{count} charges of {amount} on {date} in the same account — {bank} from the bank, {manual} entered by hand. If they are the same money, the hand-entered one is the extra.",
   "Remove the hand-entered one",
   // W5b
@@ -474,8 +502,8 @@ export const REVIEW_STRINGS: string[] = [
   "The app expects {monthly} a month. One deposit of {actual} arrived on {date} and nothing like it before. If that was a one-off, the app is counting it every month from here.",
   "It was one-off — stop expecting it",
   // W7
-  "This charge looks like your {name} bill",
-  "{amount} at {merchant} on {date}. Your {name} bill is {modelled}, due on the {day}, and the app has that cycle as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.",
+  "This charge looks like your {name} bill for {month}",
+  "{amount} at {merchant} on {date}. Your {name} bill is {modelled}, due on the {day}, and {month} is still showing as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.",
   "Yes, that is the bill",
 ];
 
@@ -496,6 +524,9 @@ export const REVIEW_STRINGS: string[] = [
  *     a false "Card payment now charges more" (modelled $129, last paid $300).
  *   · a variable row with no knownAmount — that figure IS the average of actuals,
  *     so comparing it against an actual compares it against itself.
+ *   · a row billed in INSTALLMENTS — see the gate below. The calendar divides the
+ *     row's figure across its due days, so one charge and that figure are
+ *     different quantities, and the rule was both false-positive and blind there.
  *
  * CAN BE WRONG: it fires on the first divergent charge, so a late fee rolled in,
  * or a two-month catch-up payment, reads as a new price. That is the deliberate
@@ -510,6 +541,13 @@ function reviewDrift(data: AppData, now: Date): Suggestion[] {
     if (r.linkedDebtId) continue;
     if (r.variable && r.knownAmount == null) continue;
     if (!liveOn(r, today)) continue;
+    // Billed in installments: the calendar divides this row's figure by its
+    // due-day count (schedule.ts:187), so one charge is not comparable to it. A
+    // perfectly correct $600-a-month Mom, paid $300 on the 15th and $300 on the
+    // 30th, read as the price having HALVED — and the one-tap fix offered to write
+    // the halved figure into the plan. Nothing models the per-payment price, so
+    // there is nothing honest for this rule to compare against on such a row.
+    if (dueDaysOf(r).length > 1) continue;
     const modelled = modelledOf(r);
     if (!isFiniteAmount(modelled) || modelled <= 0) continue;
 
@@ -531,10 +569,14 @@ function reviewDrift(data: AppData, now: Date): Suggestion[] {
       key: `drift:${r.id}:${cents(last.amount)}`,
       rule: "W1",
       kind: "drift",
+      // What was SEEN, not a claim about the biller. This rule fires on the first
+      // divergent charge, so a late fee rolled in or a two-month catch-up payment
+      // reads as a new price — the detail line has always been careful about that
+      // and the headline was not, and the headline is what he reads first.
       title: t(
         higher
-          ? "{name} now charges more than the app expects"
-          : "{name} now charges less than the app expects",
+          ? "{name}'s last charge was more than the app expects"
+          : "{name}'s last charge was less than the app expects",
         { name: r.name },
       ),
       detail: t(
@@ -581,14 +623,20 @@ function reviewDrift(data: AppData, now: Date): Suggestion[] {
  * They share one cycle list and can never both fire on one row: W2 says the bill
  * is over, W4 says this one is late or its charge is not in the app.
  *
- * THRESHOLD: three cycles, for both. One missed cycle is a late bill; two is a
+ * THRESHOLD: three MONTHS, for both. One missed month is a late bill; two is a
  * coincidence a household really has (a two-month catch-up payment empties the
- * cycle before it). Three consecutive misses on a monthly bill is a quarter of
- * silence — long enough that "this bill no longer exists" is the better
- * explanation, and short enough to catch a cancelled subscription before it has
- * distorted a full forecast cycle. W4 additionally needs two clean cycles behind
- * the empty one, which is what separates "reliable bill, this cycle broke the
- * pattern" from "erratic bill".
+ * month before it). Three consecutive misses is a quarter of silence — long enough
+ * that "this bill no longer exists" is the better explanation, and short enough to
+ * catch a cancelled subscription before it has distorted a full forecast cycle. W4
+ * additionally needs two clean months behind the empty one, which is what
+ * separates "reliable bill, this month broke the pattern" from "erratic bill".
+ *
+ * THE UNIT IS THE MONTH, not the cycle, and that is the whole reason the grouping
+ * below exists. Both rules write their sentence and their dollar total in months —
+ * "nothing has been charged in July, August and September, that is $900 of planned
+ * money". On a row with two due days, three CYCLES span six weeks: the month list
+ * named August twice and the total claimed three months of money for a month and a
+ * half. Counting months is also what this threshold has always said it counted.
  *
  * A CLEARED debt-linked row is skipped: the calendar already drops a card payment
  * once its balance hits zero, and it brings the row back on its own when the card
@@ -623,13 +671,21 @@ function reviewPhantomAndMissing(
     const monthly = monthlyAmount(r);
     if (!isFiniteAmount(monthly) || monthly <= 0) continue;
 
-    const list = closedCycles(r, now).slice(0, SILENT_CYCLES);
+    // Closed cycles, folded into the months they fall in, newest month first. A
+    // month counts as paid when any of its closed cycles was paid.
+    const byMonth: { monthKey: string; cycles: Cycle[] }[] = [];
+    for (const c of closedCycles(r, now)) {
+      const held = byMonth[byMonth.length - 1];
+      if (held && held.monthKey === c.monthKey) held.cycles.push(c);
+      else byMonth.push({ monthKey: c.monthKey, cycles: [c] });
+    }
+    const list = byMonth.slice(0, SILENT_CYCLES);
     if (list.length < SILENT_CYCLES) continue;
-    const paid = list.map((c) => (cycles.get(c.key)?.length ?? 0) > 0);
+    const paid = list.map((m) => m.cycles.some((c) => (cycles.get(c.key)?.length ?? 0) > 0));
 
     if (!paid.some(Boolean)) {
-      if (list.some((c) => explained.has(`${r.id}|${c.monthKey}`))) continue;
-      const months = [...list].reverse().map((c) => c.monthKey);
+      if (list.some((m) => explained.has(`${r.id}|${m.monthKey}`))) continue;
+      const months = [...list].reverse().map((m) => m.monthKey);
       const total = monthly * SILENT_CYCLES;
       out.push({
         key: `phantom:${r.id}:${list[0].monthKey}`,
@@ -666,9 +722,14 @@ function reviewPhantomAndMissing(
     }
 
     if (!paid[0] && paid[1] && paid[2]) {
-      const newest = list[0];
+      // The newest closed cycle of the silent month — the payment the sentence
+      // names a due day and a price for.
+      const newest = list[0].cycles[0];
       if (explained.has(`${r.id}|${newest.monthKey}`)) continue;
-      const modelled = modelledOf(r);
+      // The price of THAT payment, not of the whole month. A row paid on the 15th
+      // and the 30th is half its monthly figure each time, so naming the monthly
+      // figure beside one due day states a price the app does not plan.
+      const modelled = perChargeOf(r, modelledOf(r));
       const paidMonths = [list[2].monthKey, list[1].monthKey];
       out.push({
         key: `missing:${r.id}:${newest.monthKey}:${installmentIndexOf(r, newest.day)}`,
@@ -764,8 +825,33 @@ function reviewUnmodelled(data: AppData, now: Date): Suggestion[] {
     const tol = Math.max(2, 0.03 * med);
     if (rows.some((tx) => Math.abs(tx.amount - med) > tol)) continue;
     if (modelledKeys.has(key) || modelledKeys.has(billKey(key))) continue;
+    // merchantKey strips the trailing digits and the date, which collapses
+    // "CHECKCARD 0921 TC @ TSMC ARIZONA 199 PHOENIX AZ" and
+    // "PURCHASE 405 Howard St San Francisco CA ON 09/22" to one bare word — so
+    // three unrelated merchants can land in one group and be reported as one
+    // subscription. On the live ledger the key CHECKCARD holds a cafeteria charge,
+    // a service charge and an MVD fee, in three different months. A subscription
+    // bills under the same TEXT every month, so require that too.
+    const shapes = new Set(
+      rows.map((tx) => billKey((tx.description ?? "").replace(/[0-9]/g, ""))),
+    );
+    if (shapes.size > 1) continue;
 
-    const name = mode(rows.map((tx) => tx.description)) ?? key;
+    // The SHORTEST descriptor is the merchant; the long ones carry the terminal id
+    // and the date. This name is both the headline AND what the fix writes into
+    // recurring.name, and W7 matches on exact normalized name equality — so a
+    // descriptor carrying digits that change every month would create a bill row no
+    // future charge could ever match, and W2 would call it a phantom three months
+    // later.
+    const name =
+      [...rows]
+        .map((tx) => (tx.description ?? "").trim())
+        .filter(Boolean)
+        .sort((a, b) => a.length - b.length || (a < b ? -1 : 1))[0] ?? key;
+    // Even the shortest can be long. A headline that wraps to three lines on a
+    // phone squeezes the amount off the end of the first, so a long name moves into
+    // the evidence line — the same call reviewEngine.ts makes for a bank descriptor.
+    const longName = name.length > 24;
     const dueDay = mode(rows.map((tx) => Number(tx.date.slice(8, 10)))) ?? 1;
     const categoryId = mode(rows.map((tx) => tx.categoryId || "other")) ?? "other";
     const ordered = [...rows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -773,11 +859,18 @@ function reviewUnmodelled(data: AppData, now: Date): Suggestion[] {
       key: `unmodelled:${key}:${cents(med)}`,
       rule: "W3",
       kind: "unmodelled",
-      title: t("{name} looks like a monthly subscription", { name }),
-      detail: t(
-        "{amount} charged in {months}, always the same amount. It is not in your bills, so nothing plans for it.",
-        { amount: money(med), months: monthList(monthKeys) },
-      ),
+      title: longName
+        ? t("A repeat charge looks like a monthly subscription")
+        : t("{name} looks like a monthly subscription", { name }),
+      detail: longName
+        ? t(
+            "{amount} at {name}, charged in {months}, always the same amount. It is not in your bills, so nothing plans for it.",
+            { amount: money(med), name, months: monthList(monthKeys) },
+          )
+        : t(
+            "{amount} charged in {months}, always the same amount. It is not in your bills, so nothing plans for it.",
+            { amount: money(med), months: monthList(monthKeys) },
+          ),
       amount: med,
       evidence: { txnIds: ordered.map((tx) => tx.id), rows: ordered.map(rowOf), observed: med },
       // The only fix that CREATES a model row, so it is the one that most needs
@@ -838,6 +931,13 @@ function reviewDuplicates(data: AppData, cycles: Map<string, Transaction[]>): Su
   const sameCharge = new Map<string, Transaction[]>();
   for (const tx of data.transactions) {
     if (!posted(tx) || !tx.accountId || !tx.date || !isFiniteAmount(tx.amount)) continue;
+    // An imported statement row carries an accountId and no provider, so it reads
+    // as "entered by hand" — and applyFix refuses every record-only delete, so the
+    // card's only button could never succeed. Import a statement for an account
+    // that is also bank-linked and every row present in both produced a duplicate
+    // card with a button that can only refuse. W3 and W7 skip these for the same
+    // reason: money that moved outside the app is not the app's to undo.
+    if (tx.recordOnly) continue;
     const key = `${tx.accountId}|${tx.date}|${cents(tx.amount)}|${tx.type}`;
     const list = sameCharge.get(key);
     if (list) list.push(tx);
@@ -850,21 +950,35 @@ function reviewDuplicates(data: AppData, cycles: Map<string, Transaction[]>): Su
     if (!bank.length || !manual.length) continue;
     const ids = rows.map((tx) => tx.id).sort();
     const first = rows[0];
+    // The group key carries the type, so every row here is the same kind of money.
+    // A hand-entered deposit sitting beside the bank's copy of it — the
+    // double-counted-income shape from the hand audit — must not be called a charge.
+    const deposit = first.type === "income";
+    // The pair is the only shape the fix ever fires on, so it gets the sentence a
+    // person would say. Bare digits go back to counting only when there are more.
+    const pair = rows.length === 2;
     out.push({
       key: `duplicate:${ids.join(":")}`,
       rule: "W5a",
       kind: "duplicate",
-      title: t("This charge may be in twice"),
-      detail: t(
-        "{count} charges of {amount} on {date} in the same account — {bank} from the bank, {manual} entered by hand. If they are the same money, the hand-entered one is the extra.",
-        {
-          count: rows.length,
-          amount: money(first.amount),
-          date: formatDate(first.date),
-          bank: bank.length,
-          manual: manual.length,
-        },
-      ),
+      title: deposit ? t("This deposit may be in twice") : t("This charge may be in twice"),
+      detail: pair
+        ? t(
+            deposit
+              ? "Two deposits of {amount} on {date} in the same account — one from the bank, one entered by hand. If they are the same money, the hand-entered one is the extra."
+              : "Two charges of {amount} on {date} in the same account — one from the bank, one entered by hand. If they are the same money, the hand-entered one is the extra.",
+            { amount: money(first.amount), date: formatDate(first.date) },
+          )
+        : t(
+            "{count} charges of {amount} on {date} in the same account — {bank} from the bank, {manual} entered by hand. If they are the same money, the hand-entered one is the extra.",
+            {
+              count: rows.length,
+              amount: money(first.amount),
+              date: formatDate(first.date),
+              bank: bank.length,
+              manual: manual.length,
+            },
+          ),
       amount: first.amount,
       evidence: { txnIds: ids, rows: rows.map(rowOf), observed: first.amount },
       // Only ever the hand-entered row, and only when there is exactly one of
@@ -970,6 +1084,12 @@ function reviewIncomeLanded(data: AppData, now: Date): Suggestion[] {
   const twoMonthsAgo = `${addMonths(monthKeyOf(now), -2)}-${pad2(now.getDate())}`;
   for (const r of data.recurring) {
     if (!r.active || r.direction !== "in") continue;
+    // Only income that arrives at least monthly. The whole discriminator below is
+    // "matched in exactly ONE month", and for a quarterly, semiannual or yearly row
+    // that is the EXPECTED state, not evidence of a one-off: a correct yearly tax
+    // refund read as an expectation to end, and the fix would have ended it. W2 and
+    // W4 gate on the same list for the same reason.
+    if (!CYCLE_CADENCES.includes(r.cadence)) continue;
     // An income row that already carries an end date has been judged — either by
     // the user or by this suggestion's own fix. Asking again would make the fix
     // look like it did nothing.
@@ -1113,9 +1233,17 @@ function reviewUnlinked(
       key: `unlinked:${r.id}:${monthKey}:${tx.id}`,
       rule: "W7",
       kind: "unlinked",
-      title: t("This charge looks like your {name} bill", { name: r.name }),
+      // The MONTH is in both sentences. One bill can produce several of these at
+      // once — the live ledger has three Amazon Prime cycles — and without the
+      // month they are the same title, the same amount and the same button three
+      // times over, each settling a different month. "That cycle" also asked him to
+      // learn a word for something the rest of the app calls a month.
+      title: t("This charge looks like your {name} bill for {month}", {
+        name: r.name,
+        month: monthLabel(monthKey),
+      }),
       detail: t(
-        "{amount} at {merchant} on {date}. Your {name} bill is {modelled}, due on the {day}, and the app has that cycle as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.",
+        "{amount} at {merchant} on {date}. Your {name} bill is {modelled}, due on the {day}, and {month} is still showing as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.",
         {
           amount: money(tx.amount),
           merchant: tx.description,
@@ -1123,6 +1251,7 @@ function reviewUnlinked(
           name: r.name,
           modelled: money(modelled),
           day: ordinal(day),
+          month: monthLabel(monthKey),
         },
       ),
       amount: tx.amount,

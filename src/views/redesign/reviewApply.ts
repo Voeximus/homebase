@@ -18,7 +18,8 @@
 //
 // A refusal is never silent. It returns a plain sentence the sheet shows.
 
-import { DUE_DAYS, billCycleFor } from "../../lib/schedule";
+import { DUE_DAYS } from "../../lib/schedule";
+import { cycleKeyOf } from "../../lib/selfAudit";
 import { t } from "../../lib/i18n";
 import type { AppData } from "../../types";
 import type { NewBillDraft, SuggestionFix } from "../../lib/reviewTypes";
@@ -33,8 +34,13 @@ import type { NewBillDraft, SuggestionFix } from "../../lib/reviewTypes";
  * and lights up on its own as each action lands. No edit to this file.
  */
 export interface ReviewWrites {
-  unlinkFromBill: (txnId: string) => Promise<void>;
-  deleteTransaction: (txnId: string) => Promise<void>;
+  /** The two that exist today return FALSE when the write did not land — an
+   *  RLS-filtered update returns no error and zero rows, and a failed RPC resyncs
+   *  and resolves. Without that, `applyFix` could only ever report success and the
+   *  sheet showed its green line for a write that never happened, while the
+   *  self-check went on reporting the thing he believed he had fixed. */
+  unlinkFromBill: (txnId: string) => Promise<boolean | void>;
+  deleteTransaction: (txnId: string) => Promise<boolean | void>;
   setRecurringAmount?: (
     id: string,
     patch: { amount?: number; knownAmount?: number | null },
@@ -42,7 +48,12 @@ export interface ReviewWrites {
   setRecurringActive?: (id: string, active: boolean) => Promise<void>;
   setRecurringWindow?: (id: string, patch: { endsOn?: string | null }) => Promise<void>;
   addRecurringFromCharges?: (bill: NewBillDraft) => Promise<void>;
-  linkTransactionToBill?: (txnId: string, recurringId: string) => Promise<void>;
+  /** The cycle is passed in, never re-derived here — see `link-charge-to-bill`. */
+  linkTransactionToBill?: (
+    txnId: string,
+    recurringId: string,
+    cycle: { monthKey: string; day: number; installmentIndex: number },
+  ) => Promise<void>;
 }
 
 export type ApplyResult = { ok: true } | { ok: false; reason: string };
@@ -94,7 +105,9 @@ export async function applyFix(
       const txn = data.transactions.find((x) => x.id === fix.txnId);
       if (!txn) return { ok: false, reason: t("That charge is no longer here.") };
       if (!txn.appliesTo) return { ok: false, reason: t("That charge is already free of any bill.") };
-      await writes.unlinkFromBill(fix.txnId);
+      if ((await writes.unlinkFromBill(fix.txnId)) === false) {
+        return { ok: false, reason: didNotSave() };
+      }
       return { ok: true };
     }
 
@@ -174,7 +187,9 @@ export async function applyFix(
       if (txn.recordOnly) {
         return { ok: false, reason: t("This one records money that moved outside the app, so it stays.") };
       }
-      await writes.deleteTransaction(fix.txnId);
+      if ((await writes.deleteTransaction(fix.txnId)) === false) {
+        return { ok: false, reason: didNotSave() };
+      }
       return { ok: true };
     }
 
@@ -192,34 +207,44 @@ export async function applyFix(
         return { ok: false, reason: t("That charge is still processing. It can be attached once it posts.") };
       }
       // Guard 3 from §D.6: the feed may have linked this cycle since the card was
-      // drawn. Re-derive the cycle from the CURRENT data and refuse if it is taken.
+      // drawn, so the CURRENT data decides.
       //
-      // "Same cycle" is (month, due day) and deliberately NOT a sixth copy of the
-      // installment-ordinal logic — there are already five cycle-key
-      // implementations in this codebase and that is the reason the Cherry
-      // duplicate was invisible. The due day is what distinguishes one
-      // installment from another (support to family, paid on the 15th AND the
-      // 30th), every stored row carries it, and comparing it needs no table.
+      // THE CYCLE IS THE ONE THE CARD OFFERED. It travels on the fix — the engine
+      // placed it and the card stated its due day out loud — so this neither
+      // re-derives it from the charge's date nor spells the rule a fourth way.
+      // Re-deriving was a real hazard: billCycleFor()'s seven-day grace maps a
+      // charge paid early into the FOLLOWING month, so a [1]-due bill paid on the
+      // 24th would be written to a different cycle than the one on screen.
       //
-      // The days themselves come from the SAME place the engine keyed the cycle
-      // on: the row's own, falling back to the legacy name map the calendar also
-      // falls back to. Handing `rec.dueDays` straight over looked right and was
-      // not — for a row whose days live only in that map, billCycleFor() falls
-      // back to the CHARGE's own day, so this guard would be reading a different
-      // cycle than the card offered and could let two charges settle one (which
-      // the exact check `one-payment-per-cycle` would then report as a defect).
+      // Both sides go through cycleKeyOf(), the one implementation in the codebase
+      // — there were five, and that is the reason the Cherry duplicate was
+      // invisible. The stored rows need the row's due days to place their own
+      // installment, and those come from the SAME place the engine read them: the
+      // row's own, falling back to the legacy name map the calendar falls back to.
       const dueDays = rec.dueDays?.length ? rec.dueDays : DUE_DAYS[rec.name];
-      const cycle = billCycleFor(dueDays, txn.date);
+      const wanted = cycleKeyOf(
+        {
+          recurringId: rec.id,
+          monthKey: fix.monthKey,
+          day: fix.day,
+          installmentIndex: fix.installmentIndex,
+        },
+        dueDays,
+      );
       const taken = data.transactions.some((x) => {
         const at = x.appliesTo;
         if (x.id === txn.id) return false;
         if (x.type !== "expense" || at?.kind !== "bill" || at.recurringId !== rec.id) return false;
-        return at.monthKey === cycle.monthKey && (at.day ?? cycle.day) === cycle.day;
+        return cycleKeyOf(at, dueDays) === wanted;
       });
       if (taken) {
         return { ok: false, reason: t("Something else is already paying that bill for this month.") };
       }
-      await writes.linkTransactionToBill(fix.txnId, fix.recurringId);
+      await writes.linkTransactionToBill(fix.txnId, fix.recurringId, {
+        monthKey: fix.monthKey,
+        day: fix.day,
+        installmentIndex: fix.installmentIndex,
+      });
       return { ok: true };
     }
   }
@@ -228,4 +253,12 @@ export async function applyFix(
 /** Shown when the store action a fix needs has not landed yet. */
 function notConnected(): string {
   return t("That fix is not ready yet. You can still change it yourself.");
+}
+
+/** Shown when the store reported that the write did not land. The green line must
+ *  not appear for a write that never happened: the optimistic local state hides
+ *  it until the next refetch, and then the same failure comes back on a screen he
+ *  believes he already fixed. */
+function didNotSave(): string {
+  return t("That did not save. Nothing has changed — try again in a moment.");
 }

@@ -1,6 +1,6 @@
 # Worth a look — the review layer, and one new exact check
 
-**Status:** design decided, nothing built.
+**Status:** pieces 1, 2 and 4 built (2026-09-26). Piece 3 — the household dismissals table and the five recurring-row writes — **NOT built**: dismissals are per-phone browser storage (`src/lib/doctorDismissals.ts`), and five of the seven one-tap fixes therefore do not appear yet. This document was committed after the code; where it and the code disagree, the code is what ships.
 **Written:** 2026-09-26, against snapshot `docs/snapshots/homebase-2026-09-26T22-04-42-456Z.json`.
 **Why it exists:** a weekly audit by hand found six problems the app's seven self-checks could not see. Gino: *"the automatic ability of the app to be able to self organize the inputs is important across the entire finance mode."*
 
@@ -406,6 +406,8 @@ Every one is real: `Amazon Prime` is modelled at $16.20 due on the 23rd and has 
 
 ### B.9 Which of these can fire on a correct ledger, and how dismissal works
 
+> **NOT BUILT as written.** The `review_dismissals` table below is piece 3 and does not exist. Dismissals live in this phone's browser storage (`src/lib/doctorDismissals.ts`), so dismissing on one phone does **not** dismiss on the other. The rest of this section — which rules can fire on a correct ledger, and the evidence-in-the-key rule — is built and accurate.
+
 **Can fire when nothing is wrong:** W1 (a one-off charge), W2 (a bill paid outside the app), W3 (a regular non-subscription), W4 (an early or genuinely-late bill), W5a (the same purchase twice in a day, one typed in), W5b (a real extra payment of the same size), W6 (a second-month recurring income), W7 (a one-off at a subscription merchant).
 
 **That is all of them.** Every suggestion can be wrong. That is the difference from a check, and the UI must say it in those words — `"Worth a look — not mistakes, just things the app noticed"`.
@@ -629,6 +631,8 @@ drift 0 · phantom 0 · unmodelled 0 · missing 0 · duplicate 0 · income-lande
 A snapshot harness like `tests/live-selfaudit.test.ts` — skipped unless the snapshot file is present — is the right home for that assertion, so it never depends on the network.
 
 ### Piece 3 — the writes
+
+> **NOT BUILT (as of 2026-09-26).** None of the actions below exist on `FinanceStore`, and there is no `supabase/schema_v36_ledger_review.sql`. The consequence in the app: only `unlinkFromBill` and `deleteTransaction` back a one-tap fix, the other five cards show their evidence and say the fix is not ready, and dismissals are per-phone.
 
 **Owns:** `src/store/FinanceStore.tsx` (interface + 4 new actions), `supabase/schema_v36_ledger_review.sql` (new).
 **Adds:** `setRecurringAmount`, `setRecurringActive`, `setRecurringWindow`, `addRecurringFromCharges`, `linkTransactionToBill`, `dismissSuggestion`, and `reviewDismissals` in `AppData`.

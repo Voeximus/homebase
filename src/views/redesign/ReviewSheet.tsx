@@ -132,8 +132,15 @@ export function ReviewSheet({
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-bold text-bone">{t("Worth a look")}</div>
+            {/* "Not mistakes" was not true of everything in here. One card — the
+                charge attached to a deleted bill — is the exact self-check's own
+                finding, and Profile calls that a real mistake in red. Two screens
+                describing the same money differently is the defect selfAudit exists
+                to catch, so the subtitle says MOST rather than all. */}
             <div className="text-[12px]" style={{ color: "#8b97a6" }}>
-              {t("Not mistakes — things the app noticed about your bills and charges. Fix or dismiss.")}
+              {t(
+                "Things the app noticed about your bills and charges. Most are guesses you can wave off — fix or dismiss.",
+              )}
             </div>
           </div>
           <button
@@ -216,21 +223,31 @@ function SuggestionCard({
   // keeps its own button, greyed, with the reason above it.
   const fix = s.fix && hasWrite(s.fix, writes) ? s.fix : null;
   const blocked = fix?.blocked;
+  // ...but the card SAYS SO, rather than quietly becoming a different card. The
+  // app already had the honest sentence for this and nothing could ever reach it,
+  // because the button it would have been shown on was the one being suppressed.
+  const notReady =
+    s.fix && !fix ? t("That fix is not ready yet. You can still change it yourself.") : null;
   const txnIds = s.txnIds ?? [];
   const working = state.phase === "working";
+  // The dangling-charge card is the ONE certain finding in this sheet — the exact
+  // self-check found it and will keep reporting it — so it is not something to wave
+  // off, and dismissing it would hide the only route to the fix.
+  const canDismiss = s.kind !== "dangling";
 
-  // The fallback left button, for the suggestions only a person can decide (W4)
-  // and for a duplicate where both rows came from the bank (§D.5 — no fix, ever).
-  // It opens ONE charge, because that is what the charge sheet shows, so it says
-  // so rather than promising to open two at once.
-  const openLabel =
-    txnIds.length >= 2
+  // The fallback left button, for the suggestions only a person can decide (W4),
+  // for a duplicate where both rows came from the bank (§D.5 — no fix, ever), and
+  // for a fix whose write has not shipped. It goes where the card's subject is: a
+  // card about a BILL opens the Bills screen, because the charge sheet has no
+  // control for a bill's amount, its window or whether it is on.
+  const openLabel = s.recurringId
+    ? t("Show me the bill")
+    : txnIds.length >= 2
       ? t("Show me the charges")
-      : txnIds.length === 1
-        ? t("Show me the charge")
-        : t("Show me the bill");
+      : t("Show me the charge");
   const openTap = () => {
-    if (txnIds.length) onTxn(txnIds[0]);
+    if (s.recurringId) onBills();
+    else if (txnIds.length) onTxn(txnIds[0]);
     else onBills();
   };
 
@@ -251,10 +268,16 @@ function SuggestionCard({
       </div>
 
       {/* Why this one cannot be tapped yet — the app says it rather than showing a
-          button that does nothing. §D.4's ungraded-category case lands here. */}
-      {blocked && (
+          button that does nothing. §D.4's ungraded-category case lands here, and so
+          does a fix whose store action has not shipped. */}
+      {(blocked || notReady) && (
         <p className="mt-2 text-[11.5px]" style={{ color: "#e3b341" }}>
-          {blocked}
+          {blocked ?? notReady}
+        </p>
+      )}
+      {!canDismiss && (
+        <p className="mt-2 text-[11.5px]" style={{ color: "#8b97a6" }}>
+          {t("The self-check found this one, so it will keep reporting it until it is fixed.")}
         </p>
       )}
       {state.phase === "refused" && (
@@ -289,13 +312,15 @@ function SuggestionCard({
             <ChevronRight size={14} />
           </button>
         )}
-        <button
-          onClick={onDismiss}
-          className="flex min-h-[44px] flex-1 items-center justify-center rounded-lg px-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
-          style={{ background: "#13211a", color: "#46d18a" }}
-        >
-          {t("Looks fine — dismiss")}
-        </button>
+        {canDismiss && (
+          <button
+            onClick={onDismiss}
+            className="flex min-h-[44px] flex-1 items-center justify-center rounded-lg px-2 text-[12.5px] font-semibold transition active:scale-[0.98]"
+            style={{ background: "#13211a", color: "#46d18a" }}
+          >
+            {t("Looks fine — dismiss")}
+          </button>
+        )}
       </div>
     </div>
   );

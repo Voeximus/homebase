@@ -108,7 +108,10 @@ export function toSurfaceFix(fix: EngineFix): SuggestionFix | null {
         txnId: fix.txnId,
       };
 
-    // §D.6 — the one write that settles a bill cycle.
+    // §D.6 — the one write that settles a bill cycle. The CYCLE travels with it:
+    // the engine placed it, the card states the due day out loud, and dropping it
+    // here would leave the write and the guard to re-derive it separately — two
+    // more spellings of the rule that already had five.
     case "linkTransactionToBill":
       return {
         ...common,
@@ -116,6 +119,9 @@ export function toSurfaceFix(fix: EngineFix): SuggestionFix | null {
         write: "link-charge-to-bill",
         txnId: fix.txnId,
         recurringId: fix.recurringId,
+        monthKey: fix.monthKey,
+        day: fix.day,
+        installmentIndex: fix.installmentIndex,
       };
   }
 }
@@ -141,6 +147,10 @@ export function toSurfaceFix(fix: EngineFix): SuggestionFix | null {
  * ONLY transaction rows. A dangling `recurring.linkedDebtId` has no one-tap fix
  * the surface can express — the write would clear a column on a bill row, which
  * §D.7 does not allow — so check 8 reports it and nothing offers to touch it.
+ *
+ * AND ONLY ONE SHAPE GETS A BUTTON. See `repairable` below: the write clears the
+ * WHOLE `applies_to` object, not the one broken id, so it is a repair in exactly
+ * one case and destroys something correct in every other.
  */
 export function danglingSuggestions(data: AppData): Suggestion[] {
   // `danglingLinks` reads five whole tables, and is exact only on a COMPLETE load
@@ -175,12 +185,54 @@ export function danglingSuggestions(data: AppData): Suggestion[] {
     account: safe.accounts.length > 0,
   };
 
+  const byId = new Map(safe.transactions.map((tx) => [tx.id, tx]));
+
   const out: Suggestion[] = [];
   for (const row of danglingLinks(safe).broken) {
     if (!row.txnId || !row.date) continue;
     const targets = row.targets.filter((w) => populated[w]);
     if (!targets.length) continue;
-    const name = row.description.trim();
+    // The row's own words, minus the bank's confirmation code — it is nothing a
+    // person can use and it pushes the useful half of the sentence onto a third
+    // line. Same tail `merchantKey` already strips.
+    const name = row.description.replace(/\s+(Conf#|Confirmation#|ID:|DES:).*/i, "").trim();
+    const at = byId.get(row.txnId)?.appliesTo;
+    const billBroken = targets.includes("bill");
+
+    // WHICH OF THESE MAY BE OFFERED A BUTTON, and why it is not all of them.
+    //
+    // The only write the surface has is `unlinkFromBill`, and the store spells it
+    // `update({ applies_to: null })` — it clears the WHOLE object, not the one
+    // broken id. So it repairs exactly one shape: the charge claimed a BILL, that
+    // bill is gone, and the claim carries nothing else that still resolves.
+    // Everywhere else the same tap destroyed something that was right:
+    //   · a card payment whose bill row was deleted by hand still names the DEBT it
+    //     paid and the amount applied to it. Clearing the column drops both, and a
+    //     $300 card payment lands in the variable budget.
+    //   · a reimbursable set-aside names the credit that settled it. Clearing the
+    //     column drops the reason, the note and the owed-back marker, and moves
+    //     fronted money into the Misc envelope. For a set-aside, counting against
+    //     no budget IS the design — so the card's sentence was wrong about it too.
+    //   · a dangling `accountId` is not inside `applies_to` at all, so this write
+    //     cannot reach it. On a row with no bill link the button could only refuse;
+    //     on a row WITH a good one it succeeded at un-settling a real bill cycle
+    //     and left the broken account link exactly where it was.
+    // Those keep their card and their evidence with no button — the same answer
+    // check 8 already gives a dangling `recurring.linkedDebtId`.
+    //
+    // `targets` is the populated-filtered list on purpose: an id whose table has
+    // not loaded is not evidence that the id is dead, so it counts as still
+    // resolving and holds the button back.
+    const stillResolves = (id: string | undefined, what: string) =>
+      !!id && !targets.includes(what);
+    const repairable =
+      billBroken &&
+      targets.length === 1 &&
+      at?.kind === "bill" &&
+      !stillResolves(at.debtId, "debt") &&
+      !stillResolves(at.goalId, "goal") &&
+      !stillResolves(at.settledByTxnId, "charge");
+
     out.push({
       // The broken targets are inside the key, so re-linking the charge to a real
       // bill retires this card on its own and no expiry logic is needed.
@@ -190,26 +242,46 @@ export function danglingSuggestions(data: AppData): Suggestion[] {
       // These are bank rows, and a bank row's description is "Mobile Banking
       // payment to CRD 6813 Confirmation# 1hrcz18pd" — as a headline it wraps to
       // three lines on a phone and squeezes the amount off the end of the first.
-      title: targets.includes("bill")
+      title: billBroken
         ? t("A charge is attached to a bill that was deleted")
         : t("A charge is attached to something that was deleted"),
-      detail: name
-        ? t("{amount} on {date} — {name}. Right now it counts against no budget and pays no bill.", {
-            amount: formatMoney(row.amount),
-            date: formatDate(row.date),
-            name,
-          })
-        : t(
-            "The {amount} charge on {date} points at something that is no longer here. Right now it counts against no budget and pays no bill.",
-            { amount: formatMoney(row.amount), date: formatDate(row.date) },
-          ),
+      // The "no budget, no bill" half is only true when the BILL is the broken
+      // link. A set-aside counts against no budget by design, and a charge whose
+      // only broken link is its account is still graded against a budget line — so
+      // saying it there would be the app describing the same money two ways, which
+      // is the defect the self-check exists to catch.
+      detail: billBroken
+        ? name
+          ? t("{amount} on {date} — {name}. Right now it counts against no budget and pays no bill.", {
+              amount: formatMoney(row.amount),
+              date: formatDate(row.date),
+              name,
+            })
+          : t(
+              "The {amount} charge on {date} points at something that is no longer here. Right now it counts against no budget and pays no bill.",
+              { amount: formatMoney(row.amount), date: formatDate(row.date) },
+            )
+        : name
+          ? t("{amount} on {date} — {name}. Something it points at is no longer here.", {
+              amount: formatMoney(row.amount),
+              date: formatDate(row.date),
+              name,
+            })
+          : t("The {amount} charge on {date} points at something that is no longer here.", {
+              amount: formatMoney(row.amount),
+              date: formatDate(row.date),
+            }),
       amount: row.amount,
-      fix: {
-        label: t("Free this charge"),
-        done: t("Freed. It counts as ordinary spending again."),
-        write: "unlink-charge",
-        txnId: row.txnId,
-      },
+      // The label says what happens, not what the code calls it: "Free" reads as an
+      // adjective before it reads as a verb on a small screen.
+      fix: repairable
+        ? {
+            label: t("Take it off that bill"),
+            done: t("Taken off. It counts as ordinary spending again."),
+            write: "unlink-charge",
+            txnId: row.txnId,
+          }
+        : null,
       txnIds: [row.txnId],
     });
   }

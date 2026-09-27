@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { billKey, merchantKey } from "../src/lib/categorize";
+import { setLangVar } from "../src/lib/i18n";
 import { REVIEW_STRINGS, reviewLedger, type Suggestion } from "../src/lib/ledgerReview";
 import { DEFAULT_CATEGORIES } from "../src/lib/seed";
 import type { AppData, Debt, Recurring, Transaction } from "../src/types";
@@ -957,6 +958,309 @@ describe("dismissal — the key carries the evidence, so it re-surfaces on its o
     };
     const out = reviewLedger(worse, NOW, dismissed);
     expect(out.map((s) => s.key)).toEqual(["drift:spotify:3500"]);
+  });
+});
+
+// ── a bill billed in INSTALLMENTS ─────────────────────────────────────────────
+//
+// The calendar divides a row's figure by its due-day count (schedule.ts), so on a
+// row with two due days the row's own figure is the MONTH's and a single charge is
+// half of it. Every rule that compared the two, or counted cycles while speaking
+// in months, was wrong on exactly one live row: Mom, $300, due on the 15th and the
+// 30th. These tests are that row.
+describe("a bill paid in two installments a month", () => {
+  const mom = (amount: number) =>
+    bill({ id: "mom", name: "Mom", amount, dueDays: [15, 30], categoryId: "kids" });
+  const cycle = (monthKey: string, day: number, idx: number, amount: number): Transaction =>
+    bank({
+      id: `mom-${monthKey}-${day}`,
+      date: `${monthKey}-${String(day).padStart(2, "0")}`,
+      amount,
+      description: "Zelle payment to Mom",
+      appliesTo: { kind: "bill", recurringId: "mom", monthKey, day, installmentIndex: idx, settled: true },
+    });
+
+  // W1 read one $300 installment against the $600 month and called the price
+  // halved, then offered to write $300 into the plan. One tap would have taken $300
+  // a month out of the household's fixed costs on a bill that was already right.
+  it("W1 stays silent on a correctly modelled $600 a month paid $300 twice, and offers no fix", () => {
+    const out = reviewLedger(
+      data({
+        recurring: [mom(600)],
+        transactions: [cycle("2026-09", 15, 0, 300), cycle("2026-08", 30, 1, 300)],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.rule === "W1")).toEqual([]);
+    expect(out.some((s) => s.fix?.action === "setRecurringAmount")).toBe(false);
+  });
+
+  // W2 counted three CYCLES and then wrote the sentence in MONTHS: Aug 15, Aug 30
+  // and Sep 15 came out as "August 2026, August 2026, September 2026" and $900 of
+  // planned money, for six weeks.
+  it("W2 names three DIFFERENT months and claims three months of money", () => {
+    const w2 = reviewLedger(data({ recurring: [mom(300)] }), NOW).find((s) => s.rule === "W2")!;
+    expect(w2).toBeTruthy();
+    expect(w2.detail).toContain("July 2026, August 2026, September 2026");
+    expect(w2.detail).toContain("$900.00 of planned money");
+    // The month must not be named twice, whatever the wording becomes.
+    expect(w2.detail.match(/August 2026/g)).toHaveLength(1);
+  });
+
+  it("W2 needs three silent MONTHS, so a row silent for six weeks is not called finished", () => {
+    // July fully paid, then nothing: two silent months, which is a coincidence a
+    // real household has, not a finished bill.
+    const out = reviewLedger(
+      data({
+        recurring: [mom(300)],
+        transactions: [cycle("2026-07", 15, 0, 150), cycle("2026-07", 30, 1, 150)],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.rule === "W2")).toEqual([]);
+  });
+
+  // W4 named the whole month's figure beside ONE due day — "Mom is $300.00, due on
+  // the 15th" — and repeated a month in the list of the ones that were charged.
+  it("W4 names the price of THAT payment and each paid month once", () => {
+    const w4 = reviewLedger(
+      data({
+        recurring: [mom(300)],
+        transactions: [
+          cycle("2026-07", 15, 0, 150),
+          cycle("2026-07", 30, 1, 150),
+          cycle("2026-08", 15, 0, 150),
+          cycle("2026-08", 30, 1, 150),
+        ],
+      }),
+      NOW,
+    ).find((s) => s.rule === "W4")!;
+    expect(w4).toBeTruthy();
+    expect(w4.detail).toContain("Mom is $150.00, due on the 15th");
+    expect(w4.detail).toContain("It was charged in July 2026, August 2026,");
+    expect(w4.amount).toBeCloseTo(150, 2);
+  });
+
+  it("a single-installment bill is unchanged — the divisor only ever applies to installments", () => {
+    const rent = bill({ id: "rent", name: "Rent", amount: 1726.88, dueDays: [1], categoryId: "housing" });
+    const w4 = reviewLedger(
+      data({
+        recurring: [rent],
+        transactions: [
+          paid("rent", "2026-07", 1, { id: "r7", amount: 1726.88 }),
+          paid("rent", "2026-08", 1, { id: "r8", amount: 1726.88 }),
+        ],
+      }),
+      NOW,
+    ).find((s) => s.rule === "W4")!;
+    expect(w4.detail).toContain("Rent is $1,726.88, due on the 1st");
+    expect(w4.detail).toContain("It was charged in July 2026, August 2026,");
+  });
+});
+
+// ── W6 and the cadences it may judge ──────────────────────────────────────────
+describe("W6 fires only on income that arrives at least monthly", () => {
+  // "Matched in exactly one month" IS the expected state for a yearly row, so the
+  // one card the app showed said a correct tax refund had already come in, and its
+  // fix would have written an end date onto live recurring income.
+  it("stays silent on a correct YEARLY income row with its one real deposit", () => {
+    const yearly = incomeRow({
+      id: "refund",
+      name: "Tax refund",
+      cadence: "yearly",
+      amount: 1200,
+      createdAt: "2026-01-02T00:00:00Z",
+    });
+    const out = reviewLedger(
+      data({
+        recurring: [yearly],
+        transactions: [
+          bank({ id: "dep", type: "income", date: "2026-03-14", amount: 1200, description: "IRS TREAS 310" }),
+        ],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.rule === "W6")).toEqual([]);
+    expect(out.some((s) => s.fix?.action === "setRecurringWindow")).toBe(false);
+  });
+
+  it("still fires on a MONTHLY income row that landed once — the case it was written for", () => {
+    const monthly = incomeRow({
+      id: "carins",
+      name: "Car insurance check",
+      amount: 1100,
+      createdAt: "2026-06-20T00:00:00Z",
+    });
+    const out = reviewLedger(
+      data({
+        recurring: [monthly],
+        transactions: [
+          bank({ id: "dep", type: "income", date: "2026-09-25", amount: 1137.2, description: "Insurance" }),
+        ],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.rule === "W6")).toHaveLength(1);
+  });
+});
+
+// ── W3 and the bank's own words ───────────────────────────────────────────────
+describe("W3 groups by merchant key, so the descriptors have to agree too", () => {
+  const checkcard = (id: string, date: string, tail: string): Transaction =>
+    bank({ id, date, amount: 9.99, description: `CHECKCARD 0${date.slice(5, 7)}21 ${tail}`, categoryId: "dining" });
+
+  // merchantKey strips the trailing digits, so "CHECKCARD 0921 TC @ TSMC ARIZONA
+  // 199 PHOENIX AZ" collapses to the bare word CHECKCARD — and on the live ledger
+  // that one key holds a cafeteria charge, a service charge and an MVD fee, in
+  // three different months. Same amount and the card would have said three
+  // unrelated merchants were one subscription.
+  it("stays silent when one key holds three different merchants", () => {
+    const out = reviewLedger(
+      data({
+        transactions: [
+          checkcard("x1", "2026-07-21", "TC @ TSMC ARIZONA"),
+          checkcard("x2", "2026-08-21", "SERVICE CHARGE"),
+          checkcard("x3", "2026-09-21", "AZ MVD FEE"),
+        ],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.rule === "W3")).toEqual([]);
+  });
+
+  it("still fires when every descriptor is the same text — only the digits may move", () => {
+    const out = reviewLedger(
+      data({
+        transactions: [
+          checkcard("y1", "2026-07-21", "TC @ TSMC ARIZONA"),
+          checkcard("y2", "2026-08-21", "TC @ TSMC ARIZONA"),
+          checkcard("y3", "2026-09-21", "TC @ TSMC ARIZONA"),
+        ],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.rule === "W3")).toHaveLength(1);
+  });
+
+  it("keeps a long bank descriptor out of the headline and puts it in the evidence line", () => {
+    const long = (id: string, date: string) =>
+      bank({
+        id,
+        date,
+        amount: 3.26,
+        description: `CHECKCARD 0${date.slice(5, 7)}21 TC @ TSMC ARIZONA 199 PHOENIX AZ`,
+        categoryId: "dining",
+      });
+    const w3 = reviewLedger(
+      data({ transactions: [long("l1", "2026-07-21"), long("l2", "2026-08-21"), long("l3", "2026-09-21")] }),
+      NOW,
+    ).find((s) => s.rule === "W3")!;
+    expect(w3.title).toBe("A repeat charge looks like a monthly subscription");
+    expect(w3.detail).toContain("TC @ TSMC ARIZONA");
+  });
+
+  it("names a merchant that fits, and picks the SHORTEST descriptor for the bill it would create", () => {
+    const grok = (id: string, date: string, desc: string) =>
+      bank({ id, date, amount: 29.99, description: desc, categoryId: "subscriptions" });
+    const w3 = reviewLedger(
+      data({
+        transactions: [
+          grok("g1", "2026-07-22", "Grok Ai 07/22"),
+          grok("g2", "2026-08-22", "Grok Ai"),
+          grok("g3", "2026-09-22", "Grok Ai 09/22"),
+        ],
+      }),
+      NOW,
+    ).find((s) => s.rule === "W3")!;
+    expect(w3.title).toBe("Grok Ai looks like a monthly subscription");
+    expect(w3.fix).toMatchObject({ action: "addRecurring", name: "Grok Ai" });
+  });
+});
+
+// ── W5a and where a row came from ─────────────────────────────────────────────
+describe("W5a — an imported row is not a hand-entered one", () => {
+  // commitImport() writes no provider and an accountId, so a statement row read as
+  // "entered by hand" beside the bank's own copy of it — and applyFix refuses every
+  // record-only delete, so the card's only button could never succeed.
+  it("stays silent on an imported record-only row beside its bank twin", () => {
+    const out = reviewLedger(
+      data({
+        transactions: [
+          bank({ id: "b", date: "2026-09-08", amount: 63.41, description: "Safeway" }),
+          txn({ id: "imp", accountId: "a1", recordOnly: true, date: "2026-09-08", amount: 63.41, description: "Safeway" }),
+        ],
+      }),
+      NOW,
+    );
+    expect(out.filter((s) => s.kind === "duplicate")).toEqual([]);
+  });
+
+  it("says 'two charges' in words, and calls a deposit a deposit", () => {
+    const pair = (type: "expense" | "income") =>
+      data({
+        transactions: [
+          bank({ id: "b", type, date: "2026-09-24", amount: 151.72, description: "Cherry" }),
+          txn({ id: "m", accountId: "a1", type, date: "2026-09-24", amount: 151.72, description: "Cherry (already paid)" }),
+        ],
+      });
+    const charge = reviewLedger(pair("expense"), NOW).find((s) => s.rule === "W5a")!;
+    expect(charge.title).toBe("This charge may be in twice");
+    expect(charge.detail).toContain("Two charges of $151.72");
+    expect(charge.detail).not.toMatch(/^2 charges/);
+
+    const deposit = reviewLedger(pair("income"), NOW).find((s) => s.rule === "W5a")!;
+    expect(deposit.title).toBe("This deposit may be in twice");
+    expect(deposit.detail).toContain("Two deposits of $151.72");
+  });
+});
+
+// ── W7 says which month ───────────────────────────────────────────────────────
+describe("W7 names the month, because one bill can produce several of these at once", () => {
+  it("puts the month in the headline and the sentence, and never says 'cycle'", () => {
+    const prime = bill({ id: "prime", name: "Amazon Prime", amount: 16.2, dueDays: [23], createdAt: "2026-06-01T00:00:00Z" });
+    const out = reviewLedger(
+      data({
+        recurring: [prime],
+        transactions: [
+          bank({ id: "p1", date: "2026-07-23", amount: 16.2, description: "Amazon Prime" }),
+          bank({ id: "p2", date: "2026-08-24", amount: 16.2, description: "Amazon Prime" }),
+          bank({ id: "p3", date: "2026-09-23", amount: 16.2, description: "Amazon Prime" }),
+        ],
+      }),
+      NOW,
+    ).filter((s) => s.rule === "W7");
+    expect(out).toHaveLength(3);
+    // Three cards, three different titles — on a phone they are otherwise the same
+    // title, the same amount and the same button, each settling a different month.
+    expect(new Set(out.map((s) => s.title)).size).toBe(3);
+    for (const s of out) {
+      expect(s.title).toMatch(/for (July|August|September) 2026$/);
+      expect(s.detail).not.toMatch(/cycle/i);
+      expect(s.detail).toContain("is still showing as unpaid");
+    }
+  });
+});
+
+// ── the day, in the other language ────────────────────────────────────────────
+describe("the due day reads correctly in Simplified Chinese", () => {
+  // The ZH templates say "{day} 号", so an English ordinal suffix lands in front of
+  // the Chinese marker and reads as a typo: "每月 23rd 号到期".
+  it("says the day as a bare number under zh, and keeps the suffix under en", () => {
+    const prime = bill({ id: "prime", name: "Amazon Prime", amount: 16.2, dueDays: [23], createdAt: "2026-09-01T00:00:00Z" });
+    const live = data({
+      recurring: [prime],
+      transactions: [bank({ id: "p1", date: "2026-09-23", amount: 16.2, description: "Amazon Prime" })],
+    });
+    try {
+      setLangVar("zh");
+      const zh = reviewLedger(live, NOW).find((s) => s.rule === "W7")!;
+      expect(zh.detail).toContain("23 号");
+      expect(zh.detail).not.toContain("23rd");
+    } finally {
+      setLangVar("en");
+    }
+    const en = reviewLedger(live, NOW).find((s) => s.rule === "W7")!;
+    expect(en.detail).toContain("due on the 23rd");
   });
 });
 

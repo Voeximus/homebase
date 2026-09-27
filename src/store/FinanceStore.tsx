@@ -219,13 +219,16 @@ export interface FinanceStore {
   data: AppData;
   loading: boolean;
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
-  deleteTransaction: (id: string) => Promise<void>;
+  // Resolves FALSE when the server refused the write, so a caller that shows a
+  // confirmation can say so instead. Both these two report it, because "Worth a
+  // look" turns one of them into a green "done" line the moment it resolves.
+  deleteTransaction: (id: string) => Promise<boolean>;
   setTransactionCategory: (id: string, categoryId: string) => Promise<void>;
   // Split one transaction across categories (or pass null to clear the split).
   setTransactionSplits: (id: string, splits: TxnSplit[] | null) => Promise<void>;
   // Release a charge that was wrongly matched to a bill, so the bill goes back to
   // unpaid. Nothing else in the app can undo a bill link.
-  unlinkFromBill: (id: string) => Promise<void>;
+  unlinkFromBill: (id: string) => Promise<boolean>;
   // Dismiss the "unusual purchase" flag for a transaction (it won't reappear).
   acknowledgeAnomaly: (id: string) => Promise<void>;
   excludeFromBudget: (id: string) => Promise<void>;
@@ -931,7 +934,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (error) {
           console.error("reverse_money_event failed — resyncing to server truth", error);
           await resyncLedger();
-          return;
+          // The row is still there. Say so, rather than letting a caller confirm a
+          // deletion the server refused.
+          return false;
         }
         // The RPC deleted the row AND undid its fan-out in ONE transaction;
         // mirror the reversal locally (settled / imported rows moved nothing).
@@ -981,6 +986,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 : p.goals,
           }));
         }
+        return true;
       },
       async setTransactionCategory(id, categoryId) {
         invalidate(seq.current, "transactions");
@@ -1059,8 +1065,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .eq("id", id)
           .select("id");
         // An RLS-filtered UPDATE returns error:null with zero rows, so checking
-        // `error` alone would report success on a write that never happened.
-        if (error || !data?.length) console.error("unlinkFromBill failed", error);
+        // `error` alone would report success on a write that never happened. The
+        // caller is told as well as the console: the optimistic state above hides
+        // the failure until the next refetch, and a green "done" line over that is
+        // the app claiming something it has no reason to believe.
+        if (error || !data?.length) {
+          console.error("unlinkFromBill failed", error);
+          return false;
+        }
+        return true;
       },
       async acknowledgeAnomaly(id) {
         // dismiss the unusual-purchase flag; optimistic + persisted so it never

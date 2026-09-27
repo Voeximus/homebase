@@ -162,7 +162,7 @@ export const EXAMPLE_SUGGESTIONS: Suggestion[] = [
   {
     key: "drift:rec-stream:2700",
     kind: "drift",
-    title: "Streamly now charges more than the app expects",
+    title: "Streamly's last charge was more than the app expects",
     detail: "The app plans $14.04 a month. The last charge, on 10 Sep, was $27.00 — $12.96 more.",
     amount: 27,
     recurringId: "rec-stream",
@@ -306,9 +306,9 @@ export const EXAMPLE_SUGGESTIONS: Suggestion[] = [
   {
     key: "unlinked:rec-drive:2026-09:txn-drive",
     kind: "unlinked",
-    title: "This charge looks like your Cloud Drive bill",
+    title: "This charge looks like your Cloud Drive bill for September 2026",
     detail:
-      "$16.20 at Cloud Drive on 23 Sep. Your Cloud Drive bill is $16.20, due on the 23rd, and the app has it as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.",
+      "$16.20 at Cloud Drive on 23 Sep. Your Cloud Drive bill is $16.20, due on the 23rd, and September 2026 is still showing as unpaid. Right now this is counted as ordinary spending as well as a bill still to come.",
     amount: 16.2,
     recurringId: "rec-drive",
     txnIds: ["txn-drive"],
@@ -318,6 +318,9 @@ export const EXAMPLE_SUGGESTIONS: Suggestion[] = [
       write: "link-charge-to-bill",
       txnId: "txn-drive",
       recurringId: "rec-drive",
+      monthKey: "2026-09",
+      day: 23,
+      installmentIndex: 0,
     },
   },
   {
@@ -334,6 +337,9 @@ export const EXAMPLE_SUGGESTIONS: Suggestion[] = [
       write: "link-charge-to-bill",
       txnId: "txn-water-unlinked",
       recurringId: "rec-claimed",
+      monthKey: "2026-09",
+      day: 12,
+      installmentIndex: 0,
     },
   },
 ];

@@ -259,6 +259,11 @@ describe("every engine action maps to a write the surface can run", () => {
     expect(fix?.write).toBe("link-charge-to-bill");
     expect(fix && "txnId" in fix ? fix.txnId : null).toBe("t1");
     expect(fix && "recurringId" in fix ? fix.recurringId : null).toBe("b1");
+    // The CYCLE travels with it. Dropping it here left the write and the guard to
+    // re-derive it separately, and billCycleFor()'s seven-day grace maps a charge
+    // paid early into the FOLLOWING month — so the month settled could differ from
+    // the month the card stated out loud.
+    expect(fix).toMatchObject({ monthKey: "2026-09", day: 15, installmentIndex: 0 });
   });
 
   it("every mapped fix names a write the surface knows how to run", () => {
@@ -361,6 +366,120 @@ describe("the dangling-link fix — spec §D.1, the live $165", () => {
     expect(danglingSuggestions(live)).toEqual([]);
   });
 
+  // ── WHICH dangling rows may be offered the button ───────────────────────────
+  //
+  // `unlinkFromBill` writes `applies_to = null` — the WHOLE object, not the one
+  // broken id. So it is a repair in exactly one shape, and on every other shape the
+  // same tap destroyed a link that still worked and pushed real money into the
+  // variable budget. Each test below is one of those shapes.
+
+  it("offers NO button when the charge also names a debt that still exists", () => {
+    // A card payment whose bill row was deleted by hand. `applies_to` still carries
+    // debtId and appliedAmount; clearing the column drops the debt attribution and
+    // a $300 card payment lands in the variable budget.
+    const live = data({
+      debts: [{ id: "d1", name: "Card", balance: 1200, originalBalance: 2000, color: "#000", createdAt: "2026-01-01T00:00:00Z" }],
+      transactions: [
+        txn({
+          id: "pay",
+          amount: 300,
+          appliesTo: {
+            kind: "bill",
+            recurringId: "deleted-row",
+            debtId: "d1",
+            monthKey: "2026-09",
+            day: 15,
+            installmentIndex: 0,
+            settled: true,
+            appliedAmount: 300,
+          },
+        }),
+      ],
+    });
+    const out = danglingSuggestions(live);
+    expect(out).toHaveLength(1);
+    expect(out[0].fix).toBeNull();
+    // Still reported, so check 8 and this screen say the same thing.
+    expect(out[0].title).toBe("A charge is attached to a bill that was deleted");
+  });
+
+  it("offers NO button on a reimbursable set-aside whose settling credit was deleted", () => {
+    // Reachable in the app today: settle a reimbursable against a deposit, then
+    // delete that deposit in the charge sheet — nothing clears the back-link. The
+    // tap would have dropped the reason, the note and the owed-back marker, and
+    // moved $120 of fronted money into the Misc envelope.
+    const live = data({
+      transactions: [
+        txn({
+          id: "front",
+          amount: 120,
+          appliesTo: {
+            kind: "setaside",
+            reason: "reimbursable",
+            settled: true,
+            settledByTxnId: "credit-gone",
+            note: "her share",
+          },
+        }),
+      ],
+    });
+    const out = danglingSuggestions(live);
+    expect(out).toHaveLength(1);
+    expect(out[0].fix).toBeNull();
+    // And it must not claim the set-aside is money on no screen: counting against
+    // no budget IS what a set-aside is for.
+    expect(out[0].detail).not.toContain("counts against no budget");
+  });
+
+  it("offers NO button when only the ACCOUNT link is broken", () => {
+    // There is no write in the §D.7 union that can repair an accountId. On a row
+    // with no bill link the button could only refuse; on a row WITH a good one it
+    // un-settled a real bill cycle and left the account link exactly as broken.
+    const orphan = data({
+      accounts: [acct({ id: "other" })],
+      transactions: [txn({ accountId: "a1", appliesTo: undefined })],
+    });
+    expect(danglingSuggestions(orphan)[0].fix).toBeNull();
+
+    const settled = data({
+      accounts: [acct({ id: "other" })],
+      recurring: [bill({ id: "rent", name: "Rent", amount: 1726.88, dueDays: [1] })],
+      transactions: [
+        txn({
+          accountId: "a1",
+          amount: 1726.88,
+          appliesTo: { kind: "bill", recurringId: "rent", monthKey: "2026-09", day: 1, settled: true },
+        }),
+      ],
+    });
+    const out = danglingSuggestions(settled);
+    expect(out).toHaveLength(1);
+    expect(out[0].fix).toBeNull();
+  });
+
+  it("keeps the button on the live shape — a bill link and nothing else", () => {
+    // All four rows on the real ledger are this shape: kind 'bill', the recurring
+    // row gone, no debt, no goal, no settling charge.
+    const live = data({
+      transactions: [
+        txn({
+          amount: 85,
+          description: "Mobile Banking payment to CRD 6813 Confirmation# 1hrcz18pd",
+          appliesTo: { kind: "bill", recurringId: "deleted-row", monthKey: "2026-06", day: 8, settled: true },
+        }),
+      ],
+    });
+    const out = danglingSuggestions(live);
+    expect(out[0].fix?.write).toBe("unlink-charge");
+    // The label says what happens. "Free" reads as an adjective first on a phone.
+    expect(out[0].fix?.label).toBe("Take it off that bill");
+    expect(out[0].fix?.done).toBe("Taken off. It counts as ordinary spending again.");
+    // And the bank's confirmation code is not in the sentence — it is nothing he can
+    // use and it pushed the useful half onto a third line.
+    expect(out[0].detail).toContain("Mobile Banking payment to CRD 6813");
+    expect(out[0].detail).not.toMatch(/Confirmation#/i);
+  });
+
   it("survives missing and odd data rather than throwing", () => {
     expect(() => danglingSuggestions({ ...data(), accounts: undefined } as unknown as AppData)).not.toThrow();
     expect(() => danglingSuggestions(undefined as unknown as AppData)).not.toThrow();
@@ -402,6 +521,21 @@ describe("the seam's own strings", () => {
   // the set of user-facing literals in the engine, both ways.
   it("every string the engine can emit has a Simplified Chinese entry", () => {
     expect(REVIEW_STRINGS.filter((s) => !ZH[s])).toEqual([]);
+  });
+
+  // The third file that writes words onto this sheet. The subtitle, the button
+  // labels and every refusal sentence live here, and a card with a Chinese headline
+  // over an English sentence has already shipped once.
+  it("every t() literal in the sheet and the fixes has a Simplified Chinese entry", () => {
+    const missing: string[] = [];
+    for (const file of ["ReviewSheet.tsx", "reviewApply.ts"]) {
+      const src = readFileSync(join(process.cwd(), "src", "views", "redesign", file), "utf8");
+      for (const m of src.matchAll(/\bt\(\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) {
+        const s = m[1].replace(/\\"/g, '"');
+        if (!ZH[s]) missing.push(`${file}: ${s}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it("says what it saw and never how likely it is", () => {

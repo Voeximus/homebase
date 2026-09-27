@@ -115,6 +115,13 @@ export type SuggestionFix = {
       write: "link-charge-to-bill";
       txnId: string;
       recurringId: string;
+      /** WHICH cycle, as the engine placed it and the card stated it. Carried
+       *  rather than re-derived: billCycleFor()'s seven-day grace can map a charge
+       *  paid early into the FOLLOWING month, so a write that re-derived the cycle
+       *  could settle a different month than the one the person read. */
+      monthKey: string;
+      day: number;
+      installmentIndex: number;
     }
   | {
       /** §D.1 — release a charge whose bill was deleted. The fix for the exact

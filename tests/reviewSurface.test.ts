@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { applyFix, hasWrite, type ReviewWrites } from "../src/views/redesign/reviewApply";
 import {
   clearDismissed,
@@ -63,7 +65,8 @@ function spyWrites(extra: Partial<ReviewWrites> = {}) {
     setRecurringActive: async (id, a) => void calls.push(`active:${id}:${a}`),
     setRecurringWindow: async (id, p) => void calls.push(`window:${id}:${JSON.stringify(p)}`),
     addRecurringFromCharges: async (b) => void calls.push(`add:${b.name}`),
-    linkTransactionToBill: async (t, r) => void calls.push(`link:${t}:${r}`),
+    linkTransactionToBill: async (t, r, c) =>
+      void calls.push(`link:${t}:${r}:${c.monthKey}|${c.day}|${c.installmentIndex}`),
     ...extra,
   };
   return { calls, writes };
@@ -111,11 +114,16 @@ describe("applyFix — deleting a charge", () => {
 
 describe("applyFix — linking a charge to a bill", () => {
   const bill = rec({ id: "r1", name: "Cloud Drive", amount: 16.2, dueDays: [23] });
+  // The cycle travels ON the fix — the engine placed it and the card stated it —
+  // so the write and the guard both read the cycle the person actually saw.
   const fix: SuggestionFix = {
     label: "Yes, that is the bill",
     write: "link-charge-to-bill",
     txnId: "t1",
     recurringId: "r1",
+    monthKey: "2026-09",
+    day: 23,
+    installmentIndex: 0,
   };
 
   it("links a free charge to a free cycle", async () => {
@@ -125,7 +133,7 @@ describe("applyFix — linking a charge to a bill", () => {
     });
     const { calls, writes } = spyWrites();
     expect(await applyFix(fix, data, writes)).toEqual({ ok: true });
-    expect(calls).toEqual(["link:t1:r1"]);
+    expect(calls).toEqual(["link:t1:r1:2026-09|23|0"]);
   });
 
   // Settling one bill cycle twice is the exact defect the whole feature exists to
@@ -169,19 +177,27 @@ describe("applyFix — linking a charge to a bill", () => {
     });
     const { calls, writes } = spyWrites();
     const res = await applyFix(
-      { label: "Yes, that is the bill", write: "link-charge-to-bill", txnId: "t1", recurringId: "r2" },
+      {
+        label: "Yes, that is the bill",
+        write: "link-charge-to-bill",
+        txnId: "t1",
+        recurringId: "r2",
+        monthKey: "2026-09",
+        day: 30,
+        installmentIndex: 1,
+      },
       data,
       writes,
     );
     expect(res).toEqual({ ok: true });
-    expect(calls).toEqual(["link:t1:r2"]);
+    expect(calls).toEqual(["link:t1:r2:2026-09|30|1"]);
   });
 
-  // The engine placed the cycle with the row's due days OR the legacy name map
-  // (dueDaysOf in ledgerReview.ts), so the guard has to read the same map. Given
-  // only `rec.dueDays`, billCycleFor() falls back to the CHARGE's own day — the
-  // guard would then be looking at 16 Sep instead of the 15th cycle the card
-  // offered, find it free, and let a second charge settle it.
+  // The STORED rows place their own installment, and they do it with the row's due
+  // days OR the legacy name map (dueDaysOf in ledgerReview.ts) — so the guard has to
+  // read the same map the engine read. Without it a row claiming the 15th and a row
+  // claiming the 30th both collapse to installment 0, and one month's two cycles
+  // stop being distinguishable in either direction.
   it("refuses a taken cycle on a row whose due days live only in the legacy map", async () => {
     const legacy = rec({ id: "r3", name: "Mom", amount: 300, dueDays: undefined });
     const data = appData({
@@ -200,7 +216,15 @@ describe("applyFix — linking a charge to a bill", () => {
     expect(
       (
         await applyFix(
-          { label: "Yes, that is the bill", write: "link-charge-to-bill", txnId: "t1", recurringId: "r3" },
+          {
+            label: "Yes, that is the bill",
+            write: "link-charge-to-bill",
+            txnId: "t1",
+            recurringId: "r3",
+            monthKey: "2026-09",
+            day: 15,
+            installmentIndex: 0,
+          },
           data,
           writes,
         )
@@ -463,5 +487,104 @@ describe("dismissals on this phone", () => {
     expect(mergeDismissed(local, undefined)).toBe(local);
     const merged = mergeDismissed(local, [{ key: "theirs" }, { key: 7 }, { key: "" }]);
     expect([...merged].sort()).toEqual(["mine", "theirs"]);
+  });
+});
+
+// ── a write that did not land ─────────────────────────────────────────────────
+//
+// Every action here used to resolve `void`, so a failed write was unrepresentable:
+// an RLS-filtered UPDATE returns error:null with zero rows and a failed RPC
+// resyncs, and both resolved the same way a success did. applyFix returned
+// {ok:true} either way, the sheet replaced the card with its green "done" line, and
+// the optimistic local state hid the failure until the next refetch — at which
+// point the self-check reported the same thing he believed he had just fixed.
+describe("applyFix reports a write the store says did not happen", () => {
+  it("refuses instead of confirming when unlinkFromBill comes back false", async () => {
+    const data = appData({
+      recurring: [rec({ id: "r1", name: "Rent" })],
+      transactions: [
+        txn({ id: "t1", appliesTo: { kind: "bill", recurringId: "gone", monthKey: "2026-09", day: 15 } }),
+      ],
+    });
+    const { calls, writes } = spyWrites({
+      unlinkFromBill: async () => false,
+    });
+    const res = await applyFix(
+      { label: "Take it off that bill", write: "unlink-charge", txnId: "t1" },
+      data,
+      writes,
+    );
+    expect(res).toEqual({
+      ok: false,
+      reason: "That did not save. Nothing has changed — try again in a moment.",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses instead of confirming when deleteTransaction comes back false", async () => {
+    const data = appData({ transactions: [txn({ id: "t1" })] });
+    const { writes } = spyWrites({ deleteTransaction: async () => false });
+    const res = await applyFix(
+      { label: "Remove the hand-entered one", write: "remove-manual-charge", txnId: "t1" },
+      data,
+      writes,
+    );
+    expect(res.ok).toBe(false);
+  });
+
+  it("still confirms when the action resolves without saying anything", async () => {
+    // The five unshipped writes return Promise<void>, and so does the dev harness.
+    // Only an explicit false is a failure.
+    const data = appData({
+      recurring: [rec({ id: "r1", name: "Rent" })],
+      transactions: [
+        txn({ id: "t1", appliesTo: { kind: "bill", recurringId: "gone", monthKey: "2026-09", day: 15 } }),
+      ],
+    });
+    const { writes } = spyWrites({ unlinkFromBill: async () => undefined });
+    expect(
+      await applyFix({ label: "x", write: "unlink-charge", txnId: "t1" }, data, writes),
+    ).toEqual({ ok: true });
+  });
+});
+
+// ── what the sheet says, read from the sheet ──────────────────────────────────
+//
+// There is no DOM in this suite (no jsdom, by design — every other test here is a
+// pure function), so these read the source. They are narrow on purpose: each one
+// guards a sentence or a gate that was wrong, not the markup around it.
+describe("the sheet's own honesty", () => {
+  const src = readFileSync(join(process.cwd(), "src", "views", "redesign", "ReviewSheet.tsx"), "utf8");
+
+  it("does not call everything in it 'not mistakes'", () => {
+    // One card — the charge attached to a deleted bill — is the exact self-check's
+    // own finding, which Profile calls a real mistake in red. Two screens describing
+    // the same money differently is the defect selfAudit.ts exists to catch.
+    expect(src).not.toMatch(/t\(\s*"Not mistakes/);
+    expect(src).toContain("Most are guesses you can wave off");
+  });
+
+  it("does not offer to dismiss the one certain finding", () => {
+    // Dismissing it removed the only route to the fix while check 8 went on
+    // reporting it and pointing at this screen.
+    expect(src).toMatch(/const canDismiss = s\.kind !== "dangling"/);
+    expect(src).toMatch(/\{canDismiss && \(/);
+    expect(src).toMatch(/The self-check found this one/);
+  });
+
+  it("says when a fix is not ready, instead of silently becoming a different card", () => {
+    // `hasWrite` stripped an unshipped fix before it could be applied, so every
+    // `notConnected()` refusal in reviewApply.ts was unreachable and the card became
+    // a plain "Show me the charge" with nothing said about why.
+    expect(src).toMatch(/const notReady =/);
+    expect(src).toMatch(/\{\(blocked \|\| notReady\) && \(/);
+  });
+
+  it("sends a card about a BILL to the bills screen, not to the charge sheet", () => {
+    // A drift, phantom, missing or income-landed card is about a recurring row, and
+    // the charge sheet has no control for a bill's amount, its window or whether it
+    // is on.
+    expect(src).toMatch(/const openLabel = s\.recurringId\s*\n?\s*\? t\("Show me the bill"\)/);
+    expect(src).toMatch(/if \(s\.recurringId\) onBills\(\);/);
   });
 });

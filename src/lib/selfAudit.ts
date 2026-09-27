@@ -589,7 +589,14 @@ function linksPointSomewhere(data: AppData): AuditCheck {
     question: "Does every charge still point at something real?",
     status: broken ? "fail" : "ok",
     detail: broken
-      ? `${broken} link${many ? "s" : ""} point${many ? "" : "s"} at something that was deleted${money}: ${offenders.join("; ")}. Worth a look has a one-tap fix for this.`
+      // What Worth a look can actually do, and no more. It offers the one-tap fix
+      // only where clearing the whole `applies_to` column IS the repair — a charge
+      // whose BILL was deleted and which claims nothing else that still resolves.
+      // A broken account link, or a set-aside whose settling credit is gone, is
+      // shown there with no button, because that write would destroy a link that
+      // still works. Promising a tap for all of them sent him to a screen that had
+      // none.
+      ? `${broken} link${many ? "s" : ""} point${many ? "" : "s"} at something that was deleted${money}: ${offenders.join("; ")}. Worth a look shows each of these, and can take a charge off a bill that was deleted.`
       : links
         ? `All ${links} links between your charges, bills, debts, goals and accounts point at something that still exists.`
         : `Nothing in the ledger links to a bill, debt, goal or account yet, so there is nothing that can dangle.`,
