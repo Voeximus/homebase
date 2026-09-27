@@ -36,6 +36,10 @@
 
 import type { ReminderRow } from "../_shared/muse/reminders.ts";
 import type { FinanceDb } from "./dbFinance.ts";
+// The memory store brings its own four statements. They are extended in rather
+// than listed here so the memory table's operations sit beside the tools that use
+// them, and so nothing in this file has to know how a memory works.
+import type { MemoryDb } from "./memoryDb.ts";
 
 export type Person = "gino" | "xinyan";
 
@@ -173,8 +177,12 @@ export interface EarlierWrite {
  * can also put back. What is still absent is anything that hard-deletes beyond
  * recovery — there is no way from here to disconnect a bank, and no way to delete a
  * bill or a bank-fed charge.
+ *
+ * The memory store's four statements come in the same way, from memoryDb.ts, and it
+ * is the one table here that is not a fact about the house — it is what the assistant
+ * was told to remember. Forgetting is a soft delete, so it is undoable like the rest.
  */
-export interface Db extends FinanceDb {
+export interface Db extends FinanceDb, MemoryDb {
   // ── the audit log, which is also the duplicate guard ──────────────────────
   /** The earlier call under this idempotency key, or null. */
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null>;

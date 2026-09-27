@@ -13,6 +13,12 @@ https://ganzefaciiyibselizqi.supabase.co/functions/v1/muse-write
 Both halves are written and tested now. Nothing below has been run, and neither
 door is deployed.
 
+The read door answers **fourteen** questions and the write door has **ten** tools.
+Three of the ten are the memory store — the table where the assistant keeps what it
+learns about how you work, in your own database rather than in Meta's. There is a
+section on it below, and it is the part that decides whether any of this survives you
+leaving Muse.
+
 ---
 
 ## In what order do I do this
@@ -96,7 +102,11 @@ Five things have to be true already. None of them are code you write now.
    without that table every write fails** — which is the right direction to fail in: a
    change nobody could put back would not be recorded as one.
 
-   All three are safe to re-run.
+   **And then `schema_v40_muse_memory.sql`.** The memory table. Without it the three
+   `memory.*` tools fail and nothing else does.
+
+   All four are safe to re-run. The numbers are run in ascending order and a gap is not
+   a missing file: v39 belongs to a change landing alongside this one.
 
 5. **The doors' code is on `main`.** `supabase/functions/muse-read/`,
    `supabase/functions/muse-write/`, `supabase/functions/cron-reminders/` and the
@@ -267,9 +277,21 @@ Leave PASTE 2 until checks 1–6 have passed. It is the part about him — the n
 shift, the sleep window, the $1,400 floor, the meal plan — and there is no point
 teaching Muse his schedule before you know the door answers at all.
 
+**And one more line, which is what makes the memory store work rather than just
+exist:**
+
+> Keep everything you learn about me in Homebase, not in your own memory. Call
+> `memory.list` at the start of a conversation about me, and `memory.remember` when
+> I tell you something standing. Ask me first. Never put a number the app computes
+> in there.
+
+If it stores things in Meta's memory instead, you have a memory you cannot read and
+cannot take with you, which is the one thing that table was added to fix. Checks 10
+to 12 are how you find out which it did.
+
 ---
 
-## Step 6 — the nine checks
+## Step 6 — the twelve checks
 
 Do these on your phone. A check passes when **you** see it pass — not when a
 script says so. If a probe and your phone disagree, your phone is right.
@@ -346,15 +368,90 @@ this phone has no push subscription for Gino, or the phone is on Do Not Disturb 
 which silences it, because this is a notification and not an alarm. Nothing in any
 cloud can set an alarm.
 
-Nine passes and the whole bridge is real. Anything else, stop and fix that one thing
-before adding the next tool.
+**Every write can actually happen now, and every one can be put back.** Phase 1 had four
+writes that only wrote the request down and waited for a tap in a screen the app does not
+have. All four are direct with a recorded before-state, so a reply that says something was
+"queued" or "waiting for a tap" means the assistant is reading an old copy of the rules.
 
-**Four of the seven writes cannot actually happen yet, and the door says so.**
-Categorising a charge, recording what a bill came to, adding a cash charge and
-logging free-form food all write the request down and stop — the app has no screen
-for those rows yet, so nothing applies one and it clears itself after a day. The
-assistant will tell you that in as many words. It is not a fault; it is the app half
-of Phase 4, and it is not built.
+**11. You can read it yourself, and take it with you.**
+Supabase dashboard → SQL editor:
+```sql
+select key, kind, value, tags from public.muse_memory
+ where person = 'gino' and forgotten_at is null order by kind, key;
+```
+Pass: what it claims to know is there, in words you can read, and nothing in the
+list is a dollar figure or a balance.
+Fail: a row holding a number the app already computes — *"$1,193.77 available"*.
+That is a figure that was true once and will be read back as current for ever.
+Delete it and tell the assistant that measured numbers come from the read tools.
+
+**12. Undo works, and forgetting is not a delete.**
+Say *"forget the pay floor."* Then *"actually, put that back."*
+Pass: it comes back word for word, and in the table the row was never gone — it had
+a `forgotten_at` stamp and then it did not.
+Fail: it cannot bring it back, or the row disappeared. A forget that cannot be undone
+is the one thing this phase was built to avoid.
+
+Twelve passes and the doors are real. Anything else, stop and fix that one thing before
+adding the next tool.
+
+---
+
+## The memory store — the part that makes this portable
+
+One table, `muse_memory`, and five plain columns: a key, a kind, the sentence, some
+tags, and whose it is. Three tools touch it: `memory.remember`, `memory.forget`,
+`memory.restore` on the write door, and `memory.recall`, `memory.search`,
+`memory.list` on the read door.
+
+**Why it is in your Postgres and not in Muse.** Muse remembers things across
+conversations in Meta's own store. You cannot read that, correct it, copy it, or take
+it with you — and it stops existing for you the day you stop using Muse. Everything
+else in this bridge is built so the app stays the place things are true. A memory held
+on the far side of the connector is the one part that would not survive leaving. Now
+it does: one `select` hands the next assistant everything this one knew.
+
+**What it is for.** The things the app cannot work out — a standing rule, a
+preference, a routine, a decision already made, a fact with no column. Five kinds:
+`standing`, `preference`, `routine`, `decided`, `fact`.
+
+**What must never be in it.** Anything the app computes. A balance, a bill amount,
+what is left in groceries, a weigh-in. Those change, and a copy in here would be read
+back as current for ever — the same failure as "Electric $85" on every phone while
+every screen said $100, except that a memory never expires. The door refuses the
+obvious spelling (a value with no words in it) and check 8 above is you catching the
+rest.
+
+**Read all of it, any time:**
+
+```sql
+select key, kind, value, tags, learned_at from public.muse_memory
+ where person = 'gino' and forgotten_at is null order by kind, key;
+```
+
+**Take it somewhere else.** Supabase dashboard → SQL editor → run the statement above
+→ *Download CSV*. That file is the whole of what the assistant knew, in words, with no
+Meta in it. Handing it to a different assistant is pasting it into a conversation.
+
+**Forgetting is not deleting.** `memory.forget` stamps `forgotten_at` and the row
+stays, which is what makes "no, put that back" one call. Forgotten rows are never in a
+list or a search, so they cost you nothing by sitting there. If you ever want them
+really gone — and after this the forget cannot be undone:
+
+```sql
+delete from public.muse_memory
+ where forgotten_at is not null and forgotten_at < now() - interval '90 days';
+```
+
+**Two hundred live memories per person**, and that is a shape limit rather than a
+storage one. Past that, something is journaling into it. The door refuses a new one and
+says so; correcting one you already have is never refused.
+
+**One cost, stated plainly.** The memory writes share the write door's ten-an-hour
+allowance with the money and health writes. An assistant that remembers chattily can
+spend the budget you needed for the ledger. If that gets annoying in practice, the fix
+is a separate counter for `memory.*` in `muse-write/handler.ts` — two lines — and it was
+left undone on purpose rather than guessed at before you had used it.
 
 ---
 
@@ -374,8 +471,11 @@ thing.
 | "I could not read the whole ledger just now, so I am not going to give you a number." | The door could not read the whole ledger, so it refused to answer from part of it. | Working as designed. Ask again in a minute. If it keeps happening, the ledger has outgrown a page size and the door needs a look. |
 | "from has to be a date like 2026-09-01." | A date was missing or the wrong shape. | Ask again with explicit dates. |
 | "from has to be the first of a month…" / "to has to be the last day of a month … or today…" | `finance.spend_by_category` answers about whole months, or a month so far, and nothing else. A free choice of dates would turn category totals into a list of individual charges. | Ask about a month. For a pay cycle, the budget question needs no dates at all. |
-| "Nothing has changed, and nothing will: the app has no screen for these yet." | One of the four queued writes. The request is written down and will not be applied. | Do it in the app. This is the app half of Phase 4, and it is not built. |
 | "That request is far bigger than any of these tools needs." | Over 16 KB of body. Nothing was read. | Nothing here needs a body that size; something is sending the wrong thing. |
+| "a web address or something instruction-shaped in it" | It tried to store a memory containing a link or a phrase like "ignore previous instructions". Nothing was stored. | Working as designed, and this is the one refusal worth noticing. A memory is read back as trusted instructions in every future conversation, so a link in one is the most durable way something could talk your assistant into doing something. If this fires on a memory **you** dictated, rephrase it without the address. If it fires on something you did not ask for, look at `muse_audit` and consider rotating the write key. |
+| "That is a figure, not something to remember" | It tried to store a number as a memory. | Working as designed. Numbers come from the read tools, which are current; a number in the memory table would be read back as current for ever. |
+| "as many things remembered already" | Two hundred live memories. | Ask it what it knows (`memory.list`) and tell it what to forget. If the list is full of things you did not ask it to keep, tell it to ask first. |
+| "already forgotten" / "nothing remembered under" | It tried to forget something that was not there. | Usually a mistyped key. Ask it to list what it knows and try the real one. |
 
 Nothing on that list is ever a reason to accept an estimate. A refused call means
 no number, not a best guess.

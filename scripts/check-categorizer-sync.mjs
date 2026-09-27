@@ -187,6 +187,12 @@ const SHARED_ONLY = [
   // against — which is the whole failure this file's other three guards are about,
   // arriving through the document an assistant actually reads.
   "catalogue.ts",
+  // memory.ts is the one spelling of what a memory IS — the five kinds, the key shape,
+  // the caps, the row mapper. Both doors depend on agreeing about it: the write door
+  // stores a row under a key it built, and the read door finds it by building the same
+  // key. Two copies would let one door write a row the other cannot find, which reads
+  // to a person as the assistant forgetting something it was told.
+  "memory.ts",
 ];
 const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
 let privateCopies = false;

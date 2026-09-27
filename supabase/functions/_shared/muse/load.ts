@@ -21,6 +21,9 @@ import { readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
 import type { ReminderRow } from "./reminders.ts";
 import { createFinanceExtras, type FinanceExtras } from "./loadFinance.ts";
+// The memory store reads its own table and nothing else, so it brings its own
+// loader rather than three more lines in here. See memoryLoad.ts.
+import { createMemoryLoader, type MemoryLoader } from "./memoryLoad.ts";
 import {
   toAppData,
   toBodyWeight,
@@ -43,7 +46,8 @@ function once<T>(make: () => Promise<T>): () => Promise<T> {
 // in-flight charges, the connections' health, the change log). They are declared and
 // mapped in loadFinance.ts and mixed in here, so every tool still sees ONE loader
 // and every read still goes through readAll.
-export interface Loader extends FinanceExtras {
+// The memory store reads its own table the same way, in memoryLoad.ts.
+export interface Loader extends FinanceExtras, MemoryLoader {
   /** Everything the finance maths modules take. */
   appData(): Promise<AppData>;
   /** One person's weigh-ins, oldest first — the same filter and sort the weight
@@ -193,6 +197,7 @@ export function createLoader(db: Db): Loader {
 
   return {
     ...createFinanceExtras(db),
+    ...createMemoryLoader(db),
     appData,
     weights,
     macroTarget,

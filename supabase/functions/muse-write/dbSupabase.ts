@@ -28,6 +28,7 @@
 // as the first is how a wrong date or a stale id goes unnoticed in a chat.
 
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { memoryDb } from "./dbMemory.ts";
 import type {
   CallRecord,
   Db,
@@ -142,6 +143,9 @@ export function supabaseDb(admin: SupabaseClient): Db {
     // it carries its own fence: a column name cannot reach PostgREST unless the undo
     // core can also put that column back.
     ...financeDb(admin),
+    // The memory store's four statements, implemented in their own file beside the
+    // tools that use them. Spread in, so this file stays the ledger's wiring.
+    ...memoryDb(admin),
 
     async findCall(person, tool, idemKey) {
       const { data, error } = await audit()

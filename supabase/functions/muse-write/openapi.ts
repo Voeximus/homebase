@@ -15,6 +15,7 @@ import { CATALOGUE, REMIND_OPEN_MAX, REMIND_PER_DAY, TOOL_NAMES } from "./tools.
 import { DUPLICATE_WINDOW_MIN, UNIVERSAL_FIELDS, WRITES_PER_HOUR } from "./handler.ts";
 import { numberWord, toolLines } from "../_shared/muse/catalogue.ts";
 import { REPEAT_LIMITS } from "../_shared/muse/reminders.ts";
+import { GATED } from "./gated.ts";
 
 export function openapi(url: URL): Record<string, unknown> {
   const names = TOOL_NAMES;
@@ -36,8 +37,11 @@ export function openapi(url: URL): Record<string, unknown> {
       title: "Homebase write door",
       version: "2.0.0",
       description: [
-        // Counted, never typed. This sentence said "seven" while there were nine, in
-        // two branches at once, because the number lived in five hand-written places.
+        // COUNTED, never typed. This sentence said "seven" while there were nine, in two
+        // branches at once, because the number lived in five hand-written places. And
+        // under-claiming is the worse direction of the two: a description that names
+        // fewer tools than exist teaches an assistant not to ask for something that
+        // works, and nothing in the conversation would ever correct it.
         `The ${numberWord(CATALOGUE.length)} things an assistant may change in Homebase.`,
         "",
         ...lines,
@@ -56,11 +60,15 @@ export function openapi(url: URL): Record<string, unknown> {
         "",
         "Reminders: schedule.list_reminders on the READ door is where the ids come from. What a repeat can be:",
         ...REPEAT_LIMITS.map((l) => `  - ${l}`),
-        // Phase 1's sentence here said "no tool for deleting anything", which phase 2
-        // made false — it deletes a weigh-in, a meal, a set, a hand-entered charge.
-        // Replaced rather than edited, because the honest version is not "fewer
-        // deletes" but a named list of what stays impossible and why.
-        "WHAT DOES NOT EXIST HERE, and is absent rather than switched off: moving money; touching the bank connection (disconnecting one hard-deletes the accounts and their whole transaction history, and nothing can put real bank history back — that takes a code he types in the app); deleting a bill (it gets turned off instead, because a deleted bill leaves every charge that paid it pointing at nothing); and deleting a bank-fed charge (the bank re-delivers it, and real history is the one thing the app cannot rebuild).",
+        // WHAT IT WILL NOT DO IS DATA, not a sentence. The sentence that was here read
+        // "there is no tool for moving money, deleting anything, settling a bill, or
+        // changing a debt balance" — true in phase 1, and three of its four clauses
+        // stopped being true in phase 2. It is the exact failure a generated description
+        // exists to prevent, in the direction that is hardest to notice: the door would
+        // have been talking an assistant out of asking for things that work. The list
+        // lives in gated.ts and a tool that stops being gated is one entry deleted.
+        "What this door will not do, whoever asks and however it is phrased:",
+        ...GATED.map((g) => `  - ${g.name}: ${g.why}`),
       ].join("\n"),
     },
     servers: [{ url: `${url.origin}${url.pathname.replace(/\/openapi\.json$/, "")}` }],

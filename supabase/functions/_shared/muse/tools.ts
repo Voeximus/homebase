@@ -5,10 +5,16 @@
 // now comes off TOOLS itself, in catalogue.ts, and every sentence that states one —
 // the OpenAPI descriptions, the "no such tool" reply — is generated from there.)
 //
-// ALL BUT ONE OF THESE ANSWER ABOUT THE HOUSEHOLD'S OWN FIGURES. The exception is
-// schedule.list_reminders, which answers about rows the WRITE door made — it is here
-// because it is a question, and because the write door's cancel and edit tools need
-// an id that something has to hand out. See the note above that tool.
+// ONE FILE PER DOMAIN. This one holds the finance summaries; toolsFinance.ts holds
+// phase 2's finance parity, healthRead.ts the health and workout reads, and
+// memoryTools.ts the memory store. They are registered below and nothing about how a
+// memory works lives in here.
+//
+// TWO OF THESE DO NOT ANSWER ABOUT THE HOUSEHOLD'S OWN FIGURES. schedule.list_reminders
+// answers about rows the WRITE door made — it is here because it is a question, and
+// because the write door's cancel and edit tools need an id that something has to hand
+// out. And the memory tools answer about what the ASSISTANT was told to remember, which
+// is the one thing in this door that is not a fact about the house.
 //
 // RULE 1 — no arithmetic in here. Every number below comes out of a function in
 // src/lib, imported through the generated copies in ./lib. The repo has the
@@ -91,11 +97,20 @@ import { FINANCE_TOOLS } from "./toolsFinance.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import { redactSuggestions } from "./worthALook.ts";
 import { HEALTH_ABSENT, HEALTH_READS } from "./healthRead.ts";
+// The memory store's three read tools. Their own file, so nothing about how a memory
+// works lives in here and nothing about finance or health lives in there.
+import { MEMORY_READ_TOOLS } from "./memoryTools.ts";
 
-// The shape of a tool, the argument checks, and BadArgs now live in args.ts, so
-// this catalogue and healthRead.ts can both use them without one importing the
-// other. Re-exported here because handler.ts, openapi.ts and the tests have always
-// asked tools.ts for them, and moving a file should not move a door's front door.
+// The shape of a tool, the argument checks, and BadArgs live in args.ts, so every tool
+// file can use them without one importing another. Re-exported here because handler.ts,
+// openapi.ts and the tests have always asked tools.ts for them, and moving a file should
+// not move a door's front door.
+//
+// THE MEMORY BRANCH SOLVED THIS TOO, as ./reply.ts, holding Json and BadArgs for exactly
+// the reason args.ts holds them: two tool files importing a class out of each other is an
+// import cycle whose failure mode is an uninitialised binding at load time rather than a
+// compile error — it works in the tests and fails in the deployed function. Three branches
+// found the same wall. One file answers it.
 export type { Json, Tool, ToolContext } from "./args.ts";
 export { BadArgs } from "./args.ts";
 
@@ -919,6 +934,7 @@ export const TOOLS: readonly Tool[] = [
   // tools he has already read the wording of keep the order he read them in.
   ...FINANCE_TOOLS,
   ...HEALTH_READS,
+  ...MEMORY_READ_TOOLS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
@@ -973,8 +989,9 @@ export const ABSENT: readonly { name: string; why: string }[] = [
     // removes can be put back byte for byte; the one thing no undo can restore —
     // disconnecting the bank, which wipes the accounts and their whole transaction
     // history — takes a code he types, not a chat command.
-    name: "anything that deletes, on this door",
-    why: "Deleting lives on the write door, and only where the before-state was captured first so 'undo that' can put it back.",
+    name: "anything that deletes beyond recovery",
+    why:
+      "Deleting lives on the write door, and only where the before-state was captured first so 'undo that' can put it back. The one thing no undo could restore is disconnecting the bank, which wipes every account and its whole history — that takes a code he types, not a chat command.",
   },
   {
     name: "asking about the other person",

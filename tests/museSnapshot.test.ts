@@ -271,6 +271,14 @@ describeSnapshot("the read door against the real ledger", () => {
     "health.records": "workouts",
     "health.exercises": "workouts",
     "schedule.reminders": "reminders",
+    // The memory store is not in the snapshot either, and for a reason worth keeping
+    // separate from the rest: `npm run snapshot` deliberately does not capture it. A
+    // memory is a sentence one of them dictated, so a captured copy would put his own
+    // words in a git-ignored file on this machine. The three tools are driven against a
+    // built fixture in tests/museMemory.test.ts.
+    "memory.recall": "muse_memory",
+    "memory.search": "muse_memory",
+    "memory.list": "muse_memory",
   };
 
   it("names every tool in the catalogue, so this file cannot fall behind it", () => {

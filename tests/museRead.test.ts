@@ -308,6 +308,46 @@ const TABLES = (): Record<string, DbRow[]> => ({
     // hers. His key must not see it.
     { id: "rem-hers", person: "xinyan", message: "Muse: her appointment", due_at: "2026-10-01T18:00:00+00:00", repeats: "weekly", source: "muse", sent_at: null, last_sent_at: null, canceled_at: null, created_at: "2026-09-30T00:00:00+00:00" },
   ],
+  // The memory store. Four rows, each one carrying a promise the loops below check:
+  //
+  //   mm1  a live memory, and its timestamp is 7 PM Arizona on the 26th spelled as
+  //        the instant a UTC runtime sees — 02:00Z on the 27th. So the two-clock
+  //        loop is not vacuous for these tools: a reply that dated it to the 27th
+  //        would differ between UTC and Arizona, which is the whole Rule 2 trap.
+  //   mm2  a value with a link and an injection line in it, so the Rule 4 loop
+  //        proves a memory is cleaned on the way OUT as well as refused on the way
+  //        in. This is the table where that matters most: its contents are read
+  //        straight back into a model's context as trusted output.
+  //   mm3  forgotten, so a recall can say WHEN instead of "never heard of it".
+  //   mm4  HERS. It must not appear in any reply to his key.
+  muse_memory: [
+    {
+      id: "mm1", person: "gino", key: "pay-floor", kind: "standing",
+      value: "A floor of fourteen hundred a check — never raise it.",
+      tags: ["money", "paycheck"], source: "muse",
+      learned_at: "2026-09-27T02:00:00Z", updated_at: "2026-09-27T02:00:00Z",
+      forgotten_at: null, previous: null,
+    },
+    {
+      id: "mm2", person: "gino", key: "no-jargon", kind: "preference",
+      value: NAME_CANARY, tags: ["writing"], source: "muse",
+      learned_at: "2026-09-20T02:00:00Z", updated_at: "2026-09-27T02:00:00Z",
+      forgotten_at: null,
+      previous: { value: "Plain words.", kind: "preference", tags: [], at: "2026-09-27T02:00:00Z" },
+    },
+    {
+      id: "mm3", person: "gino", key: "old-thing", kind: "fact",
+      value: "Something he told me to drop.", tags: [], source: "muse",
+      learned_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-20T04:00:00Z",
+      forgotten_at: "2026-09-20T04:00:00Z", previous: null,
+    },
+    {
+      id: "mm4", person: "xinyan", key: "her-thing", kind: "preference",
+      value: "Hers, and not his.", tags: [], source: "muse",
+      learned_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-01T10:00:00Z",
+      forgotten_at: null, previous: null,
+    },
+  ],
 });
 
 // ── the fake seams ────────────────────────────────────────────────────────────
@@ -435,6 +475,15 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "health.records", body: {} },
   { tool: "health.exercises", body: { query: "press" } },
   { tool: "schedule.reminders", body: {} },
+  // ── phase 2: the memory store ───────────────────────────────────────────────
+  // The one table on this door that is not a fact about the house: it holds what the
+  // ASSISTANT was told. It goes through both sweeps like everything else, and the Rule 4
+  // sweep matters most here — a memory's contents are read straight back into a model's
+  // context as trusted output, so a link inside one is the most durable way something
+  // could talk the assistant into doing something.
+  { tool: "memory.recall", body: { key: "pay-floor" } },
+  { tool: "memory.search", body: { text: "floor" } },
+  { tool: "memory.list", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -1866,7 +1915,12 @@ describe("API.md's field names exist", () => {
     // Fields a reply only carries in a state this fixture is not in. `state` and
     // `token` are on a system.changes ROW, and this fixture has made no changes, so the
     // list comes back empty and the keys never appear.
-    for (const k of ["count", "bill", "month", "a", "b", "as_of", "state", "token"]) keys.add(k);
+    for (const k of [
+      "count", "bill", "month", "a", "b", "as_of", "state", "token",
+      // `forgotten` is on a memory.recall reply only when the memory IS forgotten, and
+      // the tool is swept above with a live key.
+      "forgotten",
+    ]) keys.add(k);
 
     // API.md DOCUMENTS BOTH DOORS, so the write door's field names are printed in
     // the same backticks and have to count too. Until this was here, `reminder_id`
@@ -1902,6 +1956,11 @@ describe("API.md's field names exist", () => {
       // logged/partial/estimated/skipped/none, and a food's origin is one of
       // library/seed/bundled. Each is a value a field TAKES.
       "logged", "estimated", "none", "library", "seed", "bundled",
+      // The five memory KINDS are values of `kind`, not fields.
+      "decided", "fact",
+      // And `for` is a field that does NOT exist: the paragraph printing it is the one
+      // saying there is no way to write for the other person.
+      "for",
     ]);
     const printed = new Set(
       [...md.matchAll(/`([a-z][a-z0-9_]*)`/g)]

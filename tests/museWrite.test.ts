@@ -38,6 +38,7 @@ import type {
   Outcome,
   Person,
 } from "../supabase/functions/muse-write/db.ts";
+import type { MemoryRecord, MemoryUpsert } from "../supabase/functions/muse-write/memoryDb.ts";
 
 // 7 PM Arizona on 26 Sep 2026, spelled as the instant a UTC runtime would see.
 const AT = new Date("2026-09-27T02:00:00Z");
@@ -110,6 +111,39 @@ class Fake extends HealthRows implements Db {
    *  writing in the gap. */
   onReadMealDay: ((date: string) => void) | null = null;
 
+  /**
+   * Everything this fake holds that a tool could have written, as one string.
+   *
+   * It replaces a hand-kept sum of table sizes, which had already fallen behind: a tool
+   * writing to a table the sum did not name made "the repeat wrote nothing" pass by
+   * counting zero both times. A snapshot cannot fall behind that way, and it covers the
+   * PUSH LOG too, which turns "a retry must not buzz his phone again" into something the
+   * same assertion already checks.
+   *
+   * Everything the merged fake holds is in here: the ledger tables and the change log
+   * from FinanceFake, the health rows from HealthRows, this file's reminders, and the
+   * memory store.
+   */
+  snapshot(): string {
+    const entries = (m: Map<string, unknown>) => [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return JSON.stringify({
+      tables: this.tables,
+      changes: this.changes,
+      ledger: this.ledger,
+      pending: this.pending,
+      reminders: this.reminders,
+      pushes: this.pushes,
+      weights: entries(this.weights),
+      mealDays: entries(this.mealDays),
+      savedMeals: this.savedMeals,
+      foods: this.foods,
+      macroTargets: entries(this.macroTargets),
+      workouts: this.workouts,
+      routines: this.routines,
+      memories: entries(this.memories),
+    });
+  }
+
   // `id()` is HealthRows'. Main's Fake had a private copy of the same three lines with
   // its own counter; two counters on one shape is how two rows end up with one id.
   constructor() {
@@ -119,6 +153,46 @@ class Fake extends HealthRows implements Db {
     // existing assertion still names the same charge and the same bill.
     this.tables.transactions.push({ ...this.ledger.transactions[0], description: "Parking", created_at: "2026-09-20T12:00:00Z" });
     this.tables.recurring.push({ ...this.ledger.recurring[0], direction: "out", active: true, variable: false });
+  }
+
+  // ── the memory store ───────────────────────────────────────────────────────
+  // Four statements, same as the real ones. `memories` is keyed the way the table
+  // is — one row per person per key, forever — so the fake cannot accidentally
+  // allow the duplicate the unique index forbids. tests/museMemory.test.ts drives
+  // these hard; they are here so this file's own catalogue loops can reach the
+  // three memory tools like any other write.
+  memories = new Map<string, MemoryRecord & { person: Person }>();
+
+  readMemory(person: Person, key: string): Promise<MemoryRecord | null> {
+    return Promise.resolve(this.memories.get(`${person}|${key}`) ?? null);
+  }
+  countMemories(person: Person): Promise<number> {
+    let n = 0;
+    for (const m of this.memories.values()) if (m.person === person && !m.forgottenAt) n += 1;
+    return Promise.resolve(n);
+  }
+  upsertMemory(m: MemoryUpsert): Promise<string> {
+    const k = `${m.person}|${m.key}`;
+    const id = this.memories.get(k)?.id ?? this.id("mem");
+    this.memories.set(k, {
+      id,
+      person: m.person,
+      key: m.key,
+      kind: m.kind,
+      value: m.value,
+      tags: m.tags,
+      // Every upsert clears it, which is what makes remembering a forgotten key
+      // revive that row rather than leaving a live row still wearing the stamp.
+      forgottenAt: null,
+      previous: m.previous,
+    });
+    return Promise.resolve(id);
+  }
+  forgetMemory(person: Person, key: string, atISO: string): Promise<"ok" | "missing"> {
+    const row = this.memories.get(`${person}|${key}`);
+    if (!row || row.forgottenAt) return Promise.resolve("missing");
+    row.forgottenAt = atISO;
+    return Promise.resolve("ok");
   }
 
   findCall(person: Person, tool: string, idemKey: string): Promise<CallRecord | null> {
@@ -401,12 +475,21 @@ const EVERY_WRITE: {
   // NOTHING IN THIS LIST IS QUEUED ANY MORE, and `queued` stays as a field rather than
   // being deleted: it is what the loop below asserts each reply's shape against, and the
   // day a queued tool comes back it should be a one-word diff here.
+  // The memory store. `memory.forget` and `memory.restore` both need a row to act
+  // on, which `stocked()` plants — the loops below drive each tool twice under one
+  // key, and a tool that refused because there was nothing there would pass the
+  // idempotency check for the wrong reason.
+  {
+    tool: "memory.remember",
+    args: { key: "pay-floor", kind: "standing", value: "A floor of fourteen hundred a check — never raise it." },
+    queued: false,
+  },
+  { tool: "memory.forget", args: { key: "stale-note" }, queued: false },
+  { tool: "memory.restore", args: { key: "was-forgotten" }, queued: false },
 ];
 
 /** The default: one new row, somewhere. Counted across all four places a direct or
  *  queued write can land, minus the reminder `stocked()` put there to be edited. */
-const rowsWritten = (db: Fake) =>
-  db.pending.length + db.reminders.filter((r) => r.id !== REM_ID).length + db.weights.size + db.mealDays.size;
 
 /** A Fake with the one saved meal `health.log_saved_meal` needs to find. */
 function stocked(): Fake {
@@ -421,6 +504,15 @@ function stocked(): Fake {
     items: [
       { id: "it-1", foodId: "oats", name: "Oats", role: "carb", grams: 80, per100: { kcal: 379, p: 13, c: 67, f: 7 } },
     ],
+  });
+  db.memories.set("gino|stale-note", {
+    id: "mem-stale", person: "gino", key: "stale-note", kind: "fact",
+    value: "Something to drop.", tags: [], forgottenAt: null, previous: null,
+  });
+  db.memories.set("gino|was-forgotten", {
+    id: "mem-back", person: "gino", key: "was-forgotten", kind: "routine",
+    value: "Works nights, roughly six in the evening to six in the morning.",
+    tags: [], forgottenAt: "2026-09-20T04:00:00Z", previous: null,
   });
   // One of his own reminders, still waiting, for the two tools that edit one.
   db.reminders.push({
@@ -448,9 +540,15 @@ describe("every tool in the catalogue, not just the first one", () => {
     it(`${tool} is idempotent: the same key twice writes once and replays the answer`, async () => {
       const db = stocked();
       const key = `every-${tool.replace(/\W/g, "-")}`;
+      const untouched = db.snapshot();
       const first = await handleWrite(post(tool, args, { key }), deps(db));
-      const again = await handleWrite(post(tool, args, { key }), deps(db));
       expect(first.status, JSON.stringify(first.body)).toBe(200);
+      // The first call actually did something — otherwise everything below would
+      // pass by writing nothing twice.
+      const afterFirst = db.snapshot();
+      expect(afterFirst).not.toBe(untouched);
+
+      const again = await handleWrite(post(tool, args, { key }), deps(db));
       expect(again.status).toBe(200);
       expect(again.body.repeated).toBe(true);
       expect(again.body.message).toBe(first.body.message);
@@ -458,8 +556,16 @@ describe("every tool in the catalogue, not just the first one", () => {
       // One claimed audit row, and the repeat spent no rate-limit slot.
       expect(db.audit.filter((a) => a.idemKey === key)).toHaveLength(1);
       expect(db.calls.size).toBe(tool === "schedule.remind" ? 2 : 1);
-      // Whatever the tool does, it did it once.
-      expect((did ?? rowsWritten)(db)).toBe(1);
+      // The repeat changed NOTHING whatsoever — no second row in any table, and no second
+      // push. That replaces a hand-kept sum of four table sizes, which the memory store
+      // walked straight past: it writes to none of the four, so "the repeat wrote nothing"
+      // was passing by counting zero twice, and "it did it once" FAILED by counting zero
+      // once. A snapshot cannot be wrong about a table it does not know.
+      expect(db.snapshot()).toBe(afterFirst);
+      // And where a tool's effect needs naming, the case names it. cancel and update
+      // change a row that was already there, so "something changed" is not specific
+      // enough to tell them from each other.
+      if (did) expect(did(db)).toBe(1);
     });
   }
 

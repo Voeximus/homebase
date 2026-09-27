@@ -52,6 +52,9 @@ import { scrubCap } from "../_shared/muse/scrub.ts";
 import { DISPLAY, refuse, UUID, type Ctx, type Refusal, type Tool } from "./kit.ts";
 import { FINANCE_WRITE_TOOLS } from "./toolsFinance.ts";
 import { HEALTH_TOOLS } from "./healthTools.ts";
+// The memory store's three writes. Their own file, so nothing about how a memory works
+// lives in here and nothing about the ledger lives in there.
+import { MEMORY_WRITE_TOOLS } from "./memoryWrites.ts";
 
 // The shape of a tool and the checks every tool shares live in kit.ts, so this
 // catalogue, toolsFinance.ts and healthTools.ts can all use them without one importing
@@ -401,6 +404,10 @@ const REGISTRY: Record<string, Tool> = {
   // description and the tests all read this one object.
   ...FINANCE_WRITE_TOOLS,
   ...HEALTH_TOOLS,
+  // remember / forget / restore. All three land straight away and all three are
+  // reversible: see memoryWrites.ts for why memory's undo is a tool of its own rather
+  // than a token read back out of the change log.
+  ...MEMORY_WRITE_TOOLS,
 };
 
 /**
