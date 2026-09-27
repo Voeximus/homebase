@@ -45,13 +45,22 @@ import { setLangVar } from "./lib/i18n.ts";
  *
  * WHY THIS NUMBER IS THE TOOL IT IS. Meta publishes no rate limits for connectors,
  * so this is ours, and PLAN.md §4 makes it a control rather than a suggestion. It
- * is not only about cost. `finance.spend_by_category` answers about a window the
- * caller chooses, and a caller who can ask about enough windows can rebuild a good
- * part of the ledger a question at a time — which is what `search_transactions` is
- * forbidden for. The window rules in tools.ts take the granularity away; this takes
- * the volume away. Until it shipped, the only thing standing there was a polite
- * sentence in API.md asking an assistant not to loop, which is exactly what a
- * prompt injection overrides.
+ * is not only about cost.
+ *
+ * WHAT IT WAS FOR, AND WHAT IT IS FOR NOW. It was written when
+ * `search_transactions` was forbidden: `finance.spend_by_category` answers about a
+ * window the caller chooses, and a caller who could ask about enough windows could
+ * rebuild a good part of the ledger a question at a time. He has since lifted that
+ * prohibition — see the note under ABSENT in tools.ts — so reconstruction is no
+ * longer the thing being prevented. A caller who wants charges asks for charges.
+ *
+ * That makes this cap MORE load-bearing rather than less, and it is worth being
+ * honest about which: `finance.search_transactions` returns up to 50 rows a call, so
+ * 60 calls an hour is the only thing standing between a loop and the whole ledger.
+ * The window rules in tools.ts take the granularity away; this takes the volume
+ * away. Until it shipped, the only thing standing there was a polite sentence in
+ * API.md asking an assistant not to loop, which is exactly what a prompt injection
+ * overrides.
  */
 export const READS_PER_HOUR = 60;
 

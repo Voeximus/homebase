@@ -343,19 +343,36 @@ const WINDOW_MAX_MONTHS = 24;
 /**
  * The windows this tool will answer about, and why it is not any window.
  *
- * THE HOLE THIS CLOSES. `finance.search_transactions` is FORBIDDEN because
- * "returning individual ledger rows turns a chat into a copy of the ledger". With
- * a free choice of window, this tool rebuilt most of it: ask one day at a time, and
- * for most days a category's total IS one charge's exact amount on its exact date.
- * Measured against the household's own snapshot, 96 single-day calls returned 246
- * (day, category, amount) cells and 157 of them were a single charge. That is the
- * banned tool, minus the merchant string, through a different door.
+ * THE HOLE THIS ORIGINALLY CLOSED — AND WHY THE RULE OUTLIVED IT.
  *
- * A minimum LENGTH does not fix it, because two windows one day apart can be
- * subtracted: 1–28 and 1–29 differ by exactly the 29th. What fixes it is taking away
- * the choice of BOUNDARY. A window here is whole calendar months, or a month so far,
- * and nothing else — so every answerable window lines up on the same grid, and
- * subtracting two of them gives another month's total rather than one day's.
+ * This rule was written when `finance.search_transactions` was FORBIDDEN, on the
+ * grounds that "returning individual ledger rows turns a chat into a copy of the
+ * ledger". With a free choice of window, this tool rebuilt most of it: ask one day
+ * at a time, and for most days a category's total IS one charge's exact amount on
+ * its exact date. Measured against the household's own snapshot, 96 single-day calls
+ * returned 246 (day, category, amount) cells and 157 of them were a single charge.
+ * That was the banned tool, minus the merchant string, through a different door.
+ *
+ * HE HAS SINCE LIFTED THAT PROHIBITION, deliberately — see the note under ABSENT at
+ * the bottom of this file. `finance.search_transactions` exists, and it answers "what
+ * was that $47 on Tuesday" honestly, one charge at a time, with the cleaned
+ * description the app itself shows. So this rule can no longer be justified by the
+ * sentence above, and leaving that justification standing would be a rule resting on
+ * a premise the project has abandoned — which is how a restriction turns into folklore.
+ *
+ * WHAT IT NOW RESTS ON, and it is enough on its own: a whole month, or a month so
+ * far, is the grid every budget SCREEN uses. A total over "the last 30 days" is a
+ * figure nothing in the app displays, so nobody can check it against anything — which
+ * is Rule 3's argument, not a privacy one. Keeping the boundary also means the
+ * reconstruction above is pointless rather than merely rude: a caller who wants
+ * individual charges has a tool that gives them, said as charges, instead of building
+ * them out of category totals that look like budget figures and are not.
+ *
+ * The mechanism is unchanged, because it was right for both reasons. A minimum LENGTH
+ * would not do it — two windows one day apart can be subtracted, and 1–28 and 1–29
+ * differ by exactly the 29th. Taking away the choice of BOUNDARY does: every
+ * answerable window lines up on the same grid, so subtracting two of them gives
+ * another month's total rather than one day's.
  *
  * WHAT IT COSTS: "the last 30 days" and "since Tuesday" cannot be asked. "This
  * month so far", "last month", "the last three months" and "August" all can, which

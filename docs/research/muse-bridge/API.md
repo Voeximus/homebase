@@ -382,12 +382,17 @@ included in the range, up to 24 months in one call.
 ```
 
 **"The last 30 days" and "since Tuesday" cannot be asked here, and that is
-deliberate.** With a free choice of dates, asking one day at a time turns category
-totals into a list of individual charges — which is exactly what the forbidden
-`finance.search_transactions` is forbidden for. So the boundaries are fixed to
-months. If somebody asks about a week, either answer about the month and say so, or
-use `finance.budget_status`, which is the pay-cycle question and does not need dates
-at all. **Never** work a shorter window out by asking twice and subtracting.
+deliberate.** A whole month, or a month so far, is the grid the budget screens
+themselves use — so every answer here is a figure that can be checked against
+something he can see. A total over an arbitrary window is not.
+
+If somebody asks about a week: either answer about the month and say so, or use
+`finance.budget_status`, which is the pay-cycle question and needs no dates at all.
+If what they actually want is the charges, use `finance.search_transactions` — that
+is the honest tool for it, and it gives you charges said as charges. **Never** work a
+shorter window out by asking this twice and subtracting, and never rebuild a list of
+charges out of category totals: a total that is really one charge still looks like a
+budget figure when you say it.
 
 **You** choose the months, so **say** the months. State the exact dates you used
 before you say any number. The door will not guess dates for you, and a silent guess

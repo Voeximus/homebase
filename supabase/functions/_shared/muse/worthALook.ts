@@ -8,9 +8,21 @@
 // `merchantKey(tx.description)`, i.e. the bank descriptor or something one of them
 // typed. Each suggestion also carries `evidence` (the rows themselves) and a `fix`
 // descriptor holding raw transaction ids. Handed over as-is, this one READ tool is
-// a per-charge feed of merchant, amount and date — which is exactly what
-// `finance.search_transactions` is forbidden for. A rule that bans a tool and then
-// ships its contents under another name is not a rule.
+// a per-charge feed of merchant, amount and date — assembled by an engine that was
+// never written to clean a string, because it was written for a screen.
+//
+// THIS USED TO SAY "which is exactly what `finance.search_transactions` is forbidden
+// for", and that prohibition has since been lifted — he lifted it, deliberately; the
+// note under ABSENT in tools.ts records it. So the reason is restated here, because
+// the reason never was "charges are secret". A charge going out through
+// `finance.search_transactions` goes through `sayCharge`, built key by key, with the
+// description SCRUBBED and `raw_description` absent by construction. A charge going
+// out through this engine's own sentences goes out as the engine wrote it:
+// `merchantKey(tx.description)` is a bank-written string with the store number
+// stripped and nothing else done to it, and `evidence` is the row itself.
+//
+// So this layer is not hiding what the search tool now shows. It is refusing to be a
+// SECOND way out for the same data that skips the cleaning the first one does.
 //
 // So NOTHING is passed through. Every field below is built from scratch:
 //
