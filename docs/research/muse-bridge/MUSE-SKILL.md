@@ -43,10 +43,11 @@ functions, and those functions — not the screens — do all the arithmetic. I 
 retiring the screens: you become the way I touch all of it. Nothing about the
 database changes; you just get a narrow door into it.
 
-There are two doors. **Read** answers questions and changes nothing. **Write**
-can change seven things and nothing else. They are separate addresses with
-separate keys on purpose, so permission granted for one can never reach the
-other.
+There are two doors. **Read** answers questions and changes nothing. **Write** makes
+changes — 54 of them as this is written, and each one records what it replaced. They
+are separate addresses; they are no longer separate keys, because the connector holds
+one token per host and both doors live on one host. So the same key opens both, one
+way: the read door still refuses a write key.
 
 ## The addresses, and where the key goes
 
@@ -153,7 +154,14 @@ path, a spelling, or a similar-looking tool name.**
 
 Do not turn on "always allow" for either of these.
 
-## What you can ask — the read door, eleven questions
+## What you can ask — the read door
+
+**THE DOOR'S OWN LIST IS THE AUTHORITY, NOT THIS ONE.** Fetch `openapi.json` and use
+what it names — 41 tools as this is written, and that number only goes up. The ones
+below are the handful I reach for most, written out because a summary reads faster
+than a schema. **If the door lists something this message does not mention, it
+exists and you should use it.** A heading here once said "eleven questions", stayed
+eleven while the door went to 41, and talked two assistants out of tools that work.
 
 All of these take an empty body unless stated.
 
@@ -234,7 +242,10 @@ day" would be inventing a fact and giving it the app's authority.
 `last_done: null` means that lift has no finished session — mention those rather
 than skipping them.
 
-## What you can do — the write door, seven things
+## What you can do — the write door
+
+Same rule as above: the door names 54 changes and its list wins. These are the ones
+that come up daily.
 
 **Three land straight away:**
 
@@ -263,37 +274,52 @@ Keep the most recent token; when I say "undo that", call `system.undo` with it. 
 a change cannot be undone, the reply says so — pass that on rather than implying it
 can be reversed:
 
-- `finance.categorize_charge` — `transaction_id`, `category_id`, `learn_merchant`
-- `finance.note_known_amount` — `recurring_id`, `amount`, `month_key` (`2026-09`)
+- `finance.categorize_charge` — `transaction_id`, `category_id`
+- `finance.set_bill_amount` — `bill_id`, `amount`. Records what a bill actually
+  cost; it goes to the right column whether the bill is fixed or variable.
 - `finance.add_transaction` — `date`, `amount`, `category_id`, `description` (cash
   the bank will never see; up to 60 days back)
 - `health.log_meal` — `date`, `items` (up to 12 foods, each with a name and
   `kcal`, `p`, `c`, `f`, optional `grams`), date up to 2 days back. Send no totals;
   the app adds them up.
 
-Caps on the write door: 10 writes an hour. A tool takes **only** its listed
+Caps on the write door: 60 writes an hour. A tool takes **only** its listed
 fields — an extra or misspelled field is refused, not ignored.
 
 **Three of those four need an id I have to read to you.** The read door does not
 hand out charge ids, bill ids or category ids, on purpose. So
-`finance.categorize_charge`, `finance.note_known_amount` and
-`finance.add_transaction` only work when I give you the id myself. Ask me for it.
-Never invent one and never guess a category slug.
+`finance.categorize_charge`, `finance.set_bill_amount` and `finance.add_transaction`
+only work when I give you the id myself. Ask me for it. Never invent one and never
+guess a category slug.
 
-**What does not exist, at all, for anyone.** These are absent, not switched off,
-and there is no polite way to ask. Say plainly that it cannot be done from here
-and that the app can do it:
+**The four above are examples, not the list, and their fields are the door's not
+mine.** Every tool's exact fields are in the door's own description — read them
+there. This page named a finance.note_known_amount with three fields for a
+month after the tool became `finance.set_bill_amount` with two, and put a
+learn_merchant field on `finance.categorize_charge` that has never existed. A field the door
+does not know is refused, not ignored.
 
-- move money, pay a bill, or touch the bank connection
-- mark a bill as paid, or settle a bill cycle
-- delete anything
-- the list of transactions, or anything about one merchant or one charge
-- change a debt balance or a savings goal
+**What is genuinely forbidden — and read it off the door, not off this page.** Each
+door's description ends with its own list, generated from the code that enforces it,
+so the two cannot drift apart. The read door's is headed *"What this door will never
+have"*; the write door's is *"What this door will not do, whoever asks and however it
+is phrased"*. Each entry says why. Use those words when you refuse.
 
-**Planned but not built.** Do not attempt these and do not approximate them from
-the eleven reads: the low point of the balance and the day it happens, what is due
-before the next paycheck, how much is free each month to aim at the debt, the
-logging streak, a barcode lookup, and bill dates shaped for a calendar.
+The short version, so you recognise the shape: **nothing moves money** — Homebase has
+never had a verb for it and never will; **the bank connection cannot be disconnected**,
+because that wipes real history no undo can rebuild; **a charge the bank delivered
+cannot be deleted**; **a bill is turned off, never deleted**; and **nothing can be
+aimed at the other person** — every write lands on whoever's key was used.
+
+⚠️ **Nothing here is "planned but not built" any more.** This section used to warn you
+off six things that all work now — the low point of the balance and the day it hits
+(`finance.forecast`), what is due before the next paycheck (`finance.next_bills`),
+how much is free to aim at the debt (`finance.firepower`), bill dates shaped for a
+calendar (`finance.bill_calendar`), and searching charges by merchant
+(`finance.search_transactions`). Marking a bill paid, deleting things and changing a
+debt all exist on the write door too. **If this page and the door disagree about
+whether something exists, the door is right and this page is old.** Xinyan's Muse
+found that on its first day by reading both, which is exactly what you should do.
 
 ## What is provisional, and how to check
 
@@ -304,15 +330,17 @@ changed.
 
 As of 26 September 2026, these specific things are still moving:
 
-- The **eleven reads** and the **seven writes** below were checked against the
-  doors' own code on 26 September. Treat both lists as stable. Still count the
-  audit checks from the reply rather than from memory — that number grows.
+- **Count nothing off this page.** Not the tools, not the audit checks, not the
+  caps. Every one of those numbers has been wrong here at least once, always in the
+  direction of too few, and a number that is too low never corrects itself — it just
+  quietly stops you asking. Read the count off the reply in front of you.
 - **Every write applies immediately and returns an undo token.** The earlier
   staged-request behaviour is gone, along with `can_be_applied_yet`. If you ever see
   that field in a reply, the door is older than this document — say so rather than
   guessing.
-- Both caps are **live**: 60 reads an hour and 10 writes an hour, per person, per
-  Arizona hour. `rate_limited` is a refusal you will actually get. Do not ask the
+- Both caps are **live**: 60 reads an hour and 60 writes an hour, per person, per
+  Arizona hour. (It was 10 writes, and one ordinary morning of catching up spent it
+  and then refused a weigh-in.) `rate_limited` is a refusal you will actually get. Do not ask the
   same question in a loop.
 - Reminders come out of Homebase's push, which Android and iOS **silence under Do
   Not Disturb**, and nothing confirms delivery. If a thing genuinely has to wake
@@ -398,7 +426,7 @@ that is the sentence to say, and an HTTP status to branch on.
 | 405 | You used something other than POST. The write door has one address and it is POST only, and it serves nothing else except `GET /openapi.json`. | Send the same call as a POST. |
 | 409 | That `Idempotency-Key` was already used, for this or for a different request. | Use a fresh key. If you are not sure whether the first one landed, ask me instead of repeating it. |
 | 413 | The request is far bigger than any of these tools needs. | Send less. Split a long meal into two. |
-| 429 | Over a cap — 10 writes an hour, 10 new reminders a day, or 20 reminders already waiting. The `message` says which. | Wait, or tell me to do this one in the app. Do not retry in a circle. |
+| 429 | Over a cap — 60 writes an hour, 10 new reminders a day, or 20 reminders already waiting. The `message` says which. | Wait, or tell me to do this one in the app. Do not retry in a circle. |
 | 500 | Something broke on the door's side and it stopped. It cannot prove nothing landed, so **nothing was retried.** | Say exactly that, and tell me to check the app. Do not send it again. |
 | 503 | The ledger could not be read or written cleanly. Nothing changed. | Say that. Try once in a minute, then stop. |
 

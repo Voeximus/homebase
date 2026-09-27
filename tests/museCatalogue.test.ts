@@ -49,6 +49,9 @@ import {
   TOOL_NAMES as WRITE_NAMES,
 } from "../supabase/functions/muse-write/tools.ts";
 import { openapi as writeOpenApi } from "../supabase/functions/muse-write/openapi.ts";
+import { WRITES_PER_HOUR } from "../supabase/functions/muse-write/handler.ts";
+import { REMIND_OPEN_MAX, REMIND_PER_DAY } from "../supabase/functions/muse-write/tools.ts";
+import { READS_PER_HOUR } from "../supabase/functions/_shared/muse/handler.ts";
 
 const API_MD = "docs/research/muse-bridge/API.md";
 const api = () => readFileSync(API_MD, "utf8");
@@ -228,5 +231,105 @@ describe("API.md and the doors cannot name different tools", () => {
       expect(a.name.trim().length, a.name).toBeGreaterThan(0);
       expect(a.why.trim().length, a.name).toBeGreaterThan(20);
     }
+  });
+});
+
+// ── MUSE-SKILL.md, the document that is actually pasted into the assistant ────
+//
+// API.md has been guarded here since the week two branches disagreed about how many
+// tools existed. MUSE-SKILL.md was not, and it is the one that gets pasted — so it
+// went on saying "the read door, eleven questions" while the door served 41, and
+// "the write door, seven things" against 54, and it carried a block headed "Planned
+// but not built" listing six tools that all work.
+//
+// That is the direction nothing self-corrects. A count that is too HIGH gets a 404
+// and the assistant learns. A count that is too LOW is invisible: the assistant sees
+// a complete-looking list, stops looking, and the tools it never asks about are the
+// money questions. It survived a month and two assistants. What found it was
+// Xinyan's Muse on its first day, reading the door's own description beside the page
+// and asking which to believe — which is the behaviour the page asks for, and it
+// should not have to be the safety net.
+describe("MUSE-SKILL.md cannot state a number the code disagrees with", () => {
+  const SKILL_MD = "docs/research/muse-bridge/MUSE-SKILL.md";
+  const skill = () => readFileSync(SKILL_MD, "utf8");
+
+  // Read off the code, never typed here either — this test would otherwise be one
+  // more hand-written copy of the same numbers.
+  const CAPS: [RegExp, number, string][] = [
+    [/(\d+) writes an hour/g, WRITES_PER_HOUR, "WRITES_PER_HOUR"],
+    [/(\d+) reads an hour/g, READS_PER_HOUR, "READS_PER_HOUR"],
+    [/(\d+) new reminders a day/g, REMIND_PER_DAY, "REMIND_PER_DAY"],
+    [/(\d+) reminders already waiting/g, REMIND_OPEN_MAX, "REMIND_OPEN_MAX"],
+  ];
+
+  it("states every cap at the value the door enforces", () => {
+    const md = skill();
+    for (const [re, actual, name] of CAPS) {
+      const found = [...md.matchAll(re)].map((m) => Number(m[1]));
+      expect(found.length, `MUSE-SKILL.md never mentions ${name} — did the wording change?`)
+        .toBeGreaterThan(0);
+      for (const n of found) expect(n, `MUSE-SKILL.md says ${n} where ${name} is ${actual}`).toBe(actual);
+    }
+  });
+
+  it("names no tool that does not exist", () => {
+    // Catches the other direction: a tool renamed or removed while the page still
+    // teaches the assistant to call it, which produces a 404 and then improvisation.
+    const known = new Set([...namesOf(READ_CATALOGUE), ...namesOf(WRITE_CATALOGUE)]);
+    const mentioned = new Set(
+      [...skill().matchAll(/`((?:finance|health|schedule|memory|system)\.[a-z_]+)`/g)].map((m) => m[1]),
+    );
+    const ghosts = [...mentioned].filter((n) => !known.has(n));
+    expect(ghosts, "MUSE-SKILL.md names tools that no door has").toEqual([]);
+  });
+
+  it("names no field a tool does not take", () => {
+    // The same failure one level down, and quieter: a field the door does not know
+    // is REFUSED, not ignored, so a stale field list turns a working call into a 400
+    // the assistant then tries to talk its way around. This page carried
+    // `learn_merchant` on categorize_charge, which no version of that tool has had.
+    const md = skill();
+    // Only the lines that are explicitly "tool — field, field", which is the shape
+    // this page uses to teach a call. Prose that happens to mention a tool is left
+    // alone; it makes no claim about fields.
+    const rows = [...md.matchAll(/^- `((?:finance|health|schedule|memory|system)\.[a-z_]+)` — (.+)$/gm)];
+    expect(rows.length, "the page no longer lists any tool with its fields").toBeGreaterThan(0);
+    for (const [, tool, rest] of rows) {
+      // BOTH, the normalised catalogue, because the two registries spell their
+      // arguments differently — the read door declares `args` with types, the write
+      // door a bare `fields` list. catalogue.ts exists to end exactly that split,
+      // and its `fields` is the one list both doors agree on.
+      const def = BOTH.find((e) => e.name === tool);
+      expect(def, `${tool} is listed with fields but no door has it`).toBeTruthy();
+      const takes = new Set(def!.fields);
+      // Backticked words on the line, minus the tool name itself.
+      const claimed = [...rest.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
+      for (const field of claimed) {
+        expect(takes.has(field), `${tool} is listed with a \`${field}\` field it does not take`).toBe(true);
+      }
+    }
+  });
+
+  it("does not warn the assistant off tools that exist", () => {
+    // The literal heading that caused it. Kept as a string because the failure was
+    // never a wrong number — it was a whole block that stopped being true and that
+    // nobody reads top-to-bottom often enough to notice.
+    const md = skill();
+    expect(md, 'the "Planned but not built" block listed six tools that all work').not.toContain(
+      "Planned but not built",
+    );
+    // The three it specifically told two assistants not to attempt.
+    for (const tool of ["finance.forecast", "finance.next_bills", "finance.firepower"]) {
+      expect(namesOf(READ_CATALOGUE), `${tool} is what that block called unbuilt`).toContain(tool);
+    }
+  });
+
+  it("points at the door as the authority rather than freezing a count", () => {
+    // The structural fix, not the symptom. A page that names its own count will go
+    // stale again; a page that says "read the door's list" cannot.
+    const md = skill();
+    expect(md).toMatch(/THE DOOR'S OWN LIST IS THE AUTHORITY/);
+    expect(md).toMatch(/if the door lists something this message does not mention/i);
+    expect(md, "the heading must not re-freeze a count").not.toMatch(/the read door, \w+ questions/i);
   });
 });
