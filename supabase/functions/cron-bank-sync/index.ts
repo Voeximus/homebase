@@ -60,6 +60,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { safeEqual } from "../_shared/muse/safeEqual.ts";
+import { recordRun } from "../_shared/jobRun.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -105,6 +106,7 @@ Deno.serve(async (req) => {
   }
 
   const force = await refreshAsked();
+  return await recordRun(admin, "cron-bank-sync", async () => {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/plaid`, {
       method: "POST",
@@ -116,19 +118,68 @@ Deno.serve(async (req) => {
     // in an HTTP response that a misconfigured job could point anywhere.
     if (!res.ok) {
       console.error("cron-bank-sync: plaid answered", res.status);
-      return new Response(JSON.stringify({ ok: false, forced: force, plaid: res.status }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      });
+      return {
+        ok: false,
+        detail: { forced: force, plaid_status: res.status },
+        result: new Response(JSON.stringify({ ok: false, forced: force, plaid: res.status }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }),
+      };
     }
-    return new Response(JSON.stringify({ ok: true, forced: force }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    // WHAT THE SYNC ACTUALLY MOVED, which is the point of recording the run at all.
+    // "It ran" and "it did anything" are different claims, and the failure this whole
+    // table exists for — months with no bank pull — would have looked like a run that
+    // kept succeeding while the ledger stopped moving.
+    //
+    // NUMBERS ONLY, and that is the same rule the comment above states about the
+    // response body: a bank's error text and a list of merchant names have no
+    // business leaving this function. Filtering by TYPE rather than by field name
+    // keeps that true even if the sync's shape changes underneath.
+    return {
+      ok: true,
+      detail: { forced: force, ...(await countsFrom(res)) },
+      result: new Response(JSON.stringify({ ok: true, forced: force }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    };
   } catch (e) {
     console.error("cron-bank-sync failed:", String((e as Error)?.message ?? e));
-    return new Response(JSON.stringify({ ok: false, forced: force }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
+    return {
+      ok: false,
+      detail: { forced: force, threw: true },
+      result: new Response(JSON.stringify({ ok: false, forced: force }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    };
   }
+  });
 });
+
+/**
+ * The numeric half of the sync's own answer, per connection, and nothing else.
+ *
+ * Reading the body here is not a contradiction of "the body is not forwarded": it is
+ * read, reduced to counts, and stored where only the service role can see it. What
+ * never leaves is the text — descriptors, merchant names, a bank's error prose.
+ */
+async function countsFrom(res: Response): Promise<Record<string, number>> {
+  try {
+    const body = await res.json();
+    const per = Array.isArray(body?.synced) ? body.synced : [];
+    const totals: Record<string, number> = { connections: per.length, failed: 0 };
+    for (const one of per) {
+      if (one && typeof one === "object") {
+        if ("error" in one) totals.failed += 1;
+        for (const [k, v] of Object.entries(one)) {
+          if (typeof v === "number") totals[k] = (totals[k] ?? 0) + v;
+        }
+      }
+    }
+    return totals;
+  } catch {
+    // A body that will not parse is not a reason to fail a sync that worked.
+    return {};
+  }
+}

@@ -34,6 +34,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/webpush.ts";
 import { safeEqual } from "../_shared/muse/safeEqual.ts";
+import { recordFinished } from "../_shared/jobRun.ts";
 import { planFor, type Repeats } from "./schedule.ts";
 
 const admin = createClient(
@@ -78,6 +79,15 @@ Deno.serve(async (req) => {
   let skipped = 0;
   let expired = 0;
   let backlog = false;
+  // THE NUMBER THAT MATTERS MOST HERE, and until now it only existed in a log line.
+  // A reminder is marked delivered before the push goes out — deliberately, because
+  // the other order turns one failed push into a buzz every 15 minutes forever. The
+  // cost of that choice is that `sent_at` proves this job ran, not that anything
+  // arrived. When a push reaches no device at all, this is the only trace of it, and
+  // it is the difference between "the reminders work" and "the reminders are being
+  // marked delivered into nothing".
+  let reachedNobody = 0;
+  let caught: string | null = null;
 
   try {
     const { data: rows, error } = await admin
@@ -144,6 +154,7 @@ Deno.serve(async (req) => {
       );
       if (res.sent === 0) {
         console.error("cron-reminders:", r.id, "reached no device for", owner, "— marked delivered anyway");
+        reachedNobody++;
       }
       sent++;
     }
@@ -161,8 +172,20 @@ Deno.serve(async (req) => {
     if (expErr) throw new Error(`expire muse_pending: ${expErr.message}`);
     expired = (gone ?? []).length;
   } catch (e) {
-    console.error("cron-reminders", String((e as Error)?.message ?? e).slice(0, 200));
+    caught = String((e as Error)?.message ?? e).slice(0, 200);
+    console.error("cron-reminders", caught);
   }
+
+  // The run is recorded AFTER the catch above, on purpose. This function already
+  // swallows its own failure so one bad row cannot stop the next tick — which means
+  // the HTTP response says ok:true even when nothing worked. That is the right
+  // behaviour for the job and exactly the wrong claim for a heartbeat to read, so
+  // the row carries the truth the response cannot.
+  await recordFinished(admin, "cron-reminders", {
+    ok: caught === null,
+    detail: { sent, skipped, expired, backlog, reached_nobody: reachedNobody },
+    error: caught,
+  });
 
   return new Response(JSON.stringify({ ok: true, at: nowISO, sent, skipped, expired, backlog }), {
     headers: { "Content-Type": "application/json" },
