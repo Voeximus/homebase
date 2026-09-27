@@ -19,11 +19,13 @@ import type { Routine, Workout } from "./lib/workoutLog.ts";
 import type { Db } from "./paging.ts";
 import { readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
+import type { ReminderRow } from "./reminders.ts";
 import {
   toAppData,
   toBodyWeight,
   toDayLog,
   toMacroTarget,
+  toReminder,
   toRoutine,
   toWorkout,
 } from "./rows.ts";
@@ -51,6 +53,20 @@ export interface Loader {
   /** One person's saved custom routines (the code-defined seeds are added by the
    *  tool, exactly as the workout screen adds them). */
   routines(person: Person): Promise<Routine[]>;
+  /**
+   * One person's reminders — ALL of them, including the ones already delivered or
+   * cancelled. The caller filters, because "pending" is one definition and it lives
+   * in reminders.ts rather than in a `.is("sent_at", null)` written twice.
+   *
+   * Read whole and fail-closed like every other table (Rule 5), which is worth a
+   * sentence because it is the one table here that only ever grows: a delivered
+   * reminder is never removed. At 10 new reminders a day that is under 4,000 rows a
+   * year against MAX_ROWS of 20,000, so the door refuses rather than truncates
+   * somewhere around 2031 — and schema_v36's §9 housekeeping is where that gets
+   * trimmed. A refusal is the right failure: a list of pending reminders that is
+   * silently missing the one that matters is worse than no list.
+   */
+  reminders(person: Person): Promise<ReminderRow[]>;
 }
 
 export function createLoader(db: Db): Loader {
@@ -106,6 +122,11 @@ export function createLoader(db: Db): Loader {
     return rows.map(toRoutine);
   });
 
+  const reminders = perPerson(async (person) => {
+    const rows = await readAll(db, { table: "reminders", orderBy: "id", eq: { person } });
+    return rows.map(toReminder);
+  });
+
   const days = new Map<string, Promise<DayLog>>();
 
   return {
@@ -114,6 +135,7 @@ export function createLoader(db: Db): Loader {
     macroTarget,
     workouts,
     routines,
+    reminders,
     day(person, date) {
       const key = `${person}|${date}`;
       const hit = days.get(key);

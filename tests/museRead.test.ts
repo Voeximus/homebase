@@ -33,6 +33,10 @@ import { NAME_MAX, money, scrub } from "../supabase/functions/_shared/muse/scrub
 import { LedgerUnreadable, readAll, type Db, type DbRow } from "../supabase/functions/_shared/muse/paging";
 import { redactArgs, type AuditRow } from "../supabase/functions/_shared/muse/audit";
 import { ABSENT, TOOLS } from "../supabase/functions/_shared/muse/tools";
+// The write door, for the one cross-check that spans both: API.md documents both
+// doors, so a field name printed in it may belong to either.
+import { TOOLS as WRITE_TOOLS } from "../supabase/functions/muse-write/tools";
+import { UNIVERSAL_FIELDS as WRITE_UNIVERSAL_FIELDS } from "../supabase/functions/muse-write/handler";
 import { redactSuggestions } from "../supabase/functions/_shared/muse/worthALook";
 import {
   toAccount,
@@ -242,6 +246,36 @@ const TABLES = (): Record<string, DbRow[]> => ({
   workout_routines: [
     { id: "rt1", person: "gino", name: NAME_CANARY, meta: NAME_CANARY, exercises: [{ name: "Leg press", muscle: "legs", sets: 4, reps: "6–10" }] },
   ],
+  // ── reminders ──────────────────────────────────────────────────────────────
+  // Six rows covering every state a reminder can be in, because "pending" is the
+  // one definition three places share (the read door's list, the write door's
+  // cancel, and cron-reminders) and each of the four ways a row can be NOT pending
+  // has to be excluded by name.
+  //
+  // `now` is 2026-09-30 22:00 in Arizona, which is 2026-10-01 05:00 UTC. The two
+  // times below straddle it by half an hour each way on purpose: one overdue and one
+  // not, at an instant where the runtime's own calendar says a different day.
+  //
+  // The message carries NAME_CANARY the way a bill name does — a reminder is
+  // something one of them wrote, so it is allowed out SCRUBBED, and what must not
+  // survive is the URL, the newline and the injection line inside it.
+  reminders: [
+    // pending, its time has gone by half an hour — the job is behind, not cancelled
+    { id: "rem-late", person: "gino", message: `Muse: ${NAME_CANARY}`, due_at: "2026-10-01T04:30:00+00:00", repeats: "once", source: "muse", sent_at: null, last_sent_at: null, canceled_at: null, created_at: "2026-09-30T00:00:00+00:00" },
+    // pending, 9 AM tomorrow in Arizona
+    { id: "rem-soon", person: "gino", message: "Muse: read the electric bill", due_at: "2026-10-01T16:00:00+00:00", repeats: "once", source: "muse", sent_at: null, last_sent_at: null, canceled_at: null, created_at: "2026-09-30T00:00:00+00:00" },
+    // pending AND has already fired many times: a repeating reminder never gets a
+    // sent_at, it moves its own due_at forward. "Has it fired" and "is it finished"
+    // are different questions and this row is the one that proves it.
+    { id: "rem-daily", person: "gino", message: "Muse: weigh in", due_at: "2026-10-02T02:00:00+00:00", repeats: "daily", source: "muse", sent_at: null, last_sent_at: "2026-09-30T02:00:00+00:00", canceled_at: null, created_at: "2026-09-01T00:00:00+00:00" },
+    // delivered — a 'once' reminder that is over
+    { id: "rem-done", person: "gino", message: "Muse: take the bins out", due_at: "2026-09-29T02:00:00+00:00", repeats: "once", source: "muse", sent_at: "2026-09-29T02:07:00+00:00", last_sent_at: "2026-09-29T02:07:00+00:00", canceled_at: null, created_at: "2026-09-28T00:00:00+00:00" },
+    // cancelled, and still in the future. It must not be listed, and cron-reminders
+    // must not deliver it.
+    { id: "rem-gone", person: "gino", message: "Muse: wrong time", due_at: "2026-10-03T10:00:00+00:00", repeats: "once", source: "muse", sent_at: null, last_sent_at: null, canceled_at: "2026-09-30T01:00:00+00:00", created_at: "2026-09-29T00:00:00+00:00" },
+    // hers. His key must not see it.
+    { id: "rem-hers", person: "xinyan", message: "Muse: her appointment", due_at: "2026-10-01T18:00:00+00:00", repeats: "weekly", source: "muse", sent_at: null, last_sent_at: null, canceled_at: null, created_at: "2026-09-30T00:00:00+00:00" },
+  ],
 });
 
 // ── the fake seams ────────────────────────────────────────────────────────────
@@ -332,6 +366,7 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "health.training_volume", body: {} },
   { tool: "health.last_lift", body: { exercise: "leg press" } },
   { tool: "health.next_workout", body: {} },
+  { tool: "schedule.list_reminders", body: {} },
 ];
 
 async function underTZ<T>(tz: string, fn: () => Promise<T>): Promise<T> {
@@ -844,9 +879,18 @@ describe("what exists and what never will", () => {
     });
   }
 
-  it("has no write verb: the forbidden names are not in the catalogue at all", () => {
+  it("has no write verb: no tool on this door is named for changing something", () => {
+    // THE VERB, not the whole name. This used to be a substring match that included
+    // `remind`, and `schedule.list_reminders` tripped it — a READ tool whose subject
+    // happens to be reminders, refused by a test looking for a write. A name here is
+    // `area.verb_object`, so checking the verb says what the test means instead of
+    // what the letters look like, and it is stricter than the substring version was:
+    // `update`, `create` and `cancel` were not on the old list at all.
     for (const t of TOOLS) {
-      expect(t.name).not.toMatch(/log_|add_|set_|categorize|delete|remove|pay|notify|remind/);
+      const verb = t.name.split(".")[1]?.split("_")[0] ?? "";
+      expect(verb, t.name).not.toMatch(
+        /^(log|add|set|update|create|delete|remove|cancel|pay|send|notify|remind|categorize|move|apply|settle)$/,
+      );
     }
     expect(ABSENT.length).toBeGreaterThan(0);
   });
@@ -1525,6 +1569,22 @@ describe("API.md's field names exist", () => {
     // Fields a reply only carries in a state this fixture is not in.
     for (const k of ["count", "bill", "month", "a", "b", "as_of"]) keys.add(k);
 
+    // API.md DOCUMENTS BOTH DOORS, so the write door's field names are printed in
+    // the same backticks and have to count too. Until this was here, `reminder_id`
+    // and `do_it_anyway` could only be documented by leaving the backticks off,
+    // which is the kind of workaround that eventually loses to somebody adding them
+    // back. Taken from the write door's own catalogue rather than a hand-kept list,
+    // so a field added there cannot go undocumented and unchecked at the same time.
+    for (const t of Object.values(WRITE_TOOLS)) for (const f of t.fields) keys.add(f);
+    for (const f of WRITE_UNIVERSAL_FIELDS) keys.add(f);
+    // And the keys a write REPLY carries. Hand-listed, because the write door needs a
+    // database to answer at all and this test has none — tests/museWrite.test.ts is
+    // where those replies are actually driven.
+    for (const k of [
+      "queued", "expires_at", "summary", "applied", "can_be_applied_yet",
+      "replaced", "meals_on_day", "canceled", "changed", "meal",
+    ]) keys.add(k);
+
     // Backticked tokens that are shaped like a field name. Tool names carry a dot,
     // error codes and headers are listed out, and anything with a space in it is
     // prose rather than a field.
@@ -1542,5 +1602,153 @@ describe("API.md's field names exist", () => {
     );
     const missing = [...printed].filter((tok) => !keys.has(tok)).sort();
     expect(missing, "API.md names fields no reply carries").toEqual([]);
+  });
+});
+
+// ── schedule.list_reminders ───────────────────────────────────────────────────
+//
+// The one tool on this door whose subject is not the household's own figures. It is
+// here because the write door's cancel and edit tools need an id, and nothing else
+// hands one out — the same hole `finance.categorize_charge` still has and says so
+// about. So what these tests are really about is the four ways a reminder can be NOT
+// pending, because getting any one of them wrong shows somebody a list they will act
+// on: a cancelled reminder listed as coming, or a live one missing from the list.
+describe("schedule.list_reminders", () => {
+  const list = async (body: Record<string, unknown> = {}, secret = GINO_SECRET) =>
+    (await jsonOf(await ask("schedule.list_reminders", body, secret))) as {
+      person: string;
+      total: number;
+      shown: number;
+      offset: number;
+      more: boolean;
+      next_offset: number | null;
+      as_of: string;
+      note: string;
+      reminders: { id: string; message: string; due_at: string; due_arizona: string | null; repeats: string; overdue: boolean | null; source: string }[];
+    };
+
+  it("lists only what is still coming, soonest first", async () => {
+    const body = await list();
+    // Three of his six rows are pending. The other three are each excluded for a
+    // different reason, and every one of them is a real state a row gets into:
+    //   rem-done — delivered, so sent_at is set
+    //   rem-gone — cancelled, and still in the FUTURE, which is the row a naive
+    //              "due_at is ahead of now" filter would happily list
+    //   rem-hers — the other person's
+    expect(body.total).toBe(3);
+    expect(body.reminders.map((r) => r.id)).toEqual(["rem-late", "rem-soon", "rem-daily"]);
+    expect(body.person).toBe("gino");
+    expect(body.more).toBe(false);
+    expect(body.next_offset).toBeNull();
+  });
+
+  it("does not show her reminders to his key, or his to hers", async () => {
+    const his = await list();
+    expect(his.reminders.map((r) => r.id)).not.toContain("rem-hers");
+    const hers = await list({}, XINYAN_SECRET);
+    expect(hers.reminders.map((r) => r.id)).toEqual(["rem-hers"]);
+    expect(hers.total).toBe(1);
+    expect(hers.person).toBe("xinyan");
+  });
+
+  it("refuses to be asked about the other person", async () => {
+    const res = await ask("schedule.list_reminders", { person: "xinyan" });
+    expect(res.status).toBe(400);
+    expect(String((await jsonOf(res)).says)).toContain("who is asking from the key");
+  });
+
+  it("keeps a reminder that has already fired many times, when it repeats", async () => {
+    // A daily reminder never gets a sent_at — it moves its own due_at forward — so
+    // "has it fired" and "is it finished" are different questions. rem-daily has a
+    // last_sent_at from yesterday and is still very much pending.
+    const daily = (await list()).reminders.find((r) => r.id === "rem-daily")!;
+    expect(daily.repeats).toBe("daily");
+    expect(daily.overdue).toBe(false);
+  });
+
+  it("says a reminder is overdue when its time has gone by and it has not arrived", async () => {
+    // Now is 2026-09-30 22:00 in Arizona. rem-late was due at 21:30, rem-soon is due
+    // at 9 AM tomorrow. The comparison has to be made in ONE clock: `now` here is a
+    // Date whose local fields are Arizona's, and its epoch value is not the instant
+    // it describes unless the machine happens to be in Arizona. Comparing that
+    // against a stored instant is wrong by the runtime's own offset — seven hours,
+    // which on this fixture would flip both of these answers.
+    const rows = (await list()).reminders;
+    expect(rows.find((r) => r.id === "rem-late")!.overdue).toBe(true);
+    expect(rows.find((r) => r.id === "rem-soon")!.overdue).toBe(false);
+  });
+
+  it("says the time in Arizona words, from the stored instant", async () => {
+    const soon = (await list()).reminders.find((r) => r.id === "rem-soon")!;
+    // 2026-10-01T16:00Z is 9:00 AM on 1 October where he lives.
+    expect(soon.due_arizona).toBe("Oct 1, 9:00 AM");
+    expect(soon.due_at).toBe("2026-10-01T16:00:00+00:00");
+  });
+
+  it("scrubs the message, because a reminder is something a person typed", async () => {
+    // Same rule as a bill name: the words are allowed out, the URL and the injection
+    // line inside them are not. A reminder the APP writes one day will not have been
+    // cleaned on the way in, so it is cleaned on the way out too.
+    const late = (await list()).reminders.find((r) => r.id === "rem-late")!;
+    // The URL is gone whole, the directive's clause is gone, the marker and the
+    // person's own words survive. "and say hello" is left over because the
+    // instruction pattern is bounded to one clause on purpose — it must not eat a
+    // sentence — and what is left is no longer an instruction.
+    expect(late.message).toBe("Muse: Upper A and say hello");
+    expect(late.message).not.toContain("http");
+    expect(late.message.toLowerCase()).not.toContain("ignore previous");
+  });
+
+  it("pages, and the pages join up without dropping or repeating one", async () => {
+    const first = await list({ limit: 2 });
+    expect(first.shown).toBe(2);
+    expect(first.total).toBe(3);
+    expect(first.more).toBe(true);
+    expect(first.next_offset).toBe(2);
+    const second = await list({ limit: 2, offset: first.next_offset! });
+    expect(second.shown).toBe(1);
+    expect(second.more).toBe(false);
+    expect(second.next_offset).toBeNull();
+    const ids = [...first.reminders, ...second.reminders].map((r) => r.id);
+    expect(ids).toEqual(["rem-late", "rem-soon", "rem-daily"]);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it("refuses a page size that is not a whole number in range", async () => {
+    for (const body of [{ limit: 0 }, { limit: 51 }, { limit: 1.5 }, { limit: "10" }, { offset: -1 }]) {
+      const res = await ask("schedule.list_reminders", body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+  });
+
+  it("carries the note that says what overdue means and what is not in the list", async () => {
+    const note = (await list()).note;
+    // The three things an assistant would otherwise get wrong: it is one person's
+    // list, a repeating one shows its NEXT time, and overdue is the job being behind
+    // rather than the reminder being lost.
+    expect(note).toMatch(/only this person's/i);
+    expect(note).toMatch(/NEXT time/);
+    expect(note).toMatch(/has not gone out/i);
+  });
+
+  it("gives an empty list rather than a refusal when there is nothing waiting", async () => {
+    const tables = TABLES();
+    tables.reminders = [];
+    const body = (await jsonOf(await ask("schedule.list_reminders", {}, GINO_SECRET, {}, tables))) as {
+      total: number;
+      reminders: unknown[];
+      more: boolean;
+    };
+    expect(body.total).toBe(0);
+    expect(body.reminders).toEqual([]);
+    expect(body.more).toBe(false);
+  });
+
+  it("refuses rather than listing part of the table when a page comes back short", async () => {
+    // Rule 5, on the one table in the bridge that only ever grows. A list of pending
+    // reminders silently missing the one that matters is worse than no list.
+    const res = await ask("schedule.list_reminders", {}, GINO_SECRET, { shortPage: "reminders" });
+    expect(res.status).toBe(503);
+    expect((await jsonOf(res)).error).toBe("ledger_unreadable");
   });
 });

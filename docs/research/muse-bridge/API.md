@@ -5,7 +5,7 @@ called Homebase. Two people share it: Gino and Xinyan. It holds their bank
 accounts, bills, budget, debts, body weight and workouts, and it is the place
 those things are true.
 
-This door lets you **ask** Homebase questions. It changes nothing. Eleven questions
+This door lets you **ask** Homebase questions. It changes nothing. Twelve questions
 can be asked today. Everything else in this document is either a rule about how to
 speak, or a plain statement that something does not exist yet.
 
@@ -85,7 +85,7 @@ everything you asked.
 
 ---
 
-## The eleven questions you can ask
+## The twelve questions you can ask
 
 **You never send a person.** The door works out whether it is Gino or Xinyan asking
 from the key you used, and it refuses the call outright if you put `person` in the
@@ -338,6 +338,37 @@ exercises. Each exercise carries its planned `sets` and `reps`, the date it was
 rather than passing over it — an exercise nobody has logged is often the useful
 thing in this reply.
 
+### `schedule.list_reminders` — what reminders are still coming?
+
+**Takes an optional page.** `{}`, or `{"limit": 10}`, or `{"offset": 20}`. The
+person comes from your key.
+
+This is the one question on this door that is not about the household's own
+figures. It lists the reminders the **write** door made, because that is where the
+id of a reminder comes from — and without an id, nothing can cancel or change one.
+
+**What comes back:** `total`, how many are still waiting; `shown`, how many are in
+this reply; `offset`, where this page started; `more`, whether there are any left;
+`next_offset`, the number to send to get the next page (or `null`); and
+`reminders`, each with an `id`, its `message`, its `due_at`, the same moment as
+Arizona words in `due_arizona`, how it `repeats`, where it came from in `source`,
+and whether it is `overdue`.
+
+**The traps:**
+- **Only what is still coming.** A reminder that has already been delivered is not
+  here, and neither is one that was cancelled. If somebody asks what they were
+  reminded about yesterday, the answer is that this door does not keep that.
+- **A repeating reminder shows the NEXT time it goes off,** not the time it was
+  first set for. A daily reminder that has fired forty times shows tomorrow.
+- **`overdue: true` means the delivery job is behind**, not that the reminder was
+  cancelled or lost. It will still arrive. Say it that way round.
+- **`overdue: null`** means the stored time could not be read. Say the reminder is
+  there and that you cannot tell when it is for. Do not call it not-overdue.
+- `due_arizona` is already in the household's own clock. Do not convert it.
+
+**Saying it:** read the times, not the ids. An id is a long string of hex and
+saying one out loud is noise — hold on to it for the write door instead.
+
 ---
 
 ## When a call is refused
@@ -377,7 +408,10 @@ that the app can do it.
 
 - Move money, pay a bill, or touch the bank connection.
 - Mark a bill as paid, or settle a bill cycle.
-- Delete anything.
+- Delete anything. Neither door has a delete verb of any kind. Cancelling a reminder
+  looks like the exception and is not: it marks the reminder stopped and the row
+  stays, which is what lets "that one already went out" be answered instead of
+  guessed at.
 - Return the list of transactions, or anything about one merchant or one charge.
 - Change a debt balance or a savings goal.
 
@@ -403,15 +437,96 @@ and say the app is where that question is answered.
 and this door has no write verb anywhere in it. If you are asked to log or change
 anything with the key you have, say plainly that you can only read.
 
-For when somebody asks what the other door does: three writes land straight away —
-logging a weigh-in, logging one of the household's saved meals by name, and writing
-a reminder for a given time. Four more are **queued**: categorising a charge,
-recording what a variable bill came to, adding a cash charge, and logging free-form
-food. Queued means that door writes the request down and **changes nothing** — and
-today it stays that way, because the app has no screen for these rows yet, so nothing
-applies one and it clears itself after a day. If somebody asks for one of those four,
-say it can be written down but it will not take effect, and that the app is where the
-change actually gets made.
+For when somebody asks what the other door does: five writes land straight away —
+logging a weigh-in, logging one of the household's saved meals by name, writing a
+reminder for a given time, cancelling a reminder, and changing one. Four more are
+**queued**: categorising a charge, recording what a variable bill came to, adding a
+cash charge, and logging free-form food. Queued means that door writes the request
+down and **changes nothing** — and today it stays that way, because the app has no
+screen for these rows yet, so nothing applies one and it clears itself after a day.
+If somebody asks for one of those four, say it can be written down but it will not
+take effect, and that the app is where the change actually gets made.
+
+---
+
+## Reminders, across both doors
+
+Reminders are the one thing that needs both doors in one breath, so they are written
+up together here rather than half in each place.
+
+**The shape of it.** `schedule.remind` on the write door makes one. This door's
+`schedule.list_reminders` is the only place an **id** comes from.
+`schedule.cancel_reminder` and `schedule.update_reminder` on the write door need
+that id. So the order is always: list, then act on the one you were told about.
+Never make up an id, and never act on one you remember from earlier in the
+conversation — list again.
+
+**There is no reminders screen in the app.** Nothing in Homebase shows this list or
+edits it. That is unusual for this bridge, where the answer to almost everything is
+"open the app", and it cuts the other way here: **for a wrong reminder, these tools
+are the only fix.** So do not tell somebody to change it in the app. Offer to change
+it.
+
+**What a repeat can be — say this plainly rather than storing something close:**
+
+- Only once, daily and weekly exist. There is no monthly, no yearly, no every-other-day, no twice a day, and no hourly.
+- A weekly reminder repeats on the weekday of the time it was set for. Two different weekdays is two reminders.
+- There is no end date and no count. A daily reminder runs until somebody cancels it, and it takes up one of the waiting slots the whole time.
+- A repeating reminder more than 12 hours late is skipped for that slot and moves on to the next one, so an outage does not empty a night onto a lock screen at once.
+
+If somebody asks for one of the shapes that does not exist, **say so and offer the
+nearest thing you can actually build**, naming what is different about it. "I can do
+it every week on a Tuesday, but not Tuesdays and Thursdays — that would be two
+reminders" is a true answer. Storing a weekly reminder when somebody said monthly is
+not: it would fire four times too often, for years, and nobody would look at a
+screen to catch it.
+
+#### `schedule.cancel_reminder` — stop one that has not gone off
+
+**Takes `reminder_id`.** Stops it, whoever asked for it originally, as long as it is
+on **your** list.
+
+It is not a delete. The row stays, marked cancelled, so there is a record that it
+was stopped. What changes is that it will not arrive. A repeating reminder is
+stopped **for good** — there is no "skip just tomorrow", and the reply says so.
+
+**It refuses, and each refusal means something different:**
+- *"There is no reminder with that id on your list."* — either there is no such
+  reminder, or it is the other person's. You are not told which, and you should not
+  guess: say that you cannot find it on their list.
+- *"That reminder already went out at …"* — it is on a phone already. **Do not say
+  it was cancelled.** Say it already went out, and say when.
+- *"That reminder was already cancelled …"* — somebody got there first.
+- *"That reminder changed while I was cancelling it — it may have just gone out."* —
+  the delivery job was inside the same row at the same second. Nothing was changed.
+  List them again before saying anything else.
+
+#### `schedule.update_reminder` — change the time, the words, or how often
+
+**Takes `reminder_id`, and at least one of `at`, `message`, `repeats`.** Same rules
+as making a new one: the time must be at least a minute out and no more than a year
+ahead, and the message is capped at what fits on a lock screen and has anything
+link-shaped taken out of it. It refuses for the same reasons cancel does.
+
+The reply's `changed` lists what actually moved. Read that back rather than
+repeating what was asked for — they are not always the same thing.
+
+## One write per thing, across two people
+
+Both of them have their own key, and their assistants do not know about each other.
+So the write door keeps one more guard you should expect to meet: **if the same
+write, with the same numbers, already came through either key in the last ten
+minutes, it is refused** and the reply names who did it — "Xinyan already did that
+four minutes ago".
+
+Say that sentence as it stands. It is usually the most useful thing in the
+conversation: it means the thing is done, and by whom.
+
+If they really do want it twice — a second weigh-in, two separate charges that
+happen to be the same amount — send the identical call again with
+`do_it_anyway: true`. Every tool on the write door accepts that field, it changes
+nothing about what gets written, and it is recorded. **Do not reach for it by
+reflex.** Ask first, unless they have already said "yes, again".
 
 ## Two habits that matter more than the rest
 

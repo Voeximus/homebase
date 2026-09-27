@@ -19,6 +19,8 @@
 // with a hard `limit`. A read that could be truncated at 1,000 rows does not
 // exist in this door.
 
+import type { ReminderRow } from "../_shared/muse/reminders.ts";
+
 export type Person = "gino" | "xinyan";
 
 export type Outcome = "pending" | "ok" | "denied" | "rate_limited" | "error";
@@ -62,6 +64,34 @@ export interface PendingInsert {
   tool: string;
   payload: Record<string, unknown>;
   summary: string;
+}
+
+/**
+ * What a cancel or an edit may change on a reminder, and nothing else.
+ *
+ * `canceledAt` is how a cancel is spelled, and that is worth saying out loud: THERE
+ * IS STILL NO DELETE IN THIS FILE. "Cancel" is an update that sets one timestamp, so
+ * the row survives as the record that it was cancelled, the audit log's `row_ids`
+ * points at something that still exists, and cron-reminders simply stops picking it
+ * up. A delete verb here would be the first one in either door, and it would be
+ * reachable by an assistant — see the list at the top of this file.
+ */
+export interface ReminderPatch {
+  dueAt?: string;
+  message?: string;
+  repeats?: "once" | "daily" | "weekly";
+  canceledAt?: string;
+}
+
+/** One reminder as the write door reads it. The shared `ReminderRow` shape, so the
+ *  two doors and the cron job cannot disagree about what the columns mean. */
+export type { ReminderRow };
+
+/** The write the household already made, for the duplicate guard. */
+export interface EarlierWrite {
+  person: Person;
+  /** When it happened, as the stored timestamp. The door turns it into minutes. */
+  atISO: string;
 }
 
 export interface Db {
@@ -111,14 +141,61 @@ export interface Db {
     ms: number;
   }): Promise<void>;
 
+  /**
+   * The most recent write of the same tool, with the same arguments, by EITHER
+   * person, no older than `sinceISO` — or null when there is none.
+   *
+   * THE HOUSEHOLD CASE THIS EXISTS FOR. Two people, two assistants, one house. She
+   * asks hers to record what the electric bill came to; four minutes later he asks
+   * his the same thing, because neither of them knows the other already did it. The
+   * idempotency key cannot see that: it is per caller and per request, and these are
+   * two different callers sending two different keys. So the door asks its own audit
+   * log whether the household has already done this, and says who did it.
+   *
+   * Matched on the payload fingerprint the audit row already carries, and only
+   * against rows that got as far as claiming a key ('ok' or 'pending') — a refused
+   * call did nothing, so it is not something that was "already done".
+   */
+  recentSameWrite(q: {
+    tool: string;
+    fingerprint: string;
+    sinceISO: string;
+  }): Promise<EarlierWrite | null>;
+
   // ── rate limits ───────────────────────────────────────────────────────────
   /** Increment one counter and return its new value, in a single statement. */
   bump(person: Person, bucket: string): Promise<number>;
 
   // ── reminders ─────────────────────────────────────────────────────────────
-  /** How many of this person's reminders have not been delivered yet. */
+  /** How many of this person's reminders are still going to arrive — not
+   *  delivered, and not cancelled. Cancelling one has to free a slot, or the cap
+   *  becomes a wall nothing can get past. */
   countOpenReminders(person: Person): Promise<number>;
   insertReminder(r: ReminderInsert): Promise<string>;
+  /**
+   * One reminder by id, whoever it belongs to.
+   *
+   * It reads the row's `person` rather than filtering on it, because the tool has to
+   * be able to tell "there is no such reminder" from "that one is hers" — and then
+   * deliberately say the SAME thing for both. Filtering in the query would make that
+   * choice by accident instead of on purpose.
+   */
+  readReminder(id: string): Promise<ReminderRow | null>;
+  /**
+   * Change a reminder, but only if it is still exactly as it was read.
+   *
+   * "stale" means something moved in the gap — the 15-minute job delivered it, or
+   * advanced a repeating one's due time, or the other phone cancelled it. The caller
+   * re-reads and says so; it does NOT write over what it has not seen. Same
+   * compare-and-set shape as updateMealDayIfUnchanged, for the same reason: this
+   * door and the cron job can both be inside the same row at the same second, and
+   * the loser of that race must not be the one that silently wins.
+   */
+  updateReminderIfUnchanged(
+    id: string,
+    seen: { dueAt: string },
+    patch: ReminderPatch,
+  ): Promise<"ok" | "stale">;
 
   // ── body weight ───────────────────────────────────────────────────────────
   /** The weigh-in already stored for that day, so the reply can say what it

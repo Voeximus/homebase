@@ -1,6 +1,6 @@
-// The seven things an assistant may change, and nothing else.
+// The nine things an assistant may change, and nothing else.
 //
-// THREE LAND STRAIGHT AWAY ("direct")
+// FIVE LAND STRAIGHT AWAY ("direct")
 //   health.log_weight       one number, one row, visible on the weight screen,
 //                           deletable in two taps.
 //   health.log_saved_meal   a meal the household already saved, by name. The
@@ -8,6 +8,18 @@
 //                           parse and nothing to get wrong.
 //   schedule.remind         a reminder in Homebase's own list, which Homebase's
 //                           cron delivers as a real push.
+//   schedule.cancel_reminder  stops one that has not gone off yet.
+//   schedule.update_reminder  moves its time, changes its words, or changes how
+//                           often it repeats.
+//
+// WHY THE LAST TWO ARE NOT A LOOSENING. They are the correction half of the tool
+// above them. `schedule.remind` could put a 3 AM reminder on a lock screen and
+// nothing could take it back: the app has no reminders screen — nothing in `src/`
+// reads or writes that table — so the only fix was the Supabase dashboard. A door
+// that can make a mistake and not undo it is not safer, it is just less finished.
+// Neither of them is a delete: "cancel" sets `canceled_at` and the row stays, which
+// is what lets the audit log still point at it and what makes "that one already went
+// out" answerable instead of guessable.
 //
 // FOUR ONLY ASK ("queued")
 //   finance.categorize_charge, finance.note_known_amount,
@@ -40,9 +52,27 @@
 //   screens, which is the drift that told the phones "Electric $85" while every
 //   screen said $100.
 
-import type { Db, MealDayRow, Person, Push } from "./db.ts";
-import { addDays, azDateISO, azWallClock, daysBetweenISO, isDateISO, parseInstant } from "../_shared/muse/az.ts";
-import { MESSAGE_CAP, MUSE_MARKER, scrubCap, wasChanged } from "../_shared/muse/scrub.ts";
+import type { Db, MealDayRow, Person, Push, ReminderRow } from "./db.ts";
+import {
+  addDays,
+  azDateISO,
+  azWallClock,
+  daysBetweenISO,
+  instantOf,
+  isDateISO,
+  parseInstant,
+} from "../_shared/muse/az.ts";
+import {
+  closedBecause,
+  DELIVERY_GRAIN_MIN,
+  isRepeats,
+  messageFor,
+  overSays,
+  REMIND_MAX_DAYS,
+  TRIMMED_SAYS,
+  type Repeats,
+} from "../_shared/muse/reminders.ts";
+import { scrubCap } from "../_shared/muse/scrub.ts";
 
 /** The push_subscriptions "owner" spelling, and the name a sentence uses. */
 export const DISPLAY: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
@@ -144,7 +174,7 @@ function dateFor(
  * is no list, no screen and no tap, and no code path anywhere that applies one of
  * these rows. PLAN.md Phase 4 puts the app half and the door half in the same phase
  * and only the door half was built. So the door was sending him to a screen that
- * does not exist, four times out of seven, and "go and tap it" is the one sentence
+ * does not exist, four times out of nine, and "go and tap it" is the one sentence
  * in the whole bridge a person cannot check without walking into the app and finding
  * nothing.
  *
@@ -328,58 +358,90 @@ const logSavedMeal: Tool = {
 export const REMIND_PER_DAY = 10;
 /** How many may be waiting undelivered at once. Note that a daily or weekly
  *  reminder counts as waiting for as long as it exists, because it is — it never
- *  finishes. Twenty standing reminders is already more than anybody reads, and
- *  clearing one is a swipe in the app. */
+ *  finishes. Twenty standing reminders is already more than anybody reads, and the
+ *  way to clear one is schedule.cancel_reminder: there is no reminders screen in the
+ *  app (nothing in `src/` reads the table), which is the whole reason the cancel and
+ *  edit tools below exist. */
 export const REMIND_OPEN_MAX = 20;
-/** The raw message length the door will even look at. */
-const MESSAGE_INPUT_MAX = 200;
-/** How far ahead a reminder may be set. */
-const REMIND_MAX_DAYS = 365;
-/** cron-reminders runs on a 15-minute schedule, so this is the honest grain to
- *  promise. Saying "at 11:00 exactly" would be a promise the pipeline does not
- *  make. */
-const DELIVERY_GRAIN_MIN = 15;
+
+/** The moment a reminder is set for, checked. Shared by remind and update_reminder
+ *  so "at least a minute out" and "no more than a year ahead" cannot end up meaning
+ *  two different things on the two tools that set a time. */
+function dueFrom(at: unknown, ctx: Ctx): { due: Date } | Refusal {
+  const due = parseInstant(at);
+  if (!due) {
+    return refuse(400, "I need the time as 2026-09-26T23:00 (Arizona) or with an offset on the end.");
+  }
+  if (due.getTime() < ctx.at.getTime() + 60_000) {
+    return refuse(400, "That time has already passed. Pick one at least a minute out.");
+  }
+  if (due.getTime() > addDays(ctx.at, REMIND_MAX_DAYS).getTime()) {
+    return refuse(400, `I only set reminders up to ${REMIND_MAX_DAYS} days ahead.`);
+  }
+  return { due };
+}
+
+/**
+ * The reminder this call is about, or the refusal to give instead.
+ *
+ * THREE REFUSALS, AND THE FIRST TWO SAY THE SAME THING ON PURPOSE.
+ *
+ * A reminder that does not exist and a reminder that belongs to the other person get
+ * the identical sentence. That is not laziness — it is the same choice auth.ts makes
+ * about a wrong key ("one refusal for every kind of wrong key, so the body cannot be
+ * used to tell one from another"). If his assistant were told "that one is Xinyan's",
+ * the door would have confirmed the existence and the ownership of one of her rows to
+ * a caller holding only his secret. Two people, two keys, and the key says who is
+ * calling: an assistant may not see, cancel or edit the other person's reminders, and
+ * "see" includes learning that one is there.
+ *
+ * The third is the reminder that is already over, and it is the one that matters
+ * most: a cancel that answered "done" for a reminder whose push is already on a lock
+ * screen would leave the person believing it was stopped.
+ */
+async function reminderFor(
+  payload: Record<string, unknown>,
+  ctx: Ctx,
+  verb: string,
+): Promise<{ row: ReminderRow } | Refusal> {
+  const id = typeof payload.reminder_id === "string" ? payload.reminder_id : "";
+  if (!UUID.test(id)) {
+    return refuse(
+      400,
+      "I need the reminder's id. schedule.list_reminders on the read door gives you one for each reminder that is still waiting.",
+    );
+  }
+  const row = await ctx.db.readReminder(id);
+  const NOT_YOURS = "There is no reminder with that id on your list.";
+  if (!row) return refuse(404, NOT_YOURS);
+  if (row.person !== ctx.person) return refuse(404, NOT_YOURS);
+  const closed = closedBecause(row);
+  if (closed) {
+    const when = instantOf(closed === "delivered" ? row.sentAt : row.canceledAt);
+    return refuse(409, overSays(closed, verb, when ? azWallClock(when) : null));
+  }
+  return { row };
+}
+
+/** "…, daily." / "." — said the same way by all three reminder tools. */
+const cadenceSays = (repeats: string) => (repeats === "once" ? "." : `, ${repeats}.`);
 
 const remind: Tool = {
   kind: "direct",
   does: "Put a reminder in Homebase's own list. Homebase's cron delivers it as a real push.",
   fields: ["message", "at", "repeats"],
   async run(payload, ctx) {
-    const raw = typeof payload.message === "string" ? payload.message.trim() : "";
-    if (!raw) return refuse(400, "Tell me what the reminder should say.");
-    if (raw.length > MESSAGE_INPUT_MAX) {
-      return refuse(
-        400,
-        `That reminder is ${raw.length} characters. Keep it under ${MESSAGE_CAP} — it has to fit on a lock screen.`,
-      );
-    }
-    const clean = scrubCap(raw, MESSAGE_INPUT_MAX);
-    if (!clean) return refuse(400, "There was nothing left of that reminder once the links were taken out.");
-    if (clean.length > MESSAGE_CAP) {
-      return refuse(
-        400,
-        `That reminder is ${clean.length} characters. Keep it under ${MESSAGE_CAP} — it has to fit on a lock screen.`,
-      );
-    }
+    // One copy of the message rule, in _shared/muse/reminders.ts, because
+    // update_reminder sets a message too — and the marker in particular has to go on
+    // in both places or an edited reminder stops saying an assistant wrote it.
+    const said = messageFor(payload.message);
+    if (!said.ok) return refuse(400, said.say);
 
-    const due = parseInstant(payload.at);
-    if (!due) {
-      return refuse(
-        400,
-        "I need the time as 2026-09-26T23:00 (Arizona) or with an offset on the end.",
-      );
-    }
-    if (due.getTime() < ctx.at.getTime() + 60_000) {
-      return refuse(400, "That time has already passed. Pick one at least a minute out.");
-    }
-    if (due.getTime() > addDays(ctx.at, REMIND_MAX_DAYS).getTime()) {
-      return refuse(400, `I only set reminders up to ${REMIND_MAX_DAYS} days ahead.`);
-    }
+    const when = dueFrom(payload.at, ctx);
+    if ("ok" in when) return when;
 
     const repeats = payload.repeats === undefined ? "once" : payload.repeats;
-    if (repeats !== "once" && repeats !== "daily" && repeats !== "weekly") {
-      return refuse(400, "Repeats can be once, daily or weekly.");
-    }
+    if (!isRepeats(repeats)) return refuse(400, "Repeats can be once, daily or weekly.");
 
     // Two caps, because this is the one tool that reaches out of the system to a
     // lock screen. The daily one stops a runaway loop; the open one stops a slow
@@ -388,7 +450,7 @@ const remind: Tool = {
     if (open >= REMIND_OPEN_MAX) {
       return refuse(
         429,
-        `There are already ${open} reminders waiting. Clear some in the app before adding more.`,
+        `There are already ${open} reminders waiting. Cancel one with schedule.cancel_reminder before adding more.`,
       );
     }
     const today = azDateISO(ctx.az);
@@ -397,37 +459,178 @@ const remind: Tool = {
       return refuse(429, `That is ${REMIND_PER_DAY} reminders for today already. Try again tomorrow.`);
     }
 
-    // The marker goes on here, once, and it is stored — so it shows in the app's
-    // list as well as on the lock screen, and both phones can see at a glance
-    // that an assistant wrote this and Homebase did not.
-    const message = MUSE_MARKER + clean;
+    const message = said.message;
     const id = await ctx.db.insertReminder({
       person: ctx.person,
-      dueAt: due.toISOString(),
+      dueAt: when.due.toISOString(),
       repeats,
       message,
       source: "muse",
     });
 
-    const trimmed = wasChanged(raw, clean)
-      ? " I shortened it and took out anything link-shaped."
-      : "";
     return {
       ok: true,
       result: {
         id,
         person: ctx.person,
-        due_at: due.toISOString(),
-        due_arizona: azWallClock(due),
+        due_at: when.due.toISOString(),
+        due_arizona: azWallClock(when.due),
         repeats,
         message,
       },
       rowIds: [id],
       say:
         `Saved. ${DISPLAY[ctx.person]}'s phone gets "${message}" within about ` +
-        `${DELIVERY_GRAIN_MIN} minutes of ${azWallClock(due)}` +
-        (repeats === "once" ? "." : `, ${repeats}.`) +
-        trimmed,
+        `${DELIVERY_GRAIN_MIN} minutes of ${azWallClock(when.due)}` +
+        cadenceSays(repeats) +
+        (said.trimmed ? TRIMMED_SAYS : ""),
+    };
+  },
+};
+
+// ── schedule.cancel_reminder ─────────────────────────────────────────────────
+//
+// THE REASON THIS TOOL EXISTS. `schedule.remind` could write a reminder and nothing
+// could take one back. The app has no reminders screen — nothing in `src/` reads or
+// writes the table — so a reminder set for 3 AM instead of 3 PM could only be fixed
+// in the Supabase dashboard, and until then it woke somebody up. A door that can
+// only make a mistake and never correct one is not finished.
+//
+// AND IT IS STILL NOT A DELETE. No door has a delete verb, and this does not add
+// one: it sets `canceled_at`, the row survives, the audit log's row_ids points at
+// something that still exists, and cron-reminders stops picking it up. The
+// difference matters for the reminder that had already gone out — a delete would
+// have removed the evidence and answered "done"; this refuses and says when it went.
+
+const cancelReminder: Tool = {
+  kind: "direct",
+  does: "Cancel a reminder that has not gone off yet. A repeating one stops for good.",
+  fields: ["reminder_id"],
+  async run(payload, ctx) {
+    const found = await reminderFor(payload, ctx, "cancel");
+    if ("ok" in found) return found;
+    const { row } = found;
+
+    const landed = await ctx.db.updateReminderIfUnchanged(
+      row.id,
+      { dueAt: row.dueAt },
+      { canceledAt: ctx.at.toISOString() },
+    );
+    if (landed === "stale") {
+      // Fails closed and says which way. Something moved in the second between the
+      // read and the write: the 15-minute job delivered it, or advanced a repeating
+      // one, or the other phone got there first. The one answer this must never give
+      // is "cancelled" for a push that is already on a lock screen.
+      return refuse(
+        409,
+        "That reminder changed while I was cancelling it — it may have just gone out. Nothing was changed. Ask me to list them again.",
+      );
+    }
+
+    const due = instantOf(row.dueAt);
+    const message = scrubCap(row.message, 120);
+    const forever = row.repeats === "once"
+      ? ""
+      : ` That stops the ${row.repeats} one for good — there are no more after this.`;
+    return {
+      ok: true,
+      result: {
+        id: row.id,
+        person: ctx.person,
+        canceled: true,
+        message,
+        due_at: row.dueAt,
+        due_arizona: due ? azWallClock(due) : null,
+        repeats: row.repeats,
+      },
+      rowIds: [row.id],
+      say:
+        `Cancelled "${message}" for ${DISPLAY[ctx.person]}` +
+        (due ? `, which was set for ${azWallClock(due)}` : "") +
+        `. It will not arrive.${forever}`,
+    };
+  },
+};
+
+// ── schedule.update_reminder ─────────────────────────────────────────────────
+//
+// Time, text, or how it repeats. At least one of the three, because an update that
+// changed nothing and answered "done" is the same silent lie as a cancel that missed.
+
+const updateReminder: Tool = {
+  kind: "direct",
+  does: "Change a reminder's time, its words, or how often it repeats.",
+  fields: ["reminder_id", "at", "message", "repeats"],
+  async run(payload, ctx) {
+    const wantsTime = payload.at !== undefined;
+    const wantsText = payload.message !== undefined;
+    const wantsRepeats = payload.repeats !== undefined;
+    if (!wantsTime && !wantsText && !wantsRepeats) {
+      return refuse(400, "Tell me what to change: a new time, new words, or how often it repeats.");
+    }
+
+    const found = await reminderFor(payload, ctx, "change");
+    if ("ok" in found) return found;
+    const { row } = found;
+
+    const patch: { dueAt?: string; message?: string; repeats?: Repeats } = {};
+    const changed: string[] = [];
+    let due = instantOf(row.dueAt);
+    let message = row.message;
+    let repeats = row.repeats;
+    let trimmed = false;
+
+    if (wantsTime) {
+      const when = dueFrom(payload.at, ctx);
+      if ("ok" in when) return when;
+      due = when.due;
+      patch.dueAt = when.due.toISOString();
+      changed.push("time");
+    }
+    if (wantsText) {
+      const said = messageFor(payload.message);
+      if (!said.ok) return refuse(400, said.say);
+      // Through the same rule remind uses, so an edited reminder is capped, cleaned
+      // and still carries the marker. A message that quietly lost its marker would
+      // stop saying an assistant wrote it, on the one screen where that matters.
+      message = said.message;
+      patch.message = said.message;
+      trimmed = said.trimmed;
+      changed.push("words");
+    }
+    if (wantsRepeats) {
+      if (!isRepeats(payload.repeats)) return refuse(400, "Repeats can be once, daily or weekly.");
+      repeats = payload.repeats;
+      patch.repeats = payload.repeats;
+      changed.push("how often");
+    }
+
+    const landed = await ctx.db.updateReminderIfUnchanged(row.id, { dueAt: row.dueAt }, patch);
+    if (landed === "stale") {
+      return refuse(
+        409,
+        "That reminder changed while I was editing it — it may have just gone out. Nothing was changed. Ask me to list them again.",
+      );
+    }
+
+    return {
+      ok: true,
+      result: {
+        id: row.id,
+        person: ctx.person,
+        changed,
+        message,
+        due_at: patch.dueAt ?? row.dueAt,
+        due_arizona: due ? azWallClock(due) : null,
+        repeats,
+      },
+      rowIds: [row.id],
+      say:
+        `Changed the ${changed.join(" and ")}. ${DISPLAY[ctx.person]}'s phone now gets ` +
+        `"${message}" within about ${DELIVERY_GRAIN_MIN} minutes of ` +
+        `${due ? azWallClock(due) : "its set time"}` +
+        cadenceSays(repeats) +
+        (trimmed ? TRIMMED_SAYS : ""),
     };
   },
 };
@@ -597,6 +800,8 @@ const REGISTRY: Record<string, Tool> = {
   "health.log_weight": logWeight,
   "health.log_saved_meal": logSavedMeal,
   "schedule.remind": remind,
+  "schedule.cancel_reminder": cancelReminder,
+  "schedule.update_reminder": updateReminder,
   "finance.categorize_charge": categorizeCharge,
   "finance.note_known_amount": noteKnownAmount,
   "finance.add_transaction": addTransaction,
@@ -609,12 +814,12 @@ const REGISTRY: Record<string, Tool> = {
  * WHY NOT THE OBJECT. `REGISTRY[name]` answers for every key on Object.prototype,
  * so "constructor", "__proto__", "toString", "valueOf" and "hasOwnProperty" each
  * found an inherited value and got past the door's "no such tool" check. A Map has
- * no inherited keys, so the only names in it are the seven below. The read door has
+ * no inherited keys, so the only names in it are the nine below. The read door has
  * always been a Map; this is the same shape.
  */
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(Object.entries(REGISTRY));
 
-/** The seven names, for the OpenAPI description and the "no such tool" reply. */
+/** The nine names, for the OpenAPI description and the "no such tool" reply. */
 export const TOOL_NAMES = [...TOOL_BY_NAME.keys()];
 
 /** The catalogue by name, for the description builder and the tests. Reading it is

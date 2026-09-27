@@ -20,10 +20,15 @@
 //   5  Was this key used before? A repeat replays the first answer and writes
 //      nothing.
 //   6  The rate limit, counted in the locked-down muse_calls table.
-//   7  CLAIM the key by writing the audit row, and only then act. A row written
+//   7  Did the HOUSEHOLD already do this? The key in step 5 is per caller; this one
+//      asks whether the same write, with the same numbers, came through either
+//      person's key in the last few minutes — because two people with two assistants
+//      do not know what the other just asked for. It refuses and names who did it,
+//      and `do_it_anyway: true` is the way past.
+//   8  CLAIM the key by writing the audit row, and only then act. A row written
 //      afterwards would guard nothing: two simultaneous identical calls would
 //      both pass every check above and both write.
-//   8  Run the tool. A refusal gives the key back (nothing happened). A crash
+//   9  Run the tool. A refusal gives the key back (nothing happened). A crash
 //      keeps it (we cannot prove nothing happened, so a retry needs a new key).
 //
 // WHAT IS DELIBERATELY ABSENT
@@ -32,15 +37,47 @@
 //   calling another edge function. Not disabled — absent. See tools.ts.
 
 import type { Db, Person, Push } from "./db.ts";
-import { azDateISO, ticks } from "../_shared/muse/az.ts";
+import { azDateISO, minusMinutes, minutesSince, ticks } from "../_shared/muse/az.ts";
 import { callerOf } from "../_shared/muse/auth.ts";
 import { BodyTooLarge, MAX_BODY_BYTES, readCappedText } from "../_shared/muse/body.ts";
 import { scrubName } from "../_shared/muse/scrub.ts";
-import { TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
+import { DISPLAY, TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
  *  connectors, so this is ours. */
 export const WRITES_PER_HOUR = 10;
+
+/**
+ * How far back the door looks for the same write the household already made.
+ *
+ * THE CASE, IN ONE SENTENCE: two people, two assistants, one house, and neither of
+ * them knows the other just did it. She asks hers to record what the electric bill
+ * came to; four minutes later he asks his the same thing. Both calls are perfectly
+ * valid, both hold a real key, and the idempotency key cannot see it — that key is
+ * per caller and per request, and these are two callers sending two different keys.
+ *
+ * Ten minutes, because that is about how long "we were both just talking about it"
+ * lasts. Longer and a genuine second weigh-in after a shower starts getting refused;
+ * shorter and the two of them miss each other.
+ */
+export const DUPLICATE_WINDOW_MIN = 10;
+
+/**
+ * Fields the DOOR handles, on every tool, rather than any one tool declaring them.
+ *
+ * There is exactly one, and it is the way past the duplicate guard above. It lives
+ * here and not in a tool's `fields` list because a guard a tool could forget to
+ * opt into is not a guard — the same reason `person` is refused in one place for
+ * every tool rather than checked in seven.
+ *
+ * It is stripped before the tool sees it, and it is NOT part of the payload
+ * fingerprint: it does not change what gets written, only whether the door is
+ * willing to write it again. Keeping it out of the fingerprint is what lets a caller
+ * that was just refused resend the very same request with the flag on, under the same
+ * Idempotency-Key, and have it go through instead of coming back "you used that key
+ * for a different request".
+ */
+export const UNIVERSAL_FIELDS = ["do_it_anyway"] as const;
 
 export interface Secrets {
   gino: string;
@@ -243,8 +280,12 @@ async function afterAuth(
   // read as "weight" and then find nothing under it.
   const rawKeys = Object.keys(args);
   const shown = (keys: string[]) => keys.map((k) => scrubName(k, 24) || "?").sort();
+  // The audit log records what was SENT, universal fields included — "he overrode the
+  // duplicate guard" is exactly the kind of thing the log is for.
   const fields = shown(rawKeys);
-  const extra = rawKeys.filter((f) => !def.fields.includes(f));
+  const extra = rawKeys.filter(
+    (f) => !def.fields.includes(f) && !(UNIVERSAL_FIELDS as readonly string[]).includes(f),
+  );
   if (extra.length) {
     const loaded = extra.find((f) => LOADED_FIELDS[f]);
     const note = loaded ? `refused field ${loaded}` : `unknown fields: ${shown(extra).join(", ")}`;
@@ -255,6 +296,22 @@ async function afterAuth(
         ? LOADED_FIELDS[loaded]
         : `${tool} does not take ${shown(extra).join(", ")}. It takes ${def.fields.join(", ")}.`,
     );
+  }
+
+  // ── the door's own field, taken out before the tool sees anything ──────────
+  // A boolean and nothing else: a truthy string would make "false" mean yes.
+  const anyway = args.do_it_anyway;
+  if (anyway !== undefined && typeof anyway !== "boolean") {
+    await db.logCall({ person, tool, args: { fields }, outcome: "denied", note: "do_it_anyway not a boolean", ms: ms() });
+    return deny(400, "do_it_anyway is either true or false.");
+  }
+  const override = anyway === true;
+  // The tool is handed the arguments it declared and nothing else, so no tool has to
+  // know this field exists — and the fingerprint below is taken over these, not over
+  // the raw body, which is what makes the override invisible to the sameness check.
+  const toolArgs: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (!(UNIVERSAL_FIELDS as readonly string[]).includes(k)) toolArgs[k] = v;
   }
 
   // A key, not a sentence. Bounded to the characters a key is made of, so nothing
@@ -268,7 +325,7 @@ async function afterAuth(
     );
   }
 
-  const print = await fingerprint(tool, args);
+  const print = await fingerprint(tool, toolArgs);
   const auditArgs = { fields, fingerprint: print };
 
   // ── has this key been here before? ──────────────────────────────────────────
@@ -283,6 +340,39 @@ async function afterAuth(
     return deny(429, `That is ${WRITES_PER_HOUR} writes this hour already. Give it an hour, or do this one in the app.`);
   }
 
+  // ── did the household already do this? ─────────────────────────────────────
+  //
+  // Here, and not earlier or later, for three reasons:
+  //   · AFTER the replay check, so a genuine retry under the same key still replays
+  //     its first answer instead of being told somebody else did it;
+  //   · AFTER the rate limit, because it costs a database read — a caller looping on
+  //     duplicates must be capped before it can make the door do work;
+  //   · BEFORE the claim, because nothing is going to happen, so no key should be
+  //     burned on it. The refusal goes in through logCall, which leaves the key free:
+  //     the very same request with do_it_anyway can be sent again under it.
+  if (!override) {
+    const earlier = await db.recentSameWrite({
+      tool,
+      fingerprint: print,
+      sinceISO: minusMinutes(clock.at, DUPLICATE_WINDOW_MIN).toISOString(),
+    });
+    if (earlier) {
+      const mins = minutesSince(earlier.atISO, clock.at);
+      const ago = mins === null || mins < 1 ? "a moment ago" : `${mins} ${mins === 1 ? "minute" : "minutes"} ago`;
+      // Who, by name. "That was already done" leaves a person wondering whether they
+      // did it themselves and forgot; "Xinyan already did that" ends the question.
+      const who = earlier.person === person ? "That was already done" : `${DISPLAY[earlier.person]} already did that`;
+      const say =
+        `${who} ${ago}, so I have not done it again. ` +
+        `Send it again with do_it_anyway if you really do want it twice.`;
+      await db.logCall({
+        person, tool, args: auditArgs, outcome: "denied",
+        note: `duplicate of ${earlier.person} ${ago}`, ms: ms(),
+      });
+      return deny(409, say);
+    }
+  }
+
   // ── claim the key, THEN act ────────────────────────────────────────────────
   const claim = await db.claimCall({ person, tool, idemKey, args: auditArgs });
   if (claim === "duplicate") {
@@ -293,7 +383,7 @@ async function afterAuth(
   }
 
   try {
-    const outcome = await def.run(args, {
+    const outcome = await def.run(toolArgs, {
       db,
       push: deps.push,
       person,

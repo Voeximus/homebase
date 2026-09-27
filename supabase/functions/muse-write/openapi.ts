@@ -7,7 +7,8 @@
 // forgetting to update this document is not possible.
 
 import { REMIND_OPEN_MAX, REMIND_PER_DAY, TOOLS } from "./tools.ts";
-import { WRITES_PER_HOUR } from "./handler.ts";
+import { DUPLICATE_WINDOW_MIN, UNIVERSAL_FIELDS, WRITES_PER_HOUR } from "./handler.ts";
+import { REPEAT_LIMITS } from "../_shared/muse/reminders.ts";
 
 export function openapi(url: URL): Record<string, unknown> {
   const names = Object.keys(TOOLS);
@@ -29,12 +30,17 @@ export function openapi(url: URL): Record<string, unknown> {
       title: "Homebase write door",
       version: "1.0.0",
       description: [
-        "The seven things an assistant may change in Homebase.",
+        "The nine things an assistant may change in Homebase.",
         "",
         ...lines,
         "",
         "Every call needs the household secret, in Authorization: Bearer or in X-Muse-Token — the door takes either, because nobody has published which one a phone-built connector sends. It also needs an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
         `At most ${WRITES_PER_HOUR} writes an hour, ${REMIND_PER_DAY} new reminders a day, and ${REMIND_OPEN_MAX} reminders waiting at once.`,
+        "",
+        `Two people share this house and each has their own key. If the same write, with the same numbers, already came through either key in the last ${DUPLICATE_WINDOW_MIN} minutes, this door refuses it and says who did it — because neither of them knows what the other just asked for. Say that sentence as it stands. If they really do want it twice, send the same call again with ${UNIVERSAL_FIELDS[0]}: true, which every tool here accepts.`,
+        "",
+        "Reminders: schedule.list_reminders on the READ door is where the ids come from. What a repeat can be:",
+        ...REPEAT_LIMITS.map((l) => `  - ${l}`),
         "There is no tool for moving money, deleting anything, settling a bill, or changing a debt balance. Those are not switched off; they do not exist here.",
       ].join("\n"),
     },
@@ -62,7 +68,10 @@ export function openapi(url: URL): Record<string, unknown> {
                   required: ["tool"],
                   properties: {
                     tool: { type: "string", enum: names },
-                    args: { type: "object", description: "The fields that tool takes, and no others." },
+                    args: {
+                      type: "object",
+                      description: `The fields that tool takes, and no others — plus ${UNIVERSAL_FIELDS[0]}, which every tool accepts and which only turns off the duplicate check.`,
+                    },
                   },
                 },
               },
@@ -89,7 +98,10 @@ export function openapi(url: URL): Record<string, unknown> {
             "400": { description: "Something about the request was wrong. The message says what." },
             "401": { description: "No usable secret." },
             "404": { description: "No such tool, or the row it named does not exist." },
-            "409": { description: "That Idempotency-Key was already used." },
+            "409": {
+              description:
+                "Either that Idempotency-Key was already used for something else, or the household already made this exact write a few minutes ago, or the row moved while the door was editing it. The message says which. Nothing was changed.",
+            },
             "429": { description: "Over one of the caps. The message says which." },
             "503": { description: "The ledger could not be read or written cleanly. Nothing changed." },
           },

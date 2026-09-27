@@ -1,4 +1,9 @@
-// The read door's catalogue. Eleven tools, and nothing else exists.
+// The read door's catalogue. Twelve tools, and nothing else exists.
+//
+// (Eleven of them answer about the household's own figures. The twelfth,
+// schedule.list_reminders, answers about rows the WRITE door made — it is here
+// because it is a question, and because the write door's cancel and edit tools
+// need an id that something has to hand out. See the note above that tool.)
 //
 // RULE 1 — no arithmetic in here. Every number below comes out of a function in
 // src/lib, imported through the generated copies in ./lib. The repo has the
@@ -58,6 +63,7 @@ import { bestSet, SEED_ROUTINES, type Routine } from "./lib/workoutLog.ts";
 import { BUNDLED_EXERCISES } from "./lib/exerciseData.ts";
 import { bandLabel, hardSetsByRegion, lastTime } from "./lib/trainingMath.ts";
 import { REGIONS, REGION_BY_ID } from "./lib/muscleRegions.ts";
+import { describe, pendingFor } from "./reminders.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import type { Loader } from "./load.ts";
 import type { Person } from "./auth.ts";
@@ -682,6 +688,76 @@ const healthNextWorkout: Tool = {
   },
 };
 
+// ── schedule.list_reminders ───────────────────────────────────────────────────
+//
+// WHY A READ TOOL IS PART OF THE REMINDER STORY. Until this existed, an assistant
+// could WRITE a reminder and had no way to see one, so a reminder set for the wrong
+// hour could only be fixed in the database dashboard — the app has no reminders
+// screen at all (nothing in `src/` reads the table). That also made
+// `schedule.remind`'s own refusal untrue: it said "clear some in the app", and
+// there is nothing in the app to clear them with.
+//
+// It is the same hole `finance.categorize_charge` still has and says so about: a
+// write door that needs an id no read door hands out cannot be used. This closes it
+// for reminders, which is why the write door's cancel and edit tools can exist.
+//
+// THE COUNTS ARE COUNTS, NOT MATHS. `total` is how many rows matched, `shown` is
+// how many are in this reply. Rule 1 is about not re-deriving the household's
+// FIGURES; the length of a list the door itself just filtered is not one of them.
+const MAX_REMINDERS_PAGE = 50;
+const DEFAULT_REMINDERS_PAGE = 20;
+const MAX_REMINDERS_OFFSET = 500;
+
+const scheduleListReminders: Tool = {
+  name: "schedule.list_reminders",
+  summary: "The reminders waiting to go off, with their ids and times.",
+  args: [
+    {
+      name: "limit",
+      type: "integer",
+      required: false,
+      description: `How many to return, 1 to ${MAX_REMINDERS_PAGE}. Default ${DEFAULT_REMINDERS_PAGE}.`,
+    },
+    {
+      name: "offset",
+      type: "integer",
+      required: false,
+      description: "How many to skip. Use next_offset from the previous reply.",
+    },
+  ],
+  async run({ load, person, now, args }) {
+    const limit = intArg(args, "limit", DEFAULT_REMINDERS_PAGE, 1, MAX_REMINDERS_PAGE);
+    const offset = intArg(args, "offset", 0, 0, MAX_REMINDERS_OFFSET);
+    const rows = await load.reminders(person);
+    // "Pending" has ONE definition and it is not here — see reminders.ts. A second
+    // spelling of it is how a cancelled reminder ends up invisible in this list and
+    // still arriving on a lock screen.
+    const pending = pendingFor(rows, person);
+    const page = pending.slice(offset, offset + limit);
+    const more = offset + page.length < pending.length;
+    return {
+      person,
+      // Rule 5's habit, stated: the answer is about this Arizona day. A reply read
+      // back tomorrow is a stale list of times.
+      as_of: isoDate(now),
+      total: pending.length,
+      shown: page.length,
+      offset,
+      more,
+      next_offset: more ? offset + page.length : null,
+      reminders: page.map((r) => ({ ...describe(r, now) })),
+      // No backticks in a sentence that leaves the door: scrub() removes them from
+      // every string it cleans, and a door that emits a character its own cleaner
+      // strips is saying one thing and checking another.
+      note:
+        "Only this person's reminders, and only the ones still waiting. A repeating one " +
+        "shows the NEXT time it goes off, not the time it was first set for. Overdue " +
+        "means its time has passed and it has not gone out — the 15-minute job is behind, " +
+        "not that it was cancelled. Cancelling or changing one is the write door.",
+    };
+  },
+};
+
 export const TOOLS: readonly Tool[] = [
   financeAudit,
   financePosition,
@@ -694,6 +770,7 @@ export const TOOLS: readonly Tool[] = [
   healthTrainingVolume,
   healthLastLift,
   healthNextWorkout,
+  scheduleListReminders,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));
