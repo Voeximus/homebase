@@ -294,18 +294,27 @@ describe("every finance write is driven here", () => {
     "finance.link_debt_to_card": { debt_id: DEBT, account_id: ACCOUNT },
     "finance.unlink_debt_card": { debt_id: DEBT },
     "system.undo": {},
+    "finance.refresh_bank": {},
   };
 
   it("names all of them, so this file cannot fall behind the registry", () => {
     expect(Object.keys(DRIVEN).sort()).toEqual(Object.keys(FINANCE_WRITE_TOOLS).sort());
   });
 
-  // Every tool that CHANGES something must hand back a token and log the change. Two
+  // Every tool that CHANGES something must hand back a token and log the change. Four
   // are excluded and each says why: system.undo is the reverse of a change rather than
-  // one, and the two whose seeded state already refuses (settle/unsettle a
-  // reimbursable, which needs a set-aside charge first) are covered on their own below.
+  // one; the two whose seeded state already refuses (settle/unsettle a reimbursable,
+  // which needs a set-aside charge first) are covered on their own below; and
+  // finance.refresh_bank changes no household data at all — it writes a REQUEST on a
+  // column no figure is computed from, and there is no before-state, because you cannot
+  // un-ask a bank. It has its own block further down, including the refusal that says
+  // so out loud.
   const CHANGES = Object.keys(DRIVEN).filter(
-    (t) => t !== "system.undo" && t !== "finance.settle_reimbursable" && t !== "finance.unsettle_reimbursable",
+    (t) =>
+      t !== "system.undo" &&
+      t !== "finance.settle_reimbursable" &&
+      t !== "finance.unsettle_reimbursable" &&
+      t !== "finance.refresh_bank",
   );
 
   const seeded = () => {
@@ -1342,5 +1351,106 @@ describe("the finance reads", () => {
     ]) {
       expect(names, `${t} is not registered`).toContain(t);
     }
+  });
+});
+
+// ── finance.refresh_bank ─────────────────────────────────────────────────────
+//
+// The tool that cannot do the thing it is named after, and has to say so.
+//
+// The doors may not call another edge function, so this one writes the ASK down and a
+// scheduled job carries it out (supabase/schema_v39_bank_refresh.sql). Everything worth
+// testing here is about that gap being stated rather than papered over: the ledger has
+// not moved, the sentence says it has not, and asking twice inside the window is
+// refused rather than turned into a second call to the bank.
+
+describe("finance.refresh_bank", () => {
+  /** Minutes before AT, as Postgres hands a timestamptz back. */
+  const minsAgo = (m: number) => new Date(AT.getTime() - m * 60_000).toISOString();
+
+  const withBank = (over: Partial<{ lastSyncAt: string | null; refreshRequestedAt: string | null }> = {}) => {
+    const db = new Fake();
+    db.connections = [
+      { id: "c1", lastSyncAt: minsAgo(20), refreshRequestedAt: null, ...over },
+    ];
+    return db;
+  };
+
+  it("writes the ask onto every connection and moves no money row", async () => {
+    const db = withBank();
+    const ledgerBefore = JSON.stringify(db.tables);
+    const body = await ok(db, "finance.refresh_bank", {});
+
+    expect(db.connections[0].refreshRequestedAt).toBe(AT.toISOString());
+    expect(body.result.connections_asked).toBe(1);
+    // The ledger is untouched — this tool reaches no table the undo fence covers.
+    expect(JSON.stringify(db.tables)).toBe(ledgerBefore);
+    expect(db.writes.map((w) => w.op)).toEqual(["requestBankRefresh"]);
+  });
+
+  it("refuses to be read as done, in the sentence an assistant repeats", async () => {
+    const body = await ok(withBank(), "finance.refresh_bank", {});
+    // Each of these is a specific way this goes wrong in a chat. "NOT instant" stops
+    // the assistant reporting a completed refresh; "has not moved yet" stops it
+    // reading a balance next and calling it new; "read the numbers again" is what it
+    // should do instead.
+    expect(body.message).toContain("NOT instant");
+    expect(body.message).toContain("has not moved yet");
+    expect(body.message).toContain("read the numbers again");
+    expect(body.result.instant).toBe(false);
+  });
+
+  it("hands back no undo token, because there is nothing to put back", async () => {
+    const db = withBank();
+    const body = await ok(db, "finance.refresh_bank", {});
+    expect(body.result.undo).toBeUndefined();
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("refuses a second ask inside the cooldown, and says how long is left", async () => {
+    const db = withBank({ refreshRequestedAt: minsAgo(3) });
+    const r = await no(db, "finance.refresh_bank", {});
+    expect(r.status).toBe(429);
+    expect(r.message).toContain("already asked for");
+    expect(r.message).toContain("7 more minutes");
+    // And nothing was written: a refused ask must not move the window it was
+    // measured against, or a loop would keep pushing the cooldown forward.
+    expect(db.connections[0].refreshRequestedAt).toBe(minsAgo(3));
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("allows it again once the window has passed", async () => {
+    const db = withBank({ refreshRequestedAt: minsAgo(10) });
+    const body = await ok(db, "finance.refresh_bank", {});
+    expect(body.result.connections_asked).toBe(1);
+  });
+
+  it("caps a connection that never syncs — the window is measured from the ASK", async () => {
+    // Asked 2 minutes ago and no sync has ever landed. A cooldown measured from
+    // last_sync_at would leave this askable forever, which is a broken connection
+    // being called once a question.
+    const db = withBank({ lastSyncAt: null, refreshRequestedAt: minsAgo(2) });
+    expect((await no(db, "finance.refresh_bank", {})).status).toBe(429);
+  });
+
+  it("says there is nothing to refresh when no bank is connected", async () => {
+    const db = new Fake();
+    db.connections = [];
+    const r = await no(db, "finance.refresh_bank", {});
+    expect(r.status).toBe(404);
+    expect(r.message).toContain("no bank connected");
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("says the database is not set up yet rather than pretending it asked", async () => {
+    // schema_v39 not run: the column does not exist, so PostgREST refuses the read.
+    // The wrong answer here would be a cheerful "asked for a refresh" against a
+    // write that could never land.
+    const db = withBank();
+    db.noRefreshColumn = true;
+    const r = await no(db, "finance.refresh_bank", {});
+    expect(r.status).toBe(503);
+    expect(r.message).toContain("schema_v39");
+    expect(db.writes).toHaveLength(0);
   });
 });

@@ -59,6 +59,9 @@ import type { Ctx, Refusal, Tool, ToolOutcome } from "./tools.ts";
 import { UUID } from "../_shared/muse/args.ts";
 import type { BillRow, ChargeRow, FinanceDb } from "./dbFinance.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
+// The cooldown, and the sentences that explain it, shared with the read door's
+// freshness stamp so "too soon" has one definition rather than two.
+import { REFRESH_TICK_MIN, refreshDecision } from "../_shared/muse/freshness.ts";
 import { scrubCap } from "../_shared/muse/scrub.ts";
 import { merchantKey } from "../_shared/muse/lib/categorize.ts";
 import { cycleKeyOf } from "../_shared/muse/lib/selfAudit.ts";
@@ -1709,7 +1712,95 @@ const systemUndo: Tool = {
   },
 };
 
+// ── finance.refresh_bank ─────────────────────────────────────────────────────
+//
+// "Check the bank for anything new."
+//
+// WHY THIS IS A WRITE TOOL THAT WRITES ALMOST NOTHING. The doors may not call another
+// edge function — that is item 7 of what an assistant may never do, and it is enforced
+// by neither door importing a client or a URL. The bank pull lives in the `plaid`
+// function, so this tool cannot perform one. What it can do is write the ASK down, on
+// a column a scheduled job watches (supabase/schema_v39_bank_refresh.sql), and then
+// say so honestly.
+//
+// AND THAT HONESTY IS THE HARD PART. The queued tools of Phase 1 shipped with a
+// sentence that promised a tap in an app screen that did not exist, and the whole
+// reason `landing` is carried through the catalogue is so an assistant cannot read
+// "done" into "written down". This tool has the same trap with a different shape: an
+// assistant that hears "refreshed" will go straight on to read a balance, get the OLD
+// one, and say it with a fresh-sounding preamble. So the sentence says NOT instant, it
+// says the ledger has not moved, and it says to read the numbers again afterwards —
+// and the cooldown's refusal says the same thing from the other side.
+//
+// NO ARGUMENTS, deliberately. "Check the bank" is one instruction. A per-connection
+// version would need the door to hand out connection ids and then be told which one,
+// which is a choice nobody asking the question has any way to make.
+//
+// NO UNDO, and that is a decision rather than an omission: see requestBankRefresh in
+// dbFinance.ts. There is no before-state — you cannot un-ask a bank — and a token that
+// looked like it could reverse this would be the door promising what it cannot do.
+const refreshBank: Tool = {
+  kind: "direct",
+  does: "Ask the bank for anything new. It is not instant — the scheduled job carries it out.",
+  fields: [],
+  async run(_payload, ctx) {
+    const db = ctx.db as FinanceDb;
+
+    let conns: { id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[];
+    try {
+      conns = await db.bankSyncTimes();
+    } catch (e) {
+      // The one shape worth naming: the column does not exist yet, because
+      // schema_v39 has not been run. Anything else is a real failure and is left to
+      // the handler's 500 — a door that answered "not set up" to every database
+      // error would hide an outage behind a setup instruction.
+      const msg = String((e as Error)?.message ?? e);
+      if (/refresh_requested_at/.test(msg)) {
+        return refuse(
+          503,
+          "I cannot ask for a bank refresh yet: the database is missing the column that records the " +
+            "request (schema_v39_bank_refresh.sql has not been run). The scheduled pull is what keeps " +
+            "the numbers current anyway — read them and say when they were last synced.",
+        );
+      }
+      throw e;
+    }
+
+    // The window, and the sentence that goes with it, both come from the shared
+    // module the read door's stamp uses. One definition of "too soon", one place it
+    // is explained — the same reason the two doors share one clock and one cleaner.
+    const decision = refreshDecision(conns, ctx.at);
+    if (!decision.allowed) {
+      // 429 when it is the cooldown, 404 when there is no bank at all. Both are
+      // refusals the assistant should repeat rather than retry, and the `says`
+      // sentence is what it repeats.
+      return refuse(conns.length === 0 ? 404 : 429, decision.says);
+    }
+
+    const touched = await db.requestBankRefresh(ctx.at.toISOString());
+    if (touched === 0) {
+      return refuse(
+        503,
+        "I could not write the refresh request down, so nothing was asked for. Try again, and check " +
+          "the app if it keeps happening.",
+      );
+    }
+
+    return {
+      ok: true,
+      // No connection ids, no bank names: the caller does not need them and
+      // finance.bank_status is the tool that names a connection.
+      result: { connections_asked: touched, instant: false, arrives_within_minutes: REFRESH_TICK_MIN },
+      // rowIds stays empty. These rows are not a change anybody can look up later,
+      // and the audit row already records that the call happened.
+      rowIds: [],
+      say: decision.says,
+    };
+  },
+};
+
 export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
+  "finance.refresh_bank": refreshBank,
   "finance.add_transaction": addTransaction,
   "finance.delete_charge": deleteCharge,
   "finance.categorize_charge": categorizeCharge,

@@ -51,6 +51,22 @@ export interface BankConnection {
   lastSyncAt: string | null;
   lastError: string | null;
   consecutiveFailures: number;
+  /**
+   * When a fresh pull was last ASKED for, or null.
+   *
+   * It is a request, not a result: outstanding while it is newer than `lastSyncAt`,
+   * and retired by a sync landing past it rather than by anything clearing it.
+   * supabase/schema_v39_bank_refresh.sql is where that column and the job that
+   * honours it are written down.
+   *
+   * WORKS BEFORE THE COLUMN EXISTS, deliberately. The read is `select("*")`, so on a
+   * database where schema_v39 has not been run the key is simply not in the row,
+   * `optStr` turns the missing value into null, and the freshness stamp reports
+   * nothing outstanding — which is the truth there, because nothing can be asked for
+   * yet. A door that needed a migration to answer at all would be a door that stops
+   * answering the moment the code and the database get out of step.
+   */
+  refreshRequestedAt: string | null;
 }
 
 export interface FinanceExtras {
@@ -111,6 +127,7 @@ export function createFinanceExtras(db: Db): FinanceExtras {
         lastSyncAt: optStr(r.last_sync_at),
         lastError: optStr(r.last_error),
         consecutiveFailures: num(r.consecutive_failures),
+        refreshRequestedAt: optStr(r.refresh_requested_at),
       }),
     );
   });
