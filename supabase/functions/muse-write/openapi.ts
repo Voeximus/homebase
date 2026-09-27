@@ -17,7 +17,21 @@ import { numberWord, toolLines } from "../_shared/muse/catalogue.ts";
 import { REPEAT_LIMITS } from "../_shared/muse/reminders.ts";
 import { GATED } from "./gated.ts";
 
-export function openapi(url: URL): Record<string, unknown> {
+/**
+ * @param baseUrl this door's own public address, e.g.
+ *   `https://<project>.supabase.co/functions/v1/muse-write`.
+ *
+ * A STRING BUILT FROM THE PROJECT URL, never the incoming request. This used to take
+ * the request's `URL` and build `servers` out of `url.origin` + `url.pathname`, and
+ * that is the difference between the door a connector screen accepted and the door it
+ * refused. Behind Supabase's proxy the request arrives as `http://` with
+ * `/functions/v1` already stripped, so the document advertised
+ * `http://<project>.supabase.co/muse-write` — wrong scheme, missing prefix, 404 for
+ * anything that followed it. The read door has always been handed an env-derived
+ * string here, its screen worked on the first try, and this one failed four times
+ * while every hand-made call to the same door with the same key returned 200.
+ */
+export function openapi(baseUrl: string): Record<string, unknown> {
   const names = TOOL_NAMES;
   // Both the lines and the count come out of catalogue.ts, off the same normalised
   // list the read door's document and API.md's headings are checked against. The
@@ -71,12 +85,28 @@ export function openapi(url: URL): Record<string, unknown> {
         ...GATED.map((g) => `  - ${g.name}: ${g.why}`),
       ].join("\n"),
     },
-    servers: [{ url: `${url.origin}${url.pathname.replace(/\/openapi\.json$/, "")}` }],
+    servers: [{ url: baseUrl }],
+    // WHERE THE KEY GOES, declared. The read door has carried these two schemes from
+    // the start; this door carried none at all, which leaves a setup screen reading
+    // the document with nowhere to put the secret — and a screen that cannot place
+    // the key calls unauthenticated, gets the 401 it earned, and reports "check your
+    // API key". The door itself accepts four header spellings (see _shared/muse/
+    // auth.ts), but what is advertised here is deliberately the read door's exact
+    // pair, in its order: that document is the one known to have been accepted, so
+    // this is a copy of a measurement rather than a superset nobody has tried.
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: "http", scheme: "bearer" },
+        museToken: { type: "apiKey", in: "header", name: "X-Muse-Token" },
+      },
+    },
+    security: [{ bearerAuth: [] }, { museToken: [] }],
     paths: {
       "/": {
         post: {
           operationId: "museWrite",
           summary: "Run one write tool.",
+          security: [{ bearerAuth: [] }, { museToken: [] }],
           parameters: [
             {
               name: "Idempotency-Key",

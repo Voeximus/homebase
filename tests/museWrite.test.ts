@@ -22,6 +22,7 @@ import { REPEAT_LIMITS } from "../supabase/functions/_shared/muse/reminders.ts";
 import { callerOf, MIN_SECRET_LENGTH } from "../supabase/functions/_shared/muse/auth.ts";
 import { MAX_BODY_BYTES } from "../supabase/functions/_shared/muse/body.ts";
 import { REMIND_PER_DAY, TOOL_BY_NAME, TOOL_NAMES } from "../supabase/functions/muse-write/tools.ts";
+import { openapi } from "../supabase/functions/muse-write/openapi.ts";
 import { FINANCE_WRITE_TOOLS } from "../supabase/functions/muse-write/toolsFinance.ts";
 // The READ door's registry, for the one claim that spans both: a write refusal that
 // tells the caller where to get an id is only true if that read tool exists.
@@ -1889,5 +1890,52 @@ describe("repeating reminders are only what they say they are", () => {
     expect(joined).toMatch(/no end date and no count/i);
     const md = readFileSync("docs/research/muse-bridge/API.md", "utf8");
     for (const line of REPEAT_LIMITS) expect(md, "API.md is missing a repeat limit").toContain(line);
+  });
+});
+
+// The document the setup screen reads.
+//
+// These exist because of a four-times-refused connector screen whose every refusal
+// said "check your API key" while the key was fine. The read door's screen worked
+// first time. The two documents differed in exactly two ways, and both are the kind
+// of wrong that a human reading the JSON does not notice.
+describe("the write door's own description", () => {
+  const BASE = "https://example.supabase.co/functions/v1/muse-write";
+  const doc = () => openapi(BASE) as Record<string, any>;
+
+  it("advertises the address it was given, not the one the proxy rewrote", () => {
+    // The old code built this from the incoming request. Behind Supabase's proxy that
+    // is `http://<project>.supabase.co/muse-write` — the scheme downgraded and
+    // `/functions/v1` gone — so a screen that reads `servers` and then calls it gets
+    // a 404 and blames the key. The read door has always been handed a string.
+    expect(doc().servers).toEqual([{ url: BASE }]);
+    const url = String(doc().servers[0].url);
+    expect(url.startsWith("https://"), "a downgraded scheme is the bug this caught").toBe(true);
+    expect(url).toContain("/functions/v1/muse-write");
+  });
+
+  it("says where the key goes, in the same two schemes the read door uses", () => {
+    // A document with no securitySchemes leaves a setup screen nowhere to put the
+    // secret: it calls unauthenticated, earns a 401, and reports a bad key. The door
+    // accepts four header spellings; what is ADVERTISED is deliberately the read
+    // door's exact pair, because that document is the one known to be accepted.
+    const schemes = doc().components?.securitySchemes ?? {};
+    expect(schemes.bearerAuth).toEqual({ type: "http", scheme: "bearer" });
+    expect(schemes.museToken).toEqual({ type: "apiKey", in: "header", name: "X-Muse-Token" });
+    expect(doc().security).toEqual([{ bearerAuth: [] }, { museToken: [] }]);
+    // On the operation too. A screen that looks at the one path rather than the root
+    // finds the same answer instead of no answer.
+    expect(doc().paths["/"].post.security).toEqual([{ bearerAuth: [] }, { museToken: [] }]);
+  });
+
+  it("names a scheme for every security requirement it states", () => {
+    // The failure this blocks is a rename: `security` pointing at a scheme that
+    // components no longer defines is an invalid document, and an invalid document
+    // fails the screen the same silent way a missing one does.
+    const defined = Object.keys(doc().components?.securitySchemes ?? {});
+    const required = [...(doc().security ?? []), ...(doc().paths["/"].post.security ?? [])];
+    for (const req of required) {
+      for (const name of Object.keys(req)) expect(defined, `${name} is required but not defined`).toContain(name);
+    }
   });
 });

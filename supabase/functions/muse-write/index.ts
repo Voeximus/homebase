@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
         headers: JSON_HEADERS,
       });
     }
-    return new Response(JSON.stringify(openapi(url), null, 2), { headers: JSON_HEADERS });
+    return new Response(JSON.stringify(openapi(BASE_URL), null, 2), { headers: JSON_HEADERS });
   }
 
   // A connector setup screen proves a key works by fetching the door itself, with
