@@ -696,6 +696,40 @@ stale without making them look stale.
 ledger** — that is what stops them being counted twice when they post. The amount is
 signed the way the bank reports it: negative is money going out.
 
+### `finance.run_rate`
+
+**What do we actually net in a month?** Takes an empty body.
+
+This exists because that question got three different answers in one conversation —
+a "$780/month deficit", then "roughly break-even", then "+$400" — and none of them was
+an arithmetic mistake. All three were correct sums of the wrong rows.
+
+What it puts right:
+
+- **Whole months only.** A part-month carries a full rent and part of an income, so it
+  always reads as a disaster.
+- **Transfers and debt payments are not spending.** Moving cash to a card does not make
+  the household poorer. About $850 a month was being counted as consumption.
+- **A card payment is not income.** Both cards are synced, so one payment appears twice
+  — leaving checking and arriving at the card. A single $2,500 payment inflated one
+  month's income *and* its spending by $2,500 at once.
+- **One-offs are separated, never deleted.** A $1,250 car down payment made an ordinary
+  month look like a $1,225 loss. Each month reports `net` and `net_without_one_offs`,
+  and the one-offs are listed by name.
+
+**Two figures, both true, answering different questions — say which you mean.**
+`net_worth_per_month` is earned minus spent: paying a card down does not appear in it,
+because cancelling debt with cash makes nobody poorer. `cash_per_month` is what
+actually moved through the checking accounts, and it is the one a bank statement can
+be checked against. On this household they differ by roughly five to one, and quoting
+either alone under the name "what we net" is how the same question got three answers.
+
+Also returns the month-by-month breakdown and `excluded` — **every row left out, with
+the rule that excluded it.** That last part is the point: a number that shows its
+inputs can be wrong out loud. Its first live run reported rent as a one-off, because
+the bank writes a fresh reference into every descriptor; that was visible in seconds
+rather than believed for weeks.
+
 ### `system.heartbeat`
 
 **Is anything broken?** Not the same question as `finance.audit`, and the difference

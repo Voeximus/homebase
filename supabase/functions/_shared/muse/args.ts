@@ -32,8 +32,18 @@ export interface ToolContext {
   /** Forced from the secret. Never read from the request body — see the ARGS note
    *  in tools.ts. */
   person: "gino" | "xinyan";
-  /** The Arizona "now", built once per request. The door's only clock reading. */
+  /** The Arizona "now", built once per request. The door's only clock reading.
+   *
+   *  CALENDAR ONLY. Its LOCAL fields are Arizona's, so its epoch value is off by the
+   *  runtime's offset — seven hours where these run. Subtract a stored timestamptz
+   *  from it and every answer is seven hours wrong in the same direction, which is
+   *  not hypothetical: system.heartbeat shipped reporting a job that had finished
+   *  thirteen minutes earlier as "-406 minutes ago". For "how long ago", use `at`. */
   now: Date;
+  /** The real instant on the wire, from the SAME reading as `now`. The handler has
+   *  always built both — see clockNow — and only `now` used to be handed down, which
+   *  left a tool wanting elapsed time no honest way to get it. */
+  at: Date;
   load: Loader;
   args: Record<string, unknown>;
 }

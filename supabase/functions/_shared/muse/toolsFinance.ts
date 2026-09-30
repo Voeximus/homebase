@@ -50,7 +50,8 @@
 // does not, so there is still nothing to check a spoken number against. That is a
 // decision, not an oversight, and it keeps its entry in ABSENT.
 
-import { azDateISO, nowAZ} from "./az.ts";
+import { runRate } from "./lib/runRate.ts";
+import { azDateISO, minutesSince } from "./az.ts";
 import { heartbeat, REMINDER_STUCK_MIN } from "./heartbeat.ts";
 import {
   BadArgs,
@@ -660,7 +661,7 @@ const systemChanges: Tool = {
 const systemHeartbeat: Tool = {
   name: "system.heartbeat",
   summary: "Is everything that should be running, running? Checks the unattended jobs, the bank feed and whether reminders can still reach a phone.",
-  async run({ load, now }) {
+  async run({ load, now, at }) {
     const [runs, conns, targets, data, gino, xin] = await Promise.all([
       load.jobRuns(),
       load.bankConnections(),
@@ -678,8 +679,13 @@ const systemHeartbeat: Tool = {
     // earlier. Passing each stored instant through the same shift makes the
     // difference honest, and it still reads no clock: nowAZ is pure and `now` is the
     // one reading the handler took.
-    const minutesSince = (iso: string | null): number | null =>
-      iso ? (now.getTime() - nowAZ(new Date(iso)).getTime()) / 60000 : null;
+    // az.ts owns every instant comparison — the door's clock guard allows time
+    // handling there and nowhere else, and it was right to refuse this even though
+    // the code was parsing a stored string rather than reading a clock.
+    // `at`, the real instant — never `now`, whose epoch is seven hours out because
+    // its local fields hold Arizona. az.ts has owned this comparison all along; the
+    // instant simply was not being handed to tools until now.
+    const since = (iso: string | null): number | null => minutesSince(iso, at);
 
     // The schedule each job actually runs on. Written here rather than read from
     // cron.job for the same reason as everything else in this tool: that table is
@@ -705,7 +711,7 @@ const systemHeartbeat: Tool = {
       }, 0);
       return {
         job,
-        minutesSinceFinish: minutesSince(newest?.finishedAt ?? null),
+        minutesSinceFinish: since(newest?.finishedAt ?? null),
         everyMinutes,
         lastOk: newest ? newest.ok : null,
         reachedNobody,
@@ -718,7 +724,7 @@ const systemHeartbeat: Tool = {
       : null;
 
     const stuck = [...gino, ...xin].filter(
-      (r) => !r.sentAt && !r.canceledAt && (minutesSince(r.dueAt) ?? 0) > REMINDER_STUCK_MIN,
+      (r) => !r.sentAt && !r.canceledAt && (since(r.dueAt) ?? 0) > REMINDER_STUCK_MIN,
     ).length;
 
     const result = heartbeat({
@@ -727,7 +733,7 @@ const systemHeartbeat: Tool = {
         owner: c.owner,
         institution: c.institution,
         status: c.status,
-        minutesSinceSync: minutesSince(c.lastSyncAt),
+        minutesSinceSync: since(c.lastSyncAt),
         consecutiveFailures: c.consecutiveFailures,
       })),
       quietDays,
@@ -739,9 +745,59 @@ const systemHeartbeat: Tool = {
       clean: result.clean,
       alarms: result.alarms,
       unknown: result.unknown,
-      checks: result.checks,
+      // Mapped field by field rather than handed over whole. A door reply is Json,
+      // and spreading a typed object through it is how a field nobody meant to
+      // publish gets published the day someone adds one to the interface.
+      checks: result.checks.map((c) => ({ id: c.id, question: c.question, status: c.status, says: c.says })),
       note:
         "This is not finance.audit. That one asks whether the numbers agree with each other, and it keeps passing while the feed that supplies them is dead. This asks whether anything is still arriving.",
+    };
+  },
+};
+
+// ── finance.run_rate ──────────────────────────────────────────────────────────
+//
+// "What do we actually net in a month?" — and this tool exists because that question
+// was answered three different ways in one conversation, none of them an arithmetic
+// error and all of them a correct sum of the wrong rows: a $1,250 car down payment
+// sitting inside a monthly total, ~$850/month of card and loan payments counted as
+// spending, and worst, every card payment counted TWICE because both cards are synced
+// so one payment appears leaving checking and arriving at the card.
+//
+// THE REPLY CARRIES WHAT IT LEFT OUT. That is the point of it, not a debugging extra.
+// Each of those three failures survived being read aloud more than once because the
+// number arrived without its inputs. `excluded` names every row and the rule that
+// excluded it, so a wrong answer is visible rather than plausible.
+/** One excluded charge, as Json. Field by field, for the reason above. */
+const sayRow = (r: { date: string; amount: number; description: string; why: string }) => ({
+  date: r.date,
+  amount: r.amount,
+  description: r.description,
+  why: r.why,
+});
+
+const financeRunRate: Tool = {
+  name: "finance.run_rate",
+  summary: "What the household actually nets per month, with transfers and debt payments taken out and every excluded charge named.",
+  async run({ load, now }) {
+    const data = await load.appData();
+    const r = runRate(data.transactions, data.accounts, azDateISO(now));
+    return {
+      net_worth_per_month: r.perMonth,
+      cash_per_month: r.cashPerMonth,
+      months_counted: r.monthsCounted,
+      months: r.months.map((m) => ({
+        month: m.month,
+        earned: m.earned,
+        spent: m.spent,
+        net: m.net,
+        net_without_one_offs: m.netOngoing,
+        cash_change: m.cashChange,
+        one_offs: m.oneOffs.map(sayRow),
+      })),
+      excluded: r.excluded.map((e) => ({ flow: e.flow, total: e.total, rows: e.rows.map(sayRow) })),
+      note:
+        "TWO FIGURES, BOTH TRUE, AND THEY ANSWER DIFFERENT QUESTIONS. net_worth_per_month is earned minus spent — paying a card down does not appear in it, because cancelling debt with cash makes nobody poorer. cash_per_month is what actually moved through the checking accounts, which is the one a bank statement can be checked against. Say which one you mean. Both are the average of WHOLE months only — the current month is left out because a part-month carries a full rent and part of an income. Transfers between their own accounts and payments to their own cards or lenders are not spending: they move money that is already theirs. Every row left out is in `excluded` with the rule that excluded it, so this can be checked rather than believed.",
     };
   },
 };
@@ -759,4 +815,5 @@ export const FINANCE_TOOLS: readonly Tool[] = [
   financeBankPending,
   systemChanges,
   systemHeartbeat,
+  financeRunRate,
 ];

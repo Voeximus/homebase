@@ -434,7 +434,7 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
     // loader the tool just used. finance.bank_status therefore still costs one read
     // of that table, not two.
     const load = createLoader(deps.db);
-    const result = await tool.run({ person, now, args, load });
+    const result = await tool.run({ person, now, at: instant, args, load });
     // THE STAMP GOES ON EVERY ANSWER, and this is the only place it is applied —
     // there is exactly one success path out of this door, so there is exactly one
     // place a reply can leave without it. `fresh` is spread LAST on purpose: it is

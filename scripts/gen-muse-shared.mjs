@@ -82,6 +82,15 @@ const MODULES = [
   // removing sets, and what Finish keeps. The write door logs and edits sets, so
   // it has to use these rather than its own spelling of them.
   "src/lib/sessionOps.ts",
+  // What KIND of movement each row is, and what the household actually nets in a
+  // month. These two exist because "what do we net" was answered three different
+  // ways in one conversation, every answer a correct sum of the wrong rows — a car
+  // down payment inside a monthly total, card payments counted as spending, and
+  // worst, every card payment counted TWICE because both cards are synced. They are
+  // copied here for the same reason everything else is: the door must not hold its
+  // own spelling of the arithmetic.
+  "src/lib/flow.ts",
+  "src/lib/runRate.ts",
 ];
 
 /** Deno needs the file extension, and this folder is FLAT, so every relative
