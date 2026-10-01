@@ -74,8 +74,16 @@ export const UNDO_COLUMNS: Record<UndoTable, readonly string[]> = {
     "splits",
     "applies_to",
     "anomaly_ack",
+    // What a person says a row IS — earned, spent, moved, repaid, returned —
+    // overruling src/lib/flow.ts. Undoable like everything else: setting it back to
+    // null restores the derived answer, which is why only corrections are stored.
+    "flow_override",
   ],
-  recurring: ["amount", "known_amount", "variable", "active", "starts_on", "ends_on"],
+  // `account_id` is which account actually pays this bill. All nineteen were null,
+  // which is how "nothing is due" was true while the joint account was $1,023 short
+  // of rent — the household was being treated as one wallet because the data said
+  // nothing about three.
+  recurring: ["amount", "known_amount", "variable", "active", "starts_on", "ends_on", "account_id"],
   accounts: ["balance"],
   debts: ["provider_account_id", "balance"],
   paid_bills: ["paid"],

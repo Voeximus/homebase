@@ -71,6 +71,10 @@ export interface Transaction {
   account?: string;
   accountId?: string; // which account this hit
   appliesTo?: AppliesTo; // what this entry satisfies (bill / debt / goal / …)
+  // What a PERSON says this row is, overruling src/lib/flow.ts. Absent is the normal
+  // case and means the derived answer stands. Only the corrections are stored: a
+  // stored derivation is a cache, and a cache drifts away from the rule that made it.
+  flowOverride?: "earned" | "spent" | "moved" | "repaid" | "returned";
   // When present, the amount is allocated across these categories instead of the
   // single categoryId. Category totals/budgets read these; cash + the row stay one.
   splits?: TxnSplit[];

@@ -59,6 +59,9 @@ export function toTransaction(r: DbRow): Transaction {
     account: opt(r.account),
     accountId: opt(r.account_id),
     appliesTo: (r.applies_to ?? undefined) as Transaction["appliesTo"],
+    // Carried through so flow.ts can honour a correction somebody made by hand.
+    // Without it the door would re-derive a verdict a person has already overruled.
+    flowOverride: (r.flow_override ?? undefined) as Transaction["flowOverride"],
     splits: Array.isArray(r.splits) && r.splits.length ? (r.splits as Transaction["splits"]) : undefined,
     anomalyAck: !!r.anomaly_ack,
     pending: r.status === "pending",

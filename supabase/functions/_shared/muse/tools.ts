@@ -601,7 +601,44 @@ const financeNextBills: Tool = {
         // The amount is a rolling average of real payments, not a contracted figure.
         estimate: b.variable,
       })),
-      note: "The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills.",
+      // ── PER ACCOUNT, AND THIS IS THE POINT ─────────────────────────────────
+      // A household total can be true and still hide the thing that matters. This
+      // tool once answered "$0 due" — correctly — while the JOINT account held
+      // $703.73 against rent of $1,726.88 due in two days. The money existed; it was
+      // in the wrong account, and nothing here could see that because every bill's
+      // paying account was null.
+      //
+      // `unassigned` is reported rather than folded into a total, because a bill
+      // nobody has placed is a gap in the answer and should look like one.
+      by_account: (() => {
+        const byId = new Map(data.accounts.map((a) => [a.id, a]));
+        const buckets = new Map<string, { owner: string; account: string; due: number; count: number }>();
+        for (const b of bills) {
+          const rec = data.recurring.find((r) => r.id === b.recurringId);
+          const acct = rec?.accountId ? byId.get(rec.accountId) : undefined;
+          const key = acct?.id ?? "unassigned";
+          const row = buckets.get(key) ?? {
+            owner: acct ? scrubOr(acct.owner, "someone") : "nobody has said",
+            account: acct ? scrubOr(acct.name, "an account") : "no account set",
+            due: 0,
+            count: 0,
+          };
+          row.due += b.amount;
+          row.count += 1;
+          buckets.set(key, row);
+        }
+        return [...buckets.entries()].map(([id, r]) => ({
+          account: id === "unassigned" ? null : id,
+          owner: r.owner,
+          name: r.account,
+          // What that account actually holds, beside what is being asked of it. The
+          // two numbers together are the thing a household total cannot say.
+          balance: id === "unassigned" ? null : money(byId.get(id)?.balance ?? 0),
+          due: money(r.due),
+          count: r.count,
+        }));
+      })(),
+      note: "The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later.",
     };
   },
 };

@@ -177,6 +177,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         description: str(data.description),
         accountId: optStr(data.account_id),
         appliesTo: (data.applies_to ?? null) as UndoValue,
+        flowOverride: optStr(data.flow_override),
         splits: (data.splits ?? null) as UndoValue,
         anomalyAck: !!data.anomaly_ack,
         needsReview: !!data.needs_review,
@@ -211,6 +212,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         startsOn: optStr(data.starts_on),
         endsOn: optStr(data.ends_on),
         linkedDebtId: optStr(data.linked_debt_id),
+        accountId: optStr(data.account_id),
       };
       return row;
     },
@@ -218,7 +220,11 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async readAccount(id) {
       const { data, error } = await admin
         .from("accounts")
-        .select("id, name, balance, provider_account_id, last4")
+        // `owner` is load-bearing, not decoration: TWO accounts here are both called
+        // "Adv SafeBalance Banking" — Xinyan's and the joint one — so a sentence
+        // naming only the account does not say which. Pinning a bill to the wrong
+        // one of those is exactly the mistake that hid a rent shortfall.
+        .select("id, name, owner, balance, provider_account_id, last4")
         .eq("id", id)
         .maybeSingle();
       must(error, "read accounts");
@@ -228,6 +234,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         name: str(data.name),
         balance: num(data.balance),
         providerAccountId: optStr(data.provider_account_id),
+        owner: str(data.owner),
         last4: optStr(data.last4),
       };
       return row;
@@ -322,6 +329,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
           id: str(r.id),
           type: r.type === "income" ? "income" : "expense",
           appliesTo: (r.applies_to ?? null) as UndoValue,
+          flowOverride: optStr(r.flow_override),
         }),
       );
       if (count !== null && count !== rows.length) {

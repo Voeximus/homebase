@@ -877,6 +877,112 @@ const setBillAmount: Tool = {
   },
 };
 
+// ── finance.set_flow ─────────────────────────────────────────────────────────
+//
+// What a row IS, when the app has worked it out wrong.
+//
+// src/lib/flow.ts classifies every transaction on every read — earned, spent, moved,
+// repaid, returned — from the household's own accounts. It is right nearly always and
+// it carries its reasoning, so when it is wrong the wrong line is visible. This is how
+// that gets corrected, and the correction is the ONLY thing stored: null means the
+// derived answer stands.
+//
+// WHY IT MATTERS MORE THAN A CATEGORY. A category decides which budget line a charge
+// lands in. This decides whether it counts AT ALL. Both cards are synced, so a card
+// payment appears twice — leaving checking and arriving at the card — and getting that
+// wrong inflated one month's income and its spending by $2,500 each.
+const setFlow: Tool = {
+  kind: "direct",
+  does: "Say what a charge really is — spending, money in, a transfer between our own accounts, a debt payment, or money coming back. Overrules what the app worked out.",
+  fields: ["transaction_id", "flow"],
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const id = idArg(payload.transaction_id, "the charge");
+    if (isRefusal(id)) return id;
+    const t = await db.readCharge(id);
+    if (!t) return refuse(404, "There is no charge with that id.");
+
+    const raw = payload.flow;
+    // "clear" is spelled out rather than accepting null, because an omitted field and
+    // a field meaning "undo my correction" must not be the same request.
+    const asked = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    const ALLOWED = ["earned", "spent", "moved", "repaid", "returned", "clear"];
+    if (!ALLOWED.includes(asked)) {
+      return refuse(400, `flow is one of: ${ALLOWED.join(", ")}. "clear" puts it back to what the app works out itself.`);
+    }
+    const next = asked === "clear" ? null : asked;
+    if ((t.flowOverride ?? null) === next) {
+      return refuse(409, next === null ? "That charge has no correction on it already." : `That charge is already set to ${next}.`);
+    }
+
+    const said = scrubCap(t.description, 36) || "that charge";
+    const says = next === null
+      ? `Cleared the correction on the ${dollars(t.amount)} ${said} from ${t.date}. The app works it out again now.`
+      : `Recorded that the ${dollars(t.amount)} ${said} from ${t.date} is ${WHAT_IT_MEANS[next]}.`;
+    return oneRow(
+      ctx,
+      "finance.set_flow",
+      { table: "transactions", id: t.id },
+      { flow_override: next },
+      { flow_override: t.flowOverride ?? null },
+      says,
+      { column: "flow_override", was: t.flowOverride ?? null },
+    );
+  },
+};
+
+/** Said out loud, because "repaid" is jargon and "a payment towards a debt" is not. */
+const WHAT_IT_MEANS: Record<string, string> = {
+  earned: "money coming into the house from outside",
+  spent: "real spending",
+  moved: "a transfer between our own accounts, so it counts as neither",
+  repaid: "a payment towards a debt, which moves money rather than spends it",
+  returned: "money coming back for something already counted",
+};
+
+// ── finance.set_bill_account ─────────────────────────────────────────────────
+//
+// Which account actually pays this bill.
+//
+// ALL NINETEEN WERE NULL, and that is not untidiness. "What is due before your next
+// check" answered $0 and was right — while the joint account held $703.73 against rent
+// of $1,726.88 due in two days. The household was being treated as one wallet because
+// the data said nothing about three, and a shortfall in the account rent comes out of
+// was invisible in a correct household total.
+const setBillAccount: Tool = {
+  kind: "direct",
+  does: "Say which account a bill is paid from, so what is due can be read per account instead of as one household total.",
+  fields: ["bill_id", "account_id"],
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const id = idArg(payload.bill_id, "the bill");
+    if (isRefusal(id)) return id;
+    const bill = await db.readBill(id);
+    if (!bill) return refuse(404, "There is no bill with that id.");
+
+    const acctId = idArg(payload.account_id, "the account");
+    if (isRefusal(acctId)) return acctId;
+    const account = await db.readAccount(acctId);
+    // Checked against the real list rather than trusted: an id that is not an account
+    // would leave the bill pointing at nothing, which is the orphan the app's own
+    // links-point-somewhere check exists to catch.
+    if (!account) return refuse(404, "There is no account with that id.");
+
+    if ((bill.accountId ?? null) === acctId) {
+      return refuse(409, `${scrubCap(bill.name, 36)} is already set to come out of ${scrubCap(account.name, 30)}.`);
+    }
+    return oneRow(
+      ctx,
+      "finance.set_bill_account",
+      { table: "recurring", id: bill.id },
+      { account_id: acctId },
+      { account_id: bill.accountId ?? null },
+      `${scrubCap(bill.name, 36)} comes out of ${scrubCap(account.owner, 12)}'s ${scrubCap(account.name, 30)}.`,
+      { column: "account_id", was: bill.accountId ?? null },
+    );
+  },
+};
+
 // ── finance.turn_bill_off ────────────────────────────────────────────────────
 //
 // NEVER A DELETE, and that is not this tool being careful — it is the app's rule
@@ -1833,6 +1939,8 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.promote_to_bill": promoteToBill,
   "finance.set_bill_variable": setBillVariable,
   "finance.set_bill_amount": setBillAmount,
+  "finance.set_flow": setFlow,
+  "finance.set_bill_account": setBillAccount,
   "finance.turn_bill_off": turnBillOff,
   "finance.set_bill_window": setBillWindow,
   "finance.add_bill": addBill,

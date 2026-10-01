@@ -104,6 +104,16 @@ const digitRuns = (s: string): string[] => s.match(/\d{4}/g) ?? [];
  * link is somebody's decision. Inference only fills the silence.
  */
 export function flowOf(txn: Transaction, own: OwnAccounts): FlowVerdict {
+  // ── 0. what a person said, which beats everything below ─────────────────────
+  // The rules after this are inference from a bank's prose. This is somebody who
+  // looked at the answer and said no. It is stored (transactions.flow_override) and
+  // the derivation is not, deliberately: a stored derivation is a cache and caches
+  // drift, so only the corrections live in the database and everything else is
+  // worked out fresh every read.
+  if (txn.flowOverride) {
+    return { flow: txn.flowOverride, why: "set by hand — this overrules what the app would work out" };
+  }
+
   const applies = (txn.appliesTo ?? null) as { kind?: string } | null;
   const kind = applies?.kind;
 

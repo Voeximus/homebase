@@ -57,6 +57,9 @@ export interface ChargeRow {
   description: string;
   accountId: string | null;
   appliesTo: UndoValue;
+  /** What a person said this row IS, overruling src/lib/flow.ts, or null when the
+   *  derived answer stands — which is the normal case. */
+  flowOverride: string | null;
   splits: UndoValue;
   anomalyAck: boolean;
   needsReview: boolean;
@@ -85,6 +88,10 @@ export interface BillRow {
   startsOn: string | null;
   endsOn: string | null;
   linkedDebtId: string | null;
+  /** Which account this bill is paid from, or null while nobody has said. All
+   *  nineteen were null, which is how "nothing is due" was true while the joint
+   *  account was short of rent. */
+  accountId: string | null;
 }
 
 /** Just enough of a bill to run the three guards that compare names. */
@@ -106,6 +113,9 @@ export interface BillPaymentRow {
 export interface AccountRow {
   id: string;
   name: string;
+  /** Whose account it is — said out loud when a bill is pinned to one, because
+   *  "Adv SafeBalance Banking" alone does not tell anybody whose it is. */
+  owner: string;
   balance: number;
   providerAccountId: string | null;
   last4: string | null;
