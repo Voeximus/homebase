@@ -585,6 +585,29 @@ const financeNextBills: Tool = {
     // negative is money going out. Transaction.amount is always positive and carries
     // its direction in `type`, so the sign is put back here rather than inside the
     // matcher, where it would be one more thing to get wrong.
+    // ── AND THE CHARGE THAT HAS ALREADY POSTED ──────────────────────────────
+    // `paying_now` below only sees a charge while it is PENDING, which is a window of
+    // a day or three. The moment the bank posts it the cover vanishes and this tool
+    // goes back to the word "overdue" — the same wrong answer, just later. Rent posts
+    // two days after it is paid and stays unlinked until somebody links it.
+    //
+    // So the posted case is answered by the rule that already exists. W7 in
+    // ledgerReview.ts offers a charge that looks like a bill nobody linked, and it is
+    // already gated hard: the account arm's first version produced five suggestions,
+    // all five false (99 Ranch Market against Grok AI), which is why it now demands
+    // 1% on the amount and 3 days from the due day and DROPS a charge that fits two
+    // bills rather than picking. A third spelling of bill-to-charge matching in this
+    // file would drift from both of the two that exist.
+    const unlinkedHits = new Map<string, { id: string; date: string; amount: number }>();
+    for (const sug of reviewLedger(data, now, new Set<string>())) {
+      if (sug.rule !== "W7") continue;
+      const rid = sug.evidence.recurringId;
+      const mk = sug.evidence.monthKey;
+      const txId = sug.evidence.txnIds[0];
+      const tx = txId ? data.transactions.find((t) => t.id === txId) : undefined;
+      if (rid && mk && tx) unlinkedHits.set(`${rid}|${mk}`, { id: tx.id, date: tx.date, amount: tx.amount });
+    }
+
     const pendingNow = data.transactions
       .filter((t) => t.pending)
       .map((t) => ({
@@ -640,6 +663,26 @@ const financeNextBills: Tool = {
           );
           return cover ? { amount: money(cover.amount), on: cover.date, why: cover.why } : null;
         })(),
+        // ── ALREADY LEFT THE ACCOUNT, JUST NOT TIED TO THE BILL ───────────────
+        // Deliberately a DIFFERENT field from paying_now and a weaker claim than it.
+        // A pending charge is a payment in flight. This is money that has already
+        // gone — stronger evidence the bill is settled, and still not proof: it can
+        // be a genuine second purchase at the same merchant for the same amount,
+        // which is W7's own "CAN BE WRONG".
+        //
+        // It carries the charge id, so the answer can offer to fix itself with
+        // finance.link_charge_to_bill rather than only describing the problem.
+        maybe_already_paid: (() => {
+          const hit = b.recurringId ? unlinkedHits.get(`${b.recurringId}|${b.due.slice(0, 7)}`) : undefined;
+          return hit
+            ? {
+                charge: hit.id,
+                amount: money(hit.amount),
+                on: hit.date,
+                why: "a charge on this bill's own account, for this amount, in this cycle, that nothing has tied to the bill",
+              }
+            : null;
+        })(),
       })),
       // ── PER ACCOUNT, AND THIS IS THE POINT ─────────────────────────────────
       // A household total can be true and still hide the thing that matters. This
@@ -678,7 +721,7 @@ const financeNextBills: Tool = {
           count: r.count,
         }));
       })(),
-      note: "A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later.",
+      note: "OVERDUE MEANS NO CHARGE IS LINKED TO THIS CYCLE. It does not mean the money has not left — those are different facts and this tool only knows the first. Before saying anything is overdue, read `paying_now` and `maybe_already_paid`: the first is a payment still clearing, the second is money that has already gone out and was never tied to the bill. `maybe_already_paid` carries the charge id, so offer finance.link_charge_to_bill rather than telling him to pay it again. A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later.",
     };
   },
 };

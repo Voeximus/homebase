@@ -56,3 +56,40 @@ describe("coverFor", () => {
     expect(tolerance(1726.88)).toBeCloseTo(34.54, 2);
   });
 });
+
+// The gap pendingCover does NOT close, which the sweep found the same day.
+//
+// coverFor only sees a charge while it is PENDING — a window of a day or three. The
+// moment the bank posts it the cover vanishes and finance.next_bills says "overdue"
+// again: the same wrong answer, just later. Rent posts two days after it is paid and
+// stays unlinked until somebody links it, so the window always closes before the fix
+// does.
+//
+// The posted case is answered by W7 in ledgerReview.ts instead of by a third matcher
+// here. These tests pin the SPLIT so neither half quietly grows into the other.
+describe("the two halves of 'not actually overdue'", () => {
+  const RENT: DueLike = { name: "Rent", amount: 1726.88, due: "2026-10-01", accountId: "joint" };
+
+  it("stops seeing a charge the moment it stops being pending", () => {
+    // Not a bug in coverFor — it is handed only the pending rows, by design, because
+    // the app excludes pending money from every figure and this exists to explain
+    // that exclusion rather than to work around it.
+    const pendingRows: PendingLike[] = [
+      { date: "2026-10-02", amount: -1732.05, description: "ACH HOLD Nollie MA Rent", accountId: "joint" },
+    ];
+    expect(coverFor(RENT, pendingRows)).not.toBeNull();
+    // Once posted, the caller passes no pending rows for it at all.
+    expect(coverFor(RENT, [])).toBeNull();
+  });
+
+  it("keeps its own tolerance, which is looser than W7's and must stay separate", () => {
+    // pendingCover: 2% or $25, ±7 days — a payment in flight, matched generously
+    // because the alternative is telling him to pay rent twice.
+    // W7's account arm: 1%, ±3 days — a posted charge, matched strictly because
+    // offering a wrong link WRITES something.
+    //
+    // If these two ever become one number, one of the two jobs is being done wrong.
+    expect(tolerance(1726.88)).toBeCloseTo(34.54, 2);
+    expect(DAY_WINDOW).toBe(7);
+  });
+});

@@ -696,7 +696,7 @@ describe("Rule 1 — every number comes from the app's own function", () => {
     // A bill row, never a charge: no description, no merchant, no charge amount.
     for (const b of bills) {
       expect(Object.keys(b).sort()).toEqual(
-        ["amount", "bill", "due", "estimate", "name", "overdue", "paying_now"].sort(),
+        ["amount", "bill", "due", "estimate", "name", "overdue", "paying_now", "maybe_already_paid"].sort(),
       );
     }
   });
