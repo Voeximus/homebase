@@ -1148,6 +1148,16 @@ function reviewIncomeLanded(data: AppData, now: Date): Suggestion[] {
   return out;
 }
 
+/** How far off the amount may be when matching by ACCOUNT rather than by name.
+ *  1% — a bill paid from its own account is nearly exact. Rent drifts 0.30%; the
+ *  false positives that forced this gate were 20% to 50% out. */
+const ACCOUNT_ARM_TOLERANCE = 0.01;
+
+/** And how many days from the due day. A bill lands on its date; ordinary spending
+ *  that happens to cost the same does not. Eight days is what separated an H Mart
+ *  grocery run from Claude Pro. */
+const ACCOUNT_ARM_DAYS = 3;
+
 // ── W7 — a charge that matches a bill you already model ───────────────────────
 /**
  * This charge looks like a bill you model, and nothing connected the two. It is
@@ -1191,19 +1201,64 @@ function reviewUnlinked(
     monthKey: string;
     day: number;
     distance: number;
+    /** Matched on the merchant name rather than on the account. The name arm is the
+     *  strict one and keeps its answer when the account arm is ambiguous. */
+    byName: boolean;
   }
   const best = new Map<string, Hit>();
+  // How many bills each charge matched through the ACCOUNT arm below. A charge that
+  // fits two bills is dropped rather than assigned to the nearer one — see the note
+  // on that arm.
+  const accountMatches = new Map<string, number>();
 
   for (const tx of data.transactions) {
     if (tx.type !== "expense" || tx.appliesTo || tx.recordOnly) continue;
     if (!posted(tx) || !isFiniteAmount(tx.amount) || tx.amount <= 0) continue;
     if (!tx.date || tx.date < from) continue;
     const key = billKey(merchantKey(tx.description ?? ""));
-    if (!key) continue;
 
     for (const r of bills) {
-      if (billKey(r.name) !== key) continue;
+      // ── TWO WAYS TO MATCH, and the second only became possible on 2026-10-01 ──
+      //
+      // The NAME arm is unchanged and is still the strict one: exact normalised
+      // equality, for every reason in the note above.
+      //
+      // The ACCOUNT arm exists because the name arm cannot see rent. The bill is
+      // called "Rent"; the bank writes "ACH HOLD Nollie MA Rent ON 10/02". Four
+      // months of rent went unlinked by this rule and the biggest bill in the house
+      // read as unpaid — which is the exact failure W7 was written to prevent.
+      //
+      // It is safe now only because every bill knows which account pays it. "A
+      // charge somewhere in the household for about this much" is the heuristic
+      // that paired Chipotle with Spotify; "a charge ON THE ACCOUNT THIS BILL IS
+      // PAID FROM, inside the amount band, in this bill's own cycle" is a far
+      // narrower claim, and it still passes every guard below.
+      const byName = Boolean(key) && billKey(r.name) === key;
+      const byAccount = Boolean(r.accountId) && tx.accountId === r.accountId;
+      if (!byName && !byAccount) continue;
       if (!liveOn(r, tx.date)) continue;
+      // ── THE ACCOUNT ARM PAYS FOR ITSELF TWICE OVER ──────────────────────────
+      // Its first version reused the band below and produced five suggestions, all
+      // five wrong: 99 Ranch Market and Safeway and Itch.io all offered against Grok
+      // AI, and H Mart against Claude Pro. The band is tuned for a VARIABLE bill
+      // whose amount genuinely moves; it is far too generous once the merchant name
+      // — the only real discriminator — has been taken away.
+      //
+      // So the account arm gets its own two gates, both much tighter, and they are
+      // the two things that are actually true of a bill paid from its own account:
+      // the amount is nearly exact, and it lands on its due day.
+      //
+      //   Rent    $5.17 off on $1,726.88 (0.30%), one day late   → kept
+      //   H Mart  $0.18 off on $21.62    (0.83%), eight days off → dropped on timing
+      //   Safeway $12.02 off on $29.99   (40%)                   → dropped on amount
+      if (!byName) {
+        const target = modelledOf(r);
+        if (!isFiniteAmount(target) || target <= 0) continue;
+        if (Math.abs(tx.amount - target) > target * ACCOUNT_ARM_TOLERANCE) continue;
+        const cyc = billCycleFor(dueDaysOf(r), tx.date);
+        const dueOn = `${cyc.monthKey}-${pad2(cyc.day)}`;
+        if (Math.abs(dayStart(tx.date) - dayStart(dueOn)) > ACCOUNT_ARM_DAYS * 86_400_000) continue;
+      }
       const modelled = modelledOf(r);
       if (!isFiniteAmount(modelled) || modelled <= 0) continue;
       if (Math.abs(tx.amount - modelled) > band(r, modelled)) continue;
@@ -1220,13 +1275,20 @@ function reviewUnlinked(
         (distance === held.distance &&
           (tx.date < held.tx.date || (tx.date === held.tx.date && tx.id < held.tx.id)))
       ) {
-        best.set(cycleKey, { tx, r, monthKey: cycle.monthKey, day: cycle.day, distance });
+        best.set(cycleKey, { tx, r, monthKey: cycle.monthKey, day: cycle.day, distance, byName });
       }
+      if (!byName) accountMatches.set(tx.id, (accountMatches.get(tx.id) ?? 0) + 1);
     }
   }
 
   const out: Suggestion[] = [];
   for (const hit of best.values()) {
+    // AMBIGUITY IS DROPPED, NOT RESOLVED. A charge that fits two bills on the same
+    // account — two subscriptions of similar size in the same week — would otherwise
+    // be offered against whichever cycle it sits nearer, which is a coin toss wearing
+    // a suggestion's clothes. The name arm keeps its own answer: an exact merchant
+    // match that also happens to fit a second bill is still the first bill's.
+    if (!hit.byName && (accountMatches.get(hit.tx.id) ?? 0) > 1) continue;
     const { tx, r, monthKey, day } = hit;
     const modelled = modelledOf(r);
     out.push({

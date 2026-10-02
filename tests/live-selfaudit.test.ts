@@ -93,6 +93,10 @@ describe.skipIf(!PAT)("self-audit against LIVE data", () => {
         endsOn: (r.ends_on as string) ?? undefined,
         knownAmount: r.known_amount == null ? undefined : num(r.known_amount),
         linkedDebtId: (r.linked_debt_id as string) ?? undefined,
+        // Which account pays it. Without this the live audit is blind to W7's
+        // account arm — the one that finds rent, whose descriptor never matches its
+        // bill's name — so the rule would look exercised and would not be.
+        accountId: (r.account_id as string) ?? undefined,
         createdAt: r.created_at as string,
       })),
       transactions: txs.map((t) => ({

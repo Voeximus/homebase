@@ -1516,3 +1516,128 @@ describe.skipIf(!snapshotPath)("against the real ledger snapshot", () => {
     expect(reviewLedger(live, now, out.map((s) => s.key))).toEqual([]);
   });
 });
+
+// W7's account arm — the one that could not see rent.
+//
+// The bill is called "Rent". The bank writes "ACH HOLD Nollie MA Rent ON 10/02". W7
+// matched on exact normalised merchant name, deliberately — loose matching paired
+// Chipotle with Spotify on this very ledger — so four months of rent went unlinked
+// and the biggest bill in the house read as unpaid. That is the exact failure W7 was
+// written to prevent, happening to the one bill that matters most.
+//
+// Safe only because every bill now knows which account pays it (2026-10-01).
+describe("W7 matches a bill by the account it is paid from", () => {
+  const JOINT = "acct-joint";
+  const base = (over: Partial<AppData> = {}): AppData => ({
+    transactions: [],
+    recurring: [],
+    debts: [],
+    goals: [],
+    accounts: [],
+    paidBills: [],
+    merchantRules: [],
+    categories: [],
+    ...(over as object),
+  }) as AppData;
+
+  const rentBill = {
+    id: "bill-rent", name: "Rent", amount: 1726.88, direction: "out" as const,
+    cadence: "monthly", categoryId: "housing", active: true, dueDays: [1],
+    accountId: JOINT, createdAt: "2026-01-01",
+  };
+  const rentCharge = (over: Record<string, unknown> = {}) => ({
+    id: "tx-rent", date: "2026-10-02", amount: 1732.05, type: "expense" as const,
+    categoryId: "housing", description: "ACH HOLD Nollie MA Rent ON 10/02",
+    accountId: JOINT, ...over,
+  });
+
+  it("finds rent, which the name arm never could", () => {
+    const out = reviewLedger(
+      base({ recurring: [rentBill] as never, transactions: [rentCharge()] as never }),
+      new Date("2026-10-05T12:00:00Z"),
+    );
+    const w7 = out.filter((s) => s.rule === "W7");
+    expect(w7, "rent should be offered for linking").toHaveLength(1);
+    expect(w7[0].evidence.txnIds).toEqual(["tx-rent"]);
+  });
+
+  it("will not match a charge on a different account", () => {
+    // "A charge somewhere in the household for about this much" is the heuristic that
+    // paired Chipotle with Spotify. The account is what makes this narrow.
+    const out = reviewLedger(
+      base({ recurring: [rentBill] as never, transactions: [rentCharge({ accountId: "acct-gino" })] as never }),
+      new Date("2026-10-05T12:00:00Z"),
+    );
+    expect(out.filter((s) => s.rule === "W7")).toHaveLength(0);
+  });
+
+  it("says nothing when one charge fits two bills on the same account", () => {
+    // A coin toss wearing a suggestion's clothes. Dropped, not resolved.
+    const twin = { ...rentBill, id: "bill-twin", name: "Something Else", dueDays: [2] };
+    const out = reviewLedger(
+      base({ recurring: [rentBill, twin] as never, transactions: [rentCharge()] as never }),
+      new Date("2026-10-05T12:00:00Z"),
+    );
+    expect(out.filter((s) => s.rule === "W7")).toHaveLength(0);
+  });
+
+  it("ignores a bill nobody has given an account", () => {
+    const out = reviewLedger(
+      base({
+        recurring: [{ ...rentBill, accountId: undefined }] as never,
+        transactions: [rentCharge()] as never,
+      }),
+      new Date("2026-10-05T12:00:00Z"),
+    );
+    expect(out.filter((s) => s.rule === "W7")).toHaveLength(0);
+  });
+});
+
+// The five false positives the account arm produced on its first live run.
+//
+// All five from one ledger, all five wrong, all five offered confidently. They are
+// the reason the account arm has its own tolerance and its own day window instead of
+// reusing band(), which is tuned for a variable bill whose amount genuinely moves and
+// is far too generous once the merchant name has been taken away.
+describe("W7's account arm refuses the charges it got wrong the first time", () => {
+  const ACCT = "acct-gino";
+  const base = (recurring: unknown[], transactions: unknown[]): AppData => ({
+    transactions, recurring, debts: [], goals: [], accounts: [],
+    paidBills: [], merchantRules: [], categories: [],
+  }) as unknown as AppData;
+
+  const bill = (over: Record<string, unknown>) => ({
+    id: "b1", name: "Grok AI", amount: 29.99, direction: "out", cadence: "monthly",
+    categoryId: "subscriptions", active: true, dueDays: [22], accountId: ACCT,
+    createdAt: "2026-01-01", ...over,
+  });
+  const charge = (over: Record<string, unknown>) => ({
+    id: "t1", date: "2026-08-22", amount: 29.99, type: "expense",
+    categoryId: "groceries", description: "Somewhere", accountId: ACCT, ...over,
+  });
+
+  const w7 = (r: unknown[], t: unknown[]) =>
+    reviewLedger(base(r, t), new Date("2026-09-15T12:00:00Z")).filter((s) => s.rule === "W7");
+
+  it.each([
+    ["99 Ranch Market", 36.03, "2026-07-21"],
+    ["Safeway", 17.97, "2026-08-20"],
+    ["Itch.io", 15, "2026-05-21"],
+    ["Anthropic", 21.62, "2026-06-22"],
+  ])("refuses %s at $%s — the amount is nowhere near", (description, amount, date) => {
+    expect(w7([bill({})], [charge({ description, amount, date })])).toHaveLength(0);
+  });
+
+  it("refuses a grocery run that happens to cost the same, because of the date", () => {
+    // H Mart $21.44 against Claude Pro $21.62 is 0.83% — inside any sane amount
+    // tolerance. Eight days from the due day is what gives it away.
+    const claudePro = bill({ id: "b2", name: "Claude Pro", amount: 21.62, dueDays: [20] });
+    expect(w7([claudePro], [charge({ description: "H Mart", amount: 21.44, date: "2026-09-28" })])).toHaveLength(0);
+  });
+
+  it("still finds rent, which is the whole point of the arm", () => {
+    const rent = bill({ id: "b3", name: "Rent", amount: 1726.88, dueDays: [1], categoryId: "housing" });
+    const paid = charge({ description: "ACH HOLD Nollie MA Rent ON 09/02", amount: 1732.05, date: "2026-09-02" });
+    expect(w7([rent], [paid])).toHaveLength(1);
+  });
+});
