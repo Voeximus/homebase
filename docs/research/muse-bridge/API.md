@@ -369,42 +369,25 @@ same refusal `finance.debts` makes, and it holds here too.
 **Also not in it:** which bills make up a month's figure. The reply gives a month's
 `bills` total, not the rows behind it.
 
-### `finance.spend_by_category` — where did the money go?
+### `finance.spend_by_category`
 
-**Takes two dates, and they have to be whole months.** `from` is the **first of a
-month**. `to` is the **last day of a month**, or **today**. Both `YYYY-MM-DD`, both
-included in the range, up to 24 months in one call.
+**Where the money went, in two halves that only mean something together.**
 
-```
-{"from": "2026-09-01", "to": "2026-09-30"}   last month, whole
-{"from": "2026-09-01", "to": "2026-09-26"}   this month so far — only if today is the 26th
-{"from": "2026-07-01", "to": "2026-09-30"}   three whole months
-```
+- **`totals`** — spending attached to nothing.
+- **`attached`** — everything that paid a bill, a debt or a set-aside: rent, the car,
+  insurance, utilities, card payments. Broken down `by_category` and `by_what_it_pays`.
 
-**"The last 30 days" and "since Tuesday" cannot be asked here, and that is
-deliberate.** A whole month, or a month so far, is the grid the budget screens
-themselves use — so every answer here is a figure that can be checked against
-something he can see. A total over an arbitrary window is not.
+**Why two.** `totals` alone used to be the whole answer, and it excludes every charge
+tied to a bill by construction — so the tool whose job is where the money went left out
+the largest outflows in the house, and a category holding only bill payments read as
+**zero** rather than as absent.
 
-If somebody asks about a week: either answer about the month and say so, or use
-`finance.budget_status`, which is the pay-cycle question and needs no dates at all.
-If what they actually want is the charges, use `finance.search_transactions` — that
-is the honest tool for it, and it gives you charges said as charges. **Never** work a
-shorter window out by asking this twice and subtracting, and never rebuild a list of
-charges out of category totals: a total that is really one charge still looks like a
-budget figure when you say it.
+⚠️ **Do not compare one month's `totals` with another's without the attached half.**
+Linking a charge to its bill moves it between the two, so better bookkeeping looks like
+less spending. During the months when almost nothing was linked, bills were counted in
+`totals`; as linking improved, the same tool's figures shrank for no real reason.
 
-**You** choose the months, so **say** the months. State the exact dates you used
-before you say any number. The door will not guess dates for you, and a silent guess
-is how a wrong month gets believed.
-
-**What comes back:** a category name against a total, for the categories that had
-spending, plus a `note`. A category with nothing spent may simply be missing — that
-means zero, not unknown.
-
-**Not in it:** the charges behind a total. There is no way to get them and no
-merchant-level question to ask. Charges still processing are counted here, on
-purpose, because the cash figure has already been reduced by them.
+Whole months only. The charges behind a total are not available here.
 
 ### `finance.debts` — what is owed, and in what order?
 

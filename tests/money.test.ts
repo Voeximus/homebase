@@ -6,6 +6,7 @@ import {
   sumTargets,
   billExpected,
   spentByCategoryBetween,
+  attachedByCategoryBetween,
   planMath,
 } from "../src/lib/plan";
 import { householdMonthly, liveOn, monthlyAmount, accountFlow } from "../src/lib/recurring";
@@ -441,5 +442,67 @@ describe("what the budget is allowed to grade", () => {
   it("gas is still graded", () => {
     expect(inAnyLine("transport")).toBe(true);
     expect(OUTSIDE_BUDGET_CASH_CATS).not.toContain("transport");
+  });
+});
+
+
+// The OTHER half of that partition, and the property that makes the pair worth having.
+//
+// spentByCategoryBetween requires `!t.appliesTo`, so every charge tied to a bill, a
+// debt or a set-aside is excluded by construction — and finance.spend_by_category,
+// whose whole job is where the money went, was built on it alone. Rent, the car loan,
+// insurance, utilities and card payments were all missing, and a category holding only
+// bill payments read as ZERO rather than as absent.
+//
+// The second-order effect was worse than the first: linking a charge to its bill MOVES
+// it between the halves, so as the ledger got better organised the visible totals
+// shrank. Better data read as spending less, and two months stopped being comparable
+// for a reason nobody would guess.
+describe("attachedByCategoryBetween — the half the budget deliberately ignores", () => {
+  const tx = (o: Record<string, unknown>) => ({
+    id: Math.random().toString(36).slice(2),
+    date: "2026-08-15", amount: 10, type: "expense", categoryId: "groceries",
+    description: "x", ...o,
+  }) as never;
+
+  const rows = [
+    tx({ amount: 100, categoryId: "groceries" }),
+    tx({ amount: 50, categoryId: "dining" }),
+    tx({ amount: 1726.88, categoryId: "housing", appliesTo: { kind: "bill" } }),
+    tx({ amount: 300, categoryId: "other", appliesTo: { kind: "debt" } }),
+    tx({ amount: 120, categoryId: "other", appliesTo: { kind: "setaside" } }),
+    tx({ amount: 999, date: "2026-07-01" }),
+    tx({ amount: 500, type: "income", date: "2026-08-02" }),
+  ];
+  const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
+
+  it("adds up with its sibling to every expense in the window", () => {
+    // THE GUARD. Without it the next new `appliesTo` kind slips out of the answer
+    // exactly the way bills did — silently, looking like a smaller number rather
+    // than a missing one.
+    const free = spentByCategoryBetween(rows, "2026-08-01", "2026-08-31");
+    const attached = attachedByCategoryBetween(rows, "2026-08-01", "2026-08-31");
+    const everyExpense = (rows as unknown as { type: string; date: string; amount: number }[])
+      .filter((t) => t.type === "expense" && t.date >= "2026-08-01" && t.date <= "2026-08-31")
+      .reduce((a, t) => a + t.amount, 0);
+    expect(sum(free) + sum(attached.byCategory)).toBeCloseTo(everyExpense, 2);
+    expect(attached.total).toBeCloseTo(sum(attached.byCategory), 2);
+  });
+
+  it("names what each charge actually pays, not just 'a bill'", () => {
+    // appliesTo carries debts and set-asides too. Calling a card payment a "bill
+    // payment" is the same class of error as calling a paid-but-pending rent charge
+    // "overdue" — right rows, wrong word.
+    const { byKind } = attachedByCategoryBetween(rows, "2026-08-01", "2026-08-31");
+    expect(Object.keys(byKind).sort()).toEqual(["bill", "debt", "setaside"]);
+    expect(byKind.bill).toBeCloseTo(1726.88, 2);
+  });
+
+  it("fans a split the way its sibling does, or the two could not add up", () => {
+    const split = tx({ amount: 40, appliesTo: { kind: "bill" },
+      splits: [{ categoryId: "groceries", amount: 25 }, { categoryId: "dining", amount: 15 }] });
+    const { byCategory } = attachedByCategoryBetween([split], "2026-08-01", "2026-08-31");
+    expect(byCategory.groceries).toBe(25);
+    expect(byCategory.dining).toBe(15);
   });
 });

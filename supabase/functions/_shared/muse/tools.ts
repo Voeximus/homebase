@@ -70,6 +70,7 @@ import {
   planMath,
   sumTargets,
   spentByCategoryBetween,
+  attachedByCategoryBetween,
 } from "./lib/plan.ts";
 import {
   billsBeforeNextPayday,
@@ -467,11 +468,46 @@ const financeSpendByCategory: Tool = {
       else out[key] = money(((out[key] as number | null) ?? 0) + amount);
     }
     if (unnamed) out["(no category id I can say)"] = money(unnamed);
+
+    // ── THE HALF THAT USED TO BE MISSING ───────────────────────────────────────
+    // `totals` above counts only charges with NO appliesTo, so every payment tied to
+    // a bill, a debt or a set-aside was excluded by construction — rent, the car
+    // loan, insurance, utilities, card payments. The tool whose whole job is where
+    // the money went was leaving out the largest outflows in the house, and its own
+    // note made the absence read as a zero.
+    //
+    // Worse, it moved: linking a charge to its bill shifts it from one half to the
+    // other, so as the ledger got better organised the totals shrank. Better data
+    // read as spending less, and two months were not comparable for a reason nobody
+    // would guess.
+    //
+    // The two halves together are every expense in the window, which is the property
+    // that makes the pair worth having — and there is a test that asserts exactly
+    // that, so the next new `appliesTo` kind cannot slip out of the answer the way
+    // this one did.
+    const attached = attachedByCategoryBetween(data.transactions, from, to);
+    const byCat: { [k: string]: Json } = {};
+    let attachedUnnamed = 0;
+    for (const [catId, amount] of Object.entries(attached.byCategory) as [string, number][]) {
+      const key = scrubName(catId, NAME_MAX);
+      if (!key) attachedUnnamed += amount;
+      else byCat[key] = money(((byCat[key] as number | null) ?? 0) + amount);
+    }
+    if (attachedUnnamed) byCat["(no category id I can say)"] = money(attachedUnnamed);
+    const byKind: { [k: string]: Json } = {};
+    for (const [kind, amount] of Object.entries(attached.byKind) as [string, number][]) {
+      // `kind` is a word the app wrote, not prose, so it is recognised like a slug.
+      const key = scrubName(kind, NAME_MAX) || "(attached to something I cannot name)";
+      byKind[key] = money(((byKind[key] as number | null) ?? 0) + amount);
+    }
+
     return {
       from,
       to,
       totals: out,
-      note: "Whole months only, so say the months you asked about. A category with nothing in it is absent, which means zero. The charges behind a total are not available here at all.",
+      attached: { by_category: byCat, by_what_it_pays: byKind, total: money(attached.total) },
+      note:
+        "Whole months only, so say the months you asked about. TWO HALVES, AND THEY ONLY MEAN SOMETHING TOGETHER: `totals` is spending attached to nothing, `attached` is everything that paid a bill, a debt or a set-aside — rent, the car, insurance, utilities, card payments. A category missing from `totals` means no unattached charge hit it, NOT that nothing was spent on it; check `attached.by_category` before saying a category was zero. Do not compare one month's `totals` with another's without the attached half beside it: linking a charge to its bill moves it between the two, so better bookkeeping looks like less spending. The charges behind a total are not available here at all.",
     };
   },
 };

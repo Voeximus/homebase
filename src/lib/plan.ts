@@ -614,6 +614,53 @@ export function spentByCategory(
 
 /** Same partition as spentByCategory, over an arbitrary INCLUSIVE date range —
  *  which is what a pay cycle needs, since it straddles the month boundary. */
+/**
+ * The other half of the window: everything spentByCategoryBetween leaves out.
+ *
+ * WHY THIS HAD TO EXIST. That function requires `!t.appliesTo`, so every charge tied
+ * to a bill, a debt or a set-aside is excluded by construction — and the door's
+ * "where did the money go" tool is built on it. Ask where September went and rent,
+ * the car loan, insurance, utilities and card payments are all missing, while a
+ * category holding only bill payments reads as ZERO rather than as absent.
+ *
+ * The second-order effect is worse than the first. Linking a charge to its bill MOVES
+ * it from one half to the other, so as the ledger gets better organised the visible
+ * totals shrink — and better data reads as spending less. During the months when
+ * almost nothing was linked the same tool was quietly including bills, which makes
+ * two months non-comparable for a reason nobody would guess.
+ *
+ * So this returns the attached half, and the two together are every expense in the
+ * window. Bucketed by WHAT IT PAYS as well as by category, because `appliesTo` is not
+ * only bills: it carries debt payments, set-asides and reimbursements too, and
+ * calling a card payment a "bill payment" is the same class of error as calling a
+ * paid-but-pending rent charge "overdue" — right rows, wrong word.
+ *
+ * Same window gate and same split-fanning as its sibling, deliberately: if the two
+ * disagreed about what counts, their totals would not add up to the whole, which is
+ * the one property that makes this pair worth having.
+ */
+export function attachedByCategoryBetween(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+): { byCategory: Record<string, number>; byKind: Record<string, number>; total: number } {
+  const byCategory: Record<string, number> = {};
+  const byKind: Record<string, number> = {};
+  let total = 0;
+  for (const t of transactions) {
+    if (t.type !== "expense" || t.date < startISO || t.date > endISO || !t.appliesTo) continue;
+    const kind = (t.appliesTo as { kind?: string }).kind ?? "attached to something";
+    byKind[kind] = (byKind[kind] ?? 0) + t.amount;
+    total += t.amount;
+    if (t.splits && t.splits.length) {
+      for (const sp of t.splits) byCategory[sp.categoryId] = (byCategory[sp.categoryId] ?? 0) + sp.amount;
+    } else {
+      byCategory[t.categoryId] = (byCategory[t.categoryId] ?? 0) + t.amount;
+    }
+  }
+  return { byCategory, byKind, total };
+}
+
 export function spentByCategoryBetween(
   transactions: Transaction[],
   startISO: string,
