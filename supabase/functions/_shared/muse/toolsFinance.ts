@@ -85,6 +85,25 @@ export const SAYS_DESCRIPTION: ReadonlySet<string> = new Set([
   "finance.transaction",
   "finance.search_transactions",
   "finance.bank_pending",
+  // Added 2026-10-02, on his instruction: "Give muse the power."
+  //
+  // Two of this tool's rules — a charge that may be in twice, and a charge that
+  // looks like a bill nobody linked — are entirely about one charge on one day.
+  // They used to come back as a bare count ending "open the app to see which", and
+  // the app is being retired, so that sentence now points at nothing. A suggestion
+  // that can say something is wrong and never WHAT is a dead end, and the dead end
+  // sits in the one rule that catches unlinked bills — the error that cost the most
+  // this year.
+  //
+  // The half of the promise that did not change still binds here, and the Rule 4
+  // tests assert it on this tool like every other: no URL, no newline, no injection
+  // line. Those are not privacy, they are the path from "words in a memo line" to
+  // "his assistant fetched something". And `raw_description` stays in ABSENT.
+  "finance.worth_a_look",
+  // Same reason, 2026-10-02. Its whole purpose is that the number shows what it left
+  // out — "35 rows, $5,777 excluded" cannot be checked by anybody who cannot see
+  // which rows. Scrubbed through sayRow like every other outbound string.
+  "finance.run_rate",
 ]);
 
 /** The most rows one search will return. A chat cannot use more than this, and a
@@ -768,12 +787,35 @@ const systemHeartbeat: Tool = {
 // Each of those three failures survived being read aloud more than once because the
 // number arrived without its inputs. `excluded` names every row and the rule that
 // excluded it, so a wrong answer is visible rather than plausible.
-/** One excluded charge, as Json. Field by field, for the reason above. */
+/**
+ * One excluded charge, as Json.
+ *
+ * SCRUBBED, and the first version was not — it passed `description` through raw. The
+ * snapshot test caught it the same day: merchant names out of every excluded row, and
+ * an account's last four digits out of "PAYMENT TO ACCT #4728", which is the string
+ * this tool most often excludes. Rule 4 is that every outbound string is scrubbed, and
+ * a field added to a new reply is exactly where that gets forgotten.
+ *
+ * scrubOr, not scrub: a name that will not survive is REPLACED by a fixed sentence
+ * rather than dropped, because the row's job is to be checkable and a nameless row in
+ * an exclusion list is worse than an unnameable one — it reads as an omission.
+ *
+ * AND THE DIGITS GO. The rows this tool excludes are mostly transfers, and a transfer
+ * descriptor is "PAYMENT TO ACCT #4728" — which carries an account's last four, a
+ * thing the read door never reads from `accounts.last4` and must not hand out through
+ * the back door of a merchant name. Masked rather than dropped: "PAYMENT TO ACCT
+ * #••••" still says what the row is, which is the whole reason it is listed.
+ */
+const maskDigits = (name: string): string => name.replace(/\d{4,}/g, "••••");
 const sayRow = (r: { date: string; amount: number; description: string; why: string }) => ({
   date: r.date,
   amount: r.amount,
-  description: r.description,
-  why: r.why,
+  merchant: maskDigits(scrubOr(r.description, "(a name I cannot say safely)")),
+  // The REASON is masked too, and that is where this actually leaked. flow.ts
+  // explains itself as "a payment to the household's own account ending 4728" —
+  // useful inside the module, and the last four digits of an account on the way out.
+  // A string being one the door wrote itself is not a reason to skip Rule 4.
+  why: maskDigits(scrubOr(r.why, "(no reason I can say safely)")),
 });
 
 const financeRunRate: Tool = {

@@ -109,6 +109,10 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
     "account_id",
     "applies_to",
     "person",
+      // Carried on the way back in, or undoing a DELETE silently drops a
+    // correction somebody made by hand — the row returns classified the way the app
+    // works it out, which is the answer they had already overruled.
+    "flow_override",
   ],
   recurring: ["name", "amount", "direction", "cadence", "category_id", "active", "due_days"],
   // Nothing inserts an account: they come from the bank or from the household seed.

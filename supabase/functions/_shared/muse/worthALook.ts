@@ -61,12 +61,37 @@ export interface RedactedSuggestion {
   month?: string;
   /** The recurring row's id. */
   bill?: string;
-  /** How many charges the rule fired on, for the two rules that cannot be said. */
+  /** How many charges the rule fired on. */
   count?: number;
+  /** The charges the rule is standing on, so the suggestion can be ACTED ON.
+   *
+   *  WHY THIS IS HERE NOW. These two rules used to come back as a bare count and a
+   *  sentence ending "open the app to see which". There is no app — it is being
+   *  retired, and Muse is the interface. A suggestion that can say something is
+   *  wrong and never what is a dead end, and a dead end in the one rule that catches
+   *  unlinked bills is how "what do I still owe" goes wrong again.
+   *
+   *  Gino's call, 2026-10-02: "Give muse the power."
+   *
+   *  The cleaned merchant name only, which already leaves this door through
+   *  finance.transaction and finance.search_transactions — this makes those two
+   *  rules consistent with the tools beside them rather than opening anything new.
+   *  `raw_description`, the verbatim bank text, remains forbidden and is still read
+   *  by no tool. */
+  charges?: { id: string; date: string; amount: number; merchant: string }[];
 }
 
-/** The two rules whose whole content is one charge on one day. */
-const UNSAYABLE: ReadonlySet<SuggestionRule> = new Set<SuggestionRule>(["W5a", "W7"]);
+/**
+ * Rules held back entirely. Empty, and it stays declared rather than deleted so the
+ * next rule that should be withheld has somewhere obvious to go.
+ *
+ * W5a (a charge that may be in twice) and W7 (a charge that looks like an unlinked
+ * bill) used to be in here, because the whole content of each is one charge on one
+ * day. They came back as a count and "open the app to see which". The app is being
+ * retired, so that instruction now names something that will not exist — and both
+ * rules exist to catch the class of error that cost the most this year.
+ */
+const UNSAYABLE: ReadonlySet<SuggestionRule> = new Set<SuggestionRule>();
 
 /**
  * How many suggestions go out at most.
@@ -130,6 +155,7 @@ export function redactSuggestions(
   data: AppData,
 ): { suggestions: RedactedSuggestion[]; total: number; left_out: number } {
   const nameOf = new Map(data.recurring.map((r) => [r.id, r.name]));
+  const byId = new Map(data.transactions.map((t) => [t.id, t]));
 
   const out: RedactedSuggestion[] = [];
   const grouped = new Map<SuggestionRule, { kind: Suggestion["kind"]; count: number }>();
@@ -155,6 +181,20 @@ export function redactSuggestions(
     if (amount != null) entry.amount = amount;
     if (month) entry.month = month;
     if (billId) entry.bill = billId;
+    // The rows behind it, so the suggestion can be acted on rather than only read.
+    // Dropped rather than sliced when a name will not scrub — half a merchant name
+    // reads as a different merchant, which is Rule 4 and is why there is a fixed
+    // sentence instead.
+    const charges = s.evidence.txnIds
+      .map((id) => byId.get(id))
+      .filter((t): t is NonNullable<typeof t> => Boolean(t))
+      .map((t) => ({
+        id: t.id,
+        date: t.date,
+        amount: Math.round(t.amount * 100) / 100,
+        merchant: scrub(t.description) ?? "(a name I cannot say safely)",
+      }));
+    if (charges.length) entry.charges = charges;
     out.push(entry);
   }
 

@@ -146,6 +146,7 @@ export class FinanceFake implements FinanceDb {
       description: String(r.description ?? ""),
       accountId: (r.account_id as string | null) ?? null,
       appliesTo: (r.applies_to ?? null) as UndoValue,
+      flowOverride: (r.flow_override ?? null) as string | null,
       splits: (r.splits ?? null) as UndoValue,
       anomalyAck: !!r.anomaly_ack,
       needsReview: !!r.needs_review,
@@ -243,6 +244,8 @@ export class FinanceFake implements FinanceDb {
           id: String(r.id),
           type: r.type === "income" ? ("income" as const) : ("expense" as const),
           appliesTo: (r.applies_to ?? null) as UndoValue,
+          flowOverride: (r.flow_override ?? null) as string | null,
+      flowOverride: (r.flow_override ?? null) as string | null,
         })),
     );
   }

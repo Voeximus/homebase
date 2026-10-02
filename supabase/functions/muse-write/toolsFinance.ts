@@ -346,6 +346,10 @@ const deleteCharge: Tool = {
       description: t.description,
       account_id: t.accountId,
       applies_to: t.appliesTo,
+      // Restored with the row. Without it, undoing a delete brings the charge back
+      // classified the way the app works it out — quietly discarding the answer
+      // somebody had already overruled by hand.
+      flow_override: t.flowOverride,
       splits: t.splits,
       anomaly_ack: t.anomalyAck,
       user_categorized: t.userCategorized,

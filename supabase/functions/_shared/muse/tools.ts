@@ -479,7 +479,7 @@ const financeSpendByCategory: Tool = {
 // ── finance.worth_a_look ──────────────────────────────────────────────────────
 const financeWorthALook: Tool = {
   name: "finance.worth_a_look",
-  summary: "What looks off but is a judgement call — the rule and the money, never the charge.",
+  summary: "What looks off but is a judgement call — the rule, the money, and the charges it is standing on so you can act on it.",
   async run({ load, now }) {
     const data = await load.appData();
     // No dismissals are passed. The app remembers dismissals per phone, in that
@@ -491,7 +491,7 @@ const financeWorthALook: Tool = {
       total,
       left_out,
       dismissals_known: false,
-      note: "This lists everything, including anything already dismissed on a phone.",
+      note: "This lists everything, including anything already dismissed on a phone. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill on the write door, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token.",
       // Built key by key rather than spread, so nothing can ride along on a field
       // added to the engine's own type later.
       suggestions: shown.map((s) => {
@@ -500,6 +500,11 @@ const financeWorthALook: Tool = {
         if (s.month) o.month = s.month;
         if (s.bill) o.bill = s.bill;
         if (s.count != null) o.count = s.count;
+        // The rows behind the suggestion. Without these the two rules that matter
+        // most — an unlinked bill payment, a charge that may be in twice — could
+        // only say that something was wrong and never what, and the sentence they
+        // used to end with ("open the app") names an app that is being retired.
+        if (s.charges) o.charges = s.charges as unknown as Json;
         return o;
       }),
     };

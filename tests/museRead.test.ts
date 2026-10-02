@@ -1012,25 +1012,40 @@ describe("Rule 4 — every string out is scrubbed", () => {
 
 // ── worth_a_look: the redaction the plan demands ──────────────────────────────
 describe("finance.worth_a_look", () => {
-  it("emits the rule, the money and the cycle — never a merchant or a charge date", async () => {
+  it("emits the rule, the money, the cycle and the charges it stands on", async () => {
+    // THIS TEST ASSERTED THE OPPOSITE UNTIL 2026-10-02, and the change is his:
+    // "Give muse the power." The reply used to carry no charge and no charge date,
+    // and the two rules whose whole content IS one charge came back as a bare count
+    // ending "open the app to see which". The app is being retired, so that sentence
+    // points at nothing — and the dead end sat in the rule that catches unlinked
+    // bills, which is the error that cost the most this year.
+    //
+    // What did NOT change is asserted below and in the Rule 4 sweep: the key list is
+    // still closed, so nothing rides along on a field added to the engine's type
+    // later, and no URL, newline or injection line survives.
     const text = await (await ask("finance.worth_a_look")).text();
     const body = JSON.parse(text) as Record<string, unknown>;
     const suggestions = body.suggestions as Record<string, unknown>[];
     expect(suggestions.length).toBeGreaterThan(0);
+    const ALLOWED = ["rule", "kind", "sentence", "amount", "month", "bill", "count", "charges"];
     for (const s of suggestions) {
-      // Only these keys, ever. `detail`, `title`, `evidence`, `fix`, `key` and
-      // `txnIds` are the engine's and none of them may travel.
-      expect(Object.keys(s).sort()).toEqual(
-        Object.keys(s)
-          .filter((k) => ["rule", "kind", "sentence", "amount", "month", "bill", "count"].includes(k))
-          .sort(),
-      );
+      // `detail`, `title`, `evidence`, `fix` and `key` are the engine's and none of
+      // them may travel.
+      for (const k of Object.keys(s)) expect(ALLOWED, `worth_a_look leaked ${k}`).toContain(k);
       if (s.month) expect(String(s.month)).toMatch(/^\d{4}-\d{2}$/);
+      for (const c of (s.charges ?? []) as Record<string, unknown>[]) {
+        // A charge says exactly four things, and a date is now one of them.
+        expect(Object.keys(c).sort()).toEqual(["amount", "date", "id", "merchant"]);
+        expect(String(c.date)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      }
     }
-    // No YYYY-MM-DD anywhere in the reply: a charge date is what a month key is
-    // deliberately not.
-    expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(text).not.toContain("CANARY");
+    // The injection half of the promise, which did not change: a merchant name may
+    // leave, the things that turn a memo line into an instruction may not.
+    expect(text, "a URL survived into the reply").not.toContain("http");
+    expect(text, "an injection line survived").not.toContain("ignore previous instructions");
+    // JSON escapes a newline as the two characters backslash-n, so that is what is
+    // looked for. Built by concatenation so no layer of tooling can re-escape it.
+    expect(text, "a newline survived into the reply").not.toContain("\\" + "n");
   });
 
   it("finds the drift the engine found, and says it in the door's own words", async () => {
@@ -1043,15 +1058,21 @@ describe("finance.worth_a_look", () => {
     expect(drift.sentence).not.toContain("27.00");
   });
 
-  it("turns the two rules that cannot be said into a rule and a count", async () => {
+  it("says WHICH charge, for the two rules whose whole content is one charge", async () => {
+    // W5a (may be in twice) and W7 (looks like an unlinked bill) were withheld
+    // entirely until 2026-10-02 — a count and "open the app to see which". They are
+    // the two most actionable things this tool finds and they were the two it could
+    // not say. Now they carry the charge, so the suggestion can be acted on through
+    // finance.link_charge_to_bill rather than only read.
     const body = await jsonOf(await ask("finance.worth_a_look"));
-    const dup = (body.suggestions as { rule: string; count?: number; sentence: string }[]).find(
-      (s) => s.rule === "W5a",
-    )!;
-    expect(dup.count).toBe(1);
-    expect(dup.sentence).toMatch(/open the app/i);
-    expect(dup).not.toHaveProperty("month");
-    expect(dup).not.toHaveProperty("bill");
+    const dup = (body.suggestions as {
+      rule: string;
+      charges?: { id: string; date: string; amount: number; merchant: string }[];
+    }[]).find((s) => s.rule === "W5a")!;
+    expect(dup.charges, "W5a should name the charge it is standing on").toBeTruthy();
+    expect(dup.charges!.length).toBeGreaterThan(0);
+    expect(dup.charges![0].id).toBeTruthy();
+    expect(dup.charges![0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("says out loud that it does not know what was dismissed on a phone", async () => {

@@ -78,6 +78,9 @@ class Fake extends FinanceFake implements Db {
       description: "TRADER JOE'S #457",
       account_id: ACCOUNT,
       applies_to: null,
+      // Present-and-null, like the real row. An absent key makes an undo that writes
+      // null look like the row gained a field, and the before/after deep-equal fails.
+      flow_override: null,
       splits: null,
       anomaly_ack: false,
       needs_review: true,
@@ -102,6 +105,7 @@ class Fake extends FinanceFake implements Db {
       starts_on: null,
       ends_on: null,
       linked_debt_id: null,
+      account_id: null,
     });
     this.tables.accounts.push({
       id: ACCOUNT,
@@ -285,6 +289,12 @@ describe("every finance write is driven here", () => {
     "finance.promote_to_bill": { transaction_id: CHARGE },
     "finance.set_bill_variable": { bill_id: BILL, variable: false },
     "finance.set_bill_amount": { bill_id: BILL, amount: 101.24 },
+    // What a person says a row IS, overruling src/lib/flow.ts — so a card payment
+    // counted as spending, or a transfer counted as income, can be put right.
+    "finance.set_flow": { transaction_id: CHARGE, flow: "moved" },
+    // Which account a bill is paid from. All nineteen were null, which is how
+    // "nothing is due" was true while the joint account was short of rent.
+    "finance.set_bill_account": { bill_id: BILL, account_id: ACCOUNT },
     "finance.turn_bill_off": { bill_id: BILL, active: false },
     "finance.set_bill_window": { bill_id: BILL, ends_on: "2026-12-31" },
     "finance.add_bill": { name: "Renters insurance", amount: 10.59, due_day: 18, category_id: "utilities" },

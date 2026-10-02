@@ -193,6 +193,8 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     { tool: "finance.bank_status", body: {} },
     { tool: "finance.bank_pending", body: {} },
     { tool: "system.changes", body: {} },
+    { tool: "system.heartbeat", body: {} },
+    { tool: "finance.run_rate", body: {} },
   ];
 }
 
