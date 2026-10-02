@@ -91,6 +91,8 @@ const MODULES = [
   // own spelling of the arithmetic.
   "src/lib/flow.ts",
   "src/lib/runRate.ts",
+  // Whether a bill that reads "overdue" is actually paid and still clearing.
+  "src/lib/pendingCover.ts",
 ];
 
 /** Deno needs the file extension, and this folder is FLAT, so every relative

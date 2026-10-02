@@ -62,6 +62,7 @@
 //     without a sentence beside it;
 //   · sentenceFor / groupSentence in worthALook.ts.
 
+import { coverFor } from "./lib/pendingCover.ts";
 import { selfAudit, danglingLinks, type AuditCheck } from "./lib/selfAudit.ts";
 import {
   LEAN_VARIABLE,
@@ -568,6 +569,25 @@ const financeNextBills: Tool = {
   summary: "What is still due before the next paycheck, and how much of it is already overdue.",
   async run({ load, now }) {
     const data = await load.appData();
+    // THE STILL-CLEARING CHARGES, AND NOT load.pendingCharges(). That one reads
+    // `pending_preview`, which holds charges the bank has reported that have NOT
+    // entered the ledger — it is empty here and it is the wrong question. Rent paid
+    // on the 1st is a real `transactions` row carrying `pending: true`, which is what
+    // the app's own money maths excludes. Reading the other table found nothing and
+    // reported rent overdue hours after it was paid.
+    //
+    // Signed the way pendingCover expects, which is the way a bank reports it:
+    // negative is money going out. Transaction.amount is always positive and carries
+    // its direction in `type`, so the sign is put back here rather than inside the
+    // matcher, where it would be one more thing to get wrong.
+    const pendingNow = data.transactions
+      .filter((t) => t.pending)
+      .map((t) => ({
+        date: t.date,
+        amount: t.type === "expense" ? -t.amount : t.amount,
+        description: t.description,
+        accountId: t.accountId ?? null,
+      }));
     const { cycle, daysLeft, bills, total, overdueTotal } = billsBeforeNextPayday(
       monthGetter(data, now),
       now,
@@ -600,6 +620,21 @@ const financeNextBills: Tool = {
         overdue: b.overdue,
         // The amount is a rolling average of real payments, not a contracted figure.
         estimate: b.variable,
+        // ── PAID, OR JUST NOT SETTLED YET ───────────────────────────────────
+        // A pending charge is excluded from every money figure in this app, on
+        // purpose: a payment in flight can reverse, so counting it as spent would
+        // be a guess dressed as a fact. That stays true — nothing here changes a
+        // number. What it changes is the WORD. On 2026-10-02 this tool reported
+        // rent "overdue" hours after it was paid, which is how somebody pays rent
+        // twice.
+        paying_now: (() => {
+          const rec = data.recurring.find((r) => r.id === b.recurringId);
+          const cover = coverFor(
+            { name: b.name, amount: b.amount, due: b.due, accountId: rec?.accountId ?? null },
+            pendingNow,
+          );
+          return cover ? { amount: money(cover.amount), on: cover.date, why: cover.why } : null;
+        })(),
       })),
       // ── PER ACCOUNT, AND THIS IS THE POINT ─────────────────────────────────
       // A household total can be true and still hide the thing that matters. This
@@ -638,7 +673,7 @@ const financeNextBills: Tool = {
           count: r.count,
         }));
       })(),
-      note: "The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later.",
+      note: "A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later.",
     };
   },
 };
