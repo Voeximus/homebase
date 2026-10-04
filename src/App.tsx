@@ -1,113 +1,48 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+// Homebase, compressed to three screens.
+//
+// HIS INSTRUCTION, 2026-10-04: "compress the app down to literally Bills, Accounts
+// budget … strip everything out except those things. For the App side. The database
+// can stay intact but the app, what we see i want compressed into those things that
+// are most important."
+//
+// So this file is now the shortest path from "signed in" to those three screens.
+// What it used to carry and no longer does:
+//
+//   · HEALTH MODE — meals, workouts, weight, the label scanner. Every table still
+//     exists and every health tool on both Muse doors still answers; what is gone
+//     is the screens. `AppMode` and the finance/health switch went with it, since a
+//     toggle between two modes is meaningless when there is one.
+//   · THE OWNER LENS ("Mine" vs "Household"), on his own words: "You have to stop
+//     thinking about us as separate."
+//   · FIVE DEV LABS (?lab, ?meallab, ?workoutlab, ?labellab, ?doctorlab) and the
+//     fixtures behind them. They were already DEV-only and never shipped, so this
+//     costs the bundle nothing — it is the four screens they harnessed that are
+//     gone, which left the harnesses pointed at nothing.
+//
+// WHY THE "who's using this phone" SCREEN SURVIVED, since nothing on the three
+// screens is per-person any more: src/lib/push.ts reads `hb-owner` straight out of
+// localStorage to address a notification, and a push sent with no owner fans out to
+// every device in the household — which is how one heartbeat alarm buzzed all six
+// phones at once. A fresh device with no owner would register for push as nobody.
+// It is asked once and then never again.
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { LoginScreen } from "./auth/LoginScreen";
 import { FinanceProvider, useStore } from "./store/FinanceStore";
-import { HealthView } from "./views/HealthView";
-import type { AppMode } from "./components/ModeToggle";
 import { LanguageProvider } from "./components/LanguageProvider";
-import { WelcomeScreen } from "./components/WelcomeScreen";
-import { getOwner, type Owner } from "./lib/owner";
-import { getLens, saveLens, type Lens } from "./lib/lens";
+import { getOwner, saveOwner, OWNER_NAME, OWNER_COLOR, type Owner } from "./lib/owner";
 import { PlaidOAuthReturn } from "./components/PlaidOAuthReturn";
 import { syncNow } from "./lib/plaidClient";
 import { syncPushSubscription } from "./lib/push";
 import { FinanceTabs } from "./views/redesign/FinanceTabs";
 import { UpdatePrompt } from "./components/UpdatePrompt";
-import { WhatsNew } from "./components/WhatsNew";
-
-// ?lab — the bento design lab (mock data, no login). DEV-ONLY: lazy + gated on
-// import.meta.env.DEV so the harness AND its mock fixtures tree-shake entirely
-// out of the production bundle (nothing real ships to GitHub Pages).
-const DesignLab = import.meta.env.DEV
-  ? lazy(() => import("./views/redesign/DesignLab").then((m) => ({ default: m.DesignLab })))
-  : null;
-const MealLab = import.meta.env.DEV
-  ? lazy(() => import("./views/redesign/MealLab").then((m) => ({ default: m.MealLab })))
-  : null;
-// ?workoutlab — workout mode over an in-memory store and example history. Same
-// DEV-only gating: the harness, its fake store and its fixtures never ship.
-const WorkoutLab = import.meta.env.DEV
-  ? lazy(() => import("./dev/WorkoutLab").then((m) => ({ default: m.WorkoutLab })))
-  : null;
-// ?labellab — the nutrition-label reader harness (photos/camera → OCR → parse →
-// verify). Same DEV-only gating, so neither it nor the fixtures it loads ship.
-const LabelLab = import.meta.env.DEV
-  ? lazy(() => import("./views/redesign/LabelLab").then((m) => ({ default: m.LabelLab })))
-  : null;
-// ?doctorlab — "Worth a look" over a snapshot you drop in, or a hand-written card
-// for every state the sheet can be in. Same DEV-only gating: the harness and its
-// invented examples never ship, and it never mounts the store, so nothing it does
-// can reach Supabase.
-const DoctorLab = import.meta.env.DEV
-  ? lazy(() => import("./dev/DoctorLab").then((m) => ({ default: m.DoctorLab })))
-  : null;
+import { t } from "./lib/i18n";
 
 export default function App() {
-  if (
-    import.meta.env.DEV &&
-    DesignLab &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("lab")
-  ) {
-    return (
-      <Suspense fallback={null}>
-        <DesignLab />
-      </Suspense>
-    );
-  }
-  if (
-    import.meta.env.DEV &&
-    MealLab &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("meallab")
-  ) {
-    return (
-      <Suspense fallback={null}>
-        <MealLab />
-      </Suspense>
-    );
-  }
-  if (
-    import.meta.env.DEV &&
-    WorkoutLab &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("workoutlab")
-  ) {
-    return (
-      <Suspense fallback={null}>
-        <WorkoutLab />
-      </Suspense>
-    );
-  }
-  if (
-    import.meta.env.DEV &&
-    LabelLab &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("labellab")
-  ) {
-    return (
-      <Suspense fallback={null}>
-        <LabelLab />
-      </Suspense>
-    );
-  }
-  if (
-    import.meta.env.DEV &&
-    DoctorLab &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("doctorlab")
-  ) {
-    return (
-      <Suspense fallback={null}>
-        <DoctorLab />
-      </Suspense>
-    );
-  }
   return (
     <>
       <UpdatePrompt />
-      <WhatsNew />
       <AuthProvider>
         <AuthGate />
       </AuthProvider>
@@ -134,87 +69,59 @@ function AuthGate() {
   );
 }
 
-function Shell() {
-  const [mode, setMode] = useState<AppMode>(
-    () => (localStorage.getItem("hb-mode") as AppMode) || "finance",
+/** Asked once per device and then never again — not a screen, a missing fact. */
+function WhoAreYou({ onPick }: { onPick: (o: Owner) => void }) {
+  return (
+    <div
+      className="mx-auto flex h-[100dvh] max-w-[440px] flex-col items-center justify-center gap-4 px-6"
+      style={{ background: "#0b0f17" }}
+    >
+      <p className="text-[15px] text-taupe">{t("Who's using this phone?")}</p>
+      {(["gino", "xinyan"] as Owner[]).map((o) => (
+        <button
+          key={o}
+          onClick={() => onPick(o)}
+          className="w-full rounded-2xl py-4 text-[17px] font-semibold transition active:scale-95"
+          style={{ background: OWNER_COLOR[o] + "26", color: OWNER_COLOR[o], border: `1px solid ${OWNER_COLOR[o]}55` }}
+        >
+          {OWNER_NAME[o]}
+        </button>
+      ))}
+    </div>
   );
+}
+
+function Shell() {
+  const { loading } = useStore();
   const [owner, setOwner] = useState<Owner | null>(() => getOwner());
-  // Per cold launch: the welcome screen is the front door every time you open.
-  const [entered, setEntered] = useState(false);
-  // The owner lens: "me" = your own slice, "all" = the whole household.
-  const [lens, setLens] = useState<Lens>(() => getLens());
-  useEffect(() => {
-    localStorage.setItem("hb-mode", mode);
-  }, [mode]);
-  // Sync the bank feed once on open, so the day's purchases are waiting to train.
+
+  // Sync the bank feed once on open, so the day's charges are already in.
   useEffect(() => {
     syncNow().catch(() => {});
   }, []);
-  // Re-assert this phone's push registration on every open. The stored row is
-  // what the sender actually delivers to, and it can vanish without the browser
-  // noticing (see syncPushSubscription) — so it gets re-asserted rather than
-  // written once and trusted.
+  // Re-assert this phone's push registration on every open. The stored row is what
+  // the sender actually delivers to, and it can vanish without the browser noticing
+  // (see syncPushSubscription) — so it gets re-asserted rather than written once and
+  // trusted.
   useEffect(() => {
     syncPushSubscription().catch(() => {});
   }, []);
-  const onLens = (l: Lens) => {
-    saveLens(l);
-    setLens(l);
-  };
 
-  // owner is guaranteed set once `entered` (you can't throw the switch without
-  // picking who you are on first launch).
-  const who = owner as Owner;
+  const pick = (o: Owner) => {
+    saveOwner(o);
+    setOwner(o);
+  };
 
   return (
     <LanguageProvider>
       <PlaidOAuthReturn />
-      {!entered ? (
-        <WelcomeScreen
-          owner={owner}
-          onOwner={setOwner}
-          onEnter={(m) => {
-            setMode(m);
-            setEntered(true);
-          }}
-        />
-      ) : mode === "health" ? (
-        <HealthView
-          mode={mode}
-          onMode={setMode}
-          owner={who}
-          lens={lens}
-          onLens={onLens}
-        />
+      {!owner ? (
+        <WhoAreYou onPick={pick} />
+      ) : loading ? (
+        <FullScreenLoader />
       ) : (
-        <FinanceGate
-          mode={mode}
-          onMode={setMode}
-          owner={who}
-          lens={lens}
-          onLens={onLens}
-        />
+        <FinanceTabs />
       )}
     </LanguageProvider>
-  );
-}
-
-function FinanceGate({
-  mode,
-  onMode,
-  owner,
-  lens,
-  onLens,
-}: {
-  mode: AppMode;
-  onMode: (m: AppMode) => void;
-  owner: Owner;
-  lens: Lens;
-  onLens: (l: Lens) => void;
-}) {
-  const { loading } = useStore();
-  if (loading) return <FullScreenLoader />;
-  return (
-    <FinanceTabs mode={mode} onMode={onMode} owner={owner} lens={lens} onLens={onLens} />
   );
 }

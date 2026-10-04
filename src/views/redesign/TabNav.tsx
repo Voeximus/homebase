@@ -1,39 +1,34 @@
-import { Home, PieChart, LayoutGrid, User, type LucideIcon } from "lucide-react";
+import { Receipt, Landmark, PieChart, type LucideIcon } from "lucide-react";
 import { t } from "../../lib/i18n";
 
-export type TabKey = "home" | "insights" | "activity" | "profile";
+/**
+ * THREE THINGS. His instruction on 2026-10-04: "compress the app down to literally
+ * Bills, Accounts budget … strip everything out except those things."
+ *
+ * It was Home / Insights / Activity / Profile, and behind those four tabs sat
+ * fourteen sheets — a ledger, a transaction editor, a review queue, an importer,
+ * meal and workout modes, five dev labs. All of it still exists in the database and
+ * every bit of it is still reachable through Muse's doors; what came out is the
+ * SCREENS, because the app is being retired as an interface and what remains is
+ * what he wants to glance at on a phone.
+ */
+export type TabKey = "bills" | "accounts" | "budget";
 
 const TABS: { key: TabKey; label: string; Icon: LucideIcon }[] = [
-  { key: "home", label: "Home", Icon: Home },
-  { key: "insights", label: "Insights", Icon: PieChart },
-  { key: "activity", label: "Activity", Icon: LayoutGrid },
-  { key: "profile", label: "Profile", Icon: User },
+  { key: "bills", label: "Bills", Icon: Receipt },
+  { key: "accounts", label: "Accounts", Icon: Landmark },
+  { key: "budget", label: "Budget", Icon: PieChart },
 ];
 
-export function TabNav({
-  active,
-  onTab,
-  badges,
-}: {
-  active: TabKey;
-  onTab: (t: TabKey) => void;
-  /**
-   * A plain count beside a tab's label. Used by "Worth a look" — Activity is a
-   * tab you open on purpose, so without this there is no way to learn the app
-   * noticed something. Counts are never summed with anything else: "the app has a
-   * question about a bill" and "the app has a question about a category" are two
-   * different questions and one number would hide both.
-   */
-  badges?: Partial<Record<TabKey, number>>;
-}) {
+export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) => void }) {
   return (
     // `justify-around` sized each button to its own TEXT, so the targets
     // measured 29–36px wide with dead gutters between them — on the most-used
     // control in the app, at the bottom of a phone, where a thumb lands
     // approximately. An equal-column grid gives every tab the same share of the
-    // full width and leaves no gap that does nothing.
+    // full width and leaves no gap that does nothing. Three columns now, not four.
     <nav
-      className="grid grid-cols-4 border-t pt-2"
+      className="grid grid-cols-3 border-t pt-2"
       style={{
         background: "#10141d",
         borderColor: "#1d2530",
@@ -43,7 +38,6 @@ export function TabNav({
     >
       {TABS.map(({ key, label, Icon }) => {
         const on = key === active;
-        const badge = badges?.[key] ?? 0;
         return (
           <button
             key={key}
@@ -53,17 +47,7 @@ export function TabNav({
             style={{ color: on ? "#34c5e8" : "#7a8595" }}
           >
             <Icon size={21} />
-            <span className="inline-flex items-center gap-1">
-              {t(label)}
-              {badge > 0 && (
-                <span
-                  className="rounded-full px-1.5 text-[10px] font-bold"
-                  style={{ background: "#e3b341", color: "#0b0f17" }}
-                >
-                  {badge}
-                </span>
-              )}
-            </span>
+            <span>{t(label)}</span>
           </button>
         );
       })}

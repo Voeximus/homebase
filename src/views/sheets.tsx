@@ -40,10 +40,13 @@ export function AccountsSheet({
   open,
   onClose,
   accounts,
+  /** Render in the page rather than over it — see the note on Sheet's `panel`. */
+  panel,
 }: {
-  open: boolean;
-  onClose: () => void;
-  accounts?: Account[]; // lens-filtered list; falls back to the full household set
+  open?: boolean;
+  onClose?: () => void;
+  accounts?: Account[]; // falls back to the full household set, which is now the only case
+  panel?: boolean;
 }) {
   const { data, setAccountBalance } = useStore();
   const [edit, setEdit] = useState<Account | null>(null);
@@ -53,7 +56,7 @@ export function AccountsSheet({
   // this phone, so the editor has to stay open and say so.
   const [failed, setFailed] = useState(false);
   return (
-    <Sheet open={open} onClose={onClose} title={t("Cash & accounts")}>
+    <Sheet open={open} onClose={onClose} panel={panel} title={t("Cash & accounts")}>
       <div className="space-y-2">
         {cashAccounts(accounts ?? data.accounts).map((a) => {
           const f = accountFlow(a.id, data.recurring);
@@ -534,7 +537,7 @@ export function PayBillSheet({
   );
 }
 
-function ConnectBank() {
+export function ConnectBank() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -575,7 +578,7 @@ function ConnectBank() {
 
 // Connected credit cards, each shown as a debt you can track. Linking a card to
 // a debt means the bank feed keeps that debt's balance current automatically.
-function CreditCardLinks() {
+export function CreditCardLinks() {
   const { data, linkDebtToCard, unlinkDebtCard, createDebtFromCard } = useStore();
   const cards = data.accounts.filter(
     (a) => /credit/i.test(a.type) && a.providerAccountId,

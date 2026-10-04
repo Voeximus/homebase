@@ -125,13 +125,31 @@ export function Sheet({
   onClose,
   title,
   children,
+  /**
+   * Render as a plain section in the page instead of a modal over it.
+   *
+   * The app was compressed to three things — Bills, Accounts, Budget — and those
+   * three used to be sheets you opened. A panel is the same content with no
+   * backdrop, no dialog role and no close button, because there is nothing behind
+   * it to go back to and nothing to dismiss.
+   */
+  panel,
 }: {
-  open: boolean;
-  onClose: () => void;
+  open?: boolean;
+  onClose?: () => void;
   title: string;
   children: ReactNode;
+  panel?: boolean;
 }) {
-  if (!open) return null;
+  if (panel) {
+    return (
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-bone">{title}</h2>
+        {children}
+      </section>
+    );
+  }
+  if (open === false) return null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-3"
