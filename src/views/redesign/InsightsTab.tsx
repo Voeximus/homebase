@@ -1,9 +1,9 @@
-import { CircleCheck, Flame } from "lucide-react";
-import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const money2 = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export interface InsightsVM {
   budgetSpent: number;
@@ -27,280 +27,183 @@ interface InsightsTaps {
   onCategory?: (catId: string) => void;
 }
 
-export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: InsightsTaps }) {
-  const donutSegs = vm.donut.map((d) => ({ color: catColor(d.catId), value: d.amount }));
-  const onTrack = vm.budgetSpent <= vm.budgetTarget;
-  const leftInBudget = vm.budgetTarget - vm.budgetSpent;
-  // Days AFTER today, so `day n of total` + `days left` reconciles to the cycle
-  // length instead of overlapping on today and reading one too many.
-  const daysLeft = Math.max(0, vm.budgetCycleDays - vm.budgetCycleDay);
+// ── The Budget screen ────────────────────────────────────────────────────────
+//
+// RESKINNED 2026-10-04. Every figure still comes from `vms.insights`, built by
+// the single composed firepowerStatus call in buildVMs — this file does no
+// arithmetic beyond turning two numbers into a bar width.
+//
+// WHAT WENT, and each for a reason rather than for tidiness:
+//
+//   · THE DONUT. A conic-gradient ring split by category, where each wedge wore
+//     that category's own hue. It was the clearest statement of the old skin's
+//     rule — colour as IDENTITY — and the thing it actually communicated, "which
+//     slice is biggest", is read faster off a sorted list of bars. The VM still
+//     carries `donut`; nothing draws it.
+//   · PER-CATEGORY HUES. Groceries was green, dining was amber, transport blue.
+//     With six of them nothing stood out, so the one category that is over
+//     budget looked exactly like the five that are not. Now every bar is the
+//     same neutral and only an over-budget one turns red, which is the single
+//     thing this screen is for.
+//
+// WHAT PACE MEANS, because it is the only inference on the screen: the marker on
+// each bar is where you would be if the cycle's allowance were spent evenly. A
+// bar past its marker is ahead of pace, which is not the same as over budget and
+// is not coloured as though it were.
 
+function Bar({ spent, target, pace }: { spent: number; target: number; pace: number }) {
+  const pct = target > 0 ? Math.min(100, (spent / target) * 100) : 0;
+  const over = spent > target;
   return (
-    <div className="flex flex-col gap-0">
-      {/* ── Gradient header ── */}
+    <div className="relative mt-2 h-[6px] overflow-hidden rounded-full" style={{ background: "var(--color-recessed)" }}>
       <div
-        style={{ background: BRAND_GRADIENT }}
-        className="flex items-end justify-between rounded-b-[24px] px-6 py-4 text-white"
-      >
-        <div>
-          <div className="text-[12px] opacity-90">{t("where the money goes")}</div>
-          <div className="text-[26px] font-bold leading-none tracking-tight">{t("Insights")}</div>
-        </div>
-        {/* The pay cycle these figures are graded against. Was a hardcoded "June"
-            with a dropdown chevron that opened nothing — and after the budget moved
-            to pay cycles it named the wrong PERIOD as well as the wrong month. */}
-        <div className="pb-1 text-right">
-          <div className="text-[13px] font-semibold leading-tight">{vm.budgetCycleLabel}</div>
-          <div className="text-[11px] leading-tight opacity-80">
-            {daysLeft === 0
-              ? t("last day")
-              : t("{n} days left", { n: daysLeft })}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 p-4">
-        {/* ── Spending gauge ── */}
+        className="absolute inset-y-0 left-0 rounded-full"
+        style={{ width: `${pct}%`, background: over ? "var(--color-ember)" : "var(--color-bone)" }}
+      />
+      {/* Where the cycle says you should be. Drawn ON the track, not in the fill,
+          so it stays visible when the fill has passed it. */}
+      {pace > 0 && pace < 100 && (
         <div
-          className="flex items-center gap-4 rounded-[18px] border p-4"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
-        >
-          <div className="relative h-[120px] w-[120px] shrink-0">
-            <div
-              className="h-[120px] w-[120px] rounded-full"
-              style={{ background: conicFromSegments(donutSegs) }}
-            />
-            <div
-              className="absolute inset-[14px] flex flex-col items-center justify-center rounded-full"
-              style={{ background: "#141a24" }}
-            >
-              <span className="text-[20px] font-bold text-bone">{money(vm.budgetSpent)}</span>
-              <span className="text-[11px]" style={{ color: "#8b97a6" }}>
-                {t("of {amount}", { amount: money(vm.budgetTarget) })}
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div
-              className="text-[10.5px] font-semibold uppercase"
-              style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
-            >
-              {t("Spent this cycle")}
-            </div>
-            {/* Which paycheck's run this is, and how far into it — the same pace
-                line the Home tile carries, so the two screens agree. */}
-            <div className="mt-0.5 text-[11px]" style={{ color: "#8b97a6" }}>
-              {t("day {n} of {total}", { n: vm.budgetCycleDay, total: vm.budgetCycleDays })}
-            </div>
-            <div
-              className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"
-              style={{ color: onTrack ? "#46d18a" : "#f0556e" }}
-            >
-              {onTrack && <CircleCheck size={16} />}
-              {onTrack ? t("On track") : t("Over")}
-            </div>
-            <div className="mt-1 text-[12px]" style={{ color: "#8b97a6" }}>
-              {t("{amount} left in the lean budget", { amount: money(leftInBudget) })}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Plan vs actual ── */}
-        <div
-          className="rounded-[18px] border p-4"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
-        >
-          <div
-            className="mb-3 text-[10.5px] font-semibold uppercase"
-            style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
-          >
-            {t("Lean budget · plan vs actual")}
-          </div>
-          <div className="flex flex-col gap-3.5">
-            {vm.categories.map((c) => {
-              const Icon = catIcon(c.catId);
-              const color = catColor(c.catId);
-              const over = c.spent > c.target;
-              const pct = Math.min(100, (c.spent / c.target) * 100);
-              return (
-                <button
-                  key={c.catId}
-                  onClick={() => taps.onCategory?.(c.catId)}
-                  className="flex min-h-[44px] w-full flex-col justify-center text-left transition active:scale-[0.99]"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon size={16} style={{ color }} className="shrink-0" />
-                    <span className="flex-1 text-[13px] font-medium text-bone">{c.label}</span>
-                    <span className="text-[12.5px] font-semibold text-bone">
-                      {money(c.spent)}{" "}
-                      <span style={{ color: "#8b97a6" }}>/ {money(c.target)}</span>
-                    </span>
-                  </div>
-                  <div
-                    className="mt-1.5 h-1.5 overflow-hidden rounded-full"
-                    style={{ background: "#222b38" }}
-                  >
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${pct}%`, background: over ? "#f0556e" : color }}
-                    />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Where every dollar goes ── */}
-        <div
-          className="rounded-[18px] border p-4"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
-        >
-          <div
-            className="mb-3 text-[10.5px] font-semibold uppercase"
-            style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
-          >
-            {t("Where every dollar goes")}
-          </div>
-          {/* This bar's three widths were the LITERALS 45.9% / 20.9% / 33.2%.
-              They match the design-lab's mock numbers exactly, which is why it
-              looked right in the harness and in the screenshots — but it never
-              read vm.living / vm.variable / vm.atDebt at all. With any other
-              month's numbers the picture and the four figures printed directly
-              underneath it disagreed, and the picture was the one people trust.
-
-              It is computed now. Segments under ~12% drop their label rather
-              than squeeze it, and every slice keeps dark ink: white on the
-              steel-blue measured 3.97:1, under what 10px text needs, while its
-              two neighbours already used dark ink — so one bar had two
-              different text treatments and the odd one out was the failing one. */}
-          {(() => {
-            const parts = [
-              { key: "living", label: t("Living"), value: vm.living, bg: "#5b82b3" },
-              { key: "variable", label: t("Variable"), value: vm.variable, bg: "#e3b341" },
-              { key: "debt", label: t("Debt"), value: vm.atDebt, bg: "#34c5e8" },
-            ].filter((seg) => seg.value > 0);
-            const total = parts.reduce((a, seg) => a + seg.value, 0);
-            if (total <= 0) return null;
-            return (
-              <div className="flex h-[30px] overflow-hidden rounded-[8px]">
-                {parts.map((seg) => {
-                  const pct = (seg.value / total) * 100;
-                  return (
-                    <div
-                      key={seg.key}
-                      className="flex items-center justify-center overflow-hidden text-[10px] font-semibold"
-                      style={{ width: `${pct}%`, background: seg.bg, color: "#0d1218" }}
-                      title={`${seg.label} · ${money(seg.value)} · ${Math.round(pct)}%`}
-                    >
-                      {pct >= 12 ? seg.label : ""}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-            <Stat label={t("Income")} value={money(vm.income)} color="#46d18a" />
-            <Stat label={t("Living")} value={money(vm.living)} color="#e6edf3" />
-            <Stat label={t("Variable")} value={money(vm.variable)} color="#e6edf3" />
-            <Stat label={t("At debt")} value={money(vm.atDebt)} color="#34c5e8" />
-          </div>
-        </div>
-
-        {/* ── Debt-free ── */}
-        <div
-          className="flex items-end justify-between rounded-[18px] p-4 text-white"
-          style={{ background: "linear-gradient(135deg,#5b21b6,#1d4ed8)" }}
-        >
-          <div>
-            <div className="text-[11.5px] opacity-90">{t("debt-free")}</div>
-            <div className="text-[26px] font-bold leading-none tracking-tight">{vm.debtFreeBy}</div>
-            <div className="mt-1 text-[12px] opacity-90">{t("~{n} months to go", { n: vm.monthsToGo })}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[11.5px] opacity-90">{t("interest you'll pay")}</div>
-            <div className="text-[20px] font-bold">~{money(vm.interest)}</div>
-          </div>
-        </div>
-
-        {/* ── Attack ladder ── */}
-        <div
-          className="rounded-[18px] border p-4"
-          style={{ background: "#141a24", borderColor: "#232d3a" }}
-        >
-          <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-bone">
-            <Flame size={16} style={{ color: "#fb923c" }} />
-            {t("Attack ladder")}
-            <span className="text-[12px] font-normal" style={{ color: "#8b97a6" }}>
-              {t("· smallest first")}
-            </span>
-          </div>
-          <div className="flex flex-col gap-2">
-            {vm.ladder.map((d) => {
-              const hi = !!d.target;
-              return (
-                <div
-                  key={d.rank}
-                  className="flex items-center gap-3 rounded-[12px] border p-3"
-                  style={{
-                    background: hi ? "#0e2230" : "transparent",
-                    borderColor: hi ? "#1d5066" : "#232d3a",
-                  }}
-                >
-                  <span
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
-                    style={{
-                      background: hi ? "#34c5e826" : "#1a212c",
-                      // The rank sat at 4.33:1 on its own chip — dimmer than the
-                      // dim ink elsewhere, because the chip is LIGHTER than the
-                      // card it sits on. It is a number the ladder exists to be
-                      // read in order, so it takes the secondary ink.
-                      color: hi ? "#34c5e8" : "#8b97a6",
-                    }}
-                  >
-                    {d.rank}
-                  </span>
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium text-bone">{d.name}</span>
-                    {d.apr != null && (
-                      <span
-                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                        style={{ background: "#f0556e26", color: "#f0556e" }}
-                      >
-                        {d.apr}%
-                      </span>
-                    )}
-                    {d.live && (
-                      <span
-                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                        style={{ background: "#46d18a26", color: "#46d18a" }}
-                      >
-                        {t("live")}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[13px] font-semibold text-bone">{money(d.amount)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      <div className="h-2" />
+          className="absolute inset-y-0 w-px"
+          style={{ left: `${pace}%`, background: "var(--color-bg)", opacity: 0.9 }}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: InsightsTaps }) {
+  const left = vm.budgetTarget - vm.budgetSpent;
+  const over = left < 0;
+  const pace = vm.budgetCycleDays > 0 ? (vm.budgetCycleDay / vm.budgetCycleDays) * 100 : 0;
+  const rows = [...vm.categories].sort((a, b) => b.spent - a.spent);
+
   return (
-    <div>
-      <div className="text-[15px] font-bold" style={{ color }}>
-        {value}
+    <div className="pb-2">
+      <header className="px-5 pt-1">
+        <p className="text-[15px] text-taupe">
+          {vm.budgetCycleLabel} ·{" "}
+          {t("day {n} of {d}", { n: vm.budgetCycleDay, d: vm.budgetCycleDays })}
+        </p>
+        <h1 className="mt-0.5 text-[34px] font-bold leading-tight tracking-[-0.022em] text-bone">
+          {t("Budget")}
+        </h1>
+      </header>
+
+      <div className="mt-5 px-5">
+        <p className="text-[15px] text-taupe">{over ? t("Over by") : t("Left to spend")}</p>
+        <p
+          className={`mt-0.5 text-[52px] font-light leading-[1.06] tracking-[-0.04em] tabular-nums ${
+            over ? "text-ember" : "text-bone"
+          }`}
+        >
+          {money2(Math.abs(left))}
+        </p>
+        <p className="mt-1 text-[14px] text-faint">
+          {t("{spent} of {target} spent", {
+            spent: money(vm.budgetSpent),
+            target: money(vm.budgetTarget),
+          })}
+        </p>
+        <div className="mt-3">
+          <Bar spent={vm.budgetSpent} target={vm.budgetTarget} pace={pace} />
+        </div>
       </div>
-      <div className="mt-0.5 text-[10.5px]" style={{ color: "#8b97a6" }}>
-        {label}
-      </div>
+
+      <section className="mt-6">
+        <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">{t("By category")}</h2>
+        <div className="overflow-hidden rounded-2xl bg-tile">
+          {rows.map((c, i) => {
+            const cOver = c.spent > c.target;
+            const last = i === rows.length - 1;
+            return (
+              <button
+                key={c.catId}
+                onClick={() => taps.onCategory?.(c.catId)}
+                className="block w-full px-4 py-3 text-left"
+                style={last ? undefined : { boxShadow: "inset 0 -1px 0 var(--color-edge)" }}
+              >
+                <div className="flex items-baseline gap-3">
+                  <span className="min-w-0 flex-1 truncate text-[16px] text-bone">{c.label}</span>
+                  <span
+                    className={`text-[15px] tabular-nums ${cOver ? "text-ember" : "text-taupe"}`}
+                  >
+                    {money(c.spent)}{" "}
+                    <span className="text-faint">/ {money(c.target)}</span>
+                  </span>
+                </div>
+                <Bar spent={c.spent} target={c.target} pace={pace} />
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">{t("The month")}</h2>
+        <div className="overflow-hidden rounded-2xl bg-tile">
+          {[
+            { k: t("Coming in"), v: money(vm.income) },
+            { k: t("Fixed living cost"), v: money(vm.living) },
+            { k: t("Free to aim at the debt"), v: money(vm.atDebt), accent: true },
+          ].map((r, i, arr) => (
+            <div
+              key={r.k}
+              className="flex items-baseline gap-3 px-4 py-3"
+              style={i === arr.length - 1 ? undefined : { boxShadow: "inset 0 -1px 0 var(--color-edge)" }}
+            >
+              <span className="min-w-0 flex-1 text-[16px] text-bone">{r.k}</span>
+              <span className={`text-[16px] tabular-nums ${r.accent ? "text-accent" : "text-bone"}`}>
+                {r.v}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 px-5 text-[13px] text-faint">
+          {/* The door's own warning, kept word-for-word on the screen that shows
+              the number: the household's cash floor is not in this figure. */}
+          {t("What is free to aim at the debt — not what is safe to spend.")}
+        </p>
+      </section>
+
+      {vm.ladder.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">
+            {vm.debtFreeBy === "—"
+              ? t("Payoff order")
+              : t("Debt free {when}", { when: vm.debtFreeBy })}
+          </h2>
+          <div className="overflow-hidden rounded-2xl bg-tile">
+            {vm.ladder.map((d, i) => (
+              <div
+                key={d.name + d.rank}
+                className="flex items-baseline gap-3 px-4 py-3"
+                style={
+                  i === vm.ladder.length - 1
+                    ? undefined
+                    : { boxShadow: "inset 0 -1px 0 var(--color-edge)" }
+                }
+              >
+                <span className="w-5 shrink-0 text-[15px] tabular-nums text-faint">{d.rank}</span>
+                <span className="min-w-0 flex-1 truncate text-[16px] text-bone">{d.name}</span>
+                {d.apr != null && (
+                  <span className="text-[13px] tabular-nums text-taupe">{d.apr}%</span>
+                )}
+                <span className="text-[16px] tabular-nums text-bone">{money(d.amount)}</span>
+              </div>
+            ))}
+          </div>
+          {vm.monthsToGo > 0 && (
+            <p className="mt-2 px-5 text-[13px] text-faint">
+              {t("{n} months at this pace · {amount} of interest", {
+                n: vm.monthsToGo,
+                amount: money(vm.interest),
+              })}
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }

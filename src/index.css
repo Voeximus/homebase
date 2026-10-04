@@ -1,35 +1,126 @@
 @import "tailwindcss";
 
-/* ── Mission Control · "Instrument" theme ────────────────────────────────────
-   Engineering-friendly re-skin: cool graphite canvas with a faint blueprint
-   grid, monospaced tabular readouts, technical mono labels, a precise cyan
-   "signal" accent, and green reserved for good money. Hierarchy still comes
-   from fill depth (canvas → tile → hero), not shadows. */
+/* ── Apple's palette, light and dark ─────────────────────────────────────────
+   WHAT THIS REPLACED, and why the shape changed as well as the colours. The old
+   skin was one dark theme: a cool graphite ground with a blueprint grid, a cyan
+   "signal" accent, and a rule that ONE accent carried every interactive meaning.
+   He asked for "a merge between SpaceX and Apple", then "more apple then
+   spacex", then "apple like color theme" — three steers in one direction.
+
+   The real difference is not the hues, it is that Apple assigns colour by
+   MEANING and the old skin assigned it by role. One accent doing every job is
+   the habit being dropped: here blue is what you can tap, green is settled,
+   orange is what needs you, red is a real problem. A card can carry two of them
+   at once and still read correctly, which the single-accent rule could not do.
+
+   BOTH GROUNDS ARE REAL, by his decision ("let's have light and dark be an
+   option"). Dark is the base because that is what the app has always been and
+   what an un-set phone at night should get; light is a full redefinition of the
+   same tokens, not a filter over the dark one. Every component reads tokens, so
+   neither theme has component-level overrides to drift.
+
+   THE THREE STATES, and the guard order matters. A viewer has an explicit
+   choice (data-theme="light"/"dark") or no choice at all (nothing stamped), and
+   the un-stamped case is the common one. So: :root holds dark; the media query
+   gives light to anyone whose OS says light UNLESS they explicitly chose dark;
+   and [data-theme="light"] wins outright. */
 @theme {
-  --color-bg: #0a0d12; /* cool graphite-black canvas */
-  --color-tile: #121822; /* default panel fill */
-  --color-raised: #18212d; /* nested wells / mini-stats */
-  --color-recessed: #0c1016; /* the pressed-in next-move slip */
-  --color-hero: #0e1b1f; /* cyan-tinted dark — ONLY the hero panel */
-  --color-edge: #232d3a; /* 1px hairline panel border */
-  --color-edgehero: #1d3d3e; /* cyan-tinted hero border */
+  /* ── dark: Apple's iOS dark system colours ── */
+  --color-bg: #000000; /* true black — the grouped-background ground */
+  --color-tile: #1c1c1e; /* systemGray6 dark — the grouped list surface */
+  --color-raised: #2c2c2e; /* systemGray5 dark — nested wells inside a tile */
+  --color-recessed: #0a0a0a; /* pressed-in slips */
+  --color-hero: #1c1c1e; /* the hero panel is just a tile now, not its own fill */
+  --color-edge: rgba(84, 84, 88, 0.65); /* separator, dark */
+  --color-edgehero: rgba(84, 84, 88, 0.65);
 
-  --color-accent: #34c5e8; /* signal cyan — interactive, momentum, CTAs, road */
-  --color-mint: #46d18a; /* green — good money: cash, cleared, on-track */
-  --color-gold: #e3b341; /* amber — the 90-day streak ring, near-limit */
-  --color-ember: #e5544e; /* red — ONLY the …4728 card + over-limit bars */
+  --color-accent: #0a84ff; /* systemBlue dark — THIS IS SOMETHING YOU CAN TAP */
+  --color-mint: #30d158; /* systemGreen dark — settled, paid, on track */
+  --color-gold: #ff9f0a; /* systemOrange dark — needs you, near the limit */
+  --color-ember: #ff453a; /* systemRed dark — over, or genuinely wrong */
 
-  --color-bone: #eef2f7; /* cool off-white — readouts + headlines (brightened) */
-  --color-taupe: #97a3b2; /* labels, captions (brightened for contrast) */
-  --color-faint: #7c8696; /* tertiary hints, last4 (was #687180 — too dim) */
+  --color-bone: #ffffff; /* label — 21:1 on the tile */
+  --color-taupe: rgba(235, 235, 245, 0.6); /* secondaryLabel — 5.94:1 on tile */
+  /* Apple's tertiaryLabel is .3, which measures 2.48:1 on #1C1C1E and fails for
+     any real text. It carries "over 10 days" and the due dates here, so it is
+     lifted to .5 — 4.58:1 on the tile, 4.65:1 on the black ground. */
+  --color-faint: rgba(235, 235, 245, 0.5);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  /* SF first, and it is the real thing on both of their phones. The rest is the
+     fallback chain for a desktop browser, which is where this gets looked at
+     least. No webfont: a font request is a blank screen on a bad connection,
+     and the whole point of this palette is that it is the system's. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    system-ui, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
     "Roboto Mono", Menlo, Consolas, monospace;
 }
 
 :root {
+  color-scheme: dark;
+}
+
+/* ── light ──────────────────────────────────────────────────────────────────
+   Not an inversion. A hue that reads on black is too pale to read on white, so
+   every value here was MEASURED against both of this theme's surfaces — the
+   white tile and the #F2F2F7 ground — and the number in each comment is the
+   worse of the two. Nothing here is Apple's published value where Apple's
+   published value failed:
+
+     systemGreen  #34C759  2.22:1 on white
+     systemOrange #FF9500  2.20:1
+     systemBlue   #007AFF  4.02:1
+     secondaryLabel .6     3.44:1
+
+   Apple ships all four, on larger type and usually beside an icon. They carry
+   13px status text here ("Paid · clearing") and the tap target on a 16px line,
+   which needs 4.5:1, so each is stepped to the darkest member of its own ramp
+   that still reads as that colour. The blue is the one to notice: #0066CC is
+   visibly deeper than Apple's #007AFF, and it is deeper because #007AFF failed
+   on the grey ground the tab bar sits on. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --color-bg: #f2f2f7; /* systemGroupedBackground */
+    --color-tile: #ffffff; /* secondarySystemGroupedBackground */
+    --color-raised: #f2f2f7;
+    --color-recessed: #e5e5ea;
+    --color-hero: #ffffff;
+    --color-edge: rgba(60, 60, 67, 0.18); /* separator, light */
+    --color-edgehero: rgba(60, 60, 67, 0.18);
+
+    --color-accent: #0066cc; /* 5.57:1 on the tile, 4.99:1 on the ground */
+    --color-mint: #1e7a33; /* 5.40 / 4.84 — settled, paid */
+    --color-gold: #9a5800; /* 5.57 / 4.99 — needs you */
+    --color-ember: #d70015; /* 5.38 / 4.83 — over, or wrong */
+
+    --color-bone: #000000; /* 21:1 */
+    --color-taupe: rgba(60, 60, 67, 0.9); /* 8.01 / 7.40 */
+    --color-faint: rgba(60, 60, 67, 0.75); /* 5.15 / 4.82 */
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f2f2f7;
+  --color-tile: #ffffff;
+  --color-raised: #f2f2f7;
+  --color-recessed: #e5e5ea;
+  --color-hero: #ffffff;
+  --color-edge: rgba(60, 60, 67, 0.18);
+  --color-edgehero: rgba(60, 60, 67, 0.18);
+
+  --color-accent: #0066cc; /* 5.57:1 on the tile, 4.99:1 on the ground */
+  --color-mint: #1e7a33; /* 5.40 / 4.84 — settled, paid */
+  --color-gold: #9a5800; /* 5.57 / 4.99 — needs you */
+  --color-ember: #d70015; /* 5.38 / 4.83 — over, or wrong */
+
+  --color-bone: #000000; /* 21:1 */
+  --color-taupe: rgba(60, 60, 67, 0.9); /* 8.01 / 7.40 */
+  --color-faint: rgba(60, 60, 67, 0.75); /* 5.15 / 4.82 */
+}
+
+:root[data-theme="dark"] {
   color-scheme: dark;
 }
 
@@ -49,14 +140,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: var(--color-bone);
-  background-color: #0a0d12;
-  /* faint blueprint grid + one cool signal glow up top */
-  background-image:
-    radial-gradient(1100px 560px at 50% -12%, rgba(52, 197, 232, 0.05), transparent 70%),
-    linear-gradient(rgba(120, 160, 200, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 160, 200, 0.025) 1px, transparent 1px);
-  background-size: 100% 100%, 28px 28px, 28px 28px;
-  background-attachment: fixed;
+  /* The token, not a literal: this line used to hardcode #0a0d12 beside a
+     var()-driven colour, so the ground could not follow a theme even when every
+     other surface did. The blueprint grid and the cyan glow that sat on top of
+     it are gone with the rest of that skin — Apple's ground is a ground. */
+  background-color: var(--color-bg);
   overscroll-behavior-y: none;
 }
 
@@ -1134,6 +1222,16 @@ input[type="number"] {
   filter: blur(96px);
   opacity: 0.9;
 }
+/* Light mode gets a fraction of it: the same field that reads as atmosphere on
+   black reads as a stain on white. */
+:root[data-theme="light"] .hb-aurora {
+  opacity: 0.28;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .hb-aurora {
+    opacity: 0.28;
+  }
+}
 .hb-aurora span {
   position: absolute;
   display: block;
@@ -1145,15 +1243,13 @@ input[type="number"] {
   width: 62vmax;
   height: 62vmax;
   left: -18%;
-  top: -14%;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.85) 0%, rgba(6, 182, 212, 0.34) 44%, transparent 70%);
+  top: -20%;
+  background: radial-gradient(circle, rgba(10, 132, 255, 0.5) 0%, rgba(0, 64, 221, 0.22) 46%, transparent 70%);
 }
+/* The second field is gone rather than recoloured. Two of them framed a mark
+   that was itself two gradients; one mark in one blue needs one light source. */
 .hb-aurora .a2 {
-  width: 58vmax;
-  height: 58vmax;
-  right: -20%;
-  bottom: -16%;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.8) 0%, rgba(99, 102, 241, 0.3) 46%, transparent 70%);
+  display: none;
 }
 
 .hb-login-inner {
@@ -1240,8 +1336,8 @@ input[type="number"] {
   color: var(--color-faint);
 }
 .hb-field input:focus {
-  border-color: #06b6d4;
-  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 .hb-pw {
   position: relative;
@@ -1295,10 +1391,13 @@ input[type="number"] {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: #04231f;
+  /* White on systemBlue, which is what Apple does and what the icon does. The
+     old button was a three-stop green→cyan→blue sweep with near-black text on
+     it — the single most "generic app" element on the screen. */
+  color: #fff;
   cursor: pointer;
-  background: linear-gradient(120deg, #34d399 0%, #06b6d4 52%, #3b82f6 100%);
-  box-shadow: 0 12px 28px -14px rgba(6, 182, 212, 0.9);
+  background: var(--color-accent);
+  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--color-accent) 90%, transparent);
   transition: transform 0.12s, filter 0.16s;
 }
 .hb-go:hover {
@@ -1326,7 +1425,7 @@ input[type="number"] {
 }
 .hb-swap span {
   font-weight: 700;
-  color: #22d3ee;
+  color: var(--color-accent);
 }
 .hb-swap:hover span {
   text-decoration: underline;

@@ -14,50 +14,71 @@ import path from "node:path";
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
-const PLATE = "M22 28 H78 V54 L50 80 L22 54 Z";
-const SW = 13;
+// ── The mark, 2026-10-04 ─────────────────────────────────────────────────────
+//
+// It was a teal→blue shield split down the middle. He picked this one off three
+// options: a white house on systemBlue, doorway knocked out.
+//
+// TWO BLUES, NOT THREE. The gradient runs #0A84FF → #0040DD, Apple's own
+// systemBlue falling into a deeper one. The old mark had a green end, and a
+// green-to-blue sweep is the thing that reads as "a generic app icon".
+//
+// THE DOORWAY IS A KNOCK-OUT, not a drawn rectangle, so it is always exactly the
+// blue behind it and cannot drift from the gradient.
+//
+// WHY IT SURVIVES AT 40px, which is what actually decides an icon: the whole mark
+// is two solid shapes with no stroke anywhere. The outline version of this house
+// was the better drawing at 152px and a grey smudge at 40.
+const HOUSE = "M12 46 L50 14 L88 46 L88 88 L12 88 Z";
+const DOOR = { x: 40, y: 62, w: 20, h: 26, r: 2 };
+const BLUE = `<linearGradient id="B" x1="10" y1="6" x2="92" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A84FF"/><stop offset="1" stop-color="#0040DD"/>
+    </linearGradient>`;
 
-/** The mark alone, on transparency. `s` scales it inside a 100-unit box. */
-function mark(scale = 1, cx = 50, cy = 54) {
-  const t = `translate(${cx - 50 * scale} ${cy - 54 * scale}) scale(${scale})`;
+/** The mark alone, on transparency — a blue house with the doorway cut out of it.
+ *  This is the favicon form: no tile, because a tile only shrinks the mark in a
+ *  16px browser tab. */
+function mark(scale = 1, cx = 50, cy = 50) {
+  const t = `translate(${cx - 50 * scale} ${cy - 50 * scale}) scale(${scale})`;
   return `
   <defs>
-    <linearGradient id="L" x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#06b6d4"/>
-    </linearGradient>
-    <linearGradient id="R" x1="48" y1="18" x2="86" y2="86" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#3b82f6"/>
-    </linearGradient>
+    ${BLUE}
     <mask id="M">
-      <path d="${PLATE}" fill="#fff" stroke="#fff" stroke-width="${SW}" stroke-linejoin="round" paint-order="stroke"/>
-      <rect x="48.8" y="0" width="2.4" height="62" fill="#000"/>
+      <path d="${HOUSE}" fill="#fff"/>
+      <rect x="${DOOR.x}" y="${DOOR.y}" width="${DOOR.w}" height="${DOOR.h}" rx="${DOOR.r}" fill="#000"/>
     </mask>
   </defs>
   <g transform="${t}">
-    <g mask="url(#M)">
-      <rect x="0" y="0" width="50" height="100" fill="url(#L)"/>
-      <rect x="50" y="0" width="50" height="100" fill="url(#R)"/>
-    </g>
+    <rect x="0" y="0" width="100" height="100" fill="url(#B)" mask="url(#M)"/>
+  </g>`;
+}
+
+/** The mark INVERTED — a white house on a filled blue tile. This is the app-tile
+ *  form: at icon sizes a solid field of colour reads from further away than a
+ *  coloured shape on a dark ground, which is what the old graphite tile was. */
+function plate(scale = 1) {
+  const inset = (100 - 100 * scale) / 2;
+  return `
+  <defs>${BLUE}</defs>
+  <rect width="100" height="100" fill="url(#B)"/>
+  <g transform="translate(${inset} ${inset}) scale(${scale})">
+    <path d="${HOUSE}" fill="#fff"/>
+    <rect x="${DOOR.x}" y="${DOOR.y}" width="${DOOR.w}" height="${DOOR.h}" rx="${DOOR.r}" fill="#0A84FF"/>
   </g>`;
 }
 
 // ── favicon: the mark alone, filling the frame. A dark tile behind it would
 //    only shrink the mark in a 16px browser tab for nothing.
-const favicon = `<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${mark(1.06, 50, 52)}
+const favicon = `<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${mark(1.0, 50, 50)}
 </svg>`;
 fs.writeFileSync(`${OUT}/favicon.svg`, favicon + "\n");
 
-// ── app tile: full-bleed graphite so an OS mask never cuts a white edge, with
-//    the mark inside the maskable safe zone (the inner 80%).
+// ── app tile: full-bleed BLUE so an OS mask never cuts a white edge, with the
+//    mark inside the maskable safe zone. The tile was graphite with a cyan glow
+//    behind the mark; a glow is invisible at 40px and only softened the edge, so
+//    the colour is the tile itself now.
 const tile = (safe) => `<svg width="1024" height="1024" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <radialGradient id="glow" cx="50" cy="46" r="42" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#06b6d4" stop-opacity="0.22"/><stop offset="1" stop-color="#06b6d4" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect width="100" height="100" fill="#0a0d12"/>
-  <rect width="100" height="100" fill="url(#glow)"/>
-  ${mark(safe, 50, 52)}
+  ${plate(safe)}
 </svg>`;
 
 const jobs = [

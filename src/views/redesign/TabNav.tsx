@@ -22,16 +22,20 @@ const TABS: { key: TabKey; label: string; Icon: LucideIcon }[] = [
 
 export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) => void }) {
   return (
-    // `justify-around` sized each button to its own TEXT, so the targets
-    // measured 29–36px wide with dead gutters between them — on the most-used
-    // control in the app, at the bottom of a phone, where a thumb lands
-    // approximately. An equal-column grid gives every tab the same share of the
-    // full width and leaves no gap that does nothing. Three columns now, not four.
+    // `justify-around` sized each button to its own TEXT, so the targets measured
+    // 29–36px wide with dead gutters between them — on the most-used control in the
+    // app, at the bottom of a phone, where a thumb lands approximately. An
+    // equal-column grid gives every tab the same share of the full width and leaves
+    // no gap that does nothing. Three columns now, not four.
+    //
+    // Every colour is a token, so the bar follows light and dark with no second
+    // code path. The hairline above it is the separator token, which is the same
+    // line the grouped lists use — one rule for every edge in the app.
     <nav
-      className="grid grid-cols-3 border-t pt-2"
+      className="grid grid-cols-3 border-t pt-1.5"
       style={{
-        background: "#10141d",
-        borderColor: "#1d2530",
+        background: "var(--color-bg)",
+        borderColor: "var(--color-edge)",
         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
       }}
       aria-label={t("Sections")}
@@ -43,10 +47,11 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
             key={key}
             onClick={() => onTab(key)}
             aria-current={on ? "page" : undefined}
-            className="flex min-h-[48px] flex-col items-center justify-center gap-1 text-[11px] transition active:scale-95"
-            style={{ color: on ? "#34c5e8" : "#7a8595" }}
+            className={`flex min-h-[48px] flex-col items-center justify-center gap-1 text-[11px] font-medium transition active:scale-95 ${
+              on ? "text-accent" : "text-faint"
+            }`}
           >
-            <Icon size={21} />
+            <Icon size={23} strokeWidth={1.6} />
             <span>{t(label)}</span>
           </button>
         );
