@@ -61,7 +61,7 @@ export function LoginScreen() {
           </h1>
           {/* The app is money AND body. The old line said "shared finances". */}
           <p className="hb-sub" style={{ animationDelay: "240ms" }}>
-            {t("Bills, accounts and the budget, in one place.")}
+            {t("Money and health, calibrated in one place.")}
           </p>
         </header>
 

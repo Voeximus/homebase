@@ -111,20 +111,17 @@ export function BillsSheet({
   onPay,
   getMonth,
   baseDate,
-  /** Render in the page rather than over it — see the note on Sheet's `panel`. */
-  panel,
 }: {
-  open?: boolean;
-  onClose?: () => void;
+  open: boolean;
+  onClose: () => void;
   onPay?: (b: MonthCalBill) => void;
   getMonth: (year: number, month: number) => MonthCalendar;
   baseDate?: Date;
-  panel?: boolean;
 }) {
   const [showCal, setShowCal] = useState(false);
   const [openUnpaid, setOpenUnpaid] = useState(false);
   const [openPaid, setOpenPaid] = useState(false);
-  if (!panel && open === false) return null;
+  if (!open) return null;
   const base = baseDate ?? new Date();
 
   // The list below stays CALENDAR-MONTHLY on purpose — rent really is due on the

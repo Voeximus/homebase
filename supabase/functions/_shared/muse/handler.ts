@@ -62,32 +62,7 @@ import { setLangVar } from "./lib/i18n.ts";
  * API.md asking an assistant not to loop, which is exactly what a prompt injection
  * overrides.
  */
-/**
- * TAKEN OFF, by his decision on 2026-10-04: "take the read limit off entirely."
- *
- * `null` means no cap. The counter below still RUNS — every read is still counted and
- * still audited, because the number is worth having — it just cannot refuse anything.
- *
- * WHAT THIS GIVES UP, stated plainly rather than buried. `finance.search_transactions`
- * returns up to 50 rows a call, so the cap was the only thing standing between a loop
- * and the whole ledger; the window rules in tools.ts take the granularity away and this
- * took the volume away. With it gone, a prompt injection that gets a looping assistant
- * to page the ledger is no longer stopped by the door — it is only slowed by the 50-row
- * page size. The things that DO still hold: the bank descriptor is unreadable by every
- * tool, every outbound string is scrubbed, and every call is written to the audit table
- * with its arguments, so a loop is visible after the fact even though it is not blocked
- * during.
- *
- * It came off because the cap was costing him the thing the door is FOR. An ordinary
- * session of looking into one question spent 60 reads and then refused, mid-answer,
- * with "open the app" as the remedy — in a week when the app is being retired. A safety
- * net that fires on normal use is not protecting anything, it is just the loudest
- * failure mode.
- *
- * The WRITE cap stays at 60/hour. He asked for the read limit, and writes are the side
- * where a loop changes his data rather than reading it.
- */
-export const READS_PER_HOUR: number | null = null;
+export const READS_PER_HOUR = 60;
 
 /** The counter, in the locked-down `muse_calls` table. One statement per call, so
  *  two arriving together cannot both read 59. Implemented over `muse_bump` in the
@@ -428,19 +403,21 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   // REFUSAL, never "plenty left": the cap exists for the case where something is
   // looping, which is exactly when the database is under load.
   const bucket = `read:${azDateISO(now)}T${String(now.getHours()).padStart(2, "0")}`;
-  // A counter that will not answer USED to be a refusal, and that was right while the
-  // cap was enforced: the cap exists for the case where something is looping, which is
-  // exactly when the database is under load, so "plenty left" would have been a guess
-  // at the worst moment. With no cap there is nothing to guess about — the count is
-  // observability now, not a gate, and a dead counter blocking every read would be a
-  // self-inflicted outage in exchange for nothing.
-  let used: number | null = null;
+  let used: number;
   try {
     used = await deps.limit.bump(person, bucket);
   } catch (e) {
     console.error("muse-read: rate counter unreadable", String((e as Error)?.message ?? e));
+    return finish(
+      {
+        error: "failed",
+        says: "I could not check my own call count just now, so I stopped rather than answer.",
+      },
+      500,
+      "error",
+    );
   }
-  if (READS_PER_HOUR !== null && used !== null && used > READS_PER_HOUR) {
+  if (used > READS_PER_HOUR) {
     return finish(
       {
         error: "rate_limited",

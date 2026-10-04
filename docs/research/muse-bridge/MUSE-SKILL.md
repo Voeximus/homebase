@@ -338,15 +338,10 @@ As of 26 September 2026, these specific things are still moving:
   staged-request behaviour is gone, along with `can_be_applied_yet`. If you ever see
   that field in a reply, the door is older than this document — say so rather than
   guessing.
-- **The read cap is OFF.** Ask as many questions as the answer needs; reads are still
-  counted and audited, but nothing refuses them. It was 60 an hour and came off on
-  2026-10-04, because one ordinary session of looking into a single question spent it
-  and then refused mid-answer with "open the app" as the remedy — in the week the app
-  is being retired.
-- The **write cap is live: 60 writes an hour**, per person, per Arizona hour. (It was
-  10, and one ordinary morning of catching up spent it and then refused a weigh-in.)
-  `rate_limited` is a refusal you will actually get on writes. Still do not ask the same
-  question in a loop — it is no longer blocked, which makes it your job not to.
+- Both caps are **live**: 60 reads an hour and 60 writes an hour, per person, per
+  Arizona hour. (It was 10 writes, and one ordinary morning of catching up spent it
+  and then refused a weigh-in.) `rate_limited` is a refusal you will actually get. Do not ask the
+  same question in a loop.
 - Reminders come out of Homebase's push, which Android and iOS **silence under Do
   Not Disturb**, and nothing confirms delivery. If a thing genuinely has to wake
   me, set a real alarm on my Pixel — that is the only reliable bell — and say

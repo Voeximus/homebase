@@ -1618,39 +1618,27 @@ describe("rows to the shapes the maths expects", () => {
   });
 });
 
-// ── counting reads, with no cap on them ───────────────────────────────────────
+// ── the hourly cap ────────────────────────────────────────────────────────────
 //
-// WHAT THIS BLOCK USED TO BE. A cap of 60 reads an hour, which was itself written
-// because the cap before it was declared, documented and never enforced:
-// `rate_limited` was in ERROR_CODES while API.md told the assistant a cap "is planned
-// and is not switched on yet, so today nothing stops you but this sentence" — and a
-// sentence addressed to a model is exactly what a prompt injection overrides.
-//
-// WHAT IT IS NOW. He took the read cap off on 2026-10-04, in those words: "take the
-// read limit off entirely." It was costing him the thing the door is for — an ordinary
-// session on a single question spent the hour and then refused mid-answer, offering
-// "open the app" in the week the app is being retired.
-//
-// So the COUNTING is still tested, hard, and the refusing is tested to be gone. The
-// count has not stopped mattering: it is per Arizona hour, per person, and never spent
-// by a call that ran nothing, and every one of those three was a bug once. What it no
-// longer does is decide anything.
-describe("reads are counted, per person, and never refused", () => {
-  it("answers far past the old allowance of 60", async () => {
-    // Twice the old cap, and the last one has to answer like the first.
-    for (let i = 0; i < 120; i++) {
+// WHY THIS BLOCK EXISTS. The cap was declared, documented and never enforced:
+// `rate_limited` was in ERROR_CODES, API.md told the assistant a cap "is planned and
+// is not switched on yet, so today nothing stops you but this sentence", and a
+// sentence addressed to a model is exactly what a prompt injection overrides. The
+// walk it lets through is not hypothetical — see the window tests below.
+describe("60 reads an hour, per person", () => {
+  it("counts every answered call, and refuses the one after the allowance", async () => {
+    for (let i = 0; i < READS_PER_HOUR; i++) {
       const ok = await ask("finance.position");
       expect(ok.status, `call ${i + 1} should have been answered`).toBe(200);
     }
-    expect(counted.get("gino|read:2026-09-30T22")).toBe(120);
-    // Counted and audited as an answer, not as a refusal — the number is still
-    // collected, it just has no authority.
-    expect(audited[audited.length - 1]).toMatchObject({ outcome: "ok", person: "gino" });
-  });
-
-  it("has no cap to state", () => {
-    // Read off the code so this cannot pass while a 60 is quietly put back.
-    expect(READS_PER_HOUR).toBeNull();
+    const over = await ask("finance.position");
+    expect(over.status).toBe(429);
+    const body = await jsonOf(over);
+    expect(body.error).toBe("rate_limited");
+    expect(String(body.says)).toContain(String(READS_PER_HOUR));
+    // No numbers in a refusal, and the refusal is in the log like everything else.
+    expect(body).not.toHaveProperty("available");
+    expect(audited[audited.length - 1]).toMatchObject({ outcome: "rate_limited", person: "gino" });
   });
 
   it("counts into the ARIZONA hour, not the runtime's", async () => {
@@ -1670,26 +1658,20 @@ describe("reads are counted, per person, and never refused", () => {
     ]);
   });
 
-  it("still answers when the counter itself will not answer", async () => {
-    // THIS ASSERTION IS THE REVERSE OF WHAT IT WAS, deliberately. While the cap was
-    // enforced this failed CLOSED, and that was right: a counter that cannot be read
-    // must never read as "plenty left", because the cap matters most when something is
-    // looping, which is exactly when the database is under load.
-    //
-    // With no cap there is nothing to guess at. The count is observability now, not a
-    // gate, so a dead counter refusing every read would be a self-inflicted outage
-    // bought for nothing. It is logged and the answer goes out.
+  it("refuses rather than answering when the counter itself will not answer", async () => {
+    // Fail CLOSED. A counter that cannot be read must never read as "plenty left" —
+    // the cap matters most when something is looping, which is exactly when the
+    // database is under load.
     const res = await ask("finance.position", {}, GINO_SECRET, { limitFails: true });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     const body = await jsonOf(res);
-    expect(body).toHaveProperty("available");
+    expect(body.error).toBe("failed");
+    expect(body).not.toHaveProperty("available");
   });
 
-  it("does not count a call it refused before running anything", async () => {
-    // A malformed call is cheap: it reads no table, so it is not an answer and should
-    // not appear in the tally. This mattered more when the tally was an allowance a
-    // broken caller could burn; it still matters, because the number is now what says
-    // how much the door is actually being asked.
+  it("does not spend the allowance on a call it refused before running anything", async () => {
+    // A malformed call is cheap: it reads no table. Counting it would let a broken
+    // caller burn the hour for the one that was going to work.
     await ask("finance.nonesuch");
     await ask("finance.audit", { months: 3 });
     expect([...counted.keys()]).toEqual([]);

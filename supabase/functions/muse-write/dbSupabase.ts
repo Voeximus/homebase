@@ -289,7 +289,7 @@ export function supabaseDb(admin: SupabaseClient): Db {
       // that has to make that choice deliberately.
       const { data, error } = await admin
         .from("reminders")
-        .select("id, person, message, due_at, repeats, source, sent_at, last_sent_at, canceled_at")
+        .select("id, person, message, due_at, repeats, source, sent_at, canceled_at")
         .eq("id", id)
         .maybeSingle();
       must(error, "read reminders");
