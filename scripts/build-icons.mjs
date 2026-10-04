@@ -19,9 +19,11 @@ const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "publi
 // It was a teal→blue shield split down the middle. He picked this one off three
 // options: a white house on systemBlue, doorway knocked out.
 //
-// TWO BLUES, NOT THREE. The gradient runs #0A84FF → #0040DD, Apple's own
-// systemBlue falling into a deeper one. The old mark had a green end, and a
-// green-to-blue sweep is the thing that reads as "a generic app icon".
+// RE-PIGMENTED 2026-10-04 (second time today). He picked this SHAPE off three
+// options while the palette was Apple blue; the palette is now cream, black and
+// lime, so a blue icon would be the one thing on his home screen that does not
+// belong to the app. The shape is his choice and is untouched — only the two
+// colours moved, to the ground and the accent the app actually uses.
 //
 // THE DOORWAY IS A KNOCK-OUT, not a drawn rectangle, so it is always exactly the
 // blue behind it and cannot drift from the gradient.
@@ -32,7 +34,7 @@ const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "publi
 const HOUSE = "M12 46 L50 14 L88 46 L88 88 L12 88 Z";
 const DOOR = { x: 40, y: 62, w: 20, h: 26, r: 2 };
 const BLUE = `<linearGradient id="B" x1="10" y1="6" x2="92" y2="96" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0A84FF"/><stop offset="1" stop-color="#0040DD"/>
+      <stop offset="0" stop-color="#CAF277"/><stop offset="1" stop-color="#A8DC45"/>
     </linearGradient>`;
 
 /** The mark alone, on transparency — a blue house with the doorway cut out of it.
@@ -60,10 +62,10 @@ function plate(scale = 1) {
   const inset = (100 - 100 * scale) / 2;
   return `
   <defs>${BLUE}</defs>
-  <rect width="100" height="100" fill="url(#B)"/>
+  <rect width="100" height="100" fill="#111111"/>
   <g transform="translate(${inset} ${inset}) scale(${scale})">
-    <path d="${HOUSE}" fill="#fff"/>
-    <rect x="${DOOR.x}" y="${DOOR.y}" width="${DOOR.w}" height="${DOOR.h}" rx="${DOOR.r}" fill="#0A84FF"/>
+    <path d="${HOUSE}" fill="url(#B)"/>
+    <rect x="${DOOR.x}" y="${DOOR.y}" width="${DOOR.w}" height="${DOOR.h}" rx="${DOOR.r}" fill="#111111"/>
   </g>`;
 }
 

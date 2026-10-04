@@ -56,8 +56,8 @@ export function Logo({
     >
       <defs>
         <linearGradient id={L} x1="10" y1="6" x2="92" y2="96" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#0A84FF" />
-          <stop offset="1" stopColor="#0040DD" />
+          <stop offset="0" stopColor="#CAF277" />
+          <stop offset="1" stopColor="#A8DC45" />
         </linearGradient>
         {/* The house, minus the doorway. White keeps, black cuts — so the
             doorway is a real hole and the mark drops onto any ground without

@@ -4,33 +4,26 @@ import { t } from "../../lib/i18n";
 import type { MonthCalendar, MonthCalBill } from "../../lib/schedule";
 import { BillCalendar } from "./BillCalendar";
 import { billsBeforeNextPayday } from "../../lib/headline";
+import { Bar, Card, Chip, Figure, Hero, LimePill, ROW_SEP, SectionTitle, Wells } from "./kit";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money0 = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+/** "$259.67" → ["$259", ".67"], so the cents can be set quieter. */
+const split = (n: number): [string, string] => {
+  const s = money2(n);
+  const i = s.lastIndexOf(".");
+  return [s.slice(0, i), s.slice(i)];
+};
 
 // ── The Bills screen ─────────────────────────────────────────────────────────
 //
-// RESKINNED 2026-10-04, not rewritten: every number on this screen still comes
-// from the single `billsBeforeNextPayday(getMonth, base)` call it always did, and
-// `month` is the very calendar that total was computed from, so the list and the
-// figure above it can never come from two different builds of it.
-//
-// What changed is the surface. It was an orange-topped overlay of collapsible
-// containers, each bill a hairline row with its own tinted icon; it is now an
-// inset grouped list on one tile — Apple's own pattern, which is what he asked
-// for. Three consequences worth stating because they are deliberate:
-//
-//   · NOTHING IS COLLAPSED any more. The groups existed so the sheet stayed "a
-//     glance, not a wall", and that was right when this was one of fourteen
-//     sheets. It is now one of three screens, and a list you have to open to
-//     read is a worse glance than a list that is simply short.
-//   · COLOUR CARRIES MEANING, not identity. Every bill used to wear its
-//     category's hue. Now green means settled and nothing else is coloured, so
-//     the one bill that is paid reads instantly against the ones that are not.
-//   · EVERY COLOUR IS A TOKEN, so the whole screen follows light and dark
-//     without a second code path.
+// Every number still comes from the single `billsBeforeNextPayday(getMonth, base)`
+// call it always did, and `month` is the very calendar that total was computed
+// from, so the list and the figure above it can never come from two different
+// builds of it. Only the surface has changed — twice in one day, and this is the
+// one he picked: cream page, black hero card, lime as a fill.
 
-/** One row in the grouped list. Tappable only when there is something to do. */
 function BillRow({
   b,
   onPay,
@@ -41,10 +34,15 @@ function BillRow({
   last: boolean;
 }) {
   const inner = (
-    <div className="flex w-full items-center gap-3 px-4 py-3">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className={`truncate text-[16px] ${b.paid ? "text-taupe" : "text-bone"}`}>{b.name}</span>
-        <span className="text-[13px]">
+    <div className="flex w-full items-center gap-[11px] px-[14px] py-3">
+      <Chip name={b.name} />
+      <span className="flex min-w-0 flex-1 flex-col text-left">
+        <span
+          className={`truncate text-[15px] font-medium ${b.paid ? "text-taupe line-through" : "text-bone"}`}
+        >
+          {b.name}
+        </span>
+        <span className="mt-px text-[12.5px]">
           {b.paid ? (
             <span className="text-mint">{t("Paid {date}", { date: b.paidDate ?? "" })}</span>
           ) : (
@@ -53,46 +51,21 @@ function BillRow({
         </span>
       </span>
       <span
-        className={`text-[16px] tabular-nums ${b.paid ? "text-faint" : "text-bone"}`}
+        className={`text-[15px] font-semibold tabular-nums ${b.paid ? "text-taupe" : "text-bone"}`}
       >
-        {b.variable && !b.paid ? "~" : ""}
+        &minus;{b.variable && !b.paid ? "~" : ""}
         {money2(b.amount)}
       </span>
-      {!b.paid && onPay && <ChevronRight size={17} className="shrink-0 text-faint" />}
+      {!b.paid && onPay && <ChevronRight size={16} className="-mr-1 shrink-0 text-taupe" />}
     </div>
   );
-  // The separator is inset from the left the way Apple insets it — it starts
-  // under the text, not at the edge of the tile, so the group reads as one object.
-  const sep = last ? undefined : { boxShadow: "inset 0 -1px 0 var(--color-edge)" };
+  const style = last ? undefined : ROW_SEP;
   return !b.paid && onPay ? (
-    <button onClick={() => onPay(b)} className="block w-full text-left" style={sep}>
+    <button onClick={() => onPay(b)} className="block w-full text-left" style={style}>
       {inner}
     </button>
   ) : (
-    <div style={sep}>{inner}</div>
-  );
-}
-
-/** A titled group of rows on one tile, or nothing at all when it is empty. */
-function BillGroup({
-  title,
-  bills,
-  onPay,
-}: {
-  title: string;
-  bills: MonthCalBill[];
-  onPay?: (b: MonthCalBill) => void;
-}) {
-  if (bills.length === 0) return null;
-  return (
-    <section className="mt-6">
-      <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">{title}</h2>
-      <div className="overflow-hidden rounded-2xl bg-tile">
-        {bills.map((b, i) => (
-          <BillRow key={b.id} b={b} onPay={onPay} last={i === bills.length - 1} />
-        ))}
-      </div>
-    </section>
+    <div style={style}>{inner}</div>
   );
 }
 
@@ -118,18 +91,18 @@ export function BillsSheet({
 
   // ONE call. The four arguments dueBeforeNextPayday needs — every month the
   // window touches, today, the cycle's end, the cycle's start — were once
-  // assembled right here, and three of the four fail quietly (a window opening at
-  // today instead of the cycle start silently drops the overdue rows; a window
-  // that crosses a month end under-reports unless both months are handed over).
-  // The Muse read door answers this same question, so the assembly lives in
-  // src/lib/headline.ts and both callers run it.
+  // assembled here, and three of the four fail quietly. The Muse read door
+  // answers this same question, so the assembly lives in src/lib/headline.ts and
+  // both callers run it.
   const { month: mc, cycle, daysLeft, ...beforePayday } = billsBeforeNextPayday(getMonth, base);
   const unpaid = mc.bills.filter((b) => !b.paid);
   const paid = mc.bills.filter((b) => b.paid);
+  const paidTotal = paid.reduce((s, b) => s + b.amount, 0);
+  const [whole, cents] = split(beforePayday.total);
 
   if (showCal) {
     return (
-      <div className="pb-2">
+      <div className="px-2 pb-2">
         <BillCalendar getMonth={getMonth} baseDate={base} onBack={() => setShowCal(false)} />
       </div>
     );
@@ -137,45 +110,74 @@ export function BillsSheet({
 
   return (
     <div className="pb-2">
-      {/* Large title, Apple's pattern: the context line sits above it, small and
-          secondary, and the title itself carries no decoration. */}
-      <header className="px-5 pt-1">
-        <p className="text-[15px] text-taupe">
-          {cycle.label} ·{" "}
-          {daysLeft === 0 ? t("last day") : t("{n} days left", { n: daysLeft })}
-        </p>
-        <h1 className="mt-0.5 text-[34px] font-bold leading-tight tracking-[-0.022em] text-bone">
-          {t("Bills")}
-        </h1>
+      <header className="flex items-center justify-between px-5 pt-1">
+        <div>
+          <p className="text-[13px] text-taupe">{cycle.label}</p>
+          <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-bone">
+            {t("Bills")}
+          </h1>
+        </div>
+        <span className="flex items-center gap-1.5 rounded-full bg-tile px-3 py-[7px]">
+          <span
+            className="inline-block h-[7px] w-[7px] rounded-full"
+            style={{ background: daysLeft <= 3 ? "var(--color-ember)" : "var(--color-mint)" }}
+          />
+          <span className="text-[13px] font-semibold text-bone">
+            {daysLeft === 0 ? t("last day") : t("{n} days left", { n: daysLeft })}
+          </span>
+        </span>
       </header>
 
-      {/* The one figure the screen exists to show. Light weight at a large size is
-          the Apple move: it reads as a readout rather than a headline. */}
-      <div className="mt-5 px-5">
-        <p className="text-[15px] text-taupe">
-          {beforePayday.total > 0 ? t("Still to come") : t("Nothing else due before payday")}
-        </p>
-        {beforePayday.total > 0 && (
-          <p className="mt-0.5 text-[52px] font-light leading-[1.06] tracking-[-0.04em] tabular-nums text-bone">
-            {money2(beforePayday.total)}
-          </p>
-        )}
-        {beforePayday.overdueTotal > 0 && (
-          // A different KIND of fact from the total, not a worse one: already past
-          // its date and still unpaid. Red, because that is what red is for here.
-          <p className="mt-1 text-[14px] text-ember">
-            {t("{amount} already overdue", { amount: money2(beforePayday.overdueTotal) })}
-          </p>
-        )}
+      <div className="mt-3.5">
+        <Hero>
+          <div className="flex items-center justify-between">
+            <span className="text-[13px]" style={{ opacity: 0.66 }}>
+              {beforePayday.total > 0 ? t("Still to come") : t("Nothing else due")}
+            </span>
+            <LimePill>{t("before your check")}</LimePill>
+          </div>
+          <Figure whole={whole} cents={cents} />
+          {beforePayday.overdueTotal > 0 && (
+            <p className="mt-1.5 text-[12.5px]" style={{ color: "var(--color-ember)" }}>
+              {t("{amount} already overdue", { amount: money2(beforePayday.overdueTotal) })}
+            </p>
+          )}
+          <Wells
+            items={[
+              { k: t("Paid"), v: money0(paidTotal) },
+              { k: t("Left"), v: money0(beforePayday.total) },
+              { k: t("Bills"), v: String(mc.bills.length) },
+            ]}
+          />
+        </Hero>
       </div>
 
-      <BillGroup title={t("Coming up")} bills={unpaid} onPay={onPay} />
-      <BillGroup title={t("Paid")} bills={paid} />
+      {unpaid.length > 0 && (
+        <>
+          <SectionTitle aside={mc.monthLabel}>{t("Coming up")}</SectionTitle>
+          <Card className="mt-[9px]">
+            {unpaid.map((b, i) => (
+              <BillRow key={b.id} b={b} onPay={onPay} last={i === unpaid.length - 1} />
+            ))}
+          </Card>
+        </>
+      )}
 
-      <div className="mt-6 px-4">
+      {paid.length > 0 && (
+        <>
+          <SectionTitle aside={money0(paidTotal)}>{t("Paid")}</SectionTitle>
+          <Card className="mt-[9px]">
+            {paid.map((b, i) => (
+              <BillRow key={b.id} b={b} last={i === paid.length - 1} />
+            ))}
+          </Card>
+        </>
+      )}
+
+      <div className="mt-[18px] px-4">
         <button
           onClick={() => setShowCal(true)}
-          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-tile text-[16px] text-accent"
+          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[16px] bg-tile text-[15px] font-semibold text-bone"
         >
           <CalendarDays size={17} /> {t("Open the money calendar")}
         </button>
@@ -183,3 +185,8 @@ export function BillsSheet({
     </div>
   );
 }
+
+/** Re-exported so the alert card on this screen and the bars elsewhere share one
+ *  definition. Kept here rather than inlined so a future screen cannot draw its
+ *  own slightly-different bar. */
+export { Bar };

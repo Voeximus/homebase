@@ -29,14 +29,14 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
     // no gap that does nothing. Three columns now, not four.
     //
     // Every colour is a token, so the bar follows light and dark with no second
-    // code path. The hairline above it is the separator token, which is the same
-    // line the grouped lists use — one rule for every edge in the app.
+    // code path. There is no rule above it and no fill behind it: the reference's
+    // bar sits straight on the page, and a hairline there would be the only
+    // horizontal line on the whole screen.
     <nav
-      className="grid grid-cols-3 border-t pt-1.5"
+      className="grid grid-cols-3 pt-2"
       style={{
         background: "var(--color-bg)",
-        borderColor: "var(--color-edge)",
-        paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+        paddingBottom: "max(16px, env(safe-area-inset-bottom))",
       }}
       aria-label={t("Sections")}
     >
@@ -47,11 +47,11 @@ export function TabNav({ active, onTab }: { active: TabKey; onTab: (t: TabKey) =
             key={key}
             onClick={() => onTab(key)}
             aria-current={on ? "page" : undefined}
-            className={`flex min-h-[48px] flex-col items-center justify-center gap-1 text-[11px] font-medium transition active:scale-95 ${
-              on ? "text-accent" : "text-faint"
+            className={`flex min-h-[48px] flex-col items-center justify-center gap-[3px] text-[11px] transition active:scale-95 ${
+              on ? "font-semibold text-bone" : "font-medium text-taupe"
             }`}
           >
-            <Icon size={23} strokeWidth={1.6} />
+            <Icon size={22} strokeWidth={1.9} />
             <span>{t(label)}</span>
           </button>
         );

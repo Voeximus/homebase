@@ -1,127 +1,122 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap");
 
-/* ── Apple's palette, light and dark ─────────────────────────────────────────
-   WHAT THIS REPLACED, and why the shape changed as well as the colours. The old
-   skin was one dark theme: a cool graphite ground with a blueprint grid, a cyan
-   "signal" accent, and a rule that ONE accent carried every interactive meaning.
-   He asked for "a merge between SpaceX and Apple", then "more apple then
-   spacex", then "apple like color theme" — three steers in one direction.
+/* ── Cream, black, lime ──────────────────────────────────────────────────────
+   Taken off the reference he sent on 2026-10-04 by SAMPLING it — a histogram of
+   the image, not a guess at the hues. The ground, the card, the hero black, the
+   lime and the two warm greys are that image's own values.
 
-   The real difference is not the hues, it is that Apple assigns colour by
-   MEANING and the old skin assigned it by role. One accent doing every job is
-   the habit being dropped: here blue is what you can tap, green is settled,
-   orange is what needs you, red is a real problem. A card can carry two of them
-   at once and still read correctly, which the single-accent rule could not do.
+   TWO OF ITS VALUES DID NOT SURVIVE, and both for the same measured reason:
 
-   BOTH GROUNDS ARE REAL, by his decision ("let's have light and dark be an
-   option"). Dark is the base because that is what the app has always been and
-   what an un-set phone at night should get; light is a full redefinition of the
-   same tokens, not a filter over the dark one. Every component reads tokens, so
-   neither theme has component-level overrides to drift.
+     its secondary grey  #8B8B8B   3.41:1 on white — unreadable at 12–13px
+     its lime            #CAF277   1.27:1 on white — cannot ever be text
 
-   THE THREE STATES, and the guard order matters. A viewer has an explicit
-   choice (data-theme="light"/"dark") or no choice at all (nothing stamped), and
-   the un-stamped case is the common one. So: :root holds dark; the media query
-   gives light to anyone whose OS says light UNLESS they explicitly chose dark;
-   and [data-theme="light"] wins outright. */
+   The grey is darkened to #6B6B66 (5.36:1). The lime is kept exactly and given a
+   rule instead of a fix: on the LIGHT ground it is a FILL ONLY, always with black
+   on top (14.82:1), which is how the reference itself uses it — the button's
+   fill, the chart's live bar, the donut's arc, never a letterform.
+
+   LIGHT IS THE BASE HERE, which is the reverse of what this file said this
+   morning. The reference is a light design and that is the thing he picked.
+
+   DARK IS AN INVERSION, not a dimming. The ground and the hero card swap roles:
+   on light, a black card sits on cream; on dark, a cream card sits on black. The
+   hero is always the opposite of the page, which is the move that gives the
+   reference its punch, and it is the only way to keep that punch without a
+   second layout.
+
+   AND THE LIME CHANGES JOB BY GROUND, which is worth stating because it looks
+   like an inconsistency and is the opposite. On black it measures 14.82:1, so it
+   is readable as text and becomes the accent. On cream it measures 1.27:1, so it
+   cannot be, and the accent there is the ink itself. Same colour, two jobs, both
+   measured. tests/contrast.test.ts holds every one of these numbers. */
 @theme {
-  /* ── dark: Apple's iOS dark system colours ── */
-  --color-bg: #000000; /* true black — the grouped-background ground */
-  --color-tile: #1c1c1e; /* systemGray6 dark — the grouped list surface */
-  --color-raised: #2c2c2e; /* systemGray5 dark — nested wells inside a tile */
-  --color-recessed: #0a0a0a; /* pressed-in slips */
-  --color-hero: #1c1c1e; /* the hero panel is just a tile now, not its own fill */
-  --color-edge: rgba(84, 84, 88, 0.65); /* separator, dark */
-  --color-edgehero: rgba(84, 84, 88, 0.65);
+  /* ── light: the reference's own palette ── */
+  --color-bg: #f3f2ee; /* warm cream — the page */
+  --color-tile: #ffffff; /* the card */
+  --color-raised: #f3f2ee;
+  --color-recessed: #e7e5de; /* bar tracks, segmented-control wells */
+  --color-hero: #111111; /* the hero card: the opposite of the page */
+  --color-heroink: #f3f2ee; /* and what is written on it */
+  --color-edge: #e7e5de;
+  --color-edgehero: #2a2a27; /* hairlines and wells INSIDE the hero card */
 
-  --color-accent: #0a84ff; /* systemBlue dark — THIS IS SOMETHING YOU CAN TAP */
-  --color-mint: #30d158; /* systemGreen dark — settled, paid, on track */
-  --color-gold: #ff9f0a; /* systemOrange dark — needs you, near the limit */
-  --color-ember: #ff453a; /* systemRed dark — over, or genuinely wrong */
+  --color-lime: #caf277; /* FILL ONLY on this ground. Black on it, never on it. */
+  --color-accent: #111111; /* "you can tap this" is the ink, as in the reference */
+  --color-mint: #2d793e; /* 5.36 / 4.79 — settled, money in */
+  --color-gold: #7a5a17; /* 6.36 / 5.68 — near the limit */
+  --color-ember: #bd461d; /* 5.18 / 4.62 — over, or short */
 
-  --color-bone: #ffffff; /* label — 21:1 on the tile */
-  --color-taupe: rgba(235, 235, 245, 0.6); /* secondaryLabel — 5.94:1 on tile */
-  /* Apple's tertiaryLabel is .3, which measures 2.48:1 on #1C1C1E and fails for
-     any real text. It carries "over 10 days" and the due dates here, so it is
-     lifted to .5 — 4.58:1 on the tile, 4.65:1 on the black ground. */
-  --color-faint: rgba(235, 235, 245, 0.5);
+  --color-bone: #111111; /* 18.88 / 16.86 */
+  --color-taupe: #6b6b66; /* 5.36 / 4.78 — darkened from the reference's #8B8B8B */
+  /* Deliberately the SAME as taupe. No third grey passes 4.5:1 on both the white
+     card and the cream page while still reading as quieter than the second, so
+     light has two ink levels rather than a third that fails. Dark has three. */
+  --color-faint: #6b6b66;
 
-  /* SF first, and it is the real thing on both of their phones. The rest is the
-     fallback chain for a desktop browser, which is where this gets looked at
-     least. No webfont: a font request is a blank screen on a bad connection,
-     and the whole point of this palette is that it is the system's. */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    system-ui, "Helvetica Neue", Arial, sans-serif;
+  /* The reference's face is a neutral grotesque with open numerals. Schibsted
+     Grotesk is the closest thing on Google Fonts that is not one of the three
+     faces every generated design reaches for. */
+  --font-sans: "Schibsted Grotesk", -apple-system, BlinkMacSystemFont, system-ui,
+    "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
     "Roboto Mono", Menlo, Consolas, monospace;
 }
 
 :root {
-  color-scheme: dark;
-}
-
-/* ── light ──────────────────────────────────────────────────────────────────
-   Not an inversion. A hue that reads on black is too pale to read on white, so
-   every value here was MEASURED against both of this theme's surfaces — the
-   white tile and the #F2F2F7 ground — and the number in each comment is the
-   worse of the two. Nothing here is Apple's published value where Apple's
-   published value failed:
-
-     systemGreen  #34C759  2.22:1 on white
-     systemOrange #FF9500  2.20:1
-     systemBlue   #007AFF  4.02:1
-     secondaryLabel .6     3.44:1
-
-   Apple ships all four, on larger type and usually beside an icon. They carry
-   13px status text here ("Paid · clearing") and the tap target on a 16px line,
-   which needs 4.5:1, so each is stepped to the darkest member of its own ramp
-   that still reads as that colour. The blue is the one to notice: #0066CC is
-   visibly deeper than Apple's #007AFF, and it is deeper because #007AFF failed
-   on the grey ground the tab bar sits on. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    color-scheme: light;
-    --color-bg: #f2f2f7; /* systemGroupedBackground */
-    --color-tile: #ffffff; /* secondarySystemGroupedBackground */
-    --color-raised: #f2f2f7;
-    --color-recessed: #e5e5ea;
-    --color-hero: #ffffff;
-    --color-edge: rgba(60, 60, 67, 0.18); /* separator, light */
-    --color-edgehero: rgba(60, 60, 67, 0.18);
-
-    --color-accent: #0066cc; /* 5.57:1 on the tile, 4.99:1 on the ground */
-    --color-mint: #1e7a33; /* 5.40 / 4.84 — settled, paid */
-    --color-gold: #9a5800; /* 5.57 / 4.99 — needs you */
-    --color-ember: #d70015; /* 5.38 / 4.83 — over, or wrong */
-
-    --color-bone: #000000; /* 21:1 */
-    --color-taupe: rgba(60, 60, 67, 0.9); /* 8.01 / 7.40 */
-    --color-faint: rgba(60, 60, 67, 0.75); /* 5.15 / 4.82 */
-  }
-}
-
-:root[data-theme="light"] {
   color-scheme: light;
-  --color-bg: #f2f2f7;
-  --color-tile: #ffffff;
-  --color-raised: #f2f2f7;
-  --color-recessed: #e5e5ea;
-  --color-hero: #ffffff;
-  --color-edge: rgba(60, 60, 67, 0.18);
-  --color-edgehero: rgba(60, 60, 67, 0.18);
+}
 
-  --color-accent: #0066cc; /* 5.57:1 on the tile, 4.99:1 on the ground */
-  --color-mint: #1e7a33; /* 5.40 / 4.84 — settled, paid */
-  --color-gold: #9a5800; /* 5.57 / 4.99 — needs you */
-  --color-ember: #d70015; /* 5.38 / 4.83 — over, or wrong */
+/* ── dark ───────────────────────────────────────────────────────────────────
+   The page becomes the hero's black and the hero becomes the page's cream. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-bg: #111111;
+    --color-tile: #1c1c1a;
+    --color-raised: #2a2a27;
+    --color-recessed: #2a2a27;
+    --color-hero: #f3f2ee;
+    --color-heroink: #111111;
+    --color-edge: #2a2a27;
+    --color-edgehero: #d6d4cb;
 
-  --color-bone: #000000; /* 21:1 */
-  --color-taupe: rgba(60, 60, 67, 0.9); /* 8.01 / 7.40 */
-  --color-faint: rgba(60, 60, 67, 0.75); /* 5.15 / 4.82 */
+    --color-lime: #caf277;
+    --color-accent: #caf277; /* 13.39 / 14.82 — readable here, so it leads here */
+    --color-mint: #8fd14f; /* 9.27 / 10.25 */
+    --color-gold: #d9a441; /* 7.59 / 8.40 */
+    --color-ember: #e8734a; /* 5.67 / 6.28 */
+
+    --color-bone: #f3f2ee; /* 15.24 / 16.86 */
+    --color-taupe: #a8a8a4; /* 7.15 / 7.91 */
+    --color-faint: #9a9a95; /* 6.04 / 6.68 */
+  }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --color-bg: #111111;
+  --color-tile: #1c1c1a;
+  --color-raised: #2a2a27;
+  --color-recessed: #2a2a27;
+  --color-hero: #f3f2ee;
+  --color-heroink: #111111;
+  --color-edge: #2a2a27;
+  --color-edgehero: #d6d4cb;
+
+  --color-lime: #caf277;
+  --color-accent: #caf277;
+  --color-mint: #8fd14f;
+  --color-gold: #d9a441;
+  --color-ember: #e8734a;
+
+  --color-bone: #f3f2ee;
+  --color-taupe: #a8a8a4;
+  --color-faint: #9a9a95;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 html,
@@ -1208,7 +1203,12 @@ input[type="number"] {
 
 /* Two slow colour fields behind everything. At this blur they read as light,
    not as shapes — the difference between atmosphere and two visible blobs. */
+/* GONE. Two blurred colour fields behind the login form — atmosphere, in the old
+   mark's colours. The reference he picked has no glow anywhere: it is a flat
+   cream page with solid cards on it, and an aurora on cream is a stain. Kept as a
+   rule rather than deleted because the markup still emits the element. */
 .hb-aurora {
+  display: none;
   position: absolute;
   inset: -25%;
   z-index: -1;
@@ -1265,12 +1265,22 @@ input[type="number"] {
   margin-bottom: 26px;
 }
 .hb-mark {
-  /* Larger than the word beside it: the mark is the identity, the word is the
-     caption. At 76 against a 34px title the type was leading. */
-  /* The mark's own cast light, so it sits ON the canvas rather than in front
-     of it. Sized off the mark, not a fixed blur, so it scales with it. */
-  filter: drop-shadow(0 10px 30px rgba(6, 182, 212, 0.34));
-  margin-bottom: 16px;
+  /* THE TILE IS THE POINT, not decoration. The mark is lime, and lime on the cream
+     page measures 1.14:1 — the logo was washing out to nothing on the first screen
+     of the app. On its own black tile it is 13.4:1, and it becomes the identical
+     object to the icon on the home screen: the thing you tap and the thing you see
+     when it opens are now the same picture.
+
+     The door in the mark is a knock-out, so it shows this tile through and comes
+     out black, exactly as it does in the app icon. */
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border-radius: 26px;
+  background: #111111;
+  margin-bottom: 18px;
+  box-shadow: 0 12px 30px -14px rgba(17, 17, 17, 0.5);
 }
 .hb-title {
   font-size: 32px;
@@ -1394,7 +1404,9 @@ input[type="number"] {
   /* White on systemBlue, which is what Apple does and what the icon does. The
      old button was a three-stop green→cyan→blue sweep with near-black text on
      it — the single most "generic app" element on the screen. */
-  color: #fff;
+  /* Ink on light, lime-ink on dark — whatever --color-accent is, this is the one
+     button on the screen and it is the strongest thing on it. */
+  color: var(--color-bg);
   cursor: pointer;
   background: var(--color-accent);
   box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--color-accent) 90%, transparent);

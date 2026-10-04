@@ -1,9 +1,7 @@
 import { t } from "../../lib/i18n";
+import { Bar, Card, Chip, Hero, LimePill, ROW_SEP, SectionTitle } from "./kit";
 
-const money = (n: number) =>
-  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-const money2 = (n: number) =>
-  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money0 = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
 export interface InsightsVM {
   budgetSpent: number;
@@ -29,46 +27,39 @@ interface InsightsTaps {
 
 // ── The Budget screen ────────────────────────────────────────────────────────
 //
-// RESKINNED 2026-10-04. Every figure still comes from `vms.insights`, built by
-// the single composed firepowerStatus call in buildVMs — this file does no
-// arithmetic beyond turning two numbers into a bar width.
+// The closest of the three to his reference, which had a Budgets screen of its
+// own: a ring in the black card, then one card per category with a letter chip
+// and a bar. Every figure comes from `vms.insights`, built by the single composed
+// firepowerStatus call in buildVMs; this file does no arithmetic beyond turning
+// two numbers into an arc length and a bar width.
 //
-// WHAT WENT, and each for a reason rather than for tidiness:
-//
-//   · THE DONUT. A conic-gradient ring split by category, where each wedge wore
-//     that category's own hue. It was the clearest statement of the old skin's
-//     rule — colour as IDENTITY — and the thing it actually communicated, "which
-//     slice is biggest", is read faster off a sorted list of bars. The VM still
-//     carries `donut`; nothing draws it.
-//   · PER-CATEGORY HUES. Groceries was green, dining was amber, transport blue.
-//     With six of them nothing stood out, so the one category that is over
-//     budget looked exactly like the five that are not. Now every bar is the
-//     same neutral and only an over-budget one turns red, which is the single
-//     thing this screen is for.
-//
-// WHAT PACE MEANS, because it is the only inference on the screen: the marker on
-// each bar is where you would be if the cycle's allowance were spent evenly. A
-// bar past its marker is ahead of pace, which is not the same as over budget and
-// is not coloured as though it were.
+// THE RING IS THE ONE PLACE THE LIME IS A STROKE rather than a fill, and it is
+// legal because it is drawn on the hero card, where it measures 13.4:1. On the
+// cream page it would be 1.27:1 and invisible — which is why every bar below is
+// the ink instead.
 
-function Bar({ spent, target, pace }: { spent: number; target: number; pace: number }) {
-  const pct = target > 0 ? Math.min(100, (spent / target) * 100) : 0;
-  const over = spent > target;
+const R = 38;
+const CIRC = 2 * Math.PI * R;
+
+function Ring({ pct }: { pct: number }) {
+  const shown = Math.max(0, Math.min(100, pct));
   return (
-    <div className="relative mt-2 h-[6px] overflow-hidden rounded-full" style={{ background: "var(--color-recessed)" }}>
-      <div
-        className="absolute inset-y-0 left-0 rounded-full"
-        style={{ width: `${pct}%`, background: over ? "var(--color-ember)" : "var(--color-bone)" }}
-      />
-      {/* Where the cycle says you should be. Drawn ON the track, not in the fill,
-          so it stays visible when the fill has passed it. */}
-      {pace > 0 && pace < 100 && (
-        <div
-          className="absolute inset-y-0 w-px"
-          style={{ left: `${pace}%`, background: "var(--color-bg)", opacity: 0.9 }}
-          aria-hidden="true"
+    <div className="relative h-[92px] w-[92px] shrink-0">
+      <svg width="92" height="92" viewBox="0 0 92 92" role="img"
+           aria-label={t("{n} percent of the budget spent", { n: Math.round(shown) })}>
+        <circle cx="46" cy="46" r={R} fill="none" stroke="var(--color-edgehero)" strokeWidth="11" />
+        <circle
+          cx="46" cy="46" r={R} fill="none"
+          stroke={shown > 100 - 0.01 ? "var(--color-ember)" : "var(--color-lime)"}
+          strokeWidth="11" strokeLinecap="round"
+          strokeDasharray={`${(shown / 100) * CIRC} ${CIRC}`}
+          transform="rotate(-90 46 46)"
         />
-      )}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[20px] font-bold leading-none tabular-nums">{Math.round(shown)}%</span>
+        <span className="mt-px text-[10px]" style={{ opacity: 0.62 }}>{t("spent")}</span>
+      </div>
     </div>
   );
 }
@@ -76,133 +67,146 @@ function Bar({ spent, target, pace }: { spent: number; target: number; pace: num
 export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: InsightsTaps }) {
   const left = vm.budgetTarget - vm.budgetSpent;
   const over = left < 0;
-  const pace = vm.budgetCycleDays > 0 ? (vm.budgetCycleDay / vm.budgetCycleDays) * 100 : 0;
+  const pct = vm.budgetTarget > 0 ? (vm.budgetSpent / vm.budgetTarget) * 100 : 0;
+  const daysLeft = Math.max(0, vm.budgetCycleDays - vm.budgetCycleDay);
+  const perDay = daysLeft > 0 ? left / daysLeft : left;
   const rows = [...vm.categories].sort((a, b) => b.spent - a.spent);
 
   return (
     <div className="pb-2">
       <header className="px-5 pt-1">
-        <p className="text-[15px] text-taupe">
+        <p className="text-[13px] text-taupe">
           {vm.budgetCycleLabel} ·{" "}
           {t("day {n} of {d}", { n: vm.budgetCycleDay, d: vm.budgetCycleDays })}
         </p>
-        <h1 className="mt-0.5 text-[34px] font-bold leading-tight tracking-[-0.022em] text-bone">
+        <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-bone">
           {t("Budget")}
         </h1>
       </header>
 
-      <div className="mt-5 px-5">
-        <p className="text-[15px] text-taupe">{over ? t("Over by") : t("Left to spend")}</p>
-        <p
-          className={`mt-0.5 text-[52px] font-light leading-[1.06] tracking-[-0.04em] tabular-nums ${
-            over ? "text-ember" : "text-bone"
-          }`}
-        >
-          {money2(Math.abs(left))}
-        </p>
-        <p className="mt-1 text-[14px] text-faint">
-          {t("{spent} of {target} spent", {
-            spent: money(vm.budgetSpent),
-            target: money(vm.budgetTarget),
-          })}
-        </p>
-        <div className="mt-3">
-          <Bar spent={vm.budgetSpent} target={vm.budgetTarget} pace={pace} />
-        </div>
+      <div className="mt-3.5">
+        <Hero>
+          <div className="flex items-center gap-[18px]">
+            <Ring pct={pct} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px]" style={{ opacity: 0.66 }}>
+                {over ? t("Over by") : t("Left to spend")}
+              </div>
+              <div
+                className="mt-0.5 text-[32px] font-bold leading-[1.05] tracking-[-0.03em] tabular-nums"
+                style={over ? { color: "var(--color-ember)" } : undefined}
+              >
+                {money0(Math.abs(left))}
+              </div>
+              <div className="mt-[3px] text-[12.5px]" style={{ opacity: 0.62 }}>
+                {t("{spent} of {target}", {
+                  spent: money0(vm.budgetSpent),
+                  target: money0(vm.budgetTarget),
+                })}
+              </div>
+              {!over && daysLeft > 0 && (
+                <div className="mt-[7px]">
+                  <LimePill>
+                    {t("{n} days · ~{amount}/day", { n: daysLeft, amount: money0(perDay) })}
+                  </LimePill>
+                </div>
+              )}
+            </div>
+          </div>
+        </Hero>
       </div>
 
-      <section className="mt-6">
-        <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">{t("By category")}</h2>
-        <div className="overflow-hidden rounded-2xl bg-tile">
-          {rows.map((c, i) => {
-            const cOver = c.spent > c.target;
-            const last = i === rows.length - 1;
-            return (
+      <SectionTitle aside={vm.budgetCycleLabel}>{t("Categories")}</SectionTitle>
+      <div className="mt-[9px] flex flex-col gap-2">
+        {rows.map((c) => {
+          const cOver = c.spent > c.target;
+          return (
+            <Card key={c.catId} className="!rounded-[18px]">
               <button
-                key={c.catId}
                 onClick={() => taps.onCategory?.(c.catId)}
-                className="block w-full px-4 py-3 text-left"
-                style={last ? undefined : { boxShadow: "inset 0 -1px 0 var(--color-edge)" }}
+                className="block w-full px-[14px] py-3 text-left"
               >
-                <div className="flex items-baseline gap-3">
-                  <span className="min-w-0 flex-1 truncate text-[16px] text-bone">{c.label}</span>
+                <div className="flex items-center gap-[11px]">
+                  <Chip name={c.label} size={32} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14.5px] font-semibold text-bone">
+                      {c.label}
+                    </span>
+                    <span className="mt-px block text-[12px] text-taupe tabular-nums">
+                      {t("{spent} of {target}", {
+                        spent: money0(c.spent),
+                        target: money0(c.target),
+                      })}
+                    </span>
+                  </span>
                   <span
-                    className={`text-[15px] tabular-nums ${cOver ? "text-ember" : "text-taupe"}`}
+                    className={`text-[14px] font-semibold tabular-nums ${cOver ? "text-ember" : "text-bone"}`}
                   >
-                    {money(c.spent)}{" "}
-                    <span className="text-faint">/ {money(c.target)}</span>
+                    {cOver
+                      ? t("{amount} over", { amount: money0(c.spent - c.target) })
+                      : t("{amount} left", { amount: money0(c.target - c.spent) })}
                   </span>
                 </div>
-                <Bar spent={c.spent} target={c.target} pace={pace} />
+                <Bar pct={c.target > 0 ? (c.spent / c.target) * 100 : 0} over={cOver} />
               </button>
-            );
-          })}
-        </div>
-      </section>
+            </Card>
+          );
+        })}
+      </div>
 
-      <section className="mt-6">
-        <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">{t("The month")}</h2>
-        <div className="overflow-hidden rounded-2xl bg-tile">
-          {[
-            { k: t("Coming in"), v: money(vm.income) },
-            { k: t("Fixed living cost"), v: money(vm.living) },
-            { k: t("Free to aim at the debt"), v: money(vm.atDebt), accent: true },
-          ].map((r, i, arr) => (
-            <div
-              key={r.k}
-              className="flex items-baseline gap-3 px-4 py-3"
-              style={i === arr.length - 1 ? undefined : { boxShadow: "inset 0 -1px 0 var(--color-edge)" }}
-            >
-              <span className="min-w-0 flex-1 text-[16px] text-bone">{r.k}</span>
-              <span className={`text-[16px] tabular-nums ${r.accent ? "text-accent" : "text-bone"}`}>
-                {r.v}
-              </span>
-            </div>
-          ))}
-        </div>
-        <p className="mt-2 px-5 text-[13px] text-faint">
-          {/* The door's own warning, kept word-for-word on the screen that shows
-              the number: the household's cash floor is not in this figure. */}
-          {t("What is free to aim at the debt — not what is safe to spend.")}
-        </p>
-      </section>
+      <SectionTitle>{t("The month")}</SectionTitle>
+      <Card className="mt-[9px]">
+        {[
+          { k: t("Coming in"), v: money0(vm.income) },
+          { k: t("Fixed living cost"), v: money0(vm.living) },
+          { k: t("Free to aim at the debt"), v: money0(vm.atDebt) },
+        ].map((r, i, arr) => (
+          <div
+            key={r.k}
+            className="flex items-baseline gap-3 px-[14px] py-3"
+            style={i === arr.length - 1 ? undefined : ROW_SEP}
+          >
+            <span className="min-w-0 flex-1 text-[15px] text-bone">{r.k}</span>
+            <span className="text-[15px] font-semibold tabular-nums text-bone">{r.v}</span>
+          </div>
+        ))}
+      </Card>
+      <p className="mt-2 px-5 text-[12.5px] text-taupe">
+        {/* The door's own warning, kept word-for-word on the screen that shows the
+            number: the household's cash floor is not in this figure. */}
+        {t("What is free to aim at the debt — not what is safe to spend.")}
+      </p>
 
       {vm.ladder.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 pl-5 text-[13px] font-semibold text-taupe">
-            {vm.debtFreeBy === "—"
-              ? t("Payoff order")
-              : t("Debt free {when}", { when: vm.debtFreeBy })}
-          </h2>
-          <div className="overflow-hidden rounded-2xl bg-tile">
+        <>
+          <SectionTitle aside={vm.debtFreeBy === "—" ? undefined : vm.debtFreeBy}>
+            {vm.debtFreeBy === "—" ? t("Payoff order") : t("Debt free")}
+          </SectionTitle>
+          <Card className="mt-[9px]">
             {vm.ladder.map((d, i) => (
               <div
                 key={d.name + d.rank}
-                className="flex items-baseline gap-3 px-4 py-3"
-                style={
-                  i === vm.ladder.length - 1
-                    ? undefined
-                    : { boxShadow: "inset 0 -1px 0 var(--color-edge)" }
-                }
+                className="flex items-center gap-[11px] px-[14px] py-3"
+                style={i === vm.ladder.length - 1 ? undefined : ROW_SEP}
               >
-                <span className="w-5 shrink-0 text-[15px] tabular-nums text-faint">{d.rank}</span>
-                <span className="min-w-0 flex-1 truncate text-[16px] text-bone">{d.name}</span>
-                {d.apr != null && (
-                  <span className="text-[13px] tabular-nums text-taupe">{d.apr}%</span>
-                )}
-                <span className="text-[16px] tabular-nums text-bone">{money(d.amount)}</span>
+                <Chip name={d.name} size={32} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14.5px] font-semibold text-bone">
+                    {d.name}
+                  </span>
+                  {d.apr != null && (
+                    <span className="mt-px block text-[12px] text-taupe tabular-nums">
+                      {d.apr}% APR
+                    </span>
+                  )}
+                </span>
+                <span className="text-[14px] font-semibold tabular-nums text-bone">
+                  {money0(d.amount)}
+                </span>
               </div>
             ))}
-          </div>
-          {vm.monthsToGo > 0 && (
-            <p className="mt-2 px-5 text-[13px] text-faint">
-              {t("{n} months at this pace · {amount} of interest", {
-                n: vm.monthsToGo,
-                amount: money(vm.interest),
-              })}
-            </p>
-          )}
-        </section>
+          </Card>
+        </>
       )}
     </div>
   );

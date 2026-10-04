@@ -66,13 +66,19 @@ function inkOn(value: string, surface: RGB): RGB {
 const AA = 4.5;
 
 /** Inks that carry real text. `bone` is the label, `faint` the quietest hint, and
- *  the three status colours all appear as small coloured text, never as a fill
- *  behind white. */
+ *  the status colours all appear as small coloured text.
+ *
+ *  `lime` is NOT here, and that is the point of it: on the light ground it is
+ *  1.27:1 and can only ever be a fill. It is checked separately, below, in the
+ *  two ways it is actually used. */
 const INKS = ["bone", "taupe", "faint", "accent", "mint", "gold", "ember"];
 
+/** LIGHT is the base now — the reference he picked is a light design — and dark
+ *  is the override. This was the other way round until 2026-10-04; if it inverts
+ *  again, the block names here are what has to move. */
 const THEMES: { name: string; block: string; ground: string; tile: string }[] = [
-  { name: "dark", block: "@theme {", ground: "bg", tile: "tile" },
-  { name: "light", block: ':root[data-theme="light"] {', ground: "bg", tile: "tile" },
+  { name: "light", block: "@theme {", ground: "bg", tile: "tile" },
+  { name: "dark", block: ':root[data-theme="dark"] {', ground: "bg", tile: "tile" },
 ];
 
 describe("every ink reads on both of its theme's surfaces", () => {
@@ -95,23 +101,59 @@ describe("every ink reads on both of its theme's surfaces", () => {
     }
   }
 
-  it("the light theme is defined twice and the two copies agree", () => {
-    // The palette lives in a [data-theme="light"] block AND inside the
+  it("the dark theme is defined twice and the two copies agree", () => {
+    // The dark palette lives in a [data-theme="dark"] block AND inside the
     // prefers-color-scheme media query, because the un-stamped viewer is the
     // common case and a media query cannot be re-used as a selector. Two copies
     // is two places to drift, so they are compared rather than trusted.
-    const explicit = ':root[data-theme="light"] {';
-    const auto = ':root:not([data-theme="dark"]) {';
-    for (const ink of [...INKS, "bg", "tile", "raised", "edge"]) {
-      expect(tokenIn(auto, ink), `--color-${ink} differs between the two light blocks`).toBe(
+    const explicit = ':root[data-theme="dark"] {';
+    const auto = ':root:not([data-theme="light"]) {';
+    for (const ink of [...INKS, "bg", "tile", "raised", "edge", "hero", "heroink", "lime"]) {
+      expect(tokenIn(auto, ink), `--color-${ink} differs between the two dark blocks`).toBe(
         tokenIn(explicit, ink),
       );
     }
   });
 
-  it("dark stays the base, so a viewer with no preference gets it", () => {
-    // :root is dark; light only arrives via the media query or an explicit stamp.
-    // If this inverts, every un-stamped phone flips overnight.
-    expect(css).toMatch(/:root\s*\{\s*color-scheme:\s*dark/);
+  it("light stays the base, so a viewer with no preference gets the reference", () => {
+    // :root is light; dark only arrives via the media query or an explicit stamp.
+    expect(css).toMatch(/:root\s*\{\s*color-scheme:\s*light/);
+  });
+
+  it("the hero card is legible, and is the opposite of its page in both themes", () => {
+    // The whole move of this design: a black card on cream, a cream card on
+    // black. If the two ever land on the same side of the page's lightness the
+    // hero stops being a hero and becomes a slightly-off rectangle.
+    for (const theme of THEMES) {
+      const page = inkOn(tokenIn(theme.block, "bg"), [0, 0, 0]);
+      const hero = inkOn(tokenIn(theme.block, "hero"), page);
+      const heroInk = inkOn(tokenIn(theme.block, "heroink"), hero);
+      expect(
+        contrast(heroInk, hero),
+        `${theme.name}: the hero card's own ink is unreadable on it`,
+      ).toBeGreaterThanOrEqual(AA);
+      expect(
+        contrast(hero, page),
+        `${theme.name}: the hero card does not separate from the page`,
+      ).toBeGreaterThanOrEqual(AA);
+    }
+  });
+
+  it("lime is a fill on light and may be text on dark — and black always reads on it", () => {
+    // It is the same hex in both themes with two different jobs, which looks like
+    // an inconsistency and is the opposite: on cream it measures 1.27:1 and
+    // CANNOT be a letterform, so the accent there is the ink; on black it
+    // measures 14.82:1 and leads.
+    const lightLime = inkOn(tokenIn("@theme {", "lime"), [255, 255, 255]);
+    const lightTile = inkOn(tokenIn("@theme {", "tile"), [255, 255, 255]);
+    const lightInk = inkOn(tokenIn("@theme {", "bone"), lightTile);
+    expect(
+      contrast(lightLime, lightTile),
+      "the lime has become readable on the light card — if that is deliberate, this test is what stops it being an accident",
+    ).toBeLessThan(AA);
+    expect(contrast(lightInk, lightLime)).toBeGreaterThanOrEqual(AA);
+
+    // And on light the accent must NOT be the lime, or it would be text.
+    expect(tokenIn("@theme {", "accent")).not.toBe(tokenIn("@theme {", "lime"));
   });
 });
