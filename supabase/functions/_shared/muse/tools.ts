@@ -656,6 +656,19 @@ const financeNextBills: Tool = {
       monthGetter(data, now),
       now,
     );
+
+    // ── ONE COVER PER BILL, WORKED OUT ONCE ───────────────────────────────────
+    // Hoisted out of the `bills.map` below because `by_account` needs the same answer,
+    // and a second call to coverFor down there would be a second place for it to drift.
+    // Parallel to `bills` by index: a bill's recurringId can be null, so it is not a key.
+    const covers = bills.map((b) => {
+      const rec = data.recurring.find((r) => r.id === b.recurringId);
+      return coverFor(
+        { name: b.name, amount: b.amount, due: b.due, accountId: rec?.accountId ?? null },
+        pendingNow,
+      );
+    });
+
     return {
       cycle: {
         start: cycle.start,
@@ -670,7 +683,7 @@ const financeNextBills: Tool = {
       // "already past its date and still unpaid".
       overdue_total: money(overdueTotal),
       count: bills.length,
-      bills: bills.map((b) => ({
+      bills: bills.map((b, i) => ({
         // The recurring row's id, spelled `bill` — the same word finance.worth_a_look
         // uses for the same thing, so one vocabulary covers both replies.
         bill: b.recurringId ?? null,
@@ -692,11 +705,7 @@ const financeNextBills: Tool = {
         // rent "overdue" hours after it was paid, which is how somebody pays rent
         // twice.
         paying_now: (() => {
-          const rec = data.recurring.find((r) => r.id === b.recurringId);
-          const cover = coverFor(
-            { name: b.name, amount: b.amount, due: b.due, accountId: rec?.accountId ?? null },
-            pendingNow,
-          );
+          const cover = covers[i];
           return cover ? { amount: money(cover.amount), on: cover.date, why: cover.why } : null;
         })(),
         // ── ALREADY LEFT THE ACCOUNT, JUST NOT TIED TO THE BILL ───────────────
@@ -731,8 +740,11 @@ const financeNextBills: Tool = {
       // nobody has placed is a gap in the answer and should look like one.
       by_account: (() => {
         const byId = new Map(data.accounts.map((a) => [a.id, a]));
-        const buckets = new Map<string, { owner: string; account: string; due: number; count: number }>();
-        for (const b of bills) {
+        const buckets = new Map<
+          string,
+          { owner: string; account: string; due: number; clearing: number; count: number }
+        >();
+        bills.forEach((b, i) => {
           const rec = data.recurring.find((r) => r.id === b.recurringId);
           const acct = rec?.accountId ? byId.get(rec.accountId) : undefined;
           const key = acct?.id ?? "unassigned";
@@ -740,12 +752,16 @@ const financeNextBills: Tool = {
             owner: acct ? scrubOr(acct.owner, "someone") : "nobody has said",
             account: acct ? scrubOr(acct.name, "an account") : "no account set",
             due: 0,
+            clearing: 0,
             count: 0,
           };
           row.due += b.amount;
+          // The bill's own payment, if one is in flight. Kept per account because the
+          // shortfall has to net it out — see the comment on still_to_come below.
+          row.clearing += covers[i] ? b.amount : 0;
           row.count += 1;
           buckets.set(key, row);
-        }
+        });
         return [...buckets.entries()].map(([id, r]) => ({
           account: id === "unassigned" ? null : id,
           owner: r.owner,
@@ -754,10 +770,28 @@ const financeNextBills: Tool = {
           // two numbers together are the thing a household total cannot say.
           balance: id === "unassigned" ? null : money(byId.get(id)?.balance ?? 0),
           due: money(r.due),
+          // ── THE TWO FIGURES THAT MAKE THE COMPARISON HONEST ────────────────
+          // `due` counts a bill at full amount even when its payment is already in
+          // flight, which is right and deliberate: a pending charge can reverse, so
+          // the bill is not settled until the charge posts.
+          //
+          // But `balance` is the bank's AVAILABLE figure, and the bank has ALREADY
+          // deducted that same pending charge from it. So due-minus-balance mixes two
+          // conventions and overstates the gap by exactly what is clearing. Observed
+          // live on 2026-10-04: the joint account read "SHORT $269.33" when the real
+          // gap was $169.40, because Spot Pet's $99.93 was counted as still owed AND
+          // subtracted from the balance at the same time. The same shape of error had
+          // reported the joint "SHORT $1,856.61" two days earlier, with rent clearing.
+          //
+          // Both stay, because each is true of a different question. `due` is what is
+          // still owed; `still_to_come` is what this account must find that it has not
+          // already sent, and it is the one to compare against `balance`.
+          clearing: money(r.clearing),
+          still_to_come: money(r.due - r.clearing),
           count: r.count,
         }));
       })(),
-      note: "OVERDUE MEANS NO CHARGE IS LINKED TO THIS CYCLE. It does not mean the money has not left — those are different facts and this tool only knows the first. Before saying anything is overdue, read `paying_now` and `maybe_already_paid`: the first is a payment still clearing, the second is money that has already gone out and was never tied to the bill. `maybe_already_paid` carries the charge id, so offer finance.link_charge_to_bill rather than telling him to pay it again. A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later.",
+      note: "OVERDUE MEANS NO CHARGE IS LINKED TO THIS CYCLE. It does not mean the money has not left — those are different facts and this tool only knows the first. Before saying anything is overdue, read `paying_now` and `maybe_already_paid`: the first is a payment still clearing, the second is money that has already gone out and was never tied to the bill. `maybe_already_paid` carries the charge id, so offer finance.link_charge_to_bill rather than telling him to pay it again. A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later. And inside by_account, compare `balance` against `still_to_come`, NEVER against `due`: the bank has already taken what is clearing out of the balance, so due-minus-balance double-counts it and overstates the shortfall.",
     };
   },
 };

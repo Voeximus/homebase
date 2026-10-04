@@ -92,6 +92,23 @@ export function ownAccountsFrom(accounts: readonly Account[]): OwnAccounts {
   };
 }
 
+/**
+ * The bank's confirmation code for a transfer, if the descriptor carries one.
+ *
+ * "Zelle Transfer CONF# YOMIM8KBL; GIO" and "Zelle Transfer Conf# YOMIM8KBL; XINYAN LI"
+ * are the TWO HALVES OF ONE TRANSFER, and the code is the only thing in either row that
+ * says so. The literal word "conf" is required rather than matching any long token: an
+ * account number or an order reference would otherwise pair rows that have nothing to do
+ * with each other, and a wrong `moved` erases real spending from the month.
+ *
+ * Case is thrown away because Bank of America writes it both ways on the same day, on
+ * the two sides of the same transfer.
+ */
+export const transferRef = (description: string | undefined): string | null => {
+  const m = (description ?? "").match(/conf\s*#?\s*([a-z0-9]{6,})/i);
+  return m ? m[1].toLowerCase() : null;
+};
+
 /** Four consecutive digits anywhere in a descriptor — "PAYMENT TO ACCT #4728 ON
  *  09/30 VIA WEB", "Mobile Banking payment to CRD 6813". */
 const digitRuns = (s: string): string[] => s.match(/\d{4}/g) ?? [];
@@ -165,5 +182,68 @@ export function classify(
   accounts: readonly Account[],
 ): { txn: Transaction; verdict: FlowVerdict }[] {
   const own = ownAccountsFrom(accounts);
-  return txns.map((txn) => ({ txn, verdict: flowOf(txn, own) }));
+  const rows = txns.map((txn) => ({ txn, verdict: flowOf(txn, own) }));
+  return pairTransfers(rows, accounts);
+}
+
+/**
+ * The second half of a transfer is the evidence for the first.
+ *
+ * WHY A SEPARATE PASS AND NOT A RULE IN flowOf. Every rule up there reads ONE row. This
+ * one cannot: a Zelle between their own two checking accounts looks exactly like real
+ * spending from the row alone — "Zelle Transfer CONF# YOMIM8KBL; GIO" is money leaving,
+ * full stop. What makes it a transfer is that the OTHER row exists.
+ *
+ * WHAT WENT WRONG WITHOUT IT, found on 2026-10-04. Two Zelles from Xinyan to Gino, $250
+ * and $50, each appearing twice because both accounts are synced. October was carrying
+ * $300 of invented spending AND $300 of invented income, and the $300 of "spending" was
+ * filed under Household + Hygiene, so that budget line was wrong as well. This is rule
+ * 3's credit-card case — a payment counted on both sides — in the one place rule 3
+ * cannot see it, because neither account is a card.
+ *
+ * AND WHY IT IS SAFE, which is the whole argument. A Zelle to somebody OUTSIDE the
+ * household appears in this ledger once; only an internal one appears twice with the
+ * same confirmation code. So the pairing is not a guess about intent, it is the
+ * household's own data saying the money never left. A $40 Zelle to a third party on the
+ * same day, with its own code and no sibling, stays spending and should.
+ *
+ * FIVE CONDITIONS, ALL REQUIRED, and ambiguity is left alone rather than resolved — the
+ * discipline pendingCover.ts already uses, for the same reason: a wrong "this never
+ * happened" is worse than no answer.
+ */
+function pairTransfers(
+  rows: { txn: Transaction; verdict: FlowVerdict }[],
+  accounts: readonly Account[],
+): { txn: Transaction; verdict: FlowVerdict }[] {
+  const ownIds = new Set(accounts.map((a) => a.id));
+  const byRef = new Map<string, number[]>();
+  rows.forEach(({ txn }, i) => {
+    // A correction somebody made by hand is never overruled by an inference, so a row
+    // carrying one is not even a candidate for pairing.
+    if (txn.flowOverride) return;
+    if (!ownIds.has(txn.accountId ?? "")) return;
+    const ref = transferRef(txn.description);
+    if (!ref) return;
+    if (!byRef.has(ref)) byRef.set(ref, []);
+    byRef.get(ref)!.push(i);
+  });
+
+  for (const [ref, idx] of byRef) {
+    // EXACTLY TWO. Three rows sharing a code is something this does not understand, and
+    // guessing which two are the pair would be the inference this file exists to avoid.
+    // Left as it was, and visible, for a person to settle with finance.set_flow.
+    if (idx.length !== 2) continue;
+    const [first, second] = idx.map((i) => rows[i].txn);
+    const out = first.type === "expense" ? first : second;
+    const into = first.type === "expense" ? second : first;
+    if (out.type !== "expense" || into.type !== "income") continue; // not opposite
+    if (out.accountId === into.accountId) continue; // an account cannot pay itself
+    // To the cent. A fee taken out in the middle would make this not a clean pair, and
+    // a near-match is exactly the "close enough" that produced three wrong net figures.
+    if (Math.abs(out.amount - into.amount) > 0.005) continue;
+    const why =
+      `one half of a transfer between their own accounts — the other half carries the same confirmation ${ref}`;
+    for (const i of idx) rows[i] = { txn: rows[i].txn, verdict: { flow: "moved", why } };
+  }
+  return rows;
 }
