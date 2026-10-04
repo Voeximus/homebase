@@ -43,10 +43,20 @@ jobs:
       # ran no node step at all, so a commit touching only the _shared copy
       # deployed a drifted categorizer straight onto real bank rows while the red
       # build blocked nothing but the frontend. The guard was on the wrong side of
-      # the fence. It needs no npm install — it is two readFileSync calls.
+      # the fence.
+      #
+      # IT NEEDS npm ci NOW, and the line above used to say it did not — "it is two
+      # readFileSync calls". That stopped being true when the guard grew a fifth
+      # check that type-checks both doors with the repo's own tsc. The first run
+      # after this file was repaired failed on exactly that: four checks green, then
+      # "✗ supabase/functions/_shared/muse/tsconfig.json did not type-check", because
+      # there was no typescript in node_modules to resolve. The guard was right to
+      # fail — it could not do what it promised.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+      - run: npm ci
       - name: Categorizer copies must be identical before anything deploys
         run: node scripts/check-categorizer-sync.mjs
 
