@@ -537,14 +537,7 @@ export function PayBillSheet({
   );
 }
 
-export function ConnectBank({
-  /** Let the caller draw the button. The Plaid dance — link token, the hook, the
-   *  exchange — stays in here whatever it looks like, because there is exactly one
-   *  of it and a second copy is a second way for the bank feed to break. */
-  render,
-}: {
-  render?: (start: () => void, busy: boolean) => ReactNode;
-} = {}) {
+export function ConnectBank() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -575,13 +568,9 @@ export function ConnectBank({
 
   return (
     <div className="space-y-2">
-      {render ? (
-        render(start, busy)
-      ) : (
-        <Button variant="soft" className="w-full" disabled={busy} onClick={start}>
-          <Landmark size={16} /> {busy ? t("Connecting…") : t("Connect a bank")}
-        </Button>
-      )}
+      <Button variant="soft" className="w-full" disabled={busy} onClick={start}>
+        <Landmark size={16} /> {busy ? t("Connecting…") : t("Connect a bank")}
+      </Button>
       {status && <p className="rounded-lg bg-raised px-3 py-2 text-sm text-taupe">{status}</p>}
     </div>
   );

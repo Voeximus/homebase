@@ -33,8 +33,7 @@ import { t } from "../../lib/i18n";
 import { TabNav, type TabKey } from "./TabNav";
 import { InsightsTab } from "./InsightsTab";
 import { buildFinanceVMs } from "./buildVMs";
-import { PayBillSheet } from "../sheets";
-import { AccountsPanel } from "./AccountsPanel";
+import { AccountsSheet, PayBillSheet, ConnectBank, CreditCardLinks } from "../sheets";
 import { CategorySheet, type EnvelopeVM } from "./CategorySheet";
 import { BillsSheet } from "./BillsSheet";
 import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
@@ -95,7 +94,7 @@ export function FinanceTabs() {
   return (
     <div
       className="mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
-      style={{ background: "var(--color-bg)" }}
+      style={{ background: "#0b0f17" }}
     >
       <div
         className="min-h-0 flex-1 px-3 pt-4"
@@ -110,7 +109,15 @@ export function FinanceTabs() {
             }
           />
         ) : tab === "accounts" ? (
-          <AccountsPanel />
+          <div className="space-y-4">
+            <AccountsSheet panel />
+            {/* Not a settings screen — the two things about accounts that have to be
+                reachable, because nothing else in the app can do them. */}
+            <div className="space-y-3 border-t pt-4" style={{ borderColor: "#1d2530" }}>
+              <ConnectBank />
+              <CreditCardLinks />
+            </div>
+          </div>
         ) : (
           <InsightsTab vm={vms.insights} taps={{ onCategory: setEnvCatId }} />
         )}

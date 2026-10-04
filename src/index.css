@@ -1,122 +1,36 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap");
 
-/* ── Cream, black, lime ──────────────────────────────────────────────────────
-   Taken off the reference he sent on 2026-10-04 by SAMPLING it — a histogram of
-   the image, not a guess at the hues. The ground, the card, the hero black, the
-   lime and the two warm greys are that image's own values.
-
-   TWO OF ITS VALUES DID NOT SURVIVE, and both for the same measured reason:
-
-     its secondary grey  #8B8B8B   3.41:1 on white — unreadable at 12–13px
-     its lime            #CAF277   1.27:1 on white — cannot ever be text
-
-   The grey is darkened to #6B6B66 (5.36:1). The lime is kept exactly and given a
-   rule instead of a fix: on the LIGHT ground it is a FILL ONLY, always with black
-   on top (14.82:1), which is how the reference itself uses it — the button's
-   fill, the chart's live bar, the donut's arc, never a letterform.
-
-   LIGHT IS THE BASE HERE, which is the reverse of what this file said this
-   morning. The reference is a light design and that is the thing he picked.
-
-   DARK IS AN INVERSION, not a dimming. The ground and the hero card swap roles:
-   on light, a black card sits on cream; on dark, a cream card sits on black. The
-   hero is always the opposite of the page, which is the move that gives the
-   reference its punch, and it is the only way to keep that punch without a
-   second layout.
-
-   AND THE LIME CHANGES JOB BY GROUND, which is worth stating because it looks
-   like an inconsistency and is the opposite. On black it measures 14.82:1, so it
-   is readable as text and becomes the accent. On cream it measures 1.27:1, so it
-   cannot be, and the accent there is the ink itself. Same colour, two jobs, both
-   measured. tests/contrast.test.ts holds every one of these numbers. */
+/* ── Mission Control · "Instrument" theme ────────────────────────────────────
+   Engineering-friendly re-skin: cool graphite canvas with a faint blueprint
+   grid, monospaced tabular readouts, technical mono labels, a precise cyan
+   "signal" accent, and green reserved for good money. Hierarchy still comes
+   from fill depth (canvas → tile → hero), not shadows. */
 @theme {
-  /* ── light: the reference's own palette ── */
-  --color-bg: #f3f2ee; /* warm cream — the page */
-  --color-tile: #ffffff; /* the card */
-  --color-raised: #f3f2ee;
-  --color-recessed: #e7e5de; /* bar tracks, segmented-control wells */
-  --color-hero: #111111; /* the hero card: the opposite of the page */
-  --color-heroink: #f3f2ee; /* and what is written on it */
-  --color-edge: #e7e5de;
-  --color-edgehero: #2a2a27; /* hairlines and wells INSIDE the hero card */
+  --color-bg: #0a0d12; /* cool graphite-black canvas */
+  --color-tile: #121822; /* default panel fill */
+  --color-raised: #18212d; /* nested wells / mini-stats */
+  --color-recessed: #0c1016; /* the pressed-in next-move slip */
+  --color-hero: #0e1b1f; /* cyan-tinted dark — ONLY the hero panel */
+  --color-edge: #232d3a; /* 1px hairline panel border */
+  --color-edgehero: #1d3d3e; /* cyan-tinted hero border */
 
-  --color-lime: #caf277; /* FILL ONLY on this ground. Black on it, never on it. */
-  --color-accent: #111111; /* "you can tap this" is the ink, as in the reference */
-  --color-mint: #2d793e; /* 5.36 / 4.79 — settled, money in */
-  --color-gold: #7a5a17; /* 6.36 / 5.68 — near the limit */
-  --color-ember: #bd461d; /* 5.18 / 4.62 — over, or short */
+  --color-accent: #34c5e8; /* signal cyan — interactive, momentum, CTAs, road */
+  --color-mint: #46d18a; /* green — good money: cash, cleared, on-track */
+  --color-gold: #e3b341; /* amber — the 90-day streak ring, near-limit */
+  --color-ember: #e5544e; /* red — ONLY the …4728 card + over-limit bars */
 
-  --color-bone: #111111; /* 18.88 / 16.86 */
-  --color-taupe: #6b6b66; /* 5.36 / 4.78 — darkened from the reference's #8B8B8B */
-  /* Deliberately the SAME as taupe. No third grey passes 4.5:1 on both the white
-     card and the cream page while still reading as quieter than the second, so
-     light has two ink levels rather than a third that fails. Dark has three. */
-  --color-faint: #6b6b66;
+  --color-bone: #eef2f7; /* cool off-white — readouts + headlines (brightened) */
+  --color-taupe: #97a3b2; /* labels, captions (brightened for contrast) */
+  --color-faint: #7c8696; /* tertiary hints, last4 (was #687180 — too dim) */
 
-  /* The reference's face is a neutral grotesque with open numerals. Schibsted
-     Grotesk is the closest thing on Google Fonts that is not one of the three
-     faces every generated design reaches for. */
-  --font-sans: "Schibsted Grotesk", -apple-system, BlinkMacSystemFont, system-ui,
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
     "Roboto Mono", Menlo, Consolas, monospace;
 }
 
 :root {
-  color-scheme: light;
-}
-
-/* ── dark ───────────────────────────────────────────────────────────────────
-   The page becomes the hero's black and the hero becomes the page's cream. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --color-bg: #111111;
-    --color-tile: #1c1c1a;
-    --color-raised: #2a2a27;
-    --color-recessed: #2a2a27;
-    --color-hero: #f3f2ee;
-    --color-heroink: #111111;
-    --color-edge: #2a2a27;
-    --color-edgehero: #d6d4cb;
-
-    --color-lime: #caf277;
-    --color-accent: #caf277; /* 13.39 / 14.82 — readable here, so it leads here */
-    --color-mint: #8fd14f; /* 9.27 / 10.25 */
-    --color-gold: #d9a441; /* 7.59 / 8.40 */
-    --color-ember: #e8734a; /* 5.67 / 6.28 */
-
-    --color-bone: #f3f2ee; /* 15.24 / 16.86 */
-    --color-taupe: #a8a8a4; /* 7.15 / 7.91 */
-    --color-faint: #9a9a95; /* 6.04 / 6.68 */
-  }
-}
-
-:root[data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #111111;
-  --color-tile: #1c1c1a;
-  --color-raised: #2a2a27;
-  --color-recessed: #2a2a27;
-  --color-hero: #f3f2ee;
-  --color-heroink: #111111;
-  --color-edge: #2a2a27;
-  --color-edgehero: #d6d4cb;
-
-  --color-lime: #caf277;
-  --color-accent: #caf277;
-  --color-mint: #8fd14f;
-  --color-gold: #d9a441;
-  --color-ember: #e8734a;
-
-  --color-bone: #f3f2ee;
-  --color-taupe: #a8a8a4;
-  --color-faint: #9a9a95;
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
 }
 
 html,
@@ -135,11 +49,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: var(--color-bone);
-  /* The token, not a literal: this line used to hardcode #0a0d12 beside a
-     var()-driven colour, so the ground could not follow a theme even when every
-     other surface did. The blueprint grid and the cyan glow that sat on top of
-     it are gone with the rest of that skin — Apple's ground is a ground. */
-  background-color: var(--color-bg);
+  background-color: #0a0d12;
+  /* faint blueprint grid + one cool signal glow up top */
+  background-image:
+    radial-gradient(1100px 560px at 50% -12%, rgba(52, 197, 232, 0.05), transparent 70%),
+    linear-gradient(rgba(120, 160, 200, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 160, 200, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+  background-attachment: fixed;
   overscroll-behavior-y: none;
 }
 
@@ -1203,12 +1120,7 @@ input[type="number"] {
 
 /* Two slow colour fields behind everything. At this blur they read as light,
    not as shapes — the difference between atmosphere and two visible blobs. */
-/* GONE. Two blurred colour fields behind the login form — atmosphere, in the old
-   mark's colours. The reference he picked has no glow anywhere: it is a flat
-   cream page with solid cards on it, and an aurora on cream is a stain. Kept as a
-   rule rather than deleted because the markup still emits the element. */
 .hb-aurora {
-  display: none;
   position: absolute;
   inset: -25%;
   z-index: -1;
@@ -1222,16 +1134,6 @@ input[type="number"] {
   filter: blur(96px);
   opacity: 0.9;
 }
-/* Light mode gets a fraction of it: the same field that reads as atmosphere on
-   black reads as a stain on white. */
-:root[data-theme="light"] .hb-aurora {
-  opacity: 0.28;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .hb-aurora {
-    opacity: 0.28;
-  }
-}
 .hb-aurora span {
   position: absolute;
   display: block;
@@ -1243,13 +1145,15 @@ input[type="number"] {
   width: 62vmax;
   height: 62vmax;
   left: -18%;
-  top: -20%;
-  background: radial-gradient(circle, rgba(10, 132, 255, 0.5) 0%, rgba(0, 64, 221, 0.22) 46%, transparent 70%);
+  top: -14%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.85) 0%, rgba(6, 182, 212, 0.34) 44%, transparent 70%);
 }
-/* The second field is gone rather than recoloured. Two of them framed a mark
-   that was itself two gradients; one mark in one blue needs one light source. */
 .hb-aurora .a2 {
-  display: none;
+  width: 58vmax;
+  height: 58vmax;
+  right: -20%;
+  bottom: -16%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.8) 0%, rgba(99, 102, 241, 0.3) 46%, transparent 70%);
 }
 
 .hb-login-inner {
@@ -1265,22 +1169,12 @@ input[type="number"] {
   margin-bottom: 26px;
 }
 .hb-mark {
-  /* THE TILE IS THE POINT, not decoration. The mark is lime, and lime on the cream
-     page measures 1.14:1 — the logo was washing out to nothing on the first screen
-     of the app. On its own black tile it is 13.4:1, and it becomes the identical
-     object to the icon on the home screen: the thing you tap and the thing you see
-     when it opens are now the same picture.
-
-     The door in the mark is a knock-out, so it shows this tile through and comes
-     out black, exactly as it does in the app icon. */
-  display: grid;
-  place-items: center;
-  width: 104px;
-  height: 104px;
-  border-radius: 26px;
-  background: #111111;
-  margin-bottom: 18px;
-  box-shadow: 0 12px 30px -14px rgba(17, 17, 17, 0.5);
+  /* Larger than the word beside it: the mark is the identity, the word is the
+     caption. At 76 against a 34px title the type was leading. */
+  /* The mark's own cast light, so it sits ON the canvas rather than in front
+     of it. Sized off the mark, not a fixed blur, so it scales with it. */
+  filter: drop-shadow(0 10px 30px rgba(6, 182, 212, 0.34));
+  margin-bottom: 16px;
 }
 .hb-title {
   font-size: 32px;
@@ -1346,8 +1240,8 @@ input[type="number"] {
   color: var(--color-faint);
 }
 .hb-field input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
 }
 .hb-pw {
   position: relative;
@@ -1401,15 +1295,10 @@ input[type="number"] {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  /* White on systemBlue, which is what Apple does and what the icon does. The
-     old button was a three-stop green→cyan→blue sweep with near-black text on
-     it — the single most "generic app" element on the screen. */
-  /* Ink on light, lime-ink on dark — whatever --color-accent is, this is the one
-     button on the screen and it is the strongest thing on it. */
-  color: var(--color-bg);
+  color: #04231f;
   cursor: pointer;
-  background: var(--color-accent);
-  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--color-accent) 90%, transparent);
+  background: linear-gradient(120deg, #34d399 0%, #06b6d4 52%, #3b82f6 100%);
+  box-shadow: 0 12px 28px -14px rgba(6, 182, 212, 0.9);
   transition: transform 0.12s, filter 0.16s;
 }
 .hb-go:hover {
@@ -1437,7 +1326,7 @@ input[type="number"] {
 }
 .hb-swap span {
   font-weight: 700;
-  color: var(--color-accent);
+  color: #22d3ee;
 }
 .hb-swap:hover span {
   text-decoration: underline;

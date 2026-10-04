@@ -74,7 +74,7 @@ function WhoAreYou({ onPick }: { onPick: (o: Owner) => void }) {
   return (
     <div
       className="mx-auto flex h-[100dvh] max-w-[440px] flex-col items-center justify-center gap-4 px-6"
-      style={{ background: "var(--color-bg)" }}
+      style={{ background: "#0b0f17" }}
     >
       <p className="text-[15px] text-taupe">{t("Who's using this phone?")}</p>
       {(["gino", "xinyan"] as Owner[]).map((o) => (

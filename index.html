@@ -5,18 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-    <!-- Replaced at runtime by src/lib/theme.ts from the computed ground, so
-         the status bar on an installed PWA follows the chosen theme. This value
-         is only what the browser uses for the instant before that runs. -->
-    <meta name="theme-color" content="#f3f2ee" />
-    <script>
-      // The stored choice, stamped before anything paints. Mirrors
-      // src/lib/theme.ts: "system" stamps nothing and lets the media query decide.
-      try {
-        var t = localStorage.getItem("hb-theme");
-        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
-      } catch (e) {}
-    </script>
+    <meta name="theme-color" content="#0a0d12" />
     <!-- The app handles its own EN/中文 i18n — stop the mobile browser from
          auto-translating on top of it (which turned 中 into "middle" and
          mangled casing). -->

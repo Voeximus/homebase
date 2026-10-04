@@ -19,11 +19,9 @@ import { useId } from "react";
  * stripe of the wrong colour with it.
  */
 
-// The house, and the doorway knocked out of it. Both numbers are duplicated in
-// scripts/build-icons.mjs, which says so itself: change one and the tab icon and
-// the in-app mark become two different logos.
-const HOUSE = "M12 46 L50 14 L88 46 L88 88 L12 88 Z";
-const DOOR = { x: 40, y: 62, w: 20, h: 26, r: 2 };
+// Inset so the rounded stroke grows the shape back out to fill the box.
+const PLATE = "M22 28 H78 V54 L50 80 L22 54 Z";
+const STROKE = 13;
 
 export function Logo({
   size = 48,
@@ -41,6 +39,7 @@ export function Logo({
   // the second would silently inherit the first's fills.
   const uid = useId().replace(/:/g, "");
   const L = `hbL${uid}`;
+  const R = `hbR${uid}`;
   const M = `hbM${uid}`;
   const S = `hbS${uid}`;
 
@@ -55,16 +54,25 @@ export function Logo({
       aria-hidden={title ? undefined : true}
     >
       <defs>
-        <linearGradient id={L} x1="10" y1="6" x2="92" y2="96" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#CAF277" />
-          <stop offset="1" stopColor="#A8DC45" />
+        <linearGradient id={L} x1="18" y1="18" x2="52" y2="86" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#34d399" />
+          <stop offset="1" stopColor="#06b6d4" />
         </linearGradient>
-        {/* The house, minus the doorway. White keeps, black cuts — so the
-            doorway is a real hole and the mark drops onto any ground without
-            carrying a rectangle of the wrong colour with it. */}
+        <linearGradient id={R} x1="48" y1="18" x2="86" y2="86" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#06b6d4" />
+          <stop offset="1" stopColor="#3b82f6" />
+        </linearGradient>
+        {/* The plate, minus the seam. White keeps, black cuts. */}
         <mask id={M}>
-          <path d={HOUSE} fill="#fff" />
-          <rect x={DOOR.x} y={DOOR.y} width={DOOR.w} height={DOOR.h} rx={DOOR.r} fill="#000" />
+          <path
+            d={PLATE}
+            fill="#fff"
+            stroke="#fff"
+            strokeWidth={STROKE}
+            strokeLinejoin="round"
+            paintOrder="stroke"
+          />
+          <rect x="48.8" y="0" width="2.4" height="62" fill="#000" />
         </mask>
         {animated && (
           <linearGradient id={S} x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
@@ -76,7 +84,8 @@ export function Logo({
       </defs>
 
       <g mask={`url(#${M})`}>
-        <rect x="0" y="0" width="100" height="100" fill={`url(#${L})`} />
+        <rect x="0" y="0" width="50" height="100" fill={`url(#${L})`} />
+        <rect x="50" y="0" width="50" height="100" fill={`url(#${R})`} />
         {/* The sheen rides INSIDE the mask, so it lights the mark and never
             leaks a rectangle over whatever is behind it. */}
         {animated && (

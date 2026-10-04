@@ -1,7 +1,9 @@
+import { CircleCheck, Flame } from "lucide-react";
+import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
-import { Bar, Card, Chip, Hero, LimePill, ROW_SEP, SectionTitle } from "./kit";
 
-const money0 = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+const money = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 export interface InsightsVM {
   budgetSpent: number;
@@ -25,189 +27,280 @@ interface InsightsTaps {
   onCategory?: (catId: string) => void;
 }
 
-// ── The Budget screen ────────────────────────────────────────────────────────
-//
-// The closest of the three to his reference, which had a Budgets screen of its
-// own: a ring in the black card, then one card per category with a letter chip
-// and a bar. Every figure comes from `vms.insights`, built by the single composed
-// firepowerStatus call in buildVMs; this file does no arithmetic beyond turning
-// two numbers into an arc length and a bar width.
-//
-// THE RING IS THE ONE PLACE THE LIME IS A STROKE rather than a fill, and it is
-// legal because it is drawn on the hero card, where it measures 13.4:1. On the
-// cream page it would be 1.27:1 and invisible — which is why every bar below is
-// the ink instead.
+export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: InsightsTaps }) {
+  const donutSegs = vm.donut.map((d) => ({ color: catColor(d.catId), value: d.amount }));
+  const onTrack = vm.budgetSpent <= vm.budgetTarget;
+  const leftInBudget = vm.budgetTarget - vm.budgetSpent;
+  // Days AFTER today, so `day n of total` + `days left` reconciles to the cycle
+  // length instead of overlapping on today and reading one too many.
+  const daysLeft = Math.max(0, vm.budgetCycleDays - vm.budgetCycleDay);
 
-const R = 38;
-const CIRC = 2 * Math.PI * R;
-
-function Ring({ pct }: { pct: number }) {
-  const shown = Math.max(0, Math.min(100, pct));
   return (
-    <div className="relative h-[92px] w-[92px] shrink-0">
-      <svg width="92" height="92" viewBox="0 0 92 92" role="img"
-           aria-label={t("{n} percent of the budget spent", { n: Math.round(shown) })}>
-        <circle cx="46" cy="46" r={R} fill="none" stroke="var(--color-edgehero)" strokeWidth="11" />
-        <circle
-          cx="46" cy="46" r={R} fill="none"
-          stroke={shown > 100 - 0.01 ? "var(--color-ember)" : "var(--color-lime)"}
-          strokeWidth="11" strokeLinecap="round"
-          strokeDasharray={`${(shown / 100) * CIRC} ${CIRC}`}
-          transform="rotate(-90 46 46)"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[20px] font-bold leading-none tabular-nums">{Math.round(shown)}%</span>
-        <span className="mt-px text-[10px]" style={{ opacity: 0.62 }}>{t("spent")}</span>
+    <div className="flex flex-col gap-0">
+      {/* ── Gradient header ── */}
+      <div
+        style={{ background: BRAND_GRADIENT }}
+        className="flex items-end justify-between rounded-b-[24px] px-6 py-4 text-white"
+      >
+        <div>
+          <div className="text-[12px] opacity-90">{t("where the money goes")}</div>
+          <div className="text-[26px] font-bold leading-none tracking-tight">{t("Insights")}</div>
+        </div>
+        {/* The pay cycle these figures are graded against. Was a hardcoded "June"
+            with a dropdown chevron that opened nothing — and after the budget moved
+            to pay cycles it named the wrong PERIOD as well as the wrong month. */}
+        <div className="pb-1 text-right">
+          <div className="text-[13px] font-semibold leading-tight">{vm.budgetCycleLabel}</div>
+          <div className="text-[11px] leading-tight opacity-80">
+            {daysLeft === 0
+              ? t("last day")
+              : t("{n} days left", { n: daysLeft })}
+          </div>
+        </div>
       </div>
+
+      <div className="flex flex-col gap-3 p-4">
+        {/* ── Spending gauge ── */}
+        <div
+          className="flex items-center gap-4 rounded-[18px] border p-4"
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
+        >
+          <div className="relative h-[120px] w-[120px] shrink-0">
+            <div
+              className="h-[120px] w-[120px] rounded-full"
+              style={{ background: conicFromSegments(donutSegs) }}
+            />
+            <div
+              className="absolute inset-[14px] flex flex-col items-center justify-center rounded-full"
+              style={{ background: "#141a24" }}
+            >
+              <span className="text-[20px] font-bold text-bone">{money(vm.budgetSpent)}</span>
+              <span className="text-[11px]" style={{ color: "#8b97a6" }}>
+                {t("of {amount}", { amount: money(vm.budgetTarget) })}
+              </span>
+            </div>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div
+              className="text-[10.5px] font-semibold uppercase"
+              style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
+            >
+              {t("Spent this cycle")}
+            </div>
+            {/* Which paycheck's run this is, and how far into it — the same pace
+                line the Home tile carries, so the two screens agree. */}
+            <div className="mt-0.5 text-[11px]" style={{ color: "#8b97a6" }}>
+              {t("day {n} of {total}", { n: vm.budgetCycleDay, total: vm.budgetCycleDays })}
+            </div>
+            <div
+              className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"
+              style={{ color: onTrack ? "#46d18a" : "#f0556e" }}
+            >
+              {onTrack && <CircleCheck size={16} />}
+              {onTrack ? t("On track") : t("Over")}
+            </div>
+            <div className="mt-1 text-[12px]" style={{ color: "#8b97a6" }}>
+              {t("{amount} left in the lean budget", { amount: money(leftInBudget) })}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Plan vs actual ── */}
+        <div
+          className="rounded-[18px] border p-4"
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
+        >
+          <div
+            className="mb-3 text-[10.5px] font-semibold uppercase"
+            style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
+          >
+            {t("Lean budget · plan vs actual")}
+          </div>
+          <div className="flex flex-col gap-3.5">
+            {vm.categories.map((c) => {
+              const Icon = catIcon(c.catId);
+              const color = catColor(c.catId);
+              const over = c.spent > c.target;
+              const pct = Math.min(100, (c.spent / c.target) * 100);
+              return (
+                <button
+                  key={c.catId}
+                  onClick={() => taps.onCategory?.(c.catId)}
+                  className="flex min-h-[44px] w-full flex-col justify-center text-left transition active:scale-[0.99]"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon size={16} style={{ color }} className="shrink-0" />
+                    <span className="flex-1 text-[13px] font-medium text-bone">{c.label}</span>
+                    <span className="text-[12.5px] font-semibold text-bone">
+                      {money(c.spent)}{" "}
+                      <span style={{ color: "#8b97a6" }}>/ {money(c.target)}</span>
+                    </span>
+                  </div>
+                  <div
+                    className="mt-1.5 h-1.5 overflow-hidden rounded-full"
+                    style={{ background: "#222b38" }}
+                  >
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${pct}%`, background: over ? "#f0556e" : color }}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Where every dollar goes ── */}
+        <div
+          className="rounded-[18px] border p-4"
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
+        >
+          <div
+            className="mb-3 text-[10.5px] font-semibold uppercase"
+            style={{ color: "#8b97a6", letterSpacing: "0.08em" }}
+          >
+            {t("Where every dollar goes")}
+          </div>
+          {/* This bar's three widths were the LITERALS 45.9% / 20.9% / 33.2%.
+              They match the design-lab's mock numbers exactly, which is why it
+              looked right in the harness and in the screenshots — but it never
+              read vm.living / vm.variable / vm.atDebt at all. With any other
+              month's numbers the picture and the four figures printed directly
+              underneath it disagreed, and the picture was the one people trust.
+
+              It is computed now. Segments under ~12% drop their label rather
+              than squeeze it, and every slice keeps dark ink: white on the
+              steel-blue measured 3.97:1, under what 10px text needs, while its
+              two neighbours already used dark ink — so one bar had two
+              different text treatments and the odd one out was the failing one. */}
+          {(() => {
+            const parts = [
+              { key: "living", label: t("Living"), value: vm.living, bg: "#5b82b3" },
+              { key: "variable", label: t("Variable"), value: vm.variable, bg: "#e3b341" },
+              { key: "debt", label: t("Debt"), value: vm.atDebt, bg: "#34c5e8" },
+            ].filter((seg) => seg.value > 0);
+            const total = parts.reduce((a, seg) => a + seg.value, 0);
+            if (total <= 0) return null;
+            return (
+              <div className="flex h-[30px] overflow-hidden rounded-[8px]">
+                {parts.map((seg) => {
+                  const pct = (seg.value / total) * 100;
+                  return (
+                    <div
+                      key={seg.key}
+                      className="flex items-center justify-center overflow-hidden text-[10px] font-semibold"
+                      style={{ width: `${pct}%`, background: seg.bg, color: "#0d1218" }}
+                      title={`${seg.label} · ${money(seg.value)} · ${Math.round(pct)}%`}
+                    >
+                      {pct >= 12 ? seg.label : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+            <Stat label={t("Income")} value={money(vm.income)} color="#46d18a" />
+            <Stat label={t("Living")} value={money(vm.living)} color="#e6edf3" />
+            <Stat label={t("Variable")} value={money(vm.variable)} color="#e6edf3" />
+            <Stat label={t("At debt")} value={money(vm.atDebt)} color="#34c5e8" />
+          </div>
+        </div>
+
+        {/* ── Debt-free ── */}
+        <div
+          className="flex items-end justify-between rounded-[18px] p-4 text-white"
+          style={{ background: "linear-gradient(135deg,#5b21b6,#1d4ed8)" }}
+        >
+          <div>
+            <div className="text-[11.5px] opacity-90">{t("debt-free")}</div>
+            <div className="text-[26px] font-bold leading-none tracking-tight">{vm.debtFreeBy}</div>
+            <div className="mt-1 text-[12px] opacity-90">{t("~{n} months to go", { n: vm.monthsToGo })}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[11.5px] opacity-90">{t("interest you'll pay")}</div>
+            <div className="text-[20px] font-bold">~{money(vm.interest)}</div>
+          </div>
+        </div>
+
+        {/* ── Attack ladder ── */}
+        <div
+          className="rounded-[18px] border p-4"
+          style={{ background: "#141a24", borderColor: "#232d3a" }}
+        >
+          <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-bone">
+            <Flame size={16} style={{ color: "#fb923c" }} />
+            {t("Attack ladder")}
+            <span className="text-[12px] font-normal" style={{ color: "#8b97a6" }}>
+              {t("· smallest first")}
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {vm.ladder.map((d) => {
+              const hi = !!d.target;
+              return (
+                <div
+                  key={d.rank}
+                  className="flex items-center gap-3 rounded-[12px] border p-3"
+                  style={{
+                    background: hi ? "#0e2230" : "transparent",
+                    borderColor: hi ? "#1d5066" : "#232d3a",
+                  }}
+                >
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+                    style={{
+                      background: hi ? "#34c5e826" : "#1a212c",
+                      // The rank sat at 4.33:1 on its own chip — dimmer than the
+                      // dim ink elsewhere, because the chip is LIGHTER than the
+                      // card it sits on. It is a number the ladder exists to be
+                      // read in order, so it takes the secondary ink.
+                      color: hi ? "#34c5e8" : "#8b97a6",
+                    }}
+                  >
+                    {d.rank}
+                  </span>
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate text-[13px] font-medium text-bone">{d.name}</span>
+                    {d.apr != null && (
+                      <span
+                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                        style={{ background: "#f0556e26", color: "#f0556e" }}
+                      >
+                        {d.apr}%
+                      </span>
+                    )}
+                    {d.live && (
+                      <span
+                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                        style={{ background: "#46d18a26", color: "#46d18a" }}
+                      >
+                        {t("live")}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[13px] font-semibold text-bone">{money(d.amount)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="h-2" />
     </div>
   );
 }
 
-export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: InsightsTaps }) {
-  const left = vm.budgetTarget - vm.budgetSpent;
-  const over = left < 0;
-  const pct = vm.budgetTarget > 0 ? (vm.budgetSpent / vm.budgetTarget) * 100 : 0;
-  const daysLeft = Math.max(0, vm.budgetCycleDays - vm.budgetCycleDay);
-  const perDay = daysLeft > 0 ? left / daysLeft : left;
-  const rows = [...vm.categories].sort((a, b) => b.spent - a.spent);
-
+function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="pb-2">
-      <header className="px-5 pt-1">
-        <p className="text-[13px] text-taupe">
-          {vm.budgetCycleLabel} ·{" "}
-          {t("day {n} of {d}", { n: vm.budgetCycleDay, d: vm.budgetCycleDays })}
-        </p>
-        <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-bone">
-          {t("Budget")}
-        </h1>
-      </header>
-
-      <div className="mt-3.5">
-        <Hero>
-          <div className="flex items-center gap-[18px]">
-            <Ring pct={pct} />
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px]" style={{ opacity: 0.66 }}>
-                {over ? t("Over by") : t("Left to spend")}
-              </div>
-              <div
-                className="mt-0.5 text-[32px] font-bold leading-[1.05] tracking-[-0.03em] tabular-nums"
-                style={over ? { color: "var(--color-ember)" } : undefined}
-              >
-                {money0(Math.abs(left))}
-              </div>
-              <div className="mt-[3px] text-[12.5px]" style={{ opacity: 0.62 }}>
-                {t("{spent} of {target}", {
-                  spent: money0(vm.budgetSpent),
-                  target: money0(vm.budgetTarget),
-                })}
-              </div>
-              {!over && daysLeft > 0 && (
-                <div className="mt-[7px]">
-                  <LimePill>
-                    {t("{n} days · ~{amount}/day", { n: daysLeft, amount: money0(perDay) })}
-                  </LimePill>
-                </div>
-              )}
-            </div>
-          </div>
-        </Hero>
+    <div>
+      <div className="text-[15px] font-bold" style={{ color }}>
+        {value}
       </div>
-
-      <SectionTitle aside={vm.budgetCycleLabel}>{t("Categories")}</SectionTitle>
-      <div className="mt-[9px] flex flex-col gap-2">
-        {rows.map((c) => {
-          const cOver = c.spent > c.target;
-          return (
-            <Card key={c.catId} className="!rounded-[18px]">
-              <button
-                onClick={() => taps.onCategory?.(c.catId)}
-                className="block w-full px-[14px] py-3 text-left"
-              >
-                <div className="flex items-center gap-[11px]">
-                  <Chip name={c.label} size={32} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-semibold text-bone">
-                      {c.label}
-                    </span>
-                    <span className="mt-px block text-[12px] text-taupe tabular-nums">
-                      {t("{spent} of {target}", {
-                        spent: money0(c.spent),
-                        target: money0(c.target),
-                      })}
-                    </span>
-                  </span>
-                  <span
-                    className={`text-[14px] font-semibold tabular-nums ${cOver ? "text-ember" : "text-bone"}`}
-                  >
-                    {cOver
-                      ? t("{amount} over", { amount: money0(c.spent - c.target) })
-                      : t("{amount} left", { amount: money0(c.target - c.spent) })}
-                  </span>
-                </div>
-                <Bar pct={c.target > 0 ? (c.spent / c.target) * 100 : 0} over={cOver} />
-              </button>
-            </Card>
-          );
-        })}
+      <div className="mt-0.5 text-[10.5px]" style={{ color: "#8b97a6" }}>
+        {label}
       </div>
-
-      <SectionTitle>{t("The month")}</SectionTitle>
-      <Card className="mt-[9px]">
-        {[
-          { k: t("Coming in"), v: money0(vm.income) },
-          { k: t("Fixed living cost"), v: money0(vm.living) },
-          { k: t("Free to aim at the debt"), v: money0(vm.atDebt) },
-        ].map((r, i, arr) => (
-          <div
-            key={r.k}
-            className="flex items-baseline gap-3 px-[14px] py-3"
-            style={i === arr.length - 1 ? undefined : ROW_SEP}
-          >
-            <span className="min-w-0 flex-1 text-[15px] text-bone">{r.k}</span>
-            <span className="text-[15px] font-semibold tabular-nums text-bone">{r.v}</span>
-          </div>
-        ))}
-      </Card>
-      <p className="mt-2 px-5 text-[12.5px] text-taupe">
-        {/* The door's own warning, kept word-for-word on the screen that shows the
-            number: the household's cash floor is not in this figure. */}
-        {t("What is free to aim at the debt — not what is safe to spend.")}
-      </p>
-
-      {vm.ladder.length > 0 && (
-        <>
-          <SectionTitle aside={vm.debtFreeBy === "—" ? undefined : vm.debtFreeBy}>
-            {vm.debtFreeBy === "—" ? t("Payoff order") : t("Debt free")}
-          </SectionTitle>
-          <Card className="mt-[9px]">
-            {vm.ladder.map((d, i) => (
-              <div
-                key={d.name + d.rank}
-                className="flex items-center gap-[11px] px-[14px] py-3"
-                style={i === vm.ladder.length - 1 ? undefined : ROW_SEP}
-              >
-                <Chip name={d.name} size={32} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14.5px] font-semibold text-bone">
-                    {d.name}
-                  </span>
-                  {d.apr != null && (
-                    <span className="mt-px block text-[12px] text-taupe tabular-nums">
-                      {d.apr}% APR
-                    </span>
-                  )}
-                </span>
-                <span className="text-[14px] font-semibold tabular-nums text-bone">
-                  {money0(d.amount)}
-                </span>
-              </div>
-            ))}
-          </Card>
-        </>
-      )}
     </div>
   );
 }
