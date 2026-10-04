@@ -117,8 +117,7 @@ jobs:
           # That is the second time this file has failed the same way. It previously
           # diffed only one commit, so a multi-commit push skipped functions without
           # failing. Both are the same bug: a step that succeeds while doing nothing.
-          fns=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name '_*' -printf '%f
-' | sort)
+          fns=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name '_*' -printf '%f\n' | sort)
           test -n "$fns" || { echo "no functions found — refusing to report success"; exit 1; }
           count=$(echo "$fns" | wc -l)
           for fn in $fns; do
@@ -127,8 +126,7 @@ jobs:
           done
           # Counted from what was actually deployed, so the sentence cannot outlive
           # the truth the way "seven" did.
-          echo "Deployed $count edge functions: $(echo $fns | tr '
-' ' ')"
+          echo "Deployed $count edge functions: $(echo $fns | tr '\n' ' ')"
 
   build:
     runs-on: ubuntu-latest
