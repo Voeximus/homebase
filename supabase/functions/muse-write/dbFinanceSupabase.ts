@@ -166,7 +166,16 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         .from("transactions")
         .select(
           "id, date, amount, type, category_id, description, account_id, applies_to, splits, " +
-            "anomaly_ack, needs_review, user_categorized, record_only, provider, status, created_at, person",
+            "anomaly_ack, needs_review, user_categorized, record_only, provider, status, created_at, person, " +
+            // SELECTED, not just mapped. It was mapped below and missing here, so
+            // readCharge reported flowOverride null for every row in the table —
+            // including the four that had one. Two things broke quietly: set_flow's
+            // "clear" could never fire, because the guard compared null to null and
+            // called it "no correction on it already"; and every undo row recorded
+            // `was: null`, so undoing a correction that REPLACED an earlier one wiped
+            // it instead of putting it back. tests/dbSelectMapping.test.ts now fails
+            // if any mapper in this file reads a column its select does not ask for.
+            "flow_override",
         )
         .eq("id", id)
         .maybeSingle();
@@ -198,7 +207,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async readBill(id) {
       const { data, error } = await admin
         .from("recurring")
-        .select("id, name, amount, direction, category_id, active, variable, known_amount, due_days, starts_on, ends_on, linked_debt_id")
+        .select("id, name, amount, direction, category_id, active, variable, known_amount, due_days, starts_on, ends_on, linked_debt_id, account_id")
         .eq("id", id)
         .maybeSingle();
       must(error, "read recurring");
@@ -324,7 +333,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       const filter = () =>
         admin
           .from("transactions")
-          .select("id, type, applies_to", { count: "exact" })
+          .select("id, type, applies_to, flow_override", { count: "exact" })
           .eq("applies_to->>recurringId", recurringId);
       const { data, error, count } = await filter().limit(LIST_CAP);
       must(error, "read bill payments");

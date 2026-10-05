@@ -255,9 +255,12 @@ describe("MUSE-SKILL.md cannot state a number the code disagrees with", () => {
 
   // Read off the code, never typed here either — this test would otherwise be one
   // more hand-written copy of the same numbers.
+  // READS_PER_HOUR is deliberately NOT in here. It is null — there is no read cap
+  // since 2026-10-04 — and a null has no digits for a document to agree with. The
+  // separate test below is what holds that line: it fails if the docs start quoting a
+  // reads-an-hour number again, which is the only way this can go wrong now.
   const CAPS: [RegExp, number, string][] = [
     [/(\d+) writes an hour/g, WRITES_PER_HOUR, "WRITES_PER_HOUR"],
-    [/(\d+) reads an hour/g, READS_PER_HOUR, "READS_PER_HOUR"],
     [/(\d+) new reminders a day/g, REMIND_PER_DAY, "REMIND_PER_DAY"],
     [/(\d+) reminders already waiting/g, REMIND_OPEN_MAX, "REMIND_OPEN_MAX"],
   ];
@@ -270,6 +273,28 @@ describe("MUSE-SKILL.md cannot state a number the code disagrees with", () => {
         .toBeGreaterThan(0);
       for (const n of found) expect(n, `MUSE-SKILL.md says ${n} where ${name} is ${actual}`).toBe(actual);
     }
+  });
+
+  it("never quotes a reads-an-hour number, because there is no read cap", () => {
+    // THE OTHER HALF of leaving READS_PER_HOUR out of CAPS above. That list checks a
+    // stated number against the code; a null has no digits to check, so without this
+    // the reads line could drift back to "60 reads an hour" and nothing would notice —
+    // which is the exact failure API.md had, telling an assistant for weeks that a cap
+    // was off while it was on, and then that it was on after it came off.
+    //
+    // Both documents are read, not just the one CAPS reads. API.md is the page an
+    // assistant is actually pointed at, and it is the one that drifted.
+    for (const file of [SKILL_MD, "docs/research/muse-bridge/API.md"]) {
+      const md = readFileSync(file, "utf8");
+      const quoted = [...md.matchAll(/(\d+)\s+reads an hour/g)].map((m) => m[0]);
+      expect(
+        quoted,
+        `${file} quotes a read cap, and READS_PER_HOUR is ${READS_PER_HOUR} — there is no cap to quote`,
+      ).toEqual([]);
+    }
+    // And the code agrees, so this test cannot pass by the docs and the door both
+    // being wrong in the same direction.
+    expect(READS_PER_HOUR).toBeNull();
   });
 
   it("names no tool that does not exist", () => {

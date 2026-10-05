@@ -127,8 +127,11 @@ or the other, never both.
 key cannot read. If you are asked to change something and you only hold the read
 key, say plainly that you can only read.
 
-**Do not ask the same question in a loop.** There is a cap of **60 reads an hour
-per person** and it is switched on. Over it, every call comes back `rate_limited`
+**Do not ask the same question in a loop.** The read cap came OFF on 2026-10-04 and
+there is now no limit on reads — which moves this from a rule the door enforces to a
+rule you keep. Reads are still counted and every call is still audited, so a loop is
+visible afterwards even though nothing stops it at the time. The **write** cap is still
+**60 an hour per person**, and over it every write comes back `rate_limited`
 until the hour turns — including the ones somebody is waiting on. If a call is
 refused, wait. Do not retry in a circle, and do not walk a date window one step at
 a time to build up a picture: that is the thing the cap and the whole-month rule
@@ -141,10 +144,16 @@ comes back `too_large` and is not read at all.
 the key you used, and refuse the call outright if you put `person`, `owner` or
 `for` in the body. There is no way to ask about, or write for, the other person.
 
-**Caps.** 10 writes an hour per person, 10 new reminders a day, 20 reminders waiting at
-once, 200 things remembered, and 60 reads an hour per person — the read cap IS switched
-on, whatever an older copy of these notes says. If a call is refused, wait. Do not retry in a
-circle.
+**Caps.** **No cap on reads** — it was 60 an hour and came off on 2026-10-04. On the
+write side: 60 writes an hour per person, 10 new reminders a day, 20 reminders waiting at
+once, 200 things remembered. If a call is refused, wait. Do not retry in a circle.
+
+(This block said "10 writes an hour" and "the read cap IS switched on" for long enough to
+be wrong about both. The numbers that matter are enforced in
+`supabase/functions/_shared/muse/handler.ts` and `muse-write/handler.ts`, and
+`tests/museCatalogue.test.ts` fails if MUSE-SKILL.md disagrees with them — it does not
+read this file, which is why this block drifted. Read the code before trusting a number
+written here.)
 
 Every call on both doors is written to a log the household can read: which tool,
 which person, whether it worked, how long it took. No amounts and no memory words
