@@ -398,7 +398,7 @@ describe("check 8 — a link must point at something that still exists", () => {
     expect(byId(r, "links-point-somewhere").status).toBe("ok");
   });
 
-  it("the healthy household still passes, now across eight checks", () => {
+  it("the healthy household still passes, now across nine checks — the ninth asks whose account paid", () => {
     const r = selfAudit(
       data({
         accounts: [account()],
@@ -408,7 +408,7 @@ describe("check 8 — a link must point at something that still exists", () => {
       NOW,
     );
     expect(r.clean).toBe(true);
-    expect(r.checks.length).toBe(8);
+    expect(r.checks.length).toBe(9);
   });
 });
 

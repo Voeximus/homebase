@@ -51,8 +51,8 @@
 // decision, not an oversight, and it keeps its entry in ABSENT.
 
 import { runRate } from "./lib/runRate.ts";
-import { azDateISO, minutesSince } from "./az.ts";
-import { heartbeat, REMINDER_STUCK_MIN } from "./heartbeat.ts";
+import { azDateISO } from "./az.ts";
+import { heartbeatFrom } from "./heartbeatFrom.ts";
 import {
   BadArgs,
   dateArg,
@@ -681,84 +681,10 @@ const systemHeartbeat: Tool = {
   name: "system.heartbeat",
   summary: "Is everything that should be running, running? Checks the unattended jobs, the bank feed and whether reminders can still reach a phone.",
   async run({ load, now, at }) {
-    const [runs, conns, targets, data, gino, xin] = await Promise.all([
-      load.jobRuns(),
-      load.bankConnections(),
-      load.pushTargets(),
-      load.appData(),
-      load.reminders("gino"),
-      load.reminders("xinyan"),
-    ]);
-
-    // BOTH SIDES INTO THE SAME FRAME, and this is the one thing here that was wrong
-    // on the first live run. `now` is nowAZ()'s Date — its UTC fields hold Arizona
-    // wall-clock, which is what every calendar answer in this door needs and is
-    // exactly seven hours behind the real instant. Subtracting a UTC timestamp from
-    // it gave "finished -406 minutes ago" for a row written thirteen minutes
-    // earlier. Passing each stored instant through the same shift makes the
-    // difference honest, and it still reads no clock: nowAZ is pure and `now` is the
-    // one reading the handler took.
-    // az.ts owns every instant comparison — the door's clock guard allows time
-    // handling there and nowhere else, and it was right to refuse this even though
-    // the code was parsing a stored string rather than reading a clock.
-    // `at`, the real instant — never `now`, whose epoch is seven hours out because
-    // its local fields hold Arizona. az.ts has owned this comparison all along; the
-    // instant simply was not being handed to tools until now.
-    const since = (iso: string | null): number | null => minutesSince(iso, at);
-
-    // The schedule each job actually runs on. Written here rather than read from
-    // cron.job for the same reason as everything else in this tool: that table is
-    // unreadable from a function, and a job's cadence changing without this changing
-    // is caught by the check itself going quiet, which is the direction that shows.
-    const EVERY: Record<string, number> = {
-      "cron-bank-sync": 15,
-      "cron-reminders": 15,
-      "cron-notify": 1440,
-    };
-
-    const jobs = Object.entries(EVERY).map(([job, everyMinutes]) => {
-      const mine = runs.filter((r) => r.job === job && r.finishedAt);
-      const newest = mine.reduce<typeof mine[number] | null>(
-        (best, r) => (!best || (r.finishedAt ?? "") > (best.finishedAt ?? "") ? r : best),
-        null,
-      );
-      // Summed over everything kept, not over the newest run alone: a push that
-      // reached nobody two hours ago still means nobody was reached.
-      const reachedNobody = mine.reduce((sum, r) => {
-        const n = Number((r.detail ?? {})["reached_nobody"] ?? 0);
-        return sum + (Number.isFinite(n) ? n : 0);
-      }, 0);
-      return {
-        job,
-        minutesSinceFinish: since(newest?.finishedAt ?? null),
-        everyMinutes,
-        lastOk: newest ? newest.ok : null,
-        reachedNobody,
-      };
-    });
-
-    const newestCharge = data.transactions.reduce((d, t) => (t.date > d ? t.date : d), "");
-    const quietDays = newestCharge
-      ? Math.floor((Date.parse(`${azDateISO(now)}T00:00:00Z`) - Date.parse(`${newestCharge}T00:00:00Z`)) / 86400000)
-      : null;
-
-    const stuck = [...gino, ...xin].filter(
-      (r) => !r.sentAt && !r.canceledAt && (since(r.dueAt) ?? 0) > REMINDER_STUCK_MIN,
-    ).length;
-
-    const result = heartbeat({
-      jobs,
-      connections: conns.map((c) => ({
-        owner: c.owner,
-        institution: c.institution,
-        status: c.status,
-        minutesSinceSync: since(c.lastSyncAt),
-        consecutiveFailures: c.consecutiveFailures,
-      })),
-      quietDays,
-      stuckReminders: stuck,
-      pushTargets: targets,
-    });
+    // The readings are built in heartbeatFrom.ts, which the hourly cron-heartbeat
+    // function now calls too. They used to be built twice, and the cron copy read a
+    // capped, unordered page of job_runs — see that file for what that cost.
+    const result = await heartbeatFrom(load, now, at);
 
     return {
       clean: result.clean,

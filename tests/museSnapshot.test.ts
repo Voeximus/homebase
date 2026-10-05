@@ -526,7 +526,7 @@ describeSnapshot("the read door against the real ledger", () => {
     const res = await ask("finance.audit");
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect((body.checks as unknown[]).length).toBe(8);
+    expect((body.checks as unknown[]).length).toBe(9);
   });
 
   it("gives no number at all when a page of the real table comes back short", async () => {

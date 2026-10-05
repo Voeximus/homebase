@@ -105,6 +105,7 @@ export function selfAudit(data: AppData, now: Date = new Date()): AuditResult {
     aSettledBillIsActuallySettled(data, now),
     onePaymentPerBillCycle(data),
     linksPointSomewhere(data),
+    paidFromItsOwnAccount(data, now),
   ];
   const failures = checks.filter((c) => c.status === "fail").length;
   return { checks, failures, clean: failures === 0 };
@@ -624,3 +625,63 @@ const DEFAULT_EXPENSE_IDS = [
 
 /** The designed monthly variable envelope the lines must reconcile to. */
 export const MONTHLY_ENVELOPE = 1600;
+
+
+// ── 9. A bill is paid from the account that pays it ──────────────────────────
+/**
+ * WHY THIS EXISTS, found 2026-10-05. Both of them had Claude Pro in September.
+ * There is one Claude Pro bill — Xinyan's, paid from her account — and the bank
+ * sync matched bills by NAME only. Gino's own $21.62 "Anthropic" charge on the 8th
+ * settled her bill, and her real $21.62 payment on the 21st was filed as utilities
+ * and linked to nothing.
+ *
+ * EVERY OTHER CHECK PASSED, and that is the argument for this one. Nothing was paid
+ * twice (one-payment-per-cycle), every link pointed at something real
+ * (links-point-somewhere), the bill was settled in full (settled-means-settled). The
+ * error was in WHICH charge held the slot, and no check asked whose money it was.
+ *
+ * The sync no longer makes this mistake (billsPayableFrom in categorize.ts). This is
+ * the other half: a hand link, a Muse link, or an old row can still put a charge on
+ * the wrong person's bill, and this is what notices.
+ *
+ * RECENT CYCLES ONLY — this month and last — and the reason is in the data. Bills
+ * had no paying account at all until 2026-10-01, when one was set on nineteen of
+ * them at once. Rent was paid from Gino's account in April, May and June and is paid
+ * from Joint now, so every one of those old links "disagrees" with today's setting
+ * while having been right on the day it was made. A check that fails on correct
+ * history gets ignored, and then it catches nothing. Two cycles is enough for a
+ * daily audit to see a new mistake the day after it happens.
+ *
+ * A bill with no paying account, or a charge with no account, is skipped: there is
+ * nothing to disagree with.
+ */
+function paidFromItsOwnAccount(data: AppData, now: Date): AuditCheck {
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-based
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const thisMonth = `${y}-${pad(m + 1)}`;
+  const lastMonth = m === 0 ? `${y - 1}-12` : `${y}-${pad(m)}`;
+  const recent = new Set([thisMonth, lastMonth]);
+
+  const bills = new Map(data.recurring.map((r) => [r.id, r]));
+  const owner = new Map(data.accounts.map((a) => [a.id, a.owner ?? a.name ?? "an account"]));
+  const offenders: string[] = [];
+  for (const t of data.transactions) {
+    const at = (t.appliesTo ?? null) as { kind?: string; recurringId?: string; monthKey?: string } | null;
+    if (at?.kind !== "bill" || !at.recurringId || !at.monthKey || !recent.has(at.monthKey)) continue;
+    const bill = bills.get(at.recurringId);
+    if (!bill?.accountId || !t.accountId) continue;
+    if (bill.accountId === t.accountId) continue;
+    offenders.push(
+      `${bill.name} ${at.monthKey} is settled by ${t.date} $${t.amount.toFixed(2)} from ${owner.get(t.accountId) ?? "another account"}, but it is paid from ${owner.get(bill.accountId) ?? "a different account"}`,
+    );
+  }
+  return {
+    id: "paid-from-its-own-account",
+    question: "Was every recent bill paid from the account that pays it?",
+    status: offenders.length ? "fail" : "ok",
+    detail: offenders.length
+      ? `${offenders.length} recent bill payment${offenders.length > 1 ? "s come" : " comes"} out of the wrong account: ${offenders.join("; ")}.`
+      : `Every bill paid this month and last came out of the account that pays it.`,
+  };
+}

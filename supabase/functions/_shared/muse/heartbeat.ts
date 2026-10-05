@@ -49,6 +49,32 @@ export const QUIET_DAYS_MAX = 3;
  *  ticks — the same "one miss is quiet, two is not" rule as above. */
 export const REMINDER_STUCK_MIN = 30;
 
+/**
+ * The unattended jobs, and the schedule each runs on, in minutes.
+ *
+ * ONE COPY. This lived twice until 2026-10-05 — once in cron-heartbeat and once in
+ * system.heartbeat — word for word, each with its own comment explaining itself. A
+ * job added to one and not the other is a job the push watches and Muse cannot see,
+ * or the reverse, and both read as "the heartbeat is fine". It surfaced when
+ * cron-audit was added and had to be written into both by hand.
+ *
+ * It stays hand-written rather than read from cron.job, for the reason system.heartbeat
+ * gave: that table is not readable from a function, and a cadence that changes
+ * without this changing is caught by the check itself going quiet.
+ *
+ * cron-heartbeat is deliberately absent. It cannot report its own death, and the
+ * daily pass is what notices it.
+ */
+export const WATCHED_JOBS: Readonly<Record<string, number>> = {
+  "cron-bank-sync": 15,
+  "cron-reminders": 15,
+  "cron-notify": 1440,
+  // Added 2026-10-05: the self-checks running themselves. A dead audit is silent by
+  // construction — no failures found looks exactly like nothing to find — so its
+  // liveness is watched here like any other job.
+  "cron-audit": 1440,
+};
+
 export interface JobReading {
   job: string;
   /** Minutes since this job last FINISHED. Null when it has never finished, which

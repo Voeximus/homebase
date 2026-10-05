@@ -65,6 +65,40 @@ export function billKey(name: string): string {
  *  match (shares the learned-rule key space). Returns the matched row, or null.
  *  This is the fix for bills that didn't auto-flip to paid because the bank's
  *  descriptor name didn't string-equal the modeled bill name. */
+/**
+ * The bills a charge is ALLOWED to settle, given the account it came out of.
+ *
+ * WHY THIS EXISTS, found 2026-10-05. Both of them had Claude Pro in September. There
+ * is one Claude Pro bill, and it is Xinyan's, paid from her account. Gino's own
+ * $21.62 "Anthropic" charge on the 8th was matched to that bill BY NAME — the name
+ * matcher never asked whose account the money left — so her September bill read
+ * "paid on the 8th from Gino's account", and her real payment on the 21st landed as
+ * ordinary utilities spending, linked to nothing. Every integrity check passed,
+ * because nothing was paid twice and every link pointed somewhere real.
+ *
+ * So a charge may only settle a bill that is paid FROM ITS OWN ACCOUNT. Two cases
+ * stay open on purpose, because closing them would break real payments:
+ *
+ *   · a bill with no paying account set — nobody has said where it comes from, so
+ *     there is nothing to disagree with;
+ *   · a charge whose account the app cannot resolve — a feed row from an account it
+ *     does not know yet is not evidence of anything.
+ *
+ * WHAT HAPPENS TO THE CHARGE THAT NO LONGER MATCHES. It is not dropped. The caller
+ * already routes "the categorizer named a bill but no bill resolved" to needs_review,
+ * and that is exactly right here: a charge naming a bill on the wrong account is
+ * either a second person's subscription that has no bill of its own, or a bill whose
+ * paying account is out of date. Both want a person, and both are visible — which is
+ * the trade against the old behaviour, where the wrong answer was silent.
+ */
+export function billsPayableFrom<T extends { account_id?: string | null }>(
+  bills: readonly T[],
+  chargeAccountId: string | null | undefined,
+): T[] {
+  if (!chargeAccountId) return [...bills];
+  return bills.filter((b) => !b.account_id || b.account_id === chargeAccountId);
+}
+
 export function matchRecurringName<T extends { name: string }>(
   billName: string | undefined | null,
   recurring: readonly T[],

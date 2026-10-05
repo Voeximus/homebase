@@ -35,8 +35,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/webpush.ts";
 import { safeEqual } from "../_shared/muse/safeEqual.ts";
 import { recordFinished } from "../_shared/jobRun.ts";
-import { heartbeat, REMINDER_STUCK_MIN, type HeartbeatReadings } from "../_shared/muse/heartbeat.ts";
-import { azDateISO, nowAZ } from "../_shared/muse/az.ts";
+import { heartbeatFrom, previousAlarms } from "../_shared/muse/heartbeatFrom.ts";
+import { createLoader } from "../_shared/muse/load.ts";
+import { supabaseDb } from "../_shared/supabaseDb.ts";
+import { nowAZ } from "../_shared/muse/az.ts";
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -49,12 +51,6 @@ const APP = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
  *  is what webpush.ts matches on. */
 const ALERT_OWNER = Deno.env.get("HEARTBEAT_OWNER") ?? "Gino";
 
-/** The schedule each watched job runs on, in minutes. */
-const EVERY: Record<string, number> = {
-  "cron-bank-sync": 15,
-  "cron-reminders": 15,
-  "cron-notify": 1440,
-};
 
 Deno.serve(async (req) => {
   // Fail CLOSED, constant time, like every other scheduled function here.
@@ -65,85 +61,27 @@ Deno.serve(async (req) => {
   // ONE clock reading, passed down. Same rule the doors hold themselves to.
   const at = new Date();
   const now = nowAZ(at);
-  const minutesSince = (iso: string | null): number | null =>
-    iso ? (now.getTime() - nowAZ(new Date(iso)).getTime()) / 60000 : null;
 
   let caught: string | null = null;
   let pushed = 0;
   let alarms = 0;
 
   try {
-    const [runs, conns, subs, txns, rems] = await Promise.all([
-      admin.from("job_runs").select("job, finished_at, ok, detail").not("finished_at", "is", null),
-      admin.from("bank_connections").select("owner, institution, status, last_sync_at, consecutive_failures"),
-      admin.from("push_subscriptions").select("owner"),
-      admin.from("transactions").select("date").order("date", { ascending: false }).limit(1),
-      admin.from("reminders").select("due_at, sent_at, canceled_at").is("sent_at", null).is("canceled_at", null),
-    ]);
-    for (const r of [runs, conns, subs, txns, rems]) {
-      if (r.error) throw new Error(r.error.message);
-    }
-
-    const rows = runs.data ?? [];
-    const jobs = Object.entries(EVERY).map(([job, everyMinutes]) => {
-      const mine = rows.filter((r) => r.job === job);
-      const newest = mine.reduce<(typeof mine)[number] | null>(
-        (best, r) => (!best || String(r.finished_at) > String(best.finished_at) ? r : best),
-        null,
-      );
-      return {
-        job,
-        minutesSinceFinish: minutesSince(newest ? String(newest.finished_at) : null),
-        everyMinutes,
-        lastOk: newest ? (typeof newest.ok === "boolean" ? newest.ok : null) : null,
-        reachedNobody: mine.reduce((s, r) => {
-          const n = Number((r.detail as Record<string, unknown> | null)?.["reached_nobody"] ?? 0);
-          return s + (Number.isFinite(n) ? n : 0);
-        }, 0),
-      };
-    });
-
-    const pushTargets: Record<string, number> = {};
-    for (const s of subs.data ?? []) {
-      const owner = String(s.owner ?? "unknown");
-      pushTargets[owner] = (pushTargets[owner] ?? 0) + 1;
-    }
-
-    const newest = txns.data?.[0]?.date ? String(txns.data[0].date) : null;
-    const readings: HeartbeatReadings = {
-      jobs,
-      connections: (conns.data ?? []).map((c) => ({
-        owner: String(c.owner ?? ""),
-        institution: c.institution ? String(c.institution) : null,
-        status: String(c.status ?? "unknown"),
-        minutesSinceSync: minutesSince(c.last_sync_at ? String(c.last_sync_at) : null),
-        consecutiveFailures: Number(c.consecutive_failures ?? 0),
-      })),
-      quietDays: newest
-        ? Math.floor((Date.parse(`${azDateISO(now)}T00:00:00Z`) - Date.parse(`${newest}T00:00:00Z`)) / 86400000)
-        : null,
-      stuckReminders: (rems.data ?? []).filter(
-        (r) => (minutesSince(String(r.due_at)) ?? 0) > REMINDER_STUCK_MIN,
-      ).length,
-      pushTargets,
-    };
-
-    const result = heartbeat(readings);
+    // EVERY ROW, PAGED — through the same Loader and the same builder Muse's
+    // system.heartbeat uses (heartbeatFrom.ts). This function used to run its own
+    // `select` on job_runs with no limit and no order, and Supabase capped it at
+    // 1,000 rows. Past that, the 15-minute jobs' newest rows were the ones dropped,
+    // so from 2026-10-02 it reported the bank sync and reminders as stopped every
+    // hour while both were running — and an alarm stuck on is an alarm that cannot
+    // announce a real outage.
+    const load = createLoader(supabaseDb(admin));
+    const result = await heartbeatFrom(load, now, at);
     const alarming = result.checks.filter((c) => c.status === "alarm");
     alarms = alarming.length;
 
-    // What was already broken last time this ran. Read out of the row this very job
-    // wrote an hour ago — the table the heartbeat already depends on, rather than a
-    // second place for state to go stale.
-    const previous = rows
-      .filter((r) => r.job === "cron-heartbeat")
-      .reduce<(typeof rows)[number] | null>(
-        (best, r) => (!best || String(r.finished_at) > String(best.finished_at) ? r : best),
-        null,
-      );
-    const known = new Set(
-      ((previous?.detail as Record<string, unknown> | null)?.["alarming"] as string[] | undefined) ?? [],
-    );
+    // What was already broken last time this ran — read from the SAME complete load,
+    // because the old lookup searched the same capped page and lost its own last row.
+    const known = await previousAlarms(load);
     const fresh = alarming.filter((c) => !known.has(c.id));
 
     if (fresh.length > 0) {

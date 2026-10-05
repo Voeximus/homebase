@@ -135,7 +135,7 @@ export { BadArgs } from "./args.ts";
 
 // ── finance.audit ─────────────────────────────────────────────────────────────
 //
-// Three of the eight checks put a raw ledger description or a single charge's date
+// Three of the nine checks put a raw ledger description or a single charge's date
 // into `detail`, so `detail` cannot simply be forwarded:
 //   splits-sum            `${t.date} ${t.description} (slices … vs charge …)`
 //   one-payment-per-cycle `… is claimed by N charges (${date} $${amount}, …)`
@@ -151,6 +151,16 @@ const DETAIL_SAFE: ReadonlySet<string> = new Set([
   "no-orphan-categories",
   "lines-sum-to-envelope",
   "settled-means-settled",
+  // Reviewed 2026-10-05, the day it was added, which is what this list is for. Its
+  // detail is built from a bill NAME (already forwarded by schedule-vs-plan), a
+  // month key, one charge's date and amount, and the two account OWNER labels that
+  // finance.position already says. No bank descriptor reaches it — it never reads
+  // `description` — so the injection surface this list guards against is absent.
+  //
+  // And without it the check is useless out loud: its failure would fall back to
+  // "This check failed", which cannot tell anyone which bill came out of the wrong
+  // account. The whole value of the check is in naming it.
+  "paid-from-its-own-account",
 ]);
 
 /** What the door says when it will not forward the app's own words. Per check, per
@@ -187,6 +197,12 @@ const CHECK_SAYS: Record<string, { ok: string; fail: string }> = {
   "links-point-somewhere": {
     ok: "Every charge still points at something real.",
     fail: "Some charges point at something that was deleted. Open the app to see which.",
+  },
+  "paid-from-its-own-account": {
+    ok: "Every bill paid this month and last came out of the account that pays it.",
+    // Only used if Rule 4's cap ever drops the app's own sentence. Points at the
+    // read tool that answers the question, rather than at a screen.
+    fail: "A recent bill was paid from the wrong account. Ask finance.search_transactions for that bill's charges.",
   },
 };
 

@@ -21,7 +21,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { reconcile, type NormalRow, type PlaidTxn } from "../_shared/plaidSync.ts";
-import { classify, classifyCredit, isPaycheck, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import { billsPayableFrom, classify, classifyCredit, isPaycheck, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
 import { denyUnlessCaller } from "../_shared/callerAuth.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
@@ -289,7 +289,7 @@ async function syncConnection(connId: string, force = false) {
     // bill installments (so we never double-mark a manual / prior-import / re-sync one)
     const { data: recRows } = await admin
       .from("recurring")
-      .select("id, name, due_days, amount, direction, variable, category_id, starts_on, ends_on")
+      .select("id, name, due_days, amount, direction, variable, category_id, starts_on, ends_on, account_id")
       .eq("active", true);
     // Only out-direction bills are payment targets (never match a paycheck/transfer).
     const outRecs = (recRows ?? []).filter((r: any) => r.direction === "out");
@@ -504,10 +504,17 @@ async function syncConnection(connId: string, force = false) {
         // bill begins. Both of those want a human, so it falls through to the
         // needs-review path instead of quietly claiming a cycle.
         const liveRecs = outRecs.filter((r: any) => liveOnDate(r, row.date));
+        // And only bills paid FROM THIS ACCOUNT. The name matcher never asked whose
+        // money it was, so Gino's own Claude Pro charge settled Xinyan's Claude Pro
+        // bill in September — see billsPayableFrom. Narrowing here covers both match
+        // paths below, and the day-and-amount fallback is the one that needs it most:
+        // over 120 days its only fresh link would have been a $16.17 bubble-tea
+        // charge settling the Sam's Club membership.
+        const payable = billsPayableFrom(liveRecs, acctIdByProv[row.accountId] ?? null);
         const matched =
-          matchRecurringName(c.billName, liveRecs) ??
+          matchRecurringName(c.billName, payable) ??
           (c.kind === "bill" && !c.billName
-            ? matchBillByDayAmount(liveRecs, row.date, Math.abs(row.amount), paidBill)
+            ? matchBillByDayAmount(payable, row.date, Math.abs(row.amount), paidBill)
             : null);
         // A bill payment inherits its bill's category (housing / utilities / …)
         // rather than the flat "other" it used to get. That matters most for the

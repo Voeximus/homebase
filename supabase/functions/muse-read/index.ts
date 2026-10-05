@@ -22,7 +22,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { handleMuseRead } from "../_shared/muse/handler.ts";
 import { createAuditSink } from "../_shared/muse/audit.ts";
-import type { Db, DbQuery, DbRow, DbSelect } from "../_shared/muse/paging.ts";
+import { supabaseDb } from "../_shared/supabaseDb.ts";
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -40,33 +40,9 @@ const SECRETS = {
 const BASE_URL =
   Deno.env.get("MUSE_READ_URL") ?? `${Deno.env.get("SUPABASE_URL") ?? ""}/functions/v1/muse-read`;
 
-/** supabase-js, narrowed to the two things a paged read needs: a count on a filter,
- *  and one ordered page of it. Kept here so nothing under test imports a client. */
-const db: Db = {
-  select(query: DbQuery): DbSelect {
-    const base = () => {
-      let q = admin.from(query.table).select("*");
-      for (const [col, value] of Object.entries(query.eq ?? {})) q = q.eq(col, value);
-      return q;
-    };
-    return {
-      async count() {
-        let q = admin.from(query.table).select("*", { count: "exact", head: true });
-        for (const [col, value] of Object.entries(query.eq ?? {})) q = q.eq(col, value);
-        const { count, error } = await q;
-        if (error) throw new Error(error.message);
-        return count ?? 0;
-      },
-      async page(from: number, to: number) {
-        const { data, error } = await base()
-          .order(query.orderBy, { ascending: true })
-          .range(from, to);
-        if (error) throw new Error(error.message);
-        return (data ?? []) as DbRow[];
-      },
-    };
-  },
-};
+/** The paged-read adapter, shared with cron-audit so the scheduled self-check and
+ *  finance.audit load the ledger the same way. See _shared/supabaseDb.ts. */
+const db = supabaseDb(admin);
 
 const audit = createAuditSink({
   async insert(table, row) {

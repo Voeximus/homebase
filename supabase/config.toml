@@ -70,6 +70,13 @@ verify_jwt = false
 [functions.cron-heartbeat]
 verify_jwt = false
 
+# Added 2026-10-05. Same reason as every cron-* above: pg_cron calls it with the
+# CRON_TOKEN query secret, not a user session, and the function fails CLOSED on a
+# missing or wrong token. Its first live call 401'd at the gateway ("Missing
+# authorization header") before a line of it ran — the default verify_jwt = true.
+[functions.cron-audit]
+verify_jwt = false
+
 [functions.muse-read]
 verify_jwt = false
 
