@@ -20,6 +20,7 @@ import {
 import { monthlySchedule } from "./schedule.ts";
 import { addMonths } from "./forecast.ts";
 import { monthKeyOf } from "./format.ts";
+import { transferIds } from "./flow.ts";
 
 // ── Does this add up? ─────────────────────────────────────────────────────────
 //
@@ -193,14 +194,17 @@ function scheduleMatchesMonthlyAmount(data: AppData, now: Date): AuditCheck {
 function budgetRowsSumToTheirBar(data: AppData, now: Date): AuditCheck {
   const cycle = payCycleFor(now);
   const byCat = spentByCategoryBetween(data.transactions, cycle.start, cycle.end);
+  const moved = transferIds(data.transactions);
   const offenders: string[] = [];
   let worst = 0;
 
   for (const line of LEAN_VARIABLE) {
     const bar = lineSpent(line, byCat);
-    // Rebuilt from the ledger with the SAME partition the drill-in applies.
+    // Rebuilt from the ledger with the SAME partition the drill-in applies —
+    // including leaving out transfers between their own accounts.
     let rows = 0;
     for (const t of data.transactions) {
+      if (moved.has(t.id)) continue;
       // Pending is INCLUDED, matching spentByCategoryBetween and the envelope rows.
       // All three have to share one predicate; this check exists precisely to catch
       // the moment they stop. It caught this edit — the bar started counting

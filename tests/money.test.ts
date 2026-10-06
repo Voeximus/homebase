@@ -7,6 +7,7 @@ import {
   billExpected,
   spentByCategoryBetween,
   attachedByCategoryBetween,
+  transfersBetween,
   planMath,
 } from "../src/lib/plan";
 import { householdMonthly, liveOn, monthlyAmount, accountFlow } from "../src/lib/recurring";
@@ -473,6 +474,10 @@ describe("attachedByCategoryBetween — the half the budget deliberately ignores
     tx({ amount: 120, categoryId: "other", appliesTo: { kind: "setaside" } }),
     tx({ amount: 999, date: "2026-07-01" }),
     tx({ amount: 500, type: "income", date: "2026-08-02" }),
+    // A transfer between their own accounts. Without this pair the guard below kept
+    // passing on 2026-10-05 while the real partition dropped $300 between its halves.
+    tx({ amount: 250, accountId: "xinyan", description: "Zelle Transfer CONF# YOMIM8KBL; GIO" }),
+    tx({ amount: 250, type: "income", accountId: "gino", description: "Zelle Transfer Conf# YOMIM8KBL; XINYAN LI" }),
   ];
   const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
 
@@ -482,10 +487,14 @@ describe("attachedByCategoryBetween — the half the budget deliberately ignores
     // than a missing one.
     const free = spentByCategoryBetween(rows, "2026-08-01", "2026-08-31");
     const attached = attachedByCategoryBetween(rows, "2026-08-01", "2026-08-31");
+    const moved = transfersBetween(rows, "2026-08-01", "2026-08-31");
     const everyExpense = (rows as unknown as { type: string; date: string; amount: number }[])
       .filter((t) => t.type === "expense" && t.date >= "2026-08-01" && t.date <= "2026-08-31")
       .reduce((a, t) => a + t.amount, 0);
-    expect(sum(free) + sum(attached.byCategory)).toBeCloseTo(everyExpense, 2);
+    // THREE parts now, not two: spent, attached to something, and moved between their
+    // own accounts. The transfer must land in exactly one of them.
+    expect(moved).toBeCloseTo(250, 2);
+    expect(sum(free) + sum(attached.byCategory) + moved).toBeCloseTo(everyExpense, 2);
     expect(attached.total).toBeCloseTo(sum(attached.byCategory), 2);
   });
 

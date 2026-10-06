@@ -11,6 +11,7 @@ import type { Debt, Recurring, Transaction } from "../types";
 import { liveOn, monthlyAmount } from "./recurring";
 import { CADENCE_TO_MONTHLY } from "./household";
 import { isoDate, monthKeyOf, todayISO } from "./format";
+import { transferIds } from "./flow";
 
 export interface BudgetLine {
   key: string;
@@ -661,13 +662,49 @@ export function attachedByCategoryBetween(
   return { byCategory, byKind, total };
 }
 
+/**
+ * The third part of the window: money that left one of their accounts for another of
+ * their accounts. spentByCategoryBetween leaves these out (no money left the
+ * household), and attachedByCategoryBetween never had them (a transfer pays no bill).
+ *
+ * WITHOUT THIS THE PARTITION BROKE SILENTLY. The three functions are meant to account
+ * for every expense in a window between them, and tests/money.test.ts asserts it. On
+ * 2026-10-05 transfers left the first part, and the guard kept passing — because its
+ * fixture held no transfers. So this exists, the guard now includes a transfer pair,
+ * and Muse's spend_by_category reports the figure instead of letting $300 vanish
+ * between its two halves.
+ *
+ * Attached transfers are counted in the attached half, never here, so nothing is
+ * counted twice.
+ */
+export function transfersBetween(transactions: Transaction[], startISO: string, endISO: string): number {
+  const moved = transferIds(transactions);
+  let total = 0;
+  for (const t of transactions) {
+    if (t.type !== "expense" || t.date < startISO || t.date > endISO || t.appliesTo) continue;
+    if (moved.has(t.id)) total += t.amount;
+  }
+  return total;
+}
+
 export function spentByCategoryBetween(
   transactions: Transaction[],
   startISO: string,
   endISO: string,
 ): Record<string, number> {
   const out: Record<string, number> = {};
+  // TRANSFERS BETWEEN THEIR OWN ACCOUNTS DO NOT COUNT. Asked on 2026-10-05, after a
+  // $250 and a $50 Zelle from Xinyan to Gino sat in October's household line: "Well
+  // it shouldn't I thought that was already fixed." It was, for the net-worth figures
+  // only — flow.ts paired them on 10-04 and nothing here asked. No money left the
+  // household, so nothing was spent. Every figure built on this function moves with
+  // it: the bars, spent-this-month, firepower, and the average pace the plan
+  // projects from. The rows under each bar (buildVMs) and the audit that checks bar
+  // against rows (selfAudit, bar-vs-rows) carry the same exclusion, or the check
+  // that exists to catch them disagreeing would fail on the first transfer.
+  const moved = transferIds(transactions);
   for (const t of transactions) {
+    if (moved.has(t.id)) continue;
     // PENDING charges COUNT. They used to be excluded, and that made the budget
     // incoherent with the cash it sits next to: account balances are the bank's
     // AVAILABLE figure, which the bank has already reduced by every pending hold.

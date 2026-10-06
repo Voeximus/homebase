@@ -216,34 +216,92 @@ function pairTransfers(
   accounts: readonly Account[],
 ): { txn: Transaction; verdict: FlowVerdict }[] {
   const ownIds = new Set(accounts.map((a) => a.id));
-  const byRef = new Map<string, number[]>();
-  rows.forEach(({ txn }, i) => {
+  const pairs = transferPairs(
+    rows.map((r) => r.txn),
+    (accountId) => ownIds.has(accountId),
+  );
+  return rows.map((r) => {
+    const ref = pairs.get(r.txn.id);
+    if (ref === undefined) return r;
+    const why = `one half of a transfer between their own accounts — the other half carries the same confirmation ${ref}`;
+    return { txn: r.txn, verdict: { flow: "moved" as const, why } };
+  });
+}
+
+/**
+ * Every row that is one half of a transfer between the household's own accounts,
+ * mapped to the confirmation code that pairs it.
+ *
+ * THE ONE PAIR-FINDER. classify() uses it to mark rows "moved"; the budget uses it,
+ * through transferIds(), to leave them out. It was written inside pairTransfers on
+ * 2026-10-04 and reached only the net-worth figures, so for a day the run rate knew
+ * Xinyan's $250 Zelle to Gino was not spending while the budget counted it as
+ * $250 of household spending. Two places deciding "is this a transfer" is how that
+ * happens, so there is now one.
+ *
+ * `isOwn` is the account test. classify() passes the real account list. The budget
+ * has no account list, and does not need one: both halves of a pair have to be in
+ * THIS ledger, and a Zelle to anyone outside the household only ever appears once.
+ * The pairing is the evidence. So the default just requires an account at all.
+ *
+ * FIVE CONDITIONS, ALL REQUIRED, and ambiguity is left alone rather than resolved:
+ * the same code on exactly two rows, opposite directions, two different accounts,
+ * the same amount to the cent, and no hand correction on either.
+ */
+export function transferPairs(
+  txns: readonly Transaction[],
+  isOwn: (accountId: string) => boolean = (accountId) => accountId !== "",
+): Map<string, string> {
+  const byRef = new Map<string, Transaction[]>();
+  for (const t of txns) {
     // A correction somebody made by hand is never overruled by an inference, so a row
     // carrying one is not even a candidate for pairing.
-    if (txn.flowOverride) return;
-    if (!ownIds.has(txn.accountId ?? "")) return;
-    const ref = transferRef(txn.description);
-    if (!ref) return;
+    if (t.flowOverride) continue;
+    if (!isOwn(t.accountId ?? "")) continue;
+    const ref = transferRef(t.description);
+    if (!ref) continue;
     if (!byRef.has(ref)) byRef.set(ref, []);
-    byRef.get(ref)!.push(i);
-  });
+    byRef.get(ref)!.push(t);
+  }
 
-  for (const [ref, idx] of byRef) {
+  const out = new Map<string, string>();
+  for (const [ref, rows] of byRef) {
     // EXACTLY TWO. Three rows sharing a code is something this does not understand, and
     // guessing which two are the pair would be the inference this file exists to avoid.
     // Left as it was, and visible, for a person to settle with finance.set_flow.
-    if (idx.length !== 2) continue;
-    const [first, second] = idx.map((i) => rows[i].txn);
-    const out = first.type === "expense" ? first : second;
-    const into = first.type === "expense" ? second : first;
-    if (out.type !== "expense" || into.type !== "income") continue; // not opposite
-    if (out.accountId === into.accountId) continue; // an account cannot pay itself
+    if (rows.length !== 2) continue;
+    const [first, second] = rows;
+    const sent = first.type === "expense" ? first : second;
+    const got = first.type === "expense" ? second : first;
+    if (sent.type !== "expense" || got.type !== "income") continue; // not opposite
+    if (sent.accountId === got.accountId) continue; // an account cannot pay itself
     // To the cent. A fee taken out in the middle would make this not a clean pair, and
     // a near-match is exactly the "close enough" that produced three wrong net figures.
-    if (Math.abs(out.amount - into.amount) > 0.005) continue;
-    const why =
-      `one half of a transfer between their own accounts — the other half carries the same confirmation ${ref}`;
-    for (const i of idx) rows[i] = { txn: rows[i].txn, verdict: { flow: "moved", why } };
+    if (Math.abs(sent.amount - got.amount) > 0.005) continue;
+    out.set(sent.id, ref);
+    out.set(got.id, ref);
   }
-  return rows;
+  return out;
+}
+
+const transferCache = new WeakMap<readonly Transaction[], ReadonlySet<string>>();
+
+/**
+ * The ids the BUDGET leaves out because no money left the household: both halves of
+ * every paired transfer, and any row a person has set to "moved" by hand.
+ *
+ * Cached per ledger array. spentByCategoryBetween is called once per month inside
+ * loops (the average-pace calculation walks six of them), always with the same
+ * ledger, and the pairing reads all of it — so it is done once per ledger, not once
+ * per call. Pairing always reads the WHOLE ledger and the window is applied after,
+ * because the two halves of a transfer can post on different days and a window
+ * that cut between them would turn half a transfer back into spending.
+ */
+export function transferIds(txns: readonly Transaction[]): ReadonlySet<string> {
+  const hit = transferCache.get(txns);
+  if (hit) return hit;
+  const ids = new Set(transferPairs(txns).keys());
+  for (const t of txns) if (t.flowOverride === "moved") ids.add(t.id);
+  transferCache.set(txns, ids);
+  return ids;
 }

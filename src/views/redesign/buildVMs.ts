@@ -20,6 +20,7 @@ import {
   type PayoffEvent,
 } from "../../lib/plan";
 import { firepowerStatus } from "../../lib/headline";
+import { transferIds } from "../../lib/flow";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
@@ -150,11 +151,16 @@ export function buildFinanceVMs(
   // the cycle while the list it opened read $44.13 for the calendar month, of a
   // monthly $250 target. A number and the rows that justify it have to come from
   // one calculation, or the next horizon change silently splits them again.
+  // The same exclusion the bar applies (spentByCategoryBetween): money moving between
+  // their own accounts was not spent, and a row the bar leaves out cannot be listed
+  // under it.
+  const moved = transferIds(data.transactions);
   const envelopes: EnvelopeVM[] = LEAN_VARIABLE.map((l) => {
     const inLine = (catId: string) => l.cats.includes(catId);
     const raw: { id: string; name: string; date: string; amount: number }[] = [];
     let pendingAmt = 0;
     for (const t of data.transactions) {
+      if (moved.has(t.id)) continue;
       // Pending charges are INCLUDED, and must be — spentByCategoryBetween, the
       // source of the bar, includes them. The two have to share a predicate or the
       // rows stop explaining the bar; they were once made to agree by hiding

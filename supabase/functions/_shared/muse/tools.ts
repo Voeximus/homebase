@@ -71,6 +71,7 @@ import {
   sumTargets,
   spentByCategoryBetween,
   attachedByCategoryBetween,
+  transfersBetween,
 } from "./lib/plan.ts";
 import {
   billsBeforeNextPayday,
@@ -522,8 +523,13 @@ const financeSpendByCategory: Tool = {
       to,
       totals: out,
       attached: { by_category: byCat, by_what_it_pays: byKind, total: money(attached.total) },
+      // The third part. Money from one of their accounts to another — a Zelle from
+      // Xinyan to Gino — was not spent, so it is in neither half above. Reported
+      // rather than dropped, because the three together are every expense in the
+      // window and a reader adding the two halves would otherwise find money missing.
+      between_their_own_accounts: money(transfersBetween(data.transactions, from, to)),
       note:
-        "Whole months only, so say the months you asked about. TWO HALVES, AND THEY ONLY MEAN SOMETHING TOGETHER: `totals` is spending attached to nothing, `attached` is everything that paid a bill, a debt or a set-aside — rent, the car, insurance, utilities, card payments. A category missing from `totals` means no unattached charge hit it, NOT that nothing was spent on it; check `attached.by_category` before saying a category was zero. Do not compare one month's `totals` with another's without the attached half beside it: linking a charge to its bill moves it between the two, so better bookkeeping looks like less spending. The charges behind a total are not available here at all.",
+        "Whole months only, so say the months you asked about. THREE PARTS, AND THEY ONLY MEAN SOMETHING TOGETHER: `totals` is spending attached to nothing, `attached` is everything that paid a bill, a debt or a set-aside — rent, the car, insurance, utilities, card payments — and `between_their_own_accounts` is money that moved from one of their accounts to another, which was not spent and counts against no budget. A category missing from `totals` means no unattached charge hit it, NOT that nothing was spent on it; check `attached.by_category` before saying a category was zero. Do not compare one month's `totals` with another's without the attached half beside it: linking a charge to its bill moves it between the two, so better bookkeeping looks like less spending. The charges behind a total are not available here at all.",
     };
   },
 };
