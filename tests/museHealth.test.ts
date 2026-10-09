@@ -51,6 +51,9 @@ import { mergeUndo } from "../supabase/functions/muse-write/undoContract.ts";
 // The registry the DOOR dispatches through, and the step validator that reads a `kind`
 // back out of the database. Both are the merge's half of the undo story.
 import { UNDO_REGISTRY } from "../supabase/functions/muse-write/undoRegistry.ts";
+// The finance side's one named inverse (finance.forget_merchant's undo), merged into the
+// same registry — so the "built from these handlers" check below names both halves.
+import { FINANCE_UNDO } from "../supabase/functions/muse-write/financeUndo.ts";
 import { checkStep } from "../supabase/functions/_shared/muse/undo.ts";
 import type { Ctx, ToolOutcome } from "../supabase/functions/muse-write/kit.ts";
 import type {
@@ -340,9 +343,16 @@ describe("the catalogue", () => {
   it("merges into one registry without two handlers claiming a kind", () => {
     expect(() => mergeUndo(HEALTH_UNDO)).not.toThrow();
     expect(() => mergeUndo(HEALTH_UNDO, HEALTH_UNDO)).toThrow(/claim/);
-    // And the registry the door reads really is built from this file's handlers — the
+    // The finance handler's name cannot collide with a health one: a name in a database
+    // row has to mean one inverse.
+    expect(() => mergeUndo(HEALTH_UNDO, FINANCE_UNDO)).not.toThrow();
+    // And the registry the door reads really is built from these handlers — the
     // assertion that would have failed before the merge, when mergeUndo was never called.
-    expect(Object.keys(UNDO_REGISTRY).sort()).toEqual(Object.keys(HEALTH_UNDO).sort());
+    // Both halves since 2026-10-09, when finance.forget_merchant brought the first
+    // finance inverse that is code rather than data.
+    expect(Object.keys(UNDO_REGISTRY).sort()).toEqual(
+      [...Object.keys(HEALTH_UNDO), ...Object.keys(FINANCE_UNDO)].sort(),
+    );
   });
 
   it("every kind a tool can return is a name the step validator accepts", () => {

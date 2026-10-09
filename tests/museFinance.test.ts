@@ -23,6 +23,10 @@ import { handleWrite, type Deps, type Secrets } from "../supabase/functions/muse
 import { TOOLS as READ_TOOLS } from "../supabase/functions/_shared/muse/tools.ts";
 import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance.ts";
 import { FINANCE_WRITE_TOOLS } from "../supabase/functions/muse-write/toolsFinance.ts";
+// The registry system.undo dispatches a named inverse through — reached directly once,
+// to hand the merchant-rule restore a before-state no tool would have written.
+import { UNDO_REGISTRY } from "../supabase/functions/muse-write/undoRegistry.ts";
+import type { Ctx } from "../supabase/functions/muse-write/kit.ts";
 import {
   applyUndo,
   checkStep,
@@ -41,6 +45,7 @@ import { financeDb } from "../supabase/functions/muse-write/dbFinanceSupabase.ts
 import type { Db as ReadDb, DbRow } from "../supabase/functions/_shared/muse/paging.ts";
 import { FinanceFake, sameJson } from "./museFinanceFake.ts";
 import { billsBeforeNextPayday, firepowerStatus, monthGetter } from "../src/lib/headline.ts";
+import { learnedFor, merchantKey, type LearnedRules } from "../src/lib/categorize.ts";
 import { toAppData } from "../supabase/functions/_shared/muse/rows.ts";
 import { NAME_MAX, scrub } from "../supabase/functions/_shared/muse/scrub.ts";
 
@@ -59,6 +64,7 @@ const BILL = "99999999-8888-7777-6666-555555555555";
 const ACCOUNT = "aaaa1111-2222-3333-4444-555555555555";
 const DEBT = "dddd1111-2222-3333-4444-555555555555";
 const CREDIT = "cccc1111-2222-3333-4444-555555555555";
+const RULE = "eeee1111-2222-3333-4444-555555555555";
 
 // ── the write door ───────────────────────────────────────────────────────────
 
@@ -286,6 +292,17 @@ describe("every finance write is driven here", () => {
     "finance.unlink_debt_card": (db) => {
       db.tables.debts[0].provider_account_id = "plaid-acct-1";
     },
+    // There has to be a rule before one can be forgotten. Present-and-null bill_name,
+    // like the real row, so the restored rule can be compared byte for byte.
+    "finance.forget_merchant": (db) => {
+      db.tables.merchant_rules.push({
+        id: RULE,
+        pattern: "TRADER JOE'S",
+        kind: "variable",
+        category_id: "groceries",
+        bill_name: null,
+      });
+    },
   };
 
   /** One call each tool accepts, against the seeded ledger. */
@@ -319,6 +336,9 @@ describe("every finance write is driven here", () => {
     "finance.set_bill_window": { bill_id: BILL, ends_on: "2026-12-31" },
     "finance.add_bill": { name: "Renters insurance", amount: 10.59, due_day: 18, category_id: "utilities" },
     "finance.learn_merchant": { merchant: "TRADER JOE'S", kind: "variable", category_id: "groceries" },
+    // The other half of learn_merchant: stop applying a saved rule. Its undo is the one
+    // finance inverse that is a named handler rather than a data step (financeUndo.ts).
+    "finance.forget_merchant": { merchant: "TRADER JOE'S" },
     "finance.set_account_balance": { account_id: ACCOUNT, balance: 900 },
     "finance.add_debt": { name: "Affirm", balance: 240 },
     "finance.link_debt_to_card": { debt_id: DEBT, account_id: ACCOUNT },
@@ -2004,7 +2024,11 @@ describe("learn_merchant says whether the rule will ever match", () => {
     const db = withFirestone();
     const body = await ok(db, "finance.learn_merchant", { merchant: "FIRESTONE", kind: "variable", category_id: "transport" });
     expect(body.result.matches_now).toBe(0);
-    expect(body.message).toContain("matches nothing today");
+    // Said as the door's best reading, not as a certainty: it never sees the bank's raw
+    // line behind a charge, and the app's labeller looks there too.
+    expect(body.message).toContain("no charge I can see reads exactly FIRESTONE");
+    expect(body.message).toContain("may match nothing yet");
+    expect(body.message).toContain("not the bank's own line");
     expect(body.message).toContain("only matches the whole name");
     // The real key, offered back so the next call can be right.
     expect(body.result.closest).toEqual(["FIRESTONE COMPLETE AUTO CARE"]);
@@ -2083,6 +2107,146 @@ describe("learn_merchant says whether the rule will ever match", () => {
     // "SAMS CLUB.COM" cleans to "SAMS" (".COM" reads as a link), so offering it would
     // just teach the next rule that matches nothing. It is left out, not shortened.
     expect(body.result.closest).toEqual(["SAMS CLUB", "SAMS CLUB DELIVERY", "SAMS CLUB GAS STATION"]);
+  });
+
+  // FOUND LATER ON 2026-10-09. learnedFor() looks a rule up twice: by the name's key,
+  // then by the bank's line with its statement noise stripped. A charge with no clean
+  // merchant name carries the bank's line AS its description, so its first key is the
+  // useless "CHECKCARD" — and a correct rule, saved under the stripped key, was told it
+  // matched nothing. Made-up merchant; the shape is the real one.
+  function withNoisyLine(description: string): Fake {
+    const db = new Fake();
+    db.tables.transactions.push({
+      id: "b1b1b1b1-2222-3333-4444-555555555555",
+      date: "2026-10-06",
+      amount: 14.25,
+      type: "expense",
+      category_id: "other",
+      description,
+      account_id: ACCOUNT,
+      applies_to: null,
+      flow_override: null,
+      splits: null,
+      anomaly_ack: false,
+      needs_review: true,
+      user_categorized: false,
+      record_only: false,
+      provider: "plaid",
+      status: "posted",
+      created_at: "2026-10-06T12:00:00Z",
+      person: null,
+    });
+    return db;
+  }
+
+  it("counts a charge whose bank line, stripped of its noise, carries the key", async () => {
+    const db = withNoisyLine("CHECKCARD 1006 BLUE HERON BAKERY 199 TEMPE AZ");
+    const body = await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "dining" });
+    expect(body.result.matches_now).toBe(1);
+    // No rule on the line's own key ("CHECKCARD"), so nothing gets there first.
+    expect(body.result.shadowed).toBe(0);
+    expect(body.result.shadowed_by).toEqual([]);
+    expect(body.message).not.toContain("may match nothing");
+    expect(body.message).not.toContain("checks before this one");
+  });
+
+  // FOUND IN REVIEW, 2026-10-09. learnedFor() takes the name's own key FIRST and stops at
+  // a hit, so a charge that matches only through its stripped key is filed by the rule on
+  // its own key whenever there is one. With a "CHECKCARD" rule saved, the count above said
+  // yes and the app said no.
+  const CHECKCARD_RULE = {
+    id: "f2f2f2f2-2222-3333-4444-555555555555",
+    pattern: "CHECKCARD",
+    kind: "variable",
+    category_id: "dining",
+    bill_name: null,
+  };
+
+  it("says when a saved rule on the line's own key gets to its charges first", async () => {
+    const line = "CHECKCARD 1006 BLUE HERON BAKERY 199 TEMPE AZ";
+    // The app's own function, on the same rules, is the ground truth: the CHECKCARD
+    // rule wins, and the new one never fires for this charge.
+    const rules: LearnedRules = {
+      CHECKCARD: { kind: "variable", categoryId: "dining" },
+      "BLUE HERON BAKERY": { kind: "variable", categoryId: "groceries" },
+    };
+    expect(learnedFor(merchantKey(line), rules, line)).toEqual(rules.CHECKCARD);
+
+    const db = withNoisyLine(line);
+    db.tables.merchant_rules.push({ ...CHECKCARD_RULE });
+    const body = await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "groceries" });
+    // Still counted — the charge does carry the key — and still not called dead…
+    expect(body.result.matches_now).toBe(1);
+    expect(body.message).not.toContain("may match nothing");
+    // …but the reply says that another rule answers it first, names it, and names the
+    // tool that takes it away.
+    expect(body.result.shadowed).toBe(1);
+    expect(body.result.shadowed_by).toEqual(["CHECKCARD"]);
+    expect(body.message).toContain(
+      "But the one charge I can see under BLUE HERON BAKERY first matches the saved rule on CHECKCARD, which the app checks before this one",
+    );
+    expect(body.message).toContain("until it is forgotten (finance.forget_merchant).");
+    // The rule is still saved: the warning is advice, not a refusal.
+    expect(db.tables.merchant_rules.map((r) => r.pattern)).toContain("BLUE HERON BAKERY");
+    // About today's ledger, so the log does not keep it.
+    expect(String(db.changes[0].summary)).not.toContain("checks before this one");
+  });
+
+  it("counts only the charges another rule reaches first, and says so on a changed rule too", async () => {
+    // One charge reads the merchant's own clean name — the new rule's own key, so it is
+    // this rule's whatever else is saved. The other is a bare card line, which the
+    // CHECKCARD rule reaches first. And the merchant already has a rule, so this is the
+    // update path, not the insert.
+    const db = withNoisyLine("CHECKCARD 1006 BLUE HERON BAKERY 199 TEMPE AZ");
+    db.tables.transactions.push({ id: "b2b2b2b2-2222-3333-4444-555555555555", type: "expense", description: "Blue Heron Bakery" });
+    db.tables.merchant_rules.push({ ...CHECKCARD_RULE }, { ...BAKERY_RULE });
+    const body = await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "groceries" });
+    expect(body.result.replaced).toBe("variable");
+    expect(body.result.matches_now).toBe(2);
+    expect(body.result.shadowed).toBe(1);
+    expect(body.message).toContain("But 1 of the 2 charges I can see under BLUE HERON BAKERY first matches the saved rule on CHECKCARD");
+  });
+
+  it("says nothing more when the line's own key has no rule, even with other rules saved", async () => {
+    const db = withNoisyLine("CHECKCARD 1006 BLUE HERON BAKERY 199 TEMPE AZ");
+    // A rule on some OTHER noise word does not reach a CHECKCARD line.
+    db.tables.merchant_rules.push({ ...CHECKCARD_RULE, pattern: "MOBILE PURCHASE" });
+    const body = await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "groceries" });
+    expect(body.result.shadowed).toBe(0);
+    expect(body.message).not.toContain("checks before this one");
+  });
+
+  it("saves NO rule when the look-up of the line's own key fails — that read fails closed too", async () => {
+    const db = withNoisyLine("CHECKCARD 1006 BLUE HERON BAKERY 199 TEMPE AZ");
+    const read = db.readMerchantRule.bind(db);
+    db.readMerchantRule = (p: string) =>
+      p === "CHECKCARD" ? Promise.reject(new Error("read merchant_rules: connection reset")) : read(p);
+    const r = await handleWrite(
+      post("finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "groceries" }),
+      deps(db),
+    );
+    expect(r.status).toBe(500);
+    expect(db.tables.merchant_rules).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("still counts the name's own key, and counts a charge once when both keys match", async () => {
+    // The plain case, unchanged: the seeded "TRADER JOE'S #457" keys to the pattern
+    // directly. Stripping it changes nothing, so the second key is the same key — one
+    // charge, one count, not two.
+    const db = new Fake();
+    const body = await ok(db, "finance.learn_merchant", { merchant: "TRADER JOE'S", kind: "variable", category_id: "groceries" });
+    expect(body.result.matches_now).toBe(1);
+  });
+
+  it("still warns when neither key matches, and offers the stripped key as the nearest real one", async () => {
+    const db = withNoisyLine("CHECKCARD 1006 BLUE HERON BAKERY 199 TEMPE AZ");
+    const body = await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON", kind: "variable", category_id: "dining" });
+    expect(body.result.matches_now).toBe(0);
+    expect(body.message).toContain("may match nothing yet");
+    // The key the labeller's raw lookup would actually use — teaching it is the fix.
+    expect(body.result.closest).toEqual(["BLUE HERON BAKERY"]);
   });
 
   it("saves NO rule when the ledger cannot be read whole — the read fails closed", async () => {
@@ -2200,6 +2364,186 @@ describe("the door will not teach the bank's own wording as a merchant", () => {
     expect(db.tables.recurring).toHaveLength(2);
     expect(db.tables.merchant_rules).toEqual([CHECKCARD_RULE]);
     expect(charge.applies_to).toBeNull();
+  });
+});
+
+// ── forgetting a saved rule ──────────────────────────────────────────────────
+//
+// ADDED 2026-10-09. The door could teach a rule and change one, never remove one — so a
+// rule on the bank's own wording, which the door now refuses to SAVE, could only be
+// taken out with raw SQL: no audit row, no token, no way back. finance.forget_merchant
+// removes one with a compare-and-set, and its undo puts the same rule back under the
+// same id unless the merchant has been given a rule again since. Made-up merchants.
+
+const BAKERY_RULE = {
+  id: "e1e1e1e1-2222-3333-4444-555555555555",
+  pattern: "BLUE HERON BAKERY",
+  kind: "variable",
+  category_id: "dining",
+  bill_name: null,
+};
+
+function withRule(rule: Record<string, unknown> = BAKERY_RULE): Fake {
+  const db = new Fake();
+  db.tables.merchant_rules.push({ ...rule });
+  return db;
+}
+
+describe("finance.forget_merchant", () => {
+  it("forgets a saved rule, says what the app will stop doing, and records how to put it back", async () => {
+    const db = withRule();
+    // Typed the way a person says it; the key is worked out exactly as learn_merchant
+    // works it out, so it lands on the rule learn_merchant would have written.
+    const body = await ok(db, "finance.forget_merchant", { merchant: "blue heron bakery" });
+    expect(db.tables.merchant_rules).toEqual([]);
+    expect(body.message).toContain("The app will stop filing BLUE HERON BAKERY as dining on its own.");
+    expect(body.message).toContain("Charges already filed keep their category");
+    expect(body.result.merchant).toBe("BLUE HERON BAKERY");
+    expect(body.result.id).toBe(BAKERY_RULE.id);
+    // The inverse is a NAMED handler with the whole rule as its before-state, recorded
+    // before the delete — not a data step, which could not re-create the row.
+    expect(db.changes).toHaveLength(1);
+    expect(db.changes[0].state).toBe("undoable");
+    expect(db.changes[0].steps).toEqual([
+      {
+        kind: "run_handler",
+        handler: "merchant-rule.insert",
+        before: { id: BAKERY_RULE.id, pattern: "BLUE HERON BAKERY", kind: "variable", category_id: "dining", bill_name: null },
+      },
+    ]);
+  });
+
+  it("says what each kind of rule stops doing", async () => {
+    const bill = withRule({ ...BAKERY_RULE, kind: "bill", category_id: null, bill_name: "Bread club" });
+    expect((await ok(bill, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" })).message).toContain(
+      "The app will stop treating BLUE HERON BAKERY as paying Bread club.",
+    );
+    const skip = withRule({ ...BAKERY_RULE, kind: "skip", category_id: null });
+    expect((await ok(skip, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" })).message).toContain(
+      "The app will stop dropping BLUE HERON BAKERY from the ledger.",
+    );
+  });
+
+  it("refuses a merchant with no saved rule, and writes nothing", async () => {
+    const db = withRule();
+    const r = await no(db, "finance.forget_merchant", { merchant: "BLUE HERON" });
+    expect(r.status).toBe(404);
+    expect(r.message).toContain("There is no saved rule for BLUE HERON");
+    // An exact key, like the labeller's lookup: a prefix does not reach the longer rule.
+    expect(db.tables.merchant_rules).toEqual([BAKERY_RULE]);
+    expect(db.changes).toHaveLength(0);
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("refuses, and deletes nothing, when the rule was re-taught between the read and the delete", async () => {
+    const db = withRule();
+    // The phone re-teaches the rule in the gap. The app upserts on the pattern, so the
+    // id stays and the answer changes — which is exactly what the compare-and-set is for.
+    const read = db.readMerchantRule.bind(db);
+    db.readMerchantRule = async (pattern: string) => {
+      const seen = await read(pattern);
+      db.tables.merchant_rules[0].category_id = "groceries";
+      return seen;
+    };
+    const r = await no(db, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("changed while I was working on it");
+    expect(db.tables.merchant_rules).toEqual([{ ...BAKERY_RULE, category_id: "groceries" }]);
+    // Abandoned, not undoable: nothing landed, so there is nothing to put back.
+    expect(db.changes[0].state).toBe("abandoned");
+  });
+
+  it("forgets a rule on the bank's own wording — removing those is what it is for", async () => {
+    const CHECKCARD_RULE = { ...BAKERY_RULE, id: "e2e2e2e2-2222-3333-4444-555555555555", pattern: "CHECKCARD" };
+    const db = withRule(CHECKCARD_RULE);
+    const body = await ok(db, "finance.forget_merchant", { merchant: "Checkcard" });
+    expect(db.tables.merchant_rules).toEqual([]);
+    expect(body.message).toContain("stop filing CHECKCARD as dining");
+    // And it comes back on undo like any other rule.
+    await ok(db, "system.undo", { token: undoToken(body) });
+    expect(db.tables.merchant_rules).toEqual([CHECKCARD_RULE]);
+  });
+
+  it("undo puts the same rule back, under the same id", async () => {
+    const db = withRule({ ...BAKERY_RULE, kind: "bill", category_id: null, bill_name: "Bread club" });
+    const before = JSON.parse(JSON.stringify(db.tables.merchant_rules));
+    const body = await ok(db, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" });
+    const undone = await ok(db, "system.undo", { token: undoToken(body) });
+    expect(db.tables.merchant_rules).toEqual(before);
+    expect(undone.message).toContain("Put back");
+    expect(db.changes.find((c) => c.token === undoToken(body))!.state).toBe("undone");
+  });
+
+  it("the same id is what lets an older undo still find its row", async () => {
+    // Teach (its undo deletes THAT id), forget, undo the forget, undo the teach. Under a
+    // new id the last step would find nothing and stop; under the same id it finishes.
+    const db = new Fake();
+    const taught = await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "dining" });
+    const forgot = await ok(db, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" });
+    await ok(db, "system.undo", { token: undoToken(forgot) });
+    await ok(db, "system.undo", { token: undoToken(taught) });
+    expect(db.tables.merchant_rules).toEqual([]);
+  });
+
+  it("undo refuses, and overwrites nothing, when the merchant was given a rule again since", async () => {
+    const db = withRule();
+    const body = await ok(db, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" });
+    await ok(db, "finance.learn_merchant", { merchant: "BLUE HERON BAKERY", kind: "variable", category_id: "groceries" });
+    const retaught = JSON.parse(JSON.stringify(db.tables.merchant_rules));
+
+    const r = await no(db, "system.undo", { token: undoToken(body) });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("has been given a rule again since I forgot the old one");
+    expect(db.tables.merchant_rules).toEqual(retaught);
+    expect(db.tables.merchant_rules[0].category_id).toBe("groceries");
+    // Still undoable: once the newer rule is dealt with in the app, asking again works.
+    expect(db.changes.find((c) => c.token === undoToken(body))!.state).toBe("undoable");
+  });
+
+  it("undo refuses when a rule lands in the instant between its check and its insert", async () => {
+    const db = withRule();
+    const body = await ok(db, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" });
+    // The phone teaches the merchant after the handler has looked and before it writes:
+    // the check saw nothing, and it is the table's own unique index that refuses.
+    const NEWER = { ...BAKERY_RULE, id: "e3e3e3e3-2222-3333-4444-555555555555", category_id: "groceries" };
+    db.readMerchantRule = async () => {
+      db.tables.merchant_rules.push({ ...NEWER });
+      return null;
+    };
+    const r = await no(db, "system.undo", { token: undoToken(body) });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("while I was putting the old one back");
+    expect(db.tables.merchant_rules).toEqual([NEWER]);
+  });
+
+  it("undo says so when the rule is already back", async () => {
+    const db = withRule();
+    const body = await ok(db, "finance.forget_merchant", { merchant: "BLUE HERON BAKERY" });
+    db.tables.merchant_rules.push({ ...BAKERY_RULE });
+    const r = await no(db, "system.undo", { token: undoToken(body) });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("is already back");
+    expect(db.tables.merchant_rules).toEqual([BAKERY_RULE]);
+  });
+
+  it("the restore handler refuses a before-state it cannot read, and writes nothing", async () => {
+    // The before-state comes back out of a table, so it is checked rather than trusted —
+    // the same reason checkStep reads every step again on the way in.
+    const db = new Fake();
+    const ctx = { db, person: "gino", at: AT, az: AT, appUrl: "", push: () => Promise.resolve() } as unknown as Ctx;
+    for (const before of [
+      null,
+      "BLUE HERON BAKERY",
+      { ...BAKERY_RULE, id: "not-an-id" },
+      { ...BAKERY_RULE, pattern: "" },
+      { ...BAKERY_RULE, kind: "DROP TABLE" },
+      { ...BAKERY_RULE, category_id: 7 },
+    ]) {
+      const out = await UNDO_REGISTRY["merchant-rule.insert"].apply(before as never, ctx);
+      expect(out.ok, JSON.stringify(before)).toBe(false);
+    }
+    expect(db.tables.merchant_rules).toEqual([]);
+    expect(db.writes).toHaveLength(0);
   });
 });
 

@@ -672,6 +672,13 @@ every built-in rule, so a wrong one is permanent until it is changed. `bill` mea
 charge pays that bill, `variable` means ordinary spending in a category, `skip` means
 the feed drops the charge entirely.
 
+**A wrong rule can be changed or removed on the write door.** `finance.learn_merchant`
+changes what a rule says; `finance.forget_merchant` takes it away, with `merchant` set to
+the name exactly as it reads here. Forgetting is also how a rule on the bank's own
+wording — a `CHECKCARD` rule, which files every card line with no clean name — comes
+out: the door will not teach one of those, but it will forget one. Charges already filed
+keep their category either way, and both hand back an undo token.
+
 ### `finance.bank_status`
 
 **Takes nothing.** `{}`
@@ -1175,10 +1182,10 @@ anything with the key you have, say plainly that you can only read.
 For when somebody asks what the other door does: it can now change everything the app
 can change. On the money side — add and delete a hand-entered charge, categorise and
 split one, attach one to a bill or release it, record a bill as paid, edit or turn off a
-bill, teach a merchant rule, set an account balance, add a debt. On the health side — log,
-edit and delete meals, saved meals, foods, macro targets and weigh-ins, and start, log
-into, finish, edit and delete a workout session and its routines. And a reminder: make
-one, cancel it, change it.
+bill, teach or forget a merchant rule, set an account balance, add a debt. On the health
+side — log, edit and delete meals, saved meals, foods, macro targets and weigh-ins, and
+start, log into, finish, edit and delete a workout session and its routines. And a
+reminder: make one, cancel it, change it.
 
 **Every one of those writes down what was there first and hands back an undo token**,
 which is what makes that list safe rather than alarming: Homebase never moves money, so

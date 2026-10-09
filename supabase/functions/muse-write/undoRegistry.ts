@@ -38,16 +38,26 @@
 
 import { mergeUndo, type UndoRegistry } from "./undoContract.ts";
 import { HEALTH_UNDO } from "./healthTools.ts";
+import { FINANCE_UNDO } from "./financeUndo.ts";
 
 /**
  * Every named inverse the write door can run.
  *
- * Only the health half is here today, and that is not an oversight: the finance writes
- * are all expressible as data steps, which is stricter and therefore preferred — reach
- * for a handler only when the row is a document rather than columns. The memory writes
- * need neither, because forgetting is a soft delete and `memory.restore` is a tool.
+ * The health half, and ONE finance inverse. Every other finance write is expressible as
+ * data steps, which is stricter and therefore preferred — reach for a handler only when
+ * a data step cannot say what the inverse needs. Until 2026-10-09 that meant "the row is
+ * a document rather than columns". finance.forget_merchant added the second reason: its
+ * inverse re-creates a deleted row, and must refuse if ANOTHER row has taken its place —
+ * financeUndo.ts says why neither half fits a data step without widening what an undo
+ * can write. The memory writes need neither, because forgetting is a soft delete and
+ * `memory.restore` is a tool.
+ *
+ * FINANCE_UNDO comes from its own file, not from toolsFinance.ts, on purpose:
+ * toolsFinance.ts imports THIS file's registry as a value, and the registry is built at
+ * module load, so importing back out of it would be a cycle that hands mergeUndo an
+ * undefined registry depending on which file happened to load first.
  */
-export const UNDO_REGISTRY: UndoRegistry = mergeUndo(HEALTH_UNDO);
+export const UNDO_REGISTRY: UndoRegistry = mergeUndo(HEALTH_UNDO, FINANCE_UNDO);
 
 /** The names, so a test can prove no tool returns an inverse nothing knows how to run. */
 export const UNDO_KINDS: readonly string[] = Object.keys(UNDO_REGISTRY);

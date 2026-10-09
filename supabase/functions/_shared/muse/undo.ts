@@ -162,7 +162,15 @@ export type UndoStep =
        *   · a handler the registry does not have is refused with a sentence, never guessed
        *     at. That is the allowlist property in its own shape.
        *
-       * Prefer the four data kinds. Reach for this one only when the row is a document.
+       * Prefer the four data kinds. Reach for this one only when the row is a document —
+       * or, since 2026-10-09, when the inverse RE-CREATES a deleted row whose guard is
+       * about other rows. finance.forget_merchant is that case: putting a rule back is an
+       * insert that must refuse if the merchant has been given a rule again since, and
+       * neither half fits a data kind. A generic "insert this row" kind would let a step
+       * create any row in any allowlisted table, which widens what an undo can write; and
+       * a compare-and-set cannot name a row that no longer exists. So it is one handler
+       * that can insert one rule and nothing else (muse-write/financeUndo.ts), rather
+       * than a sixth kind that could insert anything.
        */
       kind: "run_handler";
       handler: string;

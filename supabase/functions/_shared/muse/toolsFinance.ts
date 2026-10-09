@@ -531,7 +531,8 @@ const financeMerchantRules: Tool = {
           id: r.id,
           // The normalised merchant key the rule matches on. It is his own learned
           // answer, visible in the app, and it is the argument finance.learn_merchant
-          // takes — so it has to come back or the write could only be guessed at.
+          // and finance.forget_merchant take — so it has to come back or the write
+          // could only be guessed at.
           merchant: scrubOr(r.pattern, "(a merchant key I cannot say safely)"),
           kind: r.kind,
           category_id: r.categoryId ? scrubName(r.categoryId, NAME_MAX) || null : null,

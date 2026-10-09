@@ -30,6 +30,7 @@
   "include": [
     "db.ts",
     "dbFinance.ts",
+    "financeUndo.ts",
     "gated.ts",
     "handler.ts",
     "healthTools.ts",

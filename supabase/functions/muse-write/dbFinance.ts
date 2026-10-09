@@ -320,6 +320,29 @@ export interface FinanceDb {
   restoreMoneyEvent(row: Record<string, UndoValue>): Promise<"ok" | "moved">;
 
   /**
+   * Put a forgotten merchant rule back — its own id, its own pattern, its own three
+   * answers — and nothing else. "taken" means the table refused it because a rule with
+   * that pattern (or that id) is already there, and nothing was written.
+   *
+   * WHY IT IS ITS OWN VERB AND NOT insertRow. Added 2026-10-09 for the undo of
+   * finance.forget_merchant. insertRow lets the database choose the id, on purpose:
+   * its column list for merchant_rules does not carry `id`, and adding it there would
+   * let every insert into that table pick its own id. Putting a rule back under the id
+   * it had is the point of this one — the undo log, the audit row and anything the
+   * phone cached all name that id — so it is a separate statement that can write
+   * exactly one table and exactly these five columns, the same shape requestBankRefresh
+   * takes for the same reason.
+   *
+   * `created_at` is not carried. The database stamps it again, so it reads the time of
+   * the undo; nothing in the app or either door reads that column for a rule.
+   *
+   * "taken" is not checked by reading first and hoping. The table's own unique index
+   * on `pattern` is what answers, so a rule taught on the phone in the instant between
+   * the undo's check and this insert is refused rather than overwritten.
+   */
+  restoreMerchantRule(rule: RuleRow): Promise<"ok" | "taken">;
+
+  /**
    * How many ledger statements on this connection have CHANGED a row — counted when one
    * resolves having done so: an insert, an "ok" update or delete, a money event. A
    * compare-and-set that matched nothing ("moved") changed nothing and is not counted;

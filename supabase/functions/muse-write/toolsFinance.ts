@@ -66,8 +66,9 @@ import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 // The cooldown, and the sentences that explain it, shared with the read door's
 // freshness stamp so "too soon" has one definition rather than two.
 import { REFRESH_TICK_MIN, refreshDecision } from "../_shared/muse/freshness.ts";
-import { scrub, scrubCap, scrubOr } from "../_shared/muse/scrub.ts";
-import { isStatementNoiseKey, merchantKey } from "../_shared/muse/lib/categorize.ts";
+import { NAME_MAX, scrub, scrubCap, scrubName, scrubOr } from "../_shared/muse/scrub.ts";
+import { isStatementNoiseKey, merchantKey, stripStatementNoise } from "../_shared/muse/lib/categorize.ts";
+import { MERCHANT_RULE_INSERT, ruleHabit } from "./financeUndo.ts";
 import { cycleKeyOf } from "../_shared/muse/lib/selfAudit.ts";
 import { DUE_DAYS } from "../_shared/muse/lib/schedule.ts";
 import { DEFAULT_CATEGORIES } from "../_shared/muse/lib/seed.ts";
@@ -1350,10 +1351,54 @@ const addBill: Tool = {
 // when it is zero says so plainly, with the nearest real keys that start with what was
 // typed.
 //
+// AND THE COUNT LOOKS IN BOTH PLACES THE LABELLER LOOKS. FOUND LATER ON 2026-10-09: the
+// first version counted only merchantKey(description), and learnedFor() has a second
+// namespace — the bank's raw line with its statement noise stripped. A charge with no
+// clean merchant name carries the bank's line AS its description ("CHECKCARD 1006 BLUE
+// HERON BAKERY 199 …"), whose key is the useless "CHECKCARD", while the rule that labels
+// it is saved under the stripped key ("BLUE HERON BAKERY"). So a correct rule was told it
+// matched nothing; on a re-count that evening, two of the saved rules the first version
+// would have called dead were exactly this. The door may not read raw_description, so
+// it applies learnedFor's second lookup to the description instead, which for exactly
+// those charges IS the bank's line. What it still cannot see is the raw line behind a
+// charge that has a clean name, so a zero is now said as "no charge I can see", not as
+// a certainty. And because learnedFor() takes the name's own key FIRST, a charge counted
+// only through the stripped key belongs to this rule only while its own key has no rule
+// of its own — and with "CHECKCARD -> dining" still saved that day, it did not. The
+// reply says how many such charges another rule answers first, and names that rule
+// (FOUND IN REVIEW, same day).
+//
 // AND A RULE ON THE BANK'S OWN WORDING CAPTURES EVERYTHING. A "CHECKCARD -> dining"
 // rule, saved from one tap in the app on 2026-09-24, files every Bank of America card
 // line with no clean name as dining. Refused here, in the app, and in promote_to_bill,
 // all through one predicate (isStatementNoiseKey in categorize.ts).
+
+/**
+ * What learn_merchant says when some of the charges it counted are filed by another
+ * rule first — see "WHICH OF THOSE CHARGES ANOTHER RULE GETS TO FIRST" in the tool.
+ *
+ * `name` is already safe to say (the tool worked that out), and `named` holds only the
+ * keys the cleaner said back exactly; a rule whose key could not be said is still
+ * counted, as "another saved rule", so the sentence never claims fewer than there are.
+ * About what comes NEXT, like the rest of the reply: learning a rule relabels nothing.
+ */
+function shadowNote(name: string, matches: number, shadowed: number, rules: number, named: string[]): string {
+  const which = shadowed === matches
+    ? matches === 1 ? "the one charge" : `all ${matches} charges`
+    : `${shadowed} of the ${matches} charges`;
+  const unnamed = rules - named.length;
+  const ruleWords = named.length === 0
+    ? rules === 1 ? "another saved rule" : `${rules} other saved rules`
+    : `the saved ${rules === 1 ? "rule" : "rules"} on ${named.join(", ")}` +
+      (unnamed > 0 ? ` and ${unnamed} more` : "");
+  const one = rules === 1;
+  return scrubCap(
+    `But ${which} I can see under ${name} first ${shadowed === 1 ? "matches" : "match"} ${ruleWords}, which the app checks before this one — so charges that read like ${shadowed === 1 ? "it" : "those"} will keep being filed by ${one ? "that rule" : "those rules"}, not this one, until ${one ? "it is" : "they are"} forgotten (finance.forget_merchant).`,
+    // A 60-character name, three 60-character keys and the sentence around them.
+    520,
+  );
+}
+
 const learnMerchant: Tool = {
   kind: "direct",
   does: "Teach the app what a merchant is, so future charges label themselves. Give the charge's transaction_id and the name is read off the charge exactly.",
@@ -1460,12 +1505,35 @@ const learnMerchant: Tool = {
     // ledger — so a ledger that cannot be read cleanly saves no rule at all, and the
     // handler says something went wrong. The key of every charge is derived with the
     // app's own merchantKey(), the same call learnedFor() makes when it looks a rule up.
+    //
+    // TWO KEYS PER CHARGE, mirroring learnedFor()'s two lookups (see the note above the
+    // tool): the name's own key, and the key of the name with the bank's statement noise
+    // stripped off — the app's own stripStatementNoise, not a copy. The second is only
+    // taken when stripping leaves something, exactly as learnedFor() skips an empty one.
+    // A charge counts once however many of its keys match, and a key it carries that
+    // merely STARTS with the pattern is offered below as a suggestion, from either side.
     const near = new Map<string, number>();
     let matchesNow = 0;
+    // The charges that matched ONLY through the stripped key, counted by their own key
+    // — what learnedFor() looks up before it ever gets to the stripped one. See below.
+    const viaStripped = new Map<string, number>();
     for (const chargeName of await db.chargeNames()) {
       const key = merchantKey(chargeName);
-      if (key === pattern) matchesNow += 1;
-      else if (key.startsWith(pattern)) near.set(key, (near.get(key) ?? 0) + 1);
+      const stripped = stripStatementNoise(chargeName);
+      const strippedKey = stripped ? merchantKey(stripped) : "";
+      if (key === pattern) {
+        matchesNow += 1;
+        continue;
+      }
+      if (strippedKey === pattern) {
+        matchesNow += 1;
+        viaStripped.set(key, (viaStripped.get(key) ?? 0) + 1);
+        continue;
+      }
+      if (key.startsWith(pattern)) near.set(key, (near.get(key) ?? 0) + 1);
+      if (strippedKey && strippedKey !== key && strippedKey.startsWith(pattern)) {
+        near.set(strippedKey, (near.get(strippedKey) ?? 0) + 1);
+      }
     }
     // The nearest real keys: the fewest extra characters beyond what was typed, then
     // the most charges. A suggestion is only offered if the cleaner says it back
@@ -1481,16 +1549,62 @@ const learnMerchant: Tool = {
       .filter((k): k is { key: string; said: string } => k.said === k.key)
       .slice(0, 3)
       .map((k) => k.said);
+
+    // WHICH OF THOSE CHARGES ANOTHER RULE GETS TO FIRST. FOUND IN REVIEW 2026-10-09,
+    // the same day the stripped key was added to the count. learnedFor() looks the
+    // name's own key up FIRST and returns at a hit; the stripped lookup only runs when
+    // the own key has no rule at all. So a charge counted above only through its
+    // stripped key is filed by the rule on its OWN key whenever there is one, and this
+    // rule never reaches it. That was not hypothetical: the "CHECKCARD -> dining" rule
+    // was still saved that day, and every card line with no clean name keys to CHECKCARD
+    // before anything else — so a correct rule on the merchant behind those lines was counted
+    // here, the reply said nothing, and every one of its charges kept landing as dining.
+    // The FIRESTONE mistake in the other direction: the count said yes where the app
+    // says no.
+    //
+    // One single-row read of merchant_rules per DISTINCT own key, the same read the tool
+    // made above for the pattern itself. They are few: when stripping is what made a
+    // charge match, its own key is where merchantKey() stopped — the bank's prefix word,
+    // "CHECKCARD" and its cousins — not one per charge. Still before anything is written,
+    // so a read that fails here saves no rule, like the ledger read above.
+    //
+    // matches_now keeps its meaning — the charges I can see that carry this key — and
+    // `shadowed` says how many of them another rule answers first. The note names that
+    // rule's key and the tool that takes it away, because forgetting it is the fix.
+    const shadowers: { key: string; charges: number }[] = [];
+    for (const [ownKey, charges] of viaStripped) {
+      if (await db.readMerchantRule(ownKey)) shadowers.push({ key: ownKey, charges });
+    }
+    shadowers.sort((a, b) => b.charges - a.charges || a.key.localeCompare(b.key));
+    const shadowed = shadowers.reduce((n, s) => n + s.charges, 0);
+    // A key is only named if the cleaner says it back exactly, as with the suggestions
+    // above: a name that came back changed would send the forget to the wrong rule.
+    const shadowedBy = shadowers
+      .map((s) => scrub(s.key, 60))
+      .filter((said, i): said is string => said === shadowers[i].key)
+      .slice(0, 3);
+
     // Through the cleaner as a whole as well as piece by piece, so "which strings out
     // were scrubbed" is never a judgement call made line by line.
+    //
+    // "No charge I can see", not "no charge": the door reads each charge's name and never
+    // the bank's raw line behind it, which learnedFor() also checks. A zero here is the
+    // door's best reading, and the sentence says so rather than claiming a certainty it
+    // has no way to have — the same mistake as the "Taught the app…" this note exists for,
+    // in the other direction.
     const note = matchesNow > 0
-      ? undefined
+      ? shadowed > 0
+        ? shadowNote(name, matchesNow, shadowed, shadowers.length, shadowedBy)
+        : undefined
       : scrubCap(
-          `But no charge in the ledger reads exactly ${name} yet, so this rule matches nothing today — a rule only matches the whole name as it reads on the charge.` +
+          `But no charge I can see reads exactly ${name}, so this rule may match nothing yet — a rule only matches the whole name as it reads on the charge. I see each charge's name but not the bank's own line behind it, which the app also checks.` +
             (closest.length
               ? ` Charges that start with it read: ${closest.join("; ")}. Teach one of those, or give me the charge's transaction_id and I will read its name off it.`
               : " Give me the charge's transaction_id and I will read its name off it."),
-          480,
+          // Room for the longest case whole — a 60-character name and three 28-character
+          // keys — now that the sentence also says what the door cannot see. A cap that
+          // cut it would cut the instruction at the end, which is the useful half.
+          520,
         );
 
     const said =
@@ -1514,7 +1628,7 @@ const learnMerchant: Tool = {
         { kind, category_id: categoryId, bill_name: billName },
         { kind: existing.kind, category_id: existing.categoryId, bill_name: existing.billName },
         said + tail,
-        { merchant, replaced: existing.kind, matches_now: matchesNow, closest },
+        { merchant, replaced: existing.kind, matches_now: matchesNow, shadowed, shadowed_by: shadowedBy, closest },
         note,
       );
     }
@@ -1529,9 +1643,115 @@ const learnMerchant: Tool = {
       steps: [{ kind: "delete_row", table: "merchant_rules", id, after: { kind } }],
       summary: said + tail,
       note,
-      result: { id, merchant, kind, matches_now: matchesNow, closest },
+      result: { id, merchant, kind, matches_now: matchesNow, shadowed, shadowed_by: shadowedBy, closest },
       rowIds: [id],
       write: () => Promise.resolve(),
+    });
+  },
+};
+
+// ── finance.forget_merchant ──────────────────────────────────────────────────
+//
+// ADDED 2026-10-09. The door could teach a rule and change one, and could not remove
+// one. That mattered most for exactly the rules learn_merchant now refuses to save: a
+// "CHECKCARD -> dining" rule, made from one tap in the app, files every card line with
+// no clean name as dining, and a rule beats every built-in one. The refusal stopped new
+// ones; the one already saved could only be taken out with raw SQL — which leaves no
+// audit row, no token and no way back.
+//
+// SO THIS ACCEPTS THE BANK'S OWN WORDING, deliberately. isStatementNoiseKey is the gate
+// on SAVING a rule, because a rule on "CHECKCARD" catches everything; removing one is
+// the cure for that, and refusing it here would leave the worst rules as the only ones
+// nothing can touch.
+//
+// THE KEY IS WORKED OUT EXACTLY AS learn_merchant WORKS IT OUT — the typed name through
+// the cleaner, then the app's own merchantKey() — so "forget what I just taught" lands
+// on the same row "teach" wrote. The reply names the rule's own key, not what was typed,
+// so a forget that landed somewhere unexpected says where.
+//
+// THE DELETE IS A COMPARE-AND-SET on the three answers that were read: a rule re-taught
+// on the phone between the read and the write keeps its id (the app upserts on the
+// pattern) and changes its answer, and deleting it then would throw away the newer one.
+//
+// AND IT IS UNDONE BY A NAMED INVERSE, not a data step — financeUndo.ts says why. The
+// before-state is written to muse_undo BEFORE the delete, like every write in this file,
+// so even a door that dies mid-call leaves the rule's whole content recorded. The undo
+// puts it back under the same id, and refuses rather than overwrite if the merchant has
+// been given a rule again since.
+const forgetMerchant: Tool = {
+  kind: "direct",
+  does: "Stop applying a saved merchant rule. Charges already filed keep their category.",
+  fields: ["merchant"],
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const typed = payload.merchant === undefined ? "" : scrubCap(payload.merchant, 60);
+    if (!typed) {
+      return refuse(400, "Tell me the merchant the rule is saved under — finance.merchant_rules lists them, by the names they match.");
+    }
+    const pattern = merchantKey(typed);
+    if (!pattern) return refuse(400, "There was nothing left of that merchant name once it was normalised.");
+    // NO isStatementNoiseKey HERE. See above: removing a rule on the bank's wording is
+    // the main thing this tool is for.
+
+    const rule = await db.readMerchantRule(pattern);
+    if (!rule) {
+      return refuse(
+        404,
+        `There is no saved rule for ${scrubOr(pattern, "that merchant", 60)}, so there is nothing to forget. finance.merchant_rules lists the ones there are, by the exact names they match.`,
+      );
+    }
+
+    // The rule's own key, out of the database, so through the cleaner like every other
+    // string out. Two fallbacks, as in learn_merchant: a sentence needs words, and the
+    // structured field needs to say plainly that the key was withheld.
+    const name = scrubOr(rule.pattern, "that merchant", 60);
+    const merchant = scrubOr(rule.pattern, "(a merchant key I cannot say safely)", 60);
+    // True of the app's own rule as well: a rule labels what arrives next and never
+    // relabels a row already in the ledger. So forgetting it changes no charge, and the
+    // undo — putting the rule back — is the whole of the inverse.
+    const summary =
+      `Forgot the rule for ${name}. The app will stop ${ruleHabit(rule)}. ` +
+      "Charges already filed keep their category; only the ones that come next are labelled without it.";
+
+    return commit(ctx, "finance.forget_merchant", {
+      // Everything a rule IS, as it sits in the table — raw, not cleaned, because the
+      // undo has to write back exactly what was there. Never emitted: system.changes
+      // says how many rows a change touched, not what was in them.
+      steps: [
+        {
+          kind: "run_handler",
+          handler: MERCHANT_RULE_INSERT,
+          before: {
+            id: rule.id,
+            pattern: rule.pattern,
+            kind: rule.kind,
+            category_id: rule.categoryId,
+            bill_name: rule.billName,
+          },
+        },
+      ],
+      summary,
+      result: {
+        id: rule.id,
+        merchant,
+        kind: scrubName(rule.kind, 16) || null,
+        category_id: rule.categoryId ? scrubName(rule.categoryId, NAME_MAX) || null : null,
+        bill_name: rule.billName ? scrubOr(rule.billName, "a bill", 40) : null,
+      },
+      rowIds: [rule.id],
+      async write() {
+        const hit = await db.deleteRow("merchant_rules", rule.id, {
+          kind: rule.kind,
+          category_id: rule.categoryId,
+          bill_name: rule.billName,
+        });
+        if (hit === "moved") {
+          return refuse(
+            409,
+            `The rule for ${name} changed while I was working on it — it was taught again or removed — so I stopped and forgot nothing. Read finance.merchant_rules again and ask me once more.`,
+          );
+        }
+      },
     });
   },
 };
@@ -2263,6 +2483,7 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.set_bill_window": setBillWindow,
   "finance.add_bill": addBill,
   "finance.learn_merchant": learnMerchant,
+  "finance.forget_merchant": forgetMerchant,
   "finance.set_account_balance": setAccountBalance,
   "finance.add_debt": addDebt,
   "finance.link_debt_to_card": linkDebtToCard,

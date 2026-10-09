@@ -390,7 +390,10 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       // before it says "taught".
       //
       // `description` only. The untouched bank descriptor is the one column no tool on
-      // either door reads, and the app's rules are keyed on the clean name anyway.
+      // either door reads. That makes the count a floor, not an exact figure: the app
+      // also looks a rule up by the bank's raw line with its noise stripped, which the
+      // door applies to the description instead (learn_merchant says how, and why its
+      // zero is said as "no charge I can see").
       //
       // THE ORDER IS TOTAL — date, then id — so a page boundary cannot skip a row or
       // show one twice; date alone is not unique. Pages are smaller than PostgREST's
@@ -566,6 +569,31 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       must(error, "restore_money_event");
       const back = Array.isArray(data) ? data[0] : data;
       if (!back?.id) return "moved";
+      landed += 1;
+      return "ok";
+    },
+
+    async restoreMerchantRule(rule) {
+      // Five named columns into one named table; see dbFinance.ts for why this is not
+      // insertRow. No upsert, deliberately: an upsert on `pattern` is how the app
+      // re-teaches a rule, and an undo that took that path would overwrite whatever
+      // was taught since — the one thing an undo here must never do.
+      const { error } = await admin
+        .from("merchant_rules")
+        .insert({
+          id: rule.id,
+          pattern: rule.pattern,
+          kind: rule.kind,
+          category_id: rule.categoryId,
+          bill_name: rule.billName,
+        })
+        .select("id")
+        .single();
+      // 23505 is unique_violation: the pattern index or the primary key already holds
+      // this. It proves the statement rolled back, so nothing landed and the honest
+      // answer is "it is there already", not an error.
+      if (error?.code === "23505") return "taken";
+      must(error, "restore merchant_rules");
       landed += 1;
       return "ok";
     },

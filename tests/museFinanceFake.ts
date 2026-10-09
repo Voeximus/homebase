@@ -411,6 +411,27 @@ export class FinanceFake implements FinanceDb {
     return Promise.resolve("ok");
   }
 
+  /**
+   * The undo of finance.forget_merchant. "taken" exactly when the real insert would
+   * hit the table's unique index on `pattern` or its primary key — so the undo's
+   * "refuse rather than overwrite" is tested against the table's own answer, not
+   * against a read the handler made a moment earlier.
+   */
+  restoreMerchantRule(rule: RuleRow): Promise<"ok" | "taken"> {
+    const clash = this.tables.merchant_rules.some((r) => r.pattern === rule.pattern || r.id === rule.id);
+    if (clash) return Promise.resolve("taken");
+    this.writes.push({ op: "restore_merchant_rule", table: "merchant_rules", id: rule.id });
+    this.tables.merchant_rules.push({
+      id: rule.id,
+      pattern: rule.pattern,
+      kind: rule.kind,
+      category_id: rule.categoryId,
+      bill_name: rule.billName,
+    });
+    this.landed += 1;
+    return Promise.resolve("ok");
+  }
+
   writesLanded(): number {
     return this.landed;
   }
