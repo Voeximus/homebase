@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "../lib/supabase";
+import { readEveryRow } from "../lib/pagedRead";
 import type { DayLog, LoggedItem, Person, SavedMeal } from "../lib/mealLog";
 import type { Routine, Workout } from "../lib/workoutLog";
 import type { BodyWeight } from "../lib/weightLog";
@@ -244,15 +245,30 @@ export function HealthProvider({ children }: { children: ReactNode }) {
       addTombstones(removedSets.current, wDirty(j.workout.id), j.removedSets ?? []);
     }
 
+    // FOUND 2026-10-09, with the ledger's 1,000-row cut (src/lib/pagedRead.ts):
+    // meal_days, workouts and body_weights were each one bare select, and
+    // PostgREST stops a bare select at 1,000 rows without saying so. All three
+    // gain rows with the calendar — a meal day and a weigh-in per person per day,
+    // a row per session — and meal_days had no order at all, so which 1,000 came
+    // back was the database's choice. They are read whole now, a page at a time,
+    // in a total order. A failed page throws and leaves state exactly as it was —
+    // what `if (error) return` did before — and never applies the pages that did
+    // arrive: body_weights REPLACES its clean rows from a fetch, so half a read
+    // would delete the other half from the screen.
     async function reloadMealDays() {
       // Taken BEFORE the request: a key whose save lands while this fetch is in
       // the air must still merge, not take this (older) copy whole.
       const fetchNo = dirty.current.beginFetch();
-      const { data: rows, error } = await supabase.from("meal_days").select("*");
-      if (error || !active) return;
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "meal_days", [{ column: "date", ascending: false }]);
+      } catch {
+        return;
+      }
+      if (!active) return;
       setState((s) => {
         const next = { ...s.mealDays };
-        for (const r of rows ?? []) {
+        for (const r of rows) {
           const k = dayKey(r.person, r.date);
           const dk = mdDirty(r.person, r.date);
           const remote = mapDay(r);
@@ -276,9 +292,14 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     }
     async function reloadWorkouts() {
       const fetchNo = dirty.current.beginFetch(); // see reloadMealDays
-      const { data: rows, error } = await supabase.from("workouts").select("*").order("date", { ascending: false });
-      if (error || !active) return;
-      const remote = (rows ?? []).map(mapWorkout).filter((w) => !deleted.current.has(w.id));
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "workouts", [{ column: "date", ascending: false }]);
+      } catch {
+        return;
+      }
+      if (!active) return;
+      const remote = rows.map(mapWorkout).filter((w) => !deleted.current.has(w.id));
       for (const w of remote) onServer.current.add(w.id);
       firstServerCopy.current ??= remote;
       setWorkoutsLoaded(true); // committed together with the merge below
@@ -305,10 +326,15 @@ export function HealthProvider({ children }: { children: ReactNode }) {
     }
     async function reloadWeights() {
       const fetchNo = dirty.current.beginFetch(); // see reloadMealDays
-      const { data: rows, error } = await supabase.from("body_weights").select("*").order("date", { ascending: true });
-      if (error || !active) return;
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "body_weights", [{ column: "date", ascending: true }]);
+      } catch {
+        return;
+      }
+      if (!active) return;
       setState((s) => {
-        const remote = (rows ?? []).map(mapWeight);
+        const remote = rows.map(mapWeight);
         // A refetch (often triggered by the OTHER device's write) must not clobber
         // an in-flight local edit/delete: for any dirty (person+date) the LOCAL
         // state is truth — keep its value, or its ABSENCE (a pending delete isn't

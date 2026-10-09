@@ -684,9 +684,16 @@ stale without making them look stale.
 
 **Takes nothing.** `{}`
 
-**What comes back:** charges the bank has taken but not posted. They are **not in the
-ledger** — that is what stops them being counted twice when they post. The amount is
-signed the way the bank reports it: negative is money going out.
+**What comes back:** charges the bank has taken but not posted yet — the ledger rows
+whose status is `pending`, and `reads` says so in every reply. They are already in the
+ledger, marked as still processing, and the bank sync swaps each one for its posted row
+when it posts, so nothing is counted twice. Each amount is positive and `kind` says
+whether it is going out or coming in; `going_out` and `coming_in` are the totals over
+every pending row.
+
+It used to read a table called pending_preview, which nothing writes any more, and
+answered "0 processing" while five charges were. If it says nothing is processing,
+that is now a reading of the ledger itself.
 
 ### `finance.run_rate`
 
@@ -765,8 +772,8 @@ it said at the time and the token that reverses it.
 |---|---|
 | `undoable` | it landed, and `system.undo` can put it back |
 | `undone` | it landed and has since been put back |
-| `abandoned` | it did **not** happen — the row had changed, so the door stopped |
-| `pending` | the door stopped mid-call and **nobody knows** whether it landed |
+| `abandoned` | it did **not** go through — the row had changed, or the database refused the write before any of it landed, so the door stopped |
+| `pending` | the door stopped mid-call, or a write failed in a way that does not prove nothing landed — **nobody knows** whether it did |
 
 **Never read `pending` as done, and never read it as not done.** Say that it needs
 checking in the app.

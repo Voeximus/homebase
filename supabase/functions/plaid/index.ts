@@ -20,8 +20,17 @@
 // existing one-tap clarify UI. Only "variable" living spend is inserted.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { reconcile, type NormalRow, type PlaidTxn } from "../_shared/plaidSync.ts";
+import {
+  carryCorrection,
+  reconcile,
+  type CarriedCorrection,
+  type NormalRow,
+  type PendingCorrection,
+  type PlaidTxn,
+} from "../_shared/plaidSync.ts";
 import { billsPayableFrom, classify, classifyCredit, isPaycheck, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import { pendingFields } from "../_shared/pendingRow.ts";
+import { readAllPages } from "../_shared/readAllPages.ts";
 import { denyUnlessCaller } from "../_shared/callerAuth.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
@@ -310,10 +319,22 @@ async function syncConnection(connId: string, force = false) {
       const up = (desc || "").toUpperCase();
       return trackedDebts.find((d: any) => up.includes(String(d.track_pattern).toUpperCase()));
     };
-    const { data: paidRows } = await admin
-      .from("transactions")
-      .select("applies_to, provider_txn_id")
-      .not("applies_to", "is", null);
+    // Every row already linked to a bill, debt or goal — the record of which bill
+    // cycles are settled. This was one unpaged, unordered select with no error
+    // check, so two quiet failures were open at once. Past 1,000 linked rows,
+    // PostgREST would have returned an arbitrary 1,000 of them, and a cycle missing
+    // from paidBill reads as UNPAID: the next payment toward it settles it a second
+    // time instead of being recorded as an extra payment. And a failed read came
+    // back as no rows at all, which reads as "nothing is paid" — the same double
+    // settlement for every bill at once. Paged under a total order now, and a read
+    // that fails stops the sync before anything is written (the cursor is only
+    // saved at the end, so the next run retries the same delta).
+    const paidRows = await readAllPages("paid cycles", () =>
+      admin
+        .from("transactions")
+        .select("applies_to, provider_txn_id")
+        .not("applies_to", "is", null)
+    );
     // Map recurringId → its due_days so we can key a stored bill row on its
     // installment ordinal (stable) rather than its drift-prone posting day.
     const dueDaysById: Record<string, number[] | undefined> = {};
@@ -322,7 +343,7 @@ async function syncConnection(connId: string, force = false) {
       `${at.recurringId}|${at.monthKey}|${at.installmentIndex ?? installmentIndexForDay(dueDaysById[at.recurringId], at.day)}`;
     const paidBill = new Set<string>();
     const seenProviderIds = new Set<string>();
-    for (const t of paidRows ?? []) {
+    for (const t of paidRows) {
       const at = (t as any).applies_to;
       if (at?.kind === "bill") paidBill.add(cycleKey(at));
       if ((t as any).provider_txn_id) seenProviderIds.add((t as any).provider_txn_id);
@@ -393,30 +414,35 @@ async function syncConnection(connId: string, force = false) {
       // Page explicitly: PostgREST caps a select (1000 rows by default) and
       // truncates SILENTLY, and a first sync can span 24 months — a half-armed
       // guard would look like it worked and still double part of the history.
-      const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
-        const { data: prior, error: dErr } = await admin
+      //
+      // And page under a TOTAL order. This paged with .range() and no .order(),
+      // and without an order Postgres is free to return the rows in a different
+      // sequence for each page — so across pages one row could come back twice
+      // and another not at all, and a row that never came back is a key the guard
+      // never armed: exactly the half-armed guard the paging was added to prevent,
+      // only now it would also look like it had read everything. readAllPages
+      // applies (date desc, id), which ends in the primary key.
+      //
+      // Fail CLOSED. A scan we can't trust means we can't tell a new charge from
+      // a re-delivered one, and the cursor isn't persisted until the end, so the
+      // next sync simply re-pulls the same delta. A retried sync beats a doubled
+      // ledger. (readAllPages throws on an error rather than returning a short list.)
+      const prior = await readAllPages("dedup scan", () =>
+        admin
           .from("transactions")
           .select("date, amount, type, description, account_id, provider_txn_id, status")
           .gte("date", dates[0])
           .lte("date", dates[dates.length - 1])
-          .range(from, from + PAGE - 1);
-        // Fail CLOSED. A scan we can't trust means we can't tell a new charge from
-        // a re-delivered one, and the cursor isn't persisted until the end, so the
-        // next sync simply re-pulls the same delta. A retried sync beats a doubled
-        // ledger.
-        if (dErr) throw new Error("dedup scan: " + dErr.message);
-        for (const r of prior ?? []) {
-          if (r.provider_txn_id) knownProviderIds.add(r.provider_txn_id as string);
-          if (r.status !== "posted") continue;
-          if (r.provider_txn_id && ourAcctIds.has(r.account_id)) continue;
-          // Signed the way NormalRow is (− = spend) and merchant-keyed the way
-          // importStatement's dupeKey is, so all three write paths agree on what
-          // "the same purchase" means.
-          const signed = r.type === "income" ? Number(r.amount) : -Number(r.amount);
-          existingKeys.add(`${r.date}|${signed.toFixed(2)}|${merchantKey(r.description ?? "")}`);
-        }
-        if ((prior?.length ?? 0) < PAGE) break;
+      );
+      for (const r of prior) {
+        if (r.provider_txn_id) knownProviderIds.add(r.provider_txn_id as string);
+        if (r.status !== "posted") continue;
+        if (r.provider_txn_id && ourAcctIds.has(r.account_id)) continue;
+        // Signed the way NormalRow is (− = spend) and merchant-keyed the way
+        // importStatement's dupeKey is, so all three write paths agree on what
+        // "the same purchase" means.
+        const signed = r.type === "income" ? Number(r.amount) : -Number(r.amount);
+        existingKeys.add(`${r.date}|${signed.toFixed(2)}|${merchantKey(r.description ?? "")}`);
       }
     }
 
@@ -431,6 +457,52 @@ async function syncConnection(connId: string, force = false) {
             .join("; ")
             .slice(0, 500),
       );
+    }
+
+    // What a person already said about the pending rows this sync is about to
+    // replace — read NOW, before anything is written, because two writes below
+    // delete those rows: apply_bank_sync's reverse list (Plaid sends a pending id in
+    // `removed` when it posts) and the pending section's delete-then-insert. FOUND
+    // 2026-10-09: the Firestone repair, filed as `car` by hand while pending, came
+    // back as `other` the day it posted. See carryCorrection in plaidSync.ts for
+    // what carries and what deliberately does not.
+    //
+    // Two kinds of replacement: a posted row naming its pending row through
+    // pending_transaction_id, and a pending row the bank re-sent under the same id
+    // (deleted and re-inserted below). Only rows carrying an answer are read.
+    // Chunked so the id list stays a sane URL length; paged and ordered anyway,
+    // because a short read here would lose an answer without a sound.
+    //
+    // splits is read too, and a row with one counts as answered whatever its
+    // user_categorized says. FOUND 2026-10-09 in review: without it a split pending
+    // charge reached its posted row as one category, locked as answered — see the
+    // split paragraph of carryCorrection.
+    const carryFrom = [
+      ...new Set([
+        ...ops.upsertPosted.map((r) => r.pendingTxnId).filter((id): id is string => !!id),
+        ...ops.pendingUpsert.map((r) => r.providerTxnId),
+      ]),
+    ];
+    const corrections = new Map<string, PendingCorrection>();
+    for (let i = 0; i < carryFrom.length; i += 100) {
+      const ids = carryFrom.slice(i, i + 100);
+      const rows = await readAllPages("pending corrections", () =>
+        admin
+          .from("transactions")
+          .select("provider_txn_id, category_id, user_categorized, flow_override, splits")
+          .eq("provider", "plaid")
+          .eq("status", "pending")
+          .in("provider_txn_id", ids)
+          .or("user_categorized.eq.true,flow_override.not.is.null,splits.not.is.null")
+      );
+      for (const r of rows) {
+        corrections.set(r.provider_txn_id as string, {
+          categoryId: (r.category_id as string | null) ?? null,
+          userCategorized: r.user_categorized === true,
+          flowOverride: (r.flow_override as string | null) ?? null,
+          splits: r.splits ?? null,
+        });
+      }
     }
 
     // group posted rows: living-spend by account, and BILL payments (matched to a
@@ -651,6 +723,44 @@ async function syncConnection(connId: string, force = false) {
       });
     }
 
+    // Carry a person's answer from each pending row onto the posted row that
+    // replaces it. The decision is carryCorrection's (plaidSync.ts), and it runs
+    // AFTER the bill and debt matching above on purpose: a posted row the sync has
+    // just matched to a bill or debt carries an applies_to by now, and that match
+    // wins over a carried category.
+    //
+    // Two writes, because apply_bank_sync writes only some columns. The category
+    // and needs_review ride in the row itself, so they land in the same atomic
+    // insert as the charge. user_categorized, flow_override and splits are not
+    // columns that function writes, so they follow in an update straight after it
+    // (below).
+    //
+    // needs_review is the patch's own, not always false: a split that no longer
+    // adds up to the posted charge carries no category and sets needs_review TRUE,
+    // so the posted row asks again instead of passing for answered.
+    const pendingOf = new Map<string, string>();
+    for (const r of ops.upsertPosted) if (r.pendingTxnId) pendingOf.set(r.providerTxnId, r.pendingTxnId);
+    const carried: { providerTxnId: string; patch: CarriedCorrection }[] = [];
+    const carriedFrom = new Set<string>();
+    for (const row of [...Object.values(postedByAcct).flat(), ...Object.values(billByAcct).flat()]) {
+      const from = pendingOf.get(row.provider_txn_id);
+      const patch = carryCorrection(row, from ? corrections.get(from) : undefined);
+      if (!patch || !from) continue;
+      if (patch.category_id !== undefined) row.category_id = patch.category_id;
+      if (patch.needs_review !== undefined) row.needs_review = patch.needs_review;
+      carried.push({ providerTxnId: row.provider_txn_id, patch });
+      carriedFrom.add(from);
+    }
+    // A pending row whose answer is being carried must outlive the write that
+    // carries it. Plaid usually lists a posted charge's pending id in `removed`,
+    // which would delete that row inside apply_bank_sync — before the update below
+    // has run. If that update then failed, the sync would retry (the cursor is only
+    // saved at the end) and find the pending row already gone, so the answer would
+    // be lost on the retry instead of on the first try. Held back from the reverse
+    // list here, those rows are deleted by the pending section further down, whose
+    // delete covers every id in `removed` anyway and is scoped to status='pending'.
+    const reverse = ops.reverse.filter((id) => !carriedFrom.has(id));
+
     // write each of our accounts atomically (balance + its posted rows);
     // reverses are global, sent once on the first call (delete is idempotent).
     let reverseSent = false;
@@ -661,7 +771,7 @@ async function syncConnection(connId: string, force = false) {
         p_reported_balance: balByProv[provId] ?? null,
         p_balance_date: new Date().toISOString(),
         p_posted: [...(postedByAcct[provId] ?? []), ...(billByAcct[provId] ?? [])],
-        p_reverse: reverseSent ? [] : ops.reverse,
+        p_reverse: reverseSent ? [] : reverse,
       });
       if (error) throw new Error("apply_bank_sync: " + error.message);
       // display-only "still processing" hold (separate from the atomic money write)
@@ -674,17 +784,65 @@ async function syncConnection(connId: string, force = false) {
 
     // If the connection has no mapped accounts, the loop above never ran — flush
     // any pending reversals directly so Plaid `removed` ids aren't lost.
-    if (!reverseSent && ops.reverse.length) {
+    if (!reverseSent && reverse.length) {
       const { error } = await admin.rpc("apply_bank_sync", {
         p_account_id: null,
         p_provider: "plaid",
         p_reported_balance: null,
         p_balance_date: new Date().toISOString(),
         p_posted: [],
-        p_reverse: ops.reverse,
+        p_reverse: reverse,
       });
       if (error) throw new Error("apply_bank_sync (reverse flush): " + error.message);
     }
+
+    // The rest of each carried answer: the flags apply_bank_sync does not write.
+    //
+    // Each half is guarded on the POSTED row's own state, so a carry can never
+    // overwrite an answer given to the posted row itself. A carry normally happens
+    // once, because the pending row is deleted in the same sync. But a retried sync
+    // replays the whole delta, and the bank re-sends a posted charge (in `modified`)
+    // still naming its pending id — so if that pending row is still there for any
+    // reason, the carry runs again, possibly after a person has re-filed the posted
+    // row. The newer answer is the one that stands: the same reason apply_bank_sync
+    // never overwrites a user_categorized row's category.
+    //
+    // A failure THROWS. The cursor is only saved at the end, so the next sync
+    // replays this delta, the upsert above is idempotent, and the pending row —
+    // held back from the reverse list — is still there to read the answer from. A
+    // retried sync beats a correction that silently did not happen.
+    //
+    // A carried split rides in the same update as user_categorized, never on its
+    // own: the slices and the flag that protects them land together or not at all.
+    for (const { providerTxnId, patch } of carried) {
+      if (patch.user_categorized) {
+        const answer: Record<string, unknown> = {
+          category_id: patch.category_id,
+          user_categorized: true,
+          needs_review: false,
+        };
+        if (patch.splits) answer.splits = patch.splits;
+        const { error } = await admin
+          .from("transactions")
+          .update(answer)
+          .eq("provider", "plaid")
+          .eq("provider_txn_id", providerTxnId)
+          .eq("status", "posted")
+          .or("user_categorized.is.null,user_categorized.eq.false");
+        if (error) throw new Error("carry correction: " + error.message);
+      }
+      if (patch.flow_override) {
+        const { error } = await admin
+          .from("transactions")
+          .update({ flow_override: patch.flow_override })
+          .eq("provider", "plaid")
+          .eq("provider_txn_id", providerTxnId)
+          .eq("status", "posted")
+          .is("flow_override", null);
+        if (error) throw new Error("carry correction: " + error.message);
+      }
+    }
+    if (carried.length) console.log(`carried ${carried.length} answer(s) from a pending row to its posted row`);
 
     // Recompute each feed-tracked debt as baseline − sum(its recorded payments
     // since tracked_since). A SET from a recompute (not a decrement) — idempotent
@@ -717,87 +875,81 @@ async function syncConnection(connId: string, force = false) {
     // math). When a pending charge posts, Plaid links the posted txn to it via
     // pending_transaction_id → reconcile puts that id in pendingRemove → we delete
     // the pending row and the posted path inserts the real one (no double-count).
+    // Any answer a person gave the pending row has already been carried onto the
+    // posted one above (carryCorrection) — or, for a split that no longer adds up
+    // to the posted charge, turned into a question on it — so deleting it here
+    // loses nothing silently.
     // No bill/debt matching here — that runs on the posted row.
     //
     // We delete-then-insert (avoids ON CONFLICT on the partial provider index).
     // The delete is HARD-SCOPED to status='pending' so it can NEVER remove a real
     // posted transaction.
     const removeIds = [...new Set([...ops.pendingRemove, ...ops.pendingUpsert.map((r) => r.providerTxnId)])];
-    if (removeIds.length) {
-      await admin
+    // This delete used to be one unchecked call. It now also retires the pending
+    // rows held back from apply_bank_sync's reverse list above (their answers were
+    // carried), so a failure here would leave those holds on screen beside the
+    // charges that replaced them — the double row this whole section exists to
+    // prevent. So it throws, as apply_bank_sync does when ITS delete fails: the
+    // cursor is not saved, the next sync replays the delta, and every write before
+    // this one is idempotent.
+    //
+    // And it is chunked, because checking it made its size matter. removeIds holds
+    // every posted id in the delta too, and a cursor reset or a first sync is
+    // hundreds of them — one `in` list that long is a URL the gateway can refuse.
+    // Unchecked, such a refusal would have passed in silence and left every pending
+    // row in the batch on screen; checked and unchunked, it would fail every large
+    // sync. A hundred ids per call is the same chunk the corrections read uses.
+    for (let i = 0; i < removeIds.length; i += 100) {
+      const { error: rmErr } = await admin
         .from("transactions")
         .delete()
         .eq("provider", "plaid")
         .eq("status", "pending")
-        .in("provider_txn_id", removeIds);
+        .in("provider_txn_id", removeIds.slice(i, i + 100));
+      if (rmErr) throw new Error("pending delete: " + rmErr.message);
     }
     const pendingRows: any[] = [];
     for (const row of ops.pendingUpsert) {
       const acctId = acctIdByProv[row.accountId];
       if (!acctId) continue;
-      // Money coming IN while still pending. This used to `continue` — "outflows
-      // only" — which made the ledger structurally incapable of showing a deposit
-      // before it settled: zero pending income rows existed in the whole database.
-      //
-      // That is not a display nicety. A reimbursement is the case that needs it
-      // most: Xinyan covered a group meal and was Zelled $92.08 and $21.65 back,
-      // and searching the ledger for that money found nothing, because nothing
-      // could have been there. The app said she was still owed it.
-      //
-      // Internal transfers between the household's own accounts are still dropped
-      // (classifyCredit), same as on the posted path — those are the same dollars
-      // moving, not new money.
-      if (row.amount > 0) {
-        if (classifyCredit(row.description) === "transfer") continue;
-        pendingRows.push({
-          date: row.date,
-          amount: row.amount,
-          type: "income",
-          category_id: isPaycheck(row.description) ? "salary" : "other-income",
-          description: row.description,
-          raw_description: row.raw,
-          account_id: acctId,
-          provider: "plaid",
-          provider_txn_id: row.providerTxnId,
-          provider_account_id: row.accountId,
-          status: "pending",
-          needs_review: false,
-        });
-        continue;
-      }
-      const c = classify(row.description, row.amount, learned, row.raw);
-      if (c.kind === "skip") continue;
-      // A pending BILL payment is not discretionary spending and must not be
-      // graded as any. This wrote c.appCategory ?? "other", and classify() returns
-      // no appCategory for a bill — so every pending bill landed in "other", which
-      // IS the $125/mo Misc line. That stayed invisible while pending charges were
-      // excluded from the budget; the moment they started counting, a $99.93
-      // pet-insurance bill turned up under "Misc / uncategorized".
-      //
-      // It cannot carry an applies_to yet: the bill link belongs to the settled
-      // charge, and writing one here would mark the cycle paid off a hold the bank
-      // can still reverse. So it takes the "bills" category — real cash, visible,
-      // outside the envelope — and the posted twin gets the proper link a day or
-      // two later.
-      //
-      // This ignores appCategory even where there is one: the Anthropic price band
-      // sets "subscriptions", which IS graded, so a pending Claude Pro bill was
-      // being charged against Household + Hygiene.
-      const pendingCat = c.kind === "bill" ? "bills" : (c.appCategory ?? "other");
-      pendingRows.push({
+      // What the row is — or whether it is written at all — is pendingFields'
+      // decision (_shared/pendingRow.ts), lifted out of here so a test can reach
+      // it. That is also where internal transfers are dropped, both directions.
+      const f = pendingFields(row, learned);
+      if (!f) continue;
+      const pendingRow: Record<string, unknown> = {
         date: row.date,
-        amount: Math.abs(row.amount),
-        type: "expense",
-        category_id: pendingCat,
+        amount: f.amount,
+        type: f.type,
+        category_id: f.category_id,
         description: row.description,
-          raw_description: row.raw,
+        raw_description: row.raw,
         account_id: acctId,
         provider: "plaid",
         provider_txn_id: row.providerTxnId,
         provider_account_id: row.accountId,
         status: "pending",
-        needs_review: c.confidence === "low",
-      });
+        needs_review: f.needs_review,
+        // Spelled out at their column defaults, never left off. This is ONE bulk
+        // insert, and supabase-js sends a bulk insert with the union of every row's
+        // keys as its column list and fills a key a row lacks with NULL. So the
+        // moment one row below carries user_categorized, every row that omitted it
+        // would insert NULL into a NOT NULL column and the whole batch would fail.
+        user_categorized: false,
+        flow_override: null,
+        splits: null,
+      };
+      // A pending row the bank re-sent under the same id is deleted and inserted
+      // again just above, so an answer given to it would be lost the same way the
+      // Firestone one was at posting. A pending row has no applies_to, so whatever
+      // a person said carries — a split only while it still adds up to the amount
+      // the bank re-sent (a restaurant hold is often re-sent with the tip on it),
+      // and otherwise the row asks again; see carryCorrection. This is a direct
+      // insert, not apply_bank_sync, so every carried column lands in the same
+      // statement.
+      const patch = carryCorrection({ amount: f.amount }, corrections.get(row.providerTxnId));
+      if (patch) Object.assign(pendingRow, patch);
+      pendingRows.push(pendingRow);
     }
     // A plain INSERT, not an upsert. The comment above was describing what this
     // was SUPPOSED to do: the only unique index on (provider, provider_txn_id) is

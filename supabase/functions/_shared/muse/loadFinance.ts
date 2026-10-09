@@ -1,8 +1,9 @@
 // The tables the finance parity tools need beyond the ledger bundle.
 //
-// load.ts owns `appData()` — the seven tables the app's maths modules take. Three
-// more tables are read by Phase 2's tools and by nothing else, so they live here:
-// the bank's in-flight charges, the bank connections' health, and the change log.
+// load.ts owns `appData()` — the seven tables the app's maths modules take. Phase 2's
+// tools need a few more reads that nothing else does, so they live here: the bank's
+// in-flight charges (the pending rows of `transactions`, read on their own), the bank
+// connections' health, the job log, the push devices, and the change log.
 //
 // SAME TWO RULES AS load.ts. Every read goes through readAll, so it is paged and
 // fails closed (Rule 5): if the count and the pages disagree, the exception travels
@@ -13,9 +14,10 @@
 // THE MAPPERS ARE HERE AND NOT IN rows.ts on purpose. rows.ts maps into the APP'S
 // OWN types (`Transaction`, `Account`, …), and a field the domain type requires and
 // a mapper forgot is a compile error there — that is what keeps it honest. These
-// three tables have no app-side type: `pending_preview` and `bank_connections` are
-// read straight into JSX in src/views, and `muse_undo` is the door's own table. So
-// their shapes are declared next to their mappers, where a reader can see both at
+// shapes have no app-side type: `bank_connections` is read straight into JSX in
+// src/views, `muse_undo` is the door's own table, and a pending charge is a narrower
+// view of a transaction than `Transaction` — one with no room for the raw descriptor.
+// So their shapes are declared next to their mappers, where a reader can see both at
 // once.
 
 import type { Db } from "./paging.ts";
@@ -29,17 +31,33 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const optStr = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 const num = (v: unknown): number => Number(v ?? 0);
 
-/** One in-flight bank charge. Display-only: it never reaches the ledger, which is
- *  what stops it being counted twice when it posts. */
+/**
+ * One charge the bank has taken and not posted yet: a `transactions` row whose
+ * status is 'pending'.
+ *
+ * IT USED TO BE A ROW OF `pending_preview`, AND THAT TABLE IS DEAD. FOUND 2026-10-09:
+ * finance.bank_pending answered "0 processing" while five charges were processing,
+ * because nothing has written pending_preview since the bank sync started putting
+ * in-flight charges straight into `transactions` with status 'pending'
+ * (supabase/functions/plaid/index.ts — "Show charges the instant Plaid sees them"). The
+ * table had 0 rows and the tool read it faithfully. finance.next_bills had already been moved off it
+ * for the same reason (see the note there in tools.ts); this tool had not.
+ *
+ * MAPPED COLUMN BY COLUMN, and `raw_description` is not one of them. The bank's own
+ * descriptor is the one string in a charge nothing in the app has ever cleaned, so
+ * it is left in the row rather than carried into anything a tool could say.
+ */
 export interface PendingCharge {
+  id: string;
   date: string;
-  /** SIGNED as the bank reports it — negative is money going out. Not flipped
-   *  here: the app reads the sign, and a door that normalised it would be the door
-   *  doing arithmetic on the one figure whose direction is the whole point. */
+  /** Always positive, the way the ledger stores every amount. The direction is in
+   *  `kind`, exactly as finance.transaction reports it — flipping a sign here would be
+   *  the door doing arithmetic on the one figure whose direction is the whole point. */
   amount: number;
+  kind: "income" | "expense";
+  /** The cleaned merchant name the sync wrote — never the raw descriptor. */
   description: string;
   categoryId: string | null;
-  owner: string | null;
   accountId: string | null;
 }
 
@@ -78,7 +96,8 @@ export interface JobRunRow {
 }
 
 export interface FinanceExtras {
-  /** The bank's in-flight charges, newest first. */
+  /** The bank's in-flight charges — `transactions` whose status is 'pending' — newest
+   *  first. */
   pendingCharges(): Promise<PendingCharge[]>;
   /** Every unattended run recorded in the last 30 days. */
   jobRuns(): Promise<JobRunRow[]>;
@@ -114,19 +133,28 @@ function once<T>(make: () => Promise<T>): () => Promise<T> {
 
 export function createFinanceExtras(db: Db): FinanceExtras {
   const pendingCharges = once(async () => {
-    const rows = await readAll(db, { table: "pending_preview", orderBy: "id" });
+    // Paged and fail-closed through readAll like every other read, filtered to the
+    // pending rows ON THE SERVER (the count and every page carry the same filter), and
+    // ordered by `id`, which totally orders the table so a page can neither skip nor
+    // repeat a row. A sync swapping a pending row for its posted twin between the count
+    // and a page makes them disagree, and the door then refuses rather than answering
+    // from half a list — one retry, against a processing total that is quietly short.
+    const rows = await readAll(db, { table: "transactions", orderBy: "id", eq: { status: "pending" } });
     return rows
       .map(
         (r): PendingCharge => ({
+          id: str(r.id),
           date: str(r.date),
           amount: num(r.amount),
+          kind: r.type === "income" ? "income" : "expense",
           description: str(r.description),
           categoryId: optStr(r.category_id),
-          owner: optStr(r.owner),
           accountId: optStr(r.account_id),
         }),
       )
-      .sort((a, b) => b.date.localeCompare(a.date));
+      // Newest first, then by id, so two charges on one day come back in the same
+      // order on two identical calls — "the first one" must mean one charge.
+      .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
   });
 
   const bankConnections = once(async () => {

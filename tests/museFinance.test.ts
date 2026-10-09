@@ -36,10 +36,13 @@ import {
   type UndoStep,
 } from "../supabase/functions/_shared/muse/undo.ts";
 import type { Db } from "../supabase/functions/muse-write/db.ts";
+import { provesRolledBack, StatementRefused } from "../supabase/functions/muse-write/dbFinance.ts";
+import { financeDb } from "../supabase/functions/muse-write/dbFinanceSupabase.ts";
 import type { Db as ReadDb, DbRow } from "../supabase/functions/_shared/muse/paging.ts";
 import { FinanceFake, sameJson } from "./museFinanceFake.ts";
 import { billsBeforeNextPayday, firepowerStatus, monthGetter } from "../src/lib/headline.ts";
 import { toAppData } from "../supabase/functions/_shared/muse/rows.ts";
+import { NAME_MAX, scrub } from "../supabase/functions/_shared/muse/scrub.ts";
 
 const AT = new Date("2026-09-27T02:00:00Z");
 const AZ_TODAY = "2026-09-26";
@@ -64,7 +67,15 @@ const CREDIT = "cccc1111-2222-3333-4444-555555555555";
  *  on the audit log should fail loudly, not quietly pass. */
 class Fake extends FinanceFake implements Db {
   calls = new Map<string, number>();
-  audit: { tool: string; idemKey: string | null; outcome: string; note?: string; rowIds?: string[] }[] = [];
+  audit: {
+    tool: string;
+    idemKey: string | null;
+    outcome: string;
+    note?: string;
+    rowIds?: string[];
+    args?: Record<string, unknown>;
+    result?: unknown;
+  }[] = [];
   pushes: unknown[] = [];
 
   constructor() {
@@ -124,8 +135,14 @@ class Fake extends FinanceFake implements Db {
   }
 
   // ── the plumbing, faked just enough for handleWrite to reach a tool ───────
-  findCall() {
-    return Promise.resolve(null);
+  /** A real lookup since 2026-10-09, so a REPLAY can be driven: the envelope a repeat
+   *  gets has to carry the same token the first answer did. Every other test here sends
+   *  a fresh key, so this finds nothing for them, exactly as before. */
+  findCall(_person: string, tool: string, idemKey: string) {
+    const row = this.audit.find((a) => a.tool === tool && a.idemKey === idemKey);
+    return Promise.resolve(
+      row ? { outcome: row.outcome as "ok", args: row.args ?? {}, result: row.result ?? null, note: row.note ?? null } : null,
+    );
   }
   /**
    * The household duplicate guard — "Xinyan already did that four minutes ago".
@@ -142,19 +159,19 @@ class Fake extends FinanceFake implements Db {
   recentSameWrite() {
     return Promise.resolve(null);
   }
-  claimCall(c: { tool: string; idemKey: string }) {
+  claimCall(c: { tool: string; idemKey: string; args: Record<string, unknown> }) {
     const clash = this.audit.some((a) => a.idemKey === c.idemKey && a.tool === c.tool);
     if (clash) return Promise.resolve<"claimed" | "duplicate">("duplicate");
-    this.audit.push({ tool: c.tool, idemKey: c.idemKey, outcome: "pending" });
+    this.audit.push({ tool: c.tool, idemKey: c.idemKey, outcome: "pending", args: c.args });
     return Promise.resolve<"claimed" | "duplicate">("claimed");
   }
   releaseCall(_p: string, tool: string, idemKey: string) {
     this.audit = this.audit.filter((a) => !(a.tool === tool && a.idemKey === idemKey && a.outcome === "pending"));
     return Promise.resolve();
   }
-  finishCall(c: { tool: string; idemKey: string; outcome: string; rowIds?: string[] }) {
+  finishCall(c: { tool: string; idemKey: string; outcome: string; rowIds?: string[]; result?: unknown; note?: string }) {
     const row = this.audit.find((a) => a.tool === c.tool && a.idemKey === c.idemKey);
-    if (row) Object.assign(row, { outcome: c.outcome, rowIds: c.rowIds });
+    if (row) Object.assign(row, { outcome: c.outcome, rowIds: c.rowIds, result: c.result, note: c.note });
     return Promise.resolve();
   }
   logCall(c: { tool: string; outcome: string; note: string }) {
@@ -295,6 +312,9 @@ describe("every finance write is driven here", () => {
     // Which account a bill is paid from. All nineteen were null, which is how
     // "nothing is due" was true while the joint account was short of rent.
     "finance.set_bill_account": { bill_id: BILL, account_id: ACCOUNT },
+    // The day of the month a bill actually comes out. T-Mobile's row said the 29th
+    // while the charge landed on the 14th, and nothing could move it.
+    "finance.set_bill_due_day": { bill_id: BILL, due_day: 14 },
     "finance.turn_bill_off": { bill_id: BILL, active: false },
     "finance.set_bill_window": { bill_id: BILL, ends_on: "2026-12-31" },
     "finance.add_bill": { name: "Renters insurance", amount: 10.59, due_day: 18, category_id: "utilities" },
@@ -343,6 +363,14 @@ describe("every finance write is driven here", () => {
       // assistant repeats out loud, and a handle only in a field it chose not to read
       // is no handle at all.
       expect(body.message).toContain(token);
+      // AND IN THE ENVELOPE, which is where the write door's own description tells an
+      // assistant to look. FOUND 2026-10-09: every one of these came back with this
+      // token in result.undo and, beside it, `undo: null` and "Nothing was written down
+      // that could put this back."
+      const envelope = body as unknown as { undo: { token: string; says: string } | null; cannot_undo?: string };
+      expect(envelope.undo?.token, `${tool}'s envelope lost its token`).toBe(token);
+      expect(envelope.undo?.says).toBeTruthy();
+      expect(envelope.cannot_undo, `${tool} says it cannot be undone`).toBeUndefined();
       expect(db.changes).toHaveLength(1);
       expect(db.changes[0].tool).toBe(tool);
       // `undoable`, not `pending`: the row is written before the change is attempted and
@@ -517,7 +545,11 @@ describe("the undo core", () => {
     // `pending` is the state that says "I cannot prove what happened", and it has to be
     // sayable — reading it as either done or not done is the failure.
     expect(STATE_SAYS.pending).toMatch(/could not confirm/i);
-    expect(STATE_SAYS.abandoned).toMatch(/did not do this/i);
+    // Both causes, named, since 2026-10-09: a write that FAILED is abandoned too now, so
+    // the sentence cannot claim the only reason was a row that moved.
+    expect(STATE_SAYS.abandoned).toMatch(/did not go through/i);
+    expect(STATE_SAYS.abandoned).toMatch(/row had changed/i);
+    expect(STATE_SAYS.abandoned).toMatch(/database refused the write/i);
     expect(STATE_SAYS.undoable).toBeTruthy();
     expect(STATE_SAYS.undone).toBeTruthy();
   });
@@ -977,6 +1009,317 @@ describe("an undo only reaches its own owner's changes", () => {
   });
 });
 
+// ── the envelope, the wording, and a write that throws ──────────────────────
+//
+// Three bugs found on 2026-10-09 from one real reply and two stuck rows. Each is about
+// the door saying something untrue about a change it had made correctly.
+
+describe("the reply's undo envelope tells the truth", () => {
+  const SET_AMOUNT = { bill_id: BILL, amount: 96.5 };
+
+  it("a one-row write (finance.set_bill_amount) carries its own token in `undo`, and never says it cannot be undone", async () => {
+    // The reply that found it: a token in result.undo, naming a real undoable row, while the
+    // envelope said `undo: null` and cannot_undo. The token below must be the one in
+    // the change log, not a second one minted beside it.
+    const db = new Fake();
+    const r = await handleWrite(post("finance.set_bill_amount", SET_AMOUNT), deps(db));
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const undo = r.body.undo as { token: string; says: string };
+    expect(undo.token).toMatch(TOKEN_SHAPE);
+    expect(undo.token).toBe((r.body.result as Record<string, unknown>).undo);
+    expect(undo.says).toMatch(/put this back/);
+    expect(r.body.cannot_undo).toBeUndefined();
+    expect(db.changes).toHaveLength(1);
+    expect(db.changes[0]).toMatchObject({ token: undo.token, state: "undoable" });
+  });
+
+  it("the token in the envelope is one system.undo accepts", async () => {
+    const db = new Fake();
+    const r = await handleWrite(post("finance.set_bill_amount", SET_AMOUNT), deps(db));
+    const token = (r.body.undo as { token: string }).token;
+    const back = await ok(db, "system.undo", { token });
+    expect(back.message).toContain("Put back");
+    expect(db.tables.recurring[0].known_amount).toBeNull();
+  });
+
+  it("a repeat under the same key hands back the same token, not null", async () => {
+    const db = new Fake();
+    const send = () =>
+      handleWrite(
+        new Request("https://x.test/functions/v1/muse-write", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${GINO}`,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "replay-key-0001",
+          },
+          body: JSON.stringify({ tool: "finance.set_bill_amount", args: SET_AMOUNT }),
+        }),
+        deps(db),
+      );
+    const first = await send();
+    const again = await send();
+    expect(again.status).toBe(200);
+    expect(again.body.repeated).toBe(true);
+    // The token of the ONE change that was made — read back out of the audit row, never
+    // minted a second time, and never null beside a change that exists.
+    expect((again.body.undo as { token: string } | null)?.token).toBe(db.changes[0].token);
+    expect(again.body.undo).toEqual(first.body.undo);
+    expect(again.body.cannot_undo).toBeUndefined();
+    expect(db.changes).toHaveLength(1);
+  });
+
+  it("still says cannot_undo when there truly is no token", async () => {
+    // finance.refresh_bank writes a REQUEST, with no before-state — you cannot un-ask a
+    // bank. That one must keep saying so; the fix is not "never say it".
+    const db = new Fake();
+    db.connections = [{ id: "c1", lastSyncAt: new Date(AT.getTime() - 20 * 60_000).toISOString(), refreshRequestedAt: null }];
+    const r = await handleWrite(post("finance.refresh_bank", {}), deps(db));
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.undo).toBeNull();
+    expect(r.body.cannot_undo).toBe("Nothing was written down that could put this back.");
+  });
+});
+
+describe("finance.set_bill_amount says which way the price moved", () => {
+  // FOUND 2026-10-09: a bill was lowered and the reply said "up from" the old price.
+  // The sentence hardcoded "up from", so a decrease was read out as an increase.
+  const fixedAt = (amount: number) => {
+    const db = new Fake();
+    db.tables.recurring[0].variable = false;
+    db.tables.recurring[0].amount = amount;
+    return db;
+  };
+
+  it("says down when it went down", async () => {
+    const body = await ok(fixedAt(120), "finance.set_bill_amount", { bill_id: BILL, amount: 111.5 });
+    expect(body.message).toContain("now $111.50 a time, down from $120.00.");
+    expect(body.message).not.toContain("up from");
+  });
+
+  it("says up when it went up", async () => {
+    const body = await ok(fixedAt(100), "finance.set_bill_amount", { bill_id: BILL, amount: 101.24 });
+    expect(body.message).toContain("now $101.24 a time, up from $100.00.");
+  });
+
+  it("compares in cents, so float noise cannot flip the word", async () => {
+    // 0.1 + 0.2 is not 0.3 in floating point, so the door's own "already that amount"
+    // check lets it through — but as money they are the same cent, and calling that
+    // "down from $0.30" would be the same lie in the other direction.
+    const body = await ok(fixedAt(0.1 + 0.2), "finance.set_bill_amount", { bill_id: BILL, amount: 0.3 });
+    expect(body.message).toContain("now $0.30 a time, the same as before.");
+    expect(body.message).not.toMatch(/(up|down) from/);
+  });
+});
+
+describe("a write that fails after its change row exists closes that row", () => {
+  // FOUND 2026-10-09: two finance.settle_reimbursable calls on 2026-09-27 died on
+  // `invalid input syntax for type json`. The door answered 500 — correctly — and left
+  // both change rows `pending`, which system.changes reads out as "I started this and
+  // could not confirm it finished", about writes the database had refused outright.
+  //
+  // The failure is thrown the way dbFinanceSupabase.ts's must() throws it for that
+  // incident: a StatementRefused carrying 22P02, Postgres's code for it.
+  const reimbursable = () => {
+    const db = new Fake();
+    db.tables.transactions[0].applies_to = { kind: "setaside", reason: "reimbursable", settled: false };
+    db.setColumns = () =>
+      Promise.reject(new StatementRefused("update transactions: invalid input syntax for type json", "22P02"));
+    return db;
+  };
+
+  it("marks the row abandoned, not pending, and still answers 500", async () => {
+    const db = reimbursable();
+    const r = await handleWrite(post("finance.settle_reimbursable", { transaction_id: CHARGE }), deps(db));
+    expect(r.status).toBe(500);
+    expect(db.changes).toHaveLength(1);
+    expect(db.changes[0].state).toBe("abandoned");
+    // The statement-level reason still reaches the audit row — that note is how the
+    // json bug was found, and closing the change row must not swallow it.
+    expect(db.audit.find((a) => a.tool === "finance.settle_reimbursable")?.note).toContain("invalid input syntax");
+  });
+
+  it("is never offered to a bare 'undo that'", async () => {
+    const db = reimbursable();
+    await handleWrite(post("finance.settle_reimbursable", { transaction_id: CHARGE }), deps(db));
+    const r = await no(db, "system.undo", {});
+    expect(r.status).toBe(404);
+  });
+
+  it("system.changes says plainly that it did not go through", async () => {
+    const db = reimbursable();
+    await handleWrite(post("finance.settle_reimbursable", { transaction_id: CHARGE }), deps(db));
+    const tables = { ...READ_TABLES(), muse_undo: db.changes };
+    const body = (await (await read("system.changes", {}, tables)).json()) as Record<string, unknown>;
+    const mine = (body.changes as Record<string, unknown>[]).find((c) => c.tool === "finance.settle_reimbursable")!;
+    expect(mine.state).toBe("abandoned");
+    expect(mine.can_undo).toBe(false);
+    expect(String(mine.means)).toMatch(/did not go through/);
+    expect(String(mine.means)).toMatch(/database refused the write/);
+    expect(String(mine.means)).not.toMatch(/could not confirm/);
+  });
+});
+
+describe("a failed write is only called abandoned when the door can show nothing landed", () => {
+  // FOUND 2026-10-09, in review of the fix above. Its first version marked the change row
+  // `abandoned` on ANY throw — and `abandoned` says "this did not go through, there is
+  // nothing for me to put back". Each case here is one where that would have been a lie,
+  // so each must leave the row `pending`, and system.changes must say it could not
+  // confirm rather than that nothing happened. The 500 and the audit note are unchanged.
+
+  /** What system.changes says about this tool's change. */
+  async function changesSays(db: Fake, tool: string) {
+    const tables = { ...READ_TABLES(), muse_undo: db.changes };
+    const body = (await (await read("system.changes", {}, tables)).json()) as Record<string, unknown>;
+    return (body.changes as Record<string, unknown>[]).find((c) => c.tool === tool)!;
+  }
+
+  const refused = (what: string) => new StatementRefused(`${what}: invalid input syntax for type json`, "22P02");
+
+  /** A reimbursable with a free deposit beside it — the two-row settle. */
+  function withDeposit(): Fake {
+    const db = new Fake();
+    db.tables.transactions[0].applies_to = { kind: "setaside", reason: "reimbursable", settled: false };
+    db.tables.transactions.push({
+      id: CREDIT,
+      date: "2026-09-24",
+      amount: 42,
+      type: "income",
+      category_id: "refund",
+      description: "Zelle from Li",
+      account_id: ACCOUNT,
+      applies_to: null,
+      status: "posted",
+      created_at: "2026-09-24T12:00:00Z",
+    });
+    return db;
+  }
+
+  it("a failed fetch is not proof: the write may have committed and its answer been lost", async () => {
+    const db = new Fake();
+    db.tables.transactions[0].applies_to = { kind: "setaside", reason: "reimbursable", settled: false };
+    // What supabase-js hands back when the connection dies: an error with no SQLSTATE.
+    db.setColumns = () => Promise.reject(new Error("update transactions: TypeError: fetch failed"));
+    const r = await handleWrite(post("finance.settle_reimbursable", { transaction_id: CHARGE }), deps(db));
+    expect(r.status).toBe(500);
+    expect(db.changes).toHaveLength(1);
+    expect(db.changes[0].state).toBe("pending");
+    const mine = await changesSays(db, "finance.settle_reimbursable");
+    expect(String(mine.means)).toMatch(/could not confirm/);
+    expect(String(mine.means)).not.toMatch(/did not go through/);
+  });
+
+  it("promote_to_bill: a refusal after the new bill and rule are in leaves the row pending", async () => {
+    // The reviewer's case. promote_to_bill inserts the bill and the merchant rule BEFORE
+    // commit(), then sets transactions.applies_to — the column the json bug was on.
+    // `abandoned` here would hide a live bill and a live rule behind "nothing to put back".
+    const db = new Fake();
+    const realSet = db.setColumns.bind(db);
+    db.setColumns = (table, id, patch, expect) =>
+      table === "transactions" ? Promise.reject(refused("update transactions")) : realSet(table, id, patch, expect);
+    const r = await handleWrite(post("finance.promote_to_bill", { transaction_id: CHARGE }), deps(db));
+    expect(r.status).toBe(500);
+    // Both inserts are live — which is exactly why the row cannot say nothing landed.
+    expect(db.tables.recurring).toHaveLength(2);
+    expect(db.tables.merchant_rules).toHaveLength(1);
+    expect(db.changes).toHaveLength(1);
+    expect(db.changes[0].state).toBe("pending");
+    // And the steps that would remove them are still in the row, not closed off.
+    expect((db.changes[0].steps as UndoStep[]).filter((s) => s.kind === "delete_row")).toHaveLength(2);
+    const mine = await changesSays(db, "finance.promote_to_bill");
+    expect(String(mine.means)).toMatch(/could not confirm/);
+    expect(db.audit.find((a) => a.tool === "finance.promote_to_bill")?.note).toContain("invalid input syntax");
+  });
+
+  it("settle_reimbursable: a refusal on the deposit, after the charge was written, leaves it pending", async () => {
+    const db = withDeposit();
+    const realSet = db.setColumns.bind(db);
+    db.setColumns = (table, id, patch, expect) =>
+      id === CREDIT ? Promise.reject(refused("update transactions")) : realSet(table, id, patch, expect);
+    const r = await handleWrite(
+      post("finance.settle_reimbursable", { transaction_id: CHARGE, credit_transaction_id: CREDIT }),
+      deps(db),
+    );
+    expect(r.status).toBe(500);
+    // The first row IS written.
+    expect((db.tables.transactions[0].applies_to as Record<string, unknown>).settled).toBe(true);
+    expect(db.changes[0].state).toBe("pending");
+  });
+
+  it("settle_reimbursable: a refusal on the FIRST row, before anything landed, is abandoned", async () => {
+    // The same two-row write, refused on its first statement — which is what happened on
+    // 2026-09-27. Nothing is in, and the door can show it, so it says so.
+    const db = withDeposit();
+    db.setColumns = () => Promise.reject(refused("update transactions"));
+    const r = await handleWrite(
+      post("finance.settle_reimbursable", { transaction_id: CHARGE, credit_transaction_id: CREDIT }),
+      deps(db),
+    );
+    expect(r.status).toBe(500);
+    expect(db.tables.transactions[0].applies_to).toEqual({ kind: "setaside", reason: "reimbursable", settled: false });
+    expect(db.changes[0].state).toBe("abandoned");
+  });
+});
+
+describe("the Supabase wiring says which kind of failure it saw", () => {
+  // commit() can only tell "the database refused it" from "nobody knows" if must() keeps
+  // the difference. Driven against a stand-in PostgREST client that answers every chain
+  // with one fixed reply, in the shape supabase-js hands back: { data, error }.
+  type Reply = { data: unknown; error: { code?: string; message?: string } | null };
+  function client(reply: Reply) {
+    const chain: Record<string, unknown> = {};
+    for (const m of ["from", "update", "insert", "delete", "eq", "is", "not", "select", "single", "maybeSingle", "rpc"]) {
+      chain[m] = () => chain;
+    }
+    chain.then = (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(reply).then(ok, bad);
+    return chain as unknown as Parameters<typeof financeDb>[0];
+  }
+
+  const write = (reply: Reply) => financeDb(client(reply)).setColumns("recurring", BILL, { amount: 90 }, { amount: 100 });
+
+  it("a Postgres refusal is a StatementRefused carrying its code, with the same message as before", async () => {
+    const e = await write({ data: null, error: { code: "22P02", message: "invalid input syntax for type json" } }).catch(
+      (x: unknown) => x,
+    );
+    expect(e).toBeInstanceOf(StatementRefused);
+    expect((e as StatementRefused).code).toBe("22P02");
+    expect((e as Error).message).toBe("update recurring: invalid input syntax for type json");
+  });
+
+  it("a failed fetch, a PostgREST code, a broken connection and 'completion unknown' are not", async () => {
+    for (const error of [
+      { code: "", message: "TypeError: fetch failed" },
+      { message: "Bad gateway" },
+      { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" },
+      { code: "08006", message: "connection failure" },
+      { code: "40003", message: "statement completion unknown" },
+    ]) {
+      const e = await write({ data: null, error }).catch((x: unknown) => x);
+      expect(e, JSON.stringify(error)).toBeInstanceOf(Error);
+      expect(e, JSON.stringify(error)).not.toBeInstanceOf(StatementRefused);
+    }
+    expect(provesRolledBack("23505")).toBe(true);
+    expect(provesRolledBack(undefined)).toBe(false);
+  });
+
+  it("counts a write that changed a row, and not one that matched nothing or failed", async () => {
+    const landedRow = financeDb(client({ data: [{ id: BILL }], error: null }));
+    expect(await landedRow.setColumns("recurring", BILL, { amount: 90 }, { amount: 100 })).toBe("ok");
+    expect(landedRow.writesLanded()).toBe(1);
+    // The change log is the record of a change, not one.
+    await landedRow.setChangeState("u-aaaaaaaa", "undoable", {});
+    expect(landedRow.writesLanded()).toBe(1);
+
+    const moved = financeDb(client({ data: [], error: null }));
+    expect(await moved.setColumns("recurring", BILL, { amount: 90 }, { amount: 100 })).toBe("moved");
+    expect(moved.writesLanded()).toBe(0);
+
+    const failed = financeDb(client({ data: null, error: { code: "22P02", message: "x" } }));
+    await failed.setColumns("recurring", BILL, { amount: 90 }, { amount: 100 }).catch(() => undefined);
+    expect(failed.writesLanded()).toBe(0);
+  });
+});
+
 // ── the read door's new tools, against a seeded ledger ───────────────────────
 
 const READ_TABLES = (): Record<string, DbRow[]> => ({
@@ -1305,15 +1648,170 @@ describe("the finance reads", () => {
     expect(text).not.toContain("vault");
   });
 
-  it("gives the bank's in-flight charges, and says they are not in the ledger", async () => {
-    const body = await readJson("finance.bank_pending");
-    expect(body.count).toBe(1);
-    const charges = body.charges as { amount: number; merchant: string }[];
-    // The sign is the bank's own and is NOT flipped: the app reads the sign, and a door
-    // that normalised it would be doing arithmetic on the one figure whose direction is
-    // the whole point.
-    expect(charges[0].amount).toBe(-18.4);
-    expect(String(body.note)).toContain("never enter the ledger");
+  // FOUND 2026-10-09: this tool read `pending_preview`, which nothing writes any more,
+  // and answered "0 processing" while five charges were processing — as
+  // `transactions` rows with status 'pending', which is where the bank sync has put
+  // them for weeks. These tests seed BOTH: a stale pending_preview row that must not be
+  // reported, and real pending ledger rows that must.
+  const withPending = () => {
+    const tables = READ_TABLES();
+    tables.transactions.push(
+      {
+        id: "eeee0001-0000-0000-0000-000000000001",
+        date: "2026-09-26",
+        amount: "18.40",
+        type: "expense",
+        category_id: "transport",
+        description: "SHELL OIL 5521",
+        // The canary. The raw descriptor is the one string nothing in the app has ever
+        // cleaned, and it must not ride out of a tool that now reads its very row.
+        raw_description: "RAWCANARY SHELL OIL 5521 PHOENIX AZ",
+        account_id: ACCOUNT,
+        provider: "plaid",
+        status: "pending",
+        created_at: "2026-09-26T12:00:00Z",
+      },
+      {
+        id: "eeee0002-0000-0000-0000-000000000002",
+        date: "2026-09-25",
+        amount: "40.00",
+        type: "income",
+        category_id: "other-income",
+        description: "Zelle from a friend",
+        raw_description: "RAWCANARY ZELLE FROM",
+        account_id: ACCOUNT,
+        provider: "plaid",
+        status: "pending",
+        created_at: "2026-09-25T12:00:00Z",
+      },
+    );
+    return tables;
+  };
+
+  it("reads the ledger's pending rows, not the dead pending_preview table", async () => {
+    const body = await readJson("finance.bank_pending", {}, withPending());
+    // Two pending ledger rows; the posted charges and the stale preview row are not here.
+    expect(body.count).toBe(2);
+    const charges = body.charges as { id: string; amount: number; kind: string; merchant: string }[];
+    expect(charges.map((c) => c.merchant)).toEqual(["SHELL OIL 5521", "Zelle from a friend"]);
+    // The pending_preview fixture still holds a CHEVRON row. It is not in the ledger and
+    // nothing writes that table now, so it must not be reported.
+    expect(JSON.stringify(body)).not.toContain("CHEVRON");
+    // Amounts as the ledger stores them — positive — with the direction in `kind`, the way
+    // finance.transaction reports a charge. Not flipped into a sign by the door.
+    expect(charges[0]).toMatchObject({ amount: 18.4, kind: "expense" });
+    expect(charges[1]).toMatchObject({ amount: 40, kind: "income" });
+    // The totals the question is actually about, kept apart by direction.
+    expect(body.going_out).toBe(18.4);
+    expect(body.coming_in).toBe(40);
+  });
+
+  it("says which rows it read, so a zero can be checked against its source", async () => {
+    const body = await readJson("finance.bank_pending", {}, withPending());
+    expect(String(body.reads)).toMatch(/status is pending/);
+    expect(String(body.note)).toContain("already in the ledger");
+    // And the honest zero, when nothing is processing, says the same.
+    const none = await readJson("finance.bank_pending");
+    expect(none.count).toBe(0);
+    expect(none.going_out).toBe(0);
+    expect(String(none.reads)).toMatch(/status is pending/);
+  });
+
+  it("never says the raw bank descriptor of a pending row", async () => {
+    const body = await readJson("finance.bank_pending", {}, withPending());
+    expect(JSON.stringify(body)).not.toContain("RAWCANARY");
+  });
+
+  it("asks the database for the pending rows only, paged in a total order", async () => {
+    // The filter has to reach the server — on the count AND the pages — or the door
+    // would read the whole ledger to answer about five rows, and the count it checks the
+    // pages against would be a different set from the pages.
+    const tables = withPending();
+    const seen: { table: string; orderBy: string; eq?: Record<string, string> }[] = [];
+    const inner = readDb(tables);
+    const recording: ReadDb = {
+      select(q) {
+        seen.push(q);
+        return inner.select(q);
+      },
+    };
+    const res = await handleMuseRead(
+      new Request("https://x.test/functions/v1/muse-read/finance.bank_pending", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${GINO}`, "Content-Type": "application/json" },
+        body: "{}",
+      }),
+      {
+        db: recording,
+        secrets: SECRETS,
+        at: AT,
+        baseUrl: "https://x.test/functions/v1/muse-read",
+        audit: { record: () => Promise.resolve() },
+        limit: { bump: () => Promise.resolve(1) },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(seen.map((q) => q.table)).not.toContain("pending_preview");
+    expect(seen).toContainEqual({ table: "transactions", orderBy: "id", eq: { status: "pending" } });
+  });
+
+  // FOUND 2026-10-09: 'paid-from-its-own-account' was on finance.audit's allowlist so a
+  // failure could name the bill — but the door only forwards an app sentence of 64
+  // characters or fewer, and that check's sentence never is. So every failure came out
+  // as "A recent bill was paid from the wrong account", which names nothing.
+  describe("finance.audit names the bill that came out of the wrong account", () => {
+    const VISA = "cccc2222-3333-4444-5555-666666666666";
+    const auditCheck = async (tables: Record<string, DbRow[]>) => {
+      const body = await readJson("finance.audit", {}, tables);
+      return (body.checks as { id: string; status: string; detail: string }[]).find(
+        (c) => c.id === "paid-from-its-own-account",
+      )!;
+    };
+
+    it("says the bill and the month, in a sentence the scrubber passes whole", async () => {
+      // Electric is set to be paid from the Visa; the $6.00 charge that settles its
+      // September cycle came out of Geo.
+      const tables = READ_TABLES();
+      tables.recurring[0].account_id = VISA;
+      const check = await auditCheck(tables);
+      expect(check.status).toBe("fail");
+      expect(check.detail).toBe("Electric for 2026-09 came out of the wrong account.");
+      // Rule 4: what leaves is exactly what the cleaner passes, at the ceiling every
+      // check's detail is held to.
+      expect(scrub(check.detail, NAME_MAX + 40)).toBe(check.detail);
+    });
+
+    it("names as many as fit and counts the rest, never slicing a name", async () => {
+      const tables = READ_TABLES();
+      tables.recurring = [];
+      tables.transactions = [];
+      for (let i = 0; i < 4; i++) {
+        const billId = `bbbb000${i}-0000-0000-0000-000000000000`;
+        tables.recurring.push({
+          id: billId, name: `A rather long bill name number ${i}`, amount: "10.00", direction: "out",
+          cadence: "monthly", category_id: "utilities", active: true, due_days: [16], account_id: VISA,
+          created_at: "2026-01-01T00:00:00Z",
+        });
+        tables.transactions.push({
+          id: `tttt000${i}-0000-0000-0000-000000000000`, date: "2026-09-16", amount: "10.00", type: "expense",
+          category_id: "utilities", description: "x", account_id: ACCOUNT, status: "posted",
+          applies_to: { kind: "bill", recurringId: billId, monthKey: "2026-09", day: 16 },
+          created_at: "2026-09-16T12:00:00Z",
+        });
+      }
+      const check = await auditCheck(tables);
+      expect(check.status).toBe("fail");
+      expect(check.detail).toMatch(/^A rather long bill name number 0 for 2026-09/);
+      expect(check.detail).toMatch(/and \d others? came out of the wrong account\.$/);
+      expect(check.detail.length).toBeLessThanOrEqual(NAME_MAX + 40);
+      expect(scrub(check.detail, NAME_MAX + 40)).toBe(check.detail);
+    });
+
+    it("keeps the door's own sentence when the check passes", async () => {
+      const check = await auditCheck(READ_TABLES());
+      expect(check.status).toBe("ok");
+      expect(check.detail).toBe("Every bill paid this month and last came out of the account that pays it.");
+    });
   });
 
   it("lists the changes, drops the ones it could not undo, and never emits a step", async () => {
@@ -1462,5 +1960,325 @@ describe("finance.refresh_bank", () => {
     expect(r.status).toBe(503);
     expect(r.message).toContain("schema_v39");
     expect(db.writes).toHaveLength(0);
+  });
+});
+
+// ── a learned rule only matches the whole key ────────────────────────────────
+//
+// FOUND 2026-10-09. finance.learn_merchant was taught "FIRESTONE" on 10-05, replied
+// "Taught the app…", and saved a rule nothing could match: the charge reads
+// "FIRESTONE COMPLETE AUTO CARE", and a rule is an exact lookup on merchantKey()
+// (learnedFor in categorize.ts). Eight of the 88 saved rules matched no charge on
+// 10-09. The matching is right and is not changed; what changed is
+// that the door now counts, says the count, and can read the key off the charge itself.
+
+const FIRESTONE = "f1f1f1f1-2222-3333-4444-555555555555";
+
+function withFirestone(): Fake {
+  const db = new Fake();
+  db.tables.transactions.push({
+    id: FIRESTONE,
+    date: "2026-10-05",
+    amount: 100,
+    type: "expense",
+    category_id: "other",
+    description: "FIRESTONE COMPLETE AUTO CARE",
+    account_id: ACCOUNT,
+    applies_to: null,
+    flow_override: null,
+    splits: null,
+    anomaly_ack: false,
+    needs_review: true,
+    user_categorized: false,
+    record_only: false,
+    provider: "plaid",
+    status: "posted",
+    created_at: "2026-10-05T12:00:00Z",
+    person: null,
+  });
+  return db;
+}
+
+describe("learn_merchant says whether the rule will ever match", () => {
+  it("still saves a rule on a partial name, but says plainly that it matches nothing yet", async () => {
+    const db = withFirestone();
+    const body = await ok(db, "finance.learn_merchant", { merchant: "FIRESTONE", kind: "variable", category_id: "transport" });
+    expect(body.result.matches_now).toBe(0);
+    expect(body.message).toContain("matches nothing today");
+    expect(body.message).toContain("only matches the whole name");
+    // The real key, offered back so the next call can be right.
+    expect(body.result.closest).toEqual(["FIRESTONE COMPLETE AUTO CARE"]);
+    expect(body.message).toContain("FIRESTONE COMPLETE AUTO CARE");
+    // The warning is about today's ledger, not about what changed, so the log does not
+    // keep it — it would be false the day the next Firestone charge arrives.
+    expect(String(db.changes[0].summary)).not.toContain("matches nothing");
+    expect(db.tables.merchant_rules[0].pattern).toBe("FIRESTONE");
+  });
+
+  it("reads the key off the charge when given its id, so it cannot be mistyped", async () => {
+    const db = withFirestone();
+    const body = await ok(db, "finance.learn_merchant", { transaction_id: FIRESTONE, kind: "variable", category_id: "transport" });
+    expect(db.tables.merchant_rules[0].pattern).toBe("FIRESTONE COMPLETE AUTO CARE");
+    expect(body.result.merchant).toBe("FIRESTONE COMPLETE AUTO CARE");
+    expect(body.result.matches_now).toBe(1);
+    expect(body.message).not.toContain("matches nothing");
+  });
+
+  it("accepts the typed name beside the id when the charge's name starts with it", async () => {
+    const db = withFirestone();
+    await ok(db, "finance.learn_merchant", {
+      merchant: "Firestone",
+      transaction_id: FIRESTONE,
+      kind: "variable",
+      category_id: "transport",
+    });
+    expect(db.tables.merchant_rules[0].pattern).toBe("FIRESTONE COMPLETE AUTO CARE");
+  });
+
+  it("refuses when the typed name and the charge disagree, because the id is probably wrong", async () => {
+    const db = withFirestone();
+    const r = await no(db, "finance.learn_merchant", {
+      merchant: "SAFEWAY",
+      transaction_id: FIRESTONE,
+      kind: "variable",
+      category_id: "groceries",
+    });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("Check the id");
+    expect(db.tables.merchant_rules).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("counts a key that is already on a charge, and says nothing more", async () => {
+    const db = new Fake();
+    // The seeded charge reads "TRADER JOE'S #457", whose key is "TRADER JOE'S".
+    const body = await ok(db, "finance.learn_merchant", { merchant: "TRADER JOE'S", kind: "variable", category_id: "groceries" });
+    expect(body.result.matches_now).toBe(1);
+    expect(body.message).not.toContain("matches nothing");
+    expect(db.chargeNameReads).toBe(1);
+  });
+
+  it("does not count a deposit — a rule never fires on money coming in", async () => {
+    const db = new Fake();
+    db.tables.transactions[0].type = "income";
+    const body = await ok(db, "finance.learn_merchant", { merchant: "TRADER JOE'S", kind: "variable", category_id: "groceries" });
+    expect(body.result.matches_now).toBe(0);
+  });
+
+  it("offers at most three real keys, nearest first, and never one it cannot say exactly", async () => {
+    const db = new Fake();
+    const names = [
+      "SAMS CLUB.COM",
+      "SAMS CLUB DELIVERY",
+      "SAMS CLUB",
+      "SAMS CLUB GAS STATION",
+      "SAMS CLUB GAS STATION",
+      "SAMS CLUB OPTICAL CENTER",
+    ];
+    names.forEach((description, i) =>
+      db.tables.transactions.push({ id: `5a5a5a5a-2222-3333-4444-00000000000${i}`, type: "expense", description }),
+    );
+    const body = await ok(db, "finance.learn_merchant", { merchant: "SAMS", kind: "variable", category_id: "groceries" });
+    expect(body.result.matches_now).toBe(0);
+    // "SAMS CLUB.COM" cleans to "SAMS" (".COM" reads as a link), so offering it would
+    // just teach the next rule that matches nothing. It is left out, not shortened.
+    expect(body.result.closest).toEqual(["SAMS CLUB", "SAMS CLUB DELIVERY", "SAMS CLUB GAS STATION"]);
+  });
+
+  it("saves NO rule when the ledger cannot be read whole — the read fails closed", async () => {
+    const db = withFirestone();
+    db.chargeNamesFail = true;
+    const r = await handleWrite(
+      post("finance.learn_merchant", { merchant: "FIRESTONE", kind: "variable", category_id: "transport" }),
+      deps(db),
+    );
+    expect(r.status).toBe(500);
+    expect(db.tables.merchant_rules).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+    expect(db.writes).toHaveLength(0);
+  });
+});
+
+// ── a rule on the bank's own wording ─────────────────────────────────────────
+//
+// FOUND 2026-10-09. A saved "CHECKCARD -> dining" rule (from one tap in the app on
+// 2026-09-24) files every Bank of America card line with no clean name as dining,
+// because merchantKey() reduces each of them to the word "CHECKCARD". Refused at save
+// time through one predicate; the existing row is NOT touched by any of this.
+
+const CARDLINE = "c4c4c4c4-2222-3333-4444-555555555555";
+
+function withCardLine(): Fake {
+  const db = new Fake();
+  db.tables.transactions.push({
+    id: CARDLINE,
+    date: "2026-06-28",
+    amount: 32.5,
+    type: "expense",
+    category_id: "other",
+    description: "CHECKCARD 0628 AZ MVD FEE NOW PHOENIX AZ",
+    account_id: ACCOUNT,
+    applies_to: null,
+    flow_override: null,
+    splits: null,
+    anomaly_ack: false,
+    needs_review: true,
+    user_categorized: false,
+    record_only: false,
+    provider: null,
+    status: "posted",
+    created_at: "2026-06-28T12:00:00Z",
+    person: null,
+  });
+  return db;
+}
+
+describe("the door will not teach the bank's own wording as a merchant", () => {
+  // "BKOFAMERICA ATM" and "EFT" are what every cash withdrawal keys to (FOUND
+  // 2026-10-09 in review) — a rule on either outranks the "say what it went on" ask.
+  for (const merchant of ["CHECKCARD", "Checkcard", "ZELLE TRANSFER", "MOBILE PURCHASE", "POS", "BKOFAMERICA ATM", "Bkofamerica Atm", "EFT"]) {
+    it(`refuses "${merchant}"`, async () => {
+      const db = new Fake();
+      const r = await no(db, "finance.learn_merchant", { merchant, kind: "variable", category_id: "dining" });
+      expect(r.status).toBe(400);
+      expect(r.message).toContain("how the bank labels a kind of charge");
+      expect(db.tables.merchant_rules).toHaveLength(0);
+      expect(db.changes).toHaveLength(0);
+    });
+  }
+
+  it("refuses it when the key comes off a charge, too", async () => {
+    const db = withCardLine();
+    const r = await no(db, "finance.learn_merchant", { transaction_id: CARDLINE, kind: "variable", category_id: "transport" });
+    expect(r.status).toBe(400);
+    expect(db.tables.merchant_rules).toHaveLength(0);
+  });
+
+  it("still teaches a real merchant whose name merely contains a rail word", async () => {
+    const db = new Fake();
+    await ok(db, "finance.learn_merchant", { merchant: "ZELLE PAYMENT TO JANE DOE", kind: "variable", category_id: "dining" });
+    expect(db.tables.merchant_rules[0].pattern).toBe("ZELLE PAYMENT TO JANE DOE");
+  });
+
+  it("promote_to_bill makes the bill but neither teaches nor rewrites the CHECKCARD rule", async () => {
+    const db = withCardLine();
+    // The live rule, exactly as it sits in the table. Promoting this charge used to
+    // REWRITE it into a bill rule — so every card line with no clean name would have
+    // settled this one bill.
+    const CHECKCARD_RULE = {
+      id: "e0e0e0e0-2222-3333-4444-555555555555",
+      pattern: "CHECKCARD",
+      kind: "variable",
+      category_id: "dining",
+      bill_name: null,
+    };
+    db.tables.merchant_rules.push({ ...CHECKCARD_RULE });
+    // And a bill that already keys to the same word, which the dedupe would have
+    // attached this charge to.
+    db.tables.recurring.push({
+      id: "b0b0b0b0-2222-3333-4444-555555555555",
+      name: "CHECKCARD 0115 SOMETHING ELSE",
+      amount: 9,
+      direction: "out",
+      cadence: "monthly",
+      category_id: "subscriptions",
+      active: true,
+    });
+
+    const body = await ok(db, "finance.promote_to_bill", { transaction_id: CARDLINE });
+    expect(body.result.taught_merchant).toBe(false);
+    expect(body.result.reused_existing_bill).toBe(false);
+    expect(body.result.rule_id).toBeNull();
+    expect(body.message).toContain("did not teach the app the merchant");
+    expect(db.tables.merchant_rules).toEqual([CHECKCARD_RULE]);
+    expect(db.tables.recurring).toHaveLength(3);
+    const charge = db.tables.transactions.find((t) => t.id === CARDLINE)!;
+    const newBill = db.tables.recurring[2];
+    expect((charge.applies_to as Record<string, unknown>).recurringId).toBe(newBill.id);
+
+    await ok(db, "system.undo", { token: undoToken(body) });
+    expect(db.tables.recurring).toHaveLength(2);
+    expect(db.tables.merchant_rules).toEqual([CHECKCARD_RULE]);
+    expect(charge.applies_to).toBeNull();
+  });
+});
+
+// ── moving a bill's due day ──────────────────────────────────────────────────
+//
+// FOUND 2026-10-09. T-Mobile's row says the 29th; the charge landed on the 14th in
+// July, August and September, and no tool could move it.
+
+describe("finance.set_bill_due_day", () => {
+  it("moves a one-day bill and the undo puts the old day back", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_bill_due_day", { bill_id: BILL, due_day: 14 });
+    expect(db.tables.recurring[0].due_days).toEqual([14]);
+    expect(body.message).toContain("moved from day 16");
+    expect(body.result.was).toEqual([16]);
+    await ok(db, "system.undo", { token: undoToken(body) });
+    expect(db.tables.recurring[0].due_days).toEqual([16]);
+  });
+
+  it("refuses a bill paid in several parts, and says why", async () => {
+    const db = new Fake();
+    db.tables.recurring[0].due_days = [15, 30];
+    const r = await no(db, "finance.set_bill_due_day", { bill_id: BILL, due_day: 14 });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("paid in 2 parts, on days 15 and 30");
+    expect(db.tables.recurring[0].due_days).toEqual([15, 30]);
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("judges a row with no stored days by the app's legacy map, exactly as the calendar does", async () => {
+    // Mom has no stored due_days here, so schedule.ts would place it from DUE_DAYS —
+    // which says [15, 30]. That is still a two-part bill.
+    const db = new Fake();
+    db.tables.recurring[0].name = "Mom";
+    db.tables.recurring[0].due_days = null;
+    const r = await no(db, "finance.set_bill_due_day", { bill_id: BILL, due_day: 14 });
+    expect(r.status).toBe(409);
+  });
+
+  it("gives a row with no day at all its first one, and the undo puts null back", async () => {
+    const db = new Fake();
+    db.tables.recurring[0].due_days = null;
+    const body = await ok(db, "finance.set_bill_due_day", { bill_id: BILL, due_day: 3 });
+    expect(body.message).toContain("had no due day before");
+    expect(db.tables.recurring[0].due_days).toEqual([3]);
+    await ok(db, "system.undo", { token: undoToken(body) });
+    expect(db.tables.recurring[0].due_days).toBeNull();
+  });
+
+  it("refuses an anchored two-weekly row, whose due days nothing reads", async () => {
+    const db = new Fake();
+    db.tables.recurring[0].cadence = "biweekly";
+    db.tables.recurring[0].anchor_date = "2026-09-04";
+    const r = await no(db, "finance.set_bill_due_day", { bill_id: BILL, due_day: 14 });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("every two weeks");
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("refuses the day it is already on", async () => {
+    const db = new Fake();
+    const r = await no(db, "finance.set_bill_due_day", { bill_id: BILL, due_day: 16 });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("already due on day 16");
+  });
+
+  for (const due_day of [0, 32, 14.5, "14", null, -1]) {
+    it(`refuses ${JSON.stringify(due_day)} as a due day, in a plain sentence`, async () => {
+      const db = new Fake();
+      const r = await no(db, "finance.set_bill_due_day", { bill_id: BILL, due_day });
+      expect(r.status).toBe(400);
+      expect(r.message).toBe("The due day is a whole number from 1 to 31.");
+      expect(db.tables.recurring[0].due_days).toEqual([16]);
+    });
+  }
+
+  it("refuses a bill that does not exist", async () => {
+    const db = new Fake();
+    const r = await no(db, "finance.set_bill_due_day", { bill_id: "12121212-2222-3333-4444-555555555555", due_day: 14 });
+    expect(r.status).toBe(404);
   });
 });

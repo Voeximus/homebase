@@ -455,11 +455,13 @@ async function afterAuth(
     // and did not solve.
     //
     // A tool that leaves `undo` off is saying it could not honestly capture a
-    // before-state, and the reply says so rather than implying one exists.
+    // before-state, and the reply says so rather than implying one exists — UNLESS it
+    // set `recorded`, which means it wrote its own row before it changed anything (every
+    // finance tool, through commit()). That one has a token and the reply must say so:
+    // see undoEnvelope below for the day it did not.
     const stored: Record<string, unknown> = { message: outcome.say, result: outcome.result };
-    let undoTok: string | null = null;
     if (outcome.undo) {
-      undoTok = mintToken((into) => crypto.getRandomValues(into));
+      const undoTok = mintToken((into) => crypto.getRandomValues(into));
       await db.recordChange({
         token: undoTok,
         person,
@@ -480,6 +482,11 @@ async function afterAuth(
       // Kept in the audit row too, so a REPLAY of the same idempotency key hands back
       // the same token and the same sentence rather than minting a second one.
       stored.undo = { ...outcome.undo, token: undoTok };
+    } else if (outcome.recorded) {
+      // Already in muse_undo — the tool wrote the row itself, before it changed
+      // anything. Nothing to mint and nothing to store but the token and its sentence,
+      // which go into the audit row for the same replay reason as above.
+      stored.undo = { token: outcome.recorded.token, says: outcome.recorded.says };
     }
     await db.finishCall({
       person, tool, idemKey,
@@ -488,17 +495,13 @@ async function afterAuth(
       rowIds: outcome.rowIds,
       ms: ms(),
     });
-    const body: Record<string, unknown> = { ok: true, tool, message: outcome.say, result: outcome.result };
-    if (outcome.undo) {
-      body.undo = {
-        token: undoTok,
-        says: outcome.undo.says,
-        ...(outcome.undo.fragile ? { only_until: outcome.undo.fragile } : {}),
-      };
-    } else {
-      body.undo = null;
-      body.cannot_undo = "Nothing was written down that could put this back.";
-    }
+    const body: Record<string, unknown> = {
+      ok: true,
+      tool,
+      message: outcome.say,
+      result: outcome.result,
+      ...undoEnvelope(stored),
+    };
     return { status: 200, body };
   } catch (e) {
     // The key stays used. We cannot prove nothing landed, and re-running a write
@@ -508,6 +511,76 @@ async function afterAuth(
     await db.finishCall({ person, tool, idemKey, outcome: "error", ms: ms(), note: why });
     return deny(500, "Something went wrong on my side and I stopped. Nothing was retried. Check the app.");
   }
+}
+
+/** Said when a change truly has nothing written down that could reverse it. */
+const CANNOT_UNDO = "Nothing was written down that could put this back.";
+
+/**
+ * The undo half of a success reply, built from what the AUDIT ROW stores — so the first
+ * answer and every replay of it say exactly the same thing.
+ *
+ * THREE ANSWERS, and the envelope may only claim the last one when it is true:
+ *
+ *   a token      the change is in muse_undo. `undo` carries it, with the sentence
+ *                saying what undoing does, and `only_until` when something outside
+ *                this door can overwrite the restore.
+ *   a call       the memory store's undo is a tool, not a token (memoryWrites.ts says
+ *                why): the result names `memory.restore` or `memory.forget`, and its
+ *                key. That is a real way back, so the reply names it in `undo_with` and
+ *                does not say nothing could put it back.
+ *   neither      `undo: null`, and `cannot_undo` says so.
+ *
+ * FOUND 2026-10-09. finance.set_bill_amount answered with a token in result.undo —
+ * a real row, `undoable`, in muse_undo — and, in the same reply, `undo: null` and
+ * "Nothing was written down that could put this back." Every finance write said that,
+ * because this function did not exist: the reply only knew about a record the HANDLER
+ * minted, and every finance tool writes its own row first (commit() in toolsFinance.ts).
+ * The memory writes said it too, about a `previous` column that is exactly what was
+ * written down. An assistant that trusted the envelope over the result would have told
+ * him his change was permanent.
+ */
+function undoEnvelope(stored: Record<string, unknown>): Record<string, unknown> {
+  const undo = stored.undo as { says?: unknown; fragile?: unknown; token?: unknown } | undefined;
+  if (undo && typeof undo.token === "string") {
+    return {
+      undo: {
+        token: undo.token,
+        says: undo.says,
+        ...(undo.fragile ? { only_until: undo.fragile } : {}),
+      },
+    };
+  }
+  const call = undoCallOf(stored.result);
+  if (call) return { undo: null, undo_with: call };
+  return { undo: null, cannot_undo: CANNOT_UNDO };
+}
+
+/**
+ * The calls this door will name as a way back. A list, not "any tool this door has".
+ *
+ * FOUND 2026-10-09, in review of the change that added `undo_with`. The first version
+ * repeated any tool name a result put in `undo`, and the memory writes named
+ * memory.restore for every outcome — including a brand-new key, where restore refuses,
+ * and a key restore had just brought back, where restore swaps in the OLDER wording and
+ * leaves it live. The envelope then told the assistant to make that call. memoryWrites.ts
+ * now names the real inverse for each outcome (see done() there); this list is the other
+ * half, so that a result naming some other tool as its undo is not passed on as one
+ * without somebody first deciding here that it really is.
+ */
+const UNDO_CALLS: ReadonlySet<string> = new Set(["memory.restore", "memory.forget"]);
+
+/** The tool call a result names as its own undo, when it is one of UNDO_CALLS and this
+ *  door has it — `{ tool: "memory.forget", args: { key } }` and the like. Anything else
+ *  is not a way back and is not repeated as one. */
+function undoCallOf(result: unknown): { tool: string; args: Record<string, unknown> } | null {
+  if (typeof result !== "object" || result === null) return null;
+  const u = (result as Record<string, unknown>).undo;
+  if (typeof u !== "object" || u === null || Array.isArray(u)) return null;
+  const { tool, args } = u as { tool?: unknown; args?: unknown };
+  if (typeof tool !== "string" || !UNDO_CALLS.has(tool) || !TOOL_BY_NAME.has(tool)) return null;
+  if (typeof args !== "object" || args === null || Array.isArray(args)) return null;
+  return { tool, args: args as Record<string, unknown> };
 }
 
 /** The answer for a key that has been used before, or null when it is new. */
@@ -542,15 +615,7 @@ async function replayFor(
     // is minted once and written into muse_undo, so the replay has to hand back the one
     // that is actually in the table. Minting a second one here would give the assistant a
     // token naming no change.
-    const undo = stored.undo as { says?: unknown; fragile?: unknown; token?: unknown } | undefined;
-    body.undo = undo && typeof undo.token === "string"
-      ? {
-          token: undo.token,
-          says: undo.says,
-          ...(undo.fragile ? { only_until: undo.fragile } : {}),
-        }
-      : null;
-    return { status: 200, body };
+    return { status: 200, body: { ...body, ...undoEnvelope(stored) } };
   }
   if (earlier.outcome === "pending") {
     return deny(409, "I am still working on that one. Ask me again in a moment rather than sending it twice.");

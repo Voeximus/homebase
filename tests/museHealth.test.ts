@@ -1207,6 +1207,17 @@ describe("the handler carries the undo token out, and the before-state stays in 
     ]);
   });
 
+  it("never says cannot_undo beside a token it minted", async () => {
+    // FOUND 2026-10-09 on the finance side — a real token beside "Nothing was written
+    // down that could put this back." This is the handler-minted half of the same
+    // envelope: the token, its sentence, and no claim that the change is permanent.
+    const r = await handleWrite(post("health.log_weight", { weight: 198.4 }, "key-weight-0009"), deps());
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect((r.body.undo as { token: string }).token).toMatch(/^u-[0-9a-hjkmnp-tv-z]{8}$/);
+    expect(r.body.cannot_undo).toBeUndefined();
+    expect(r.body.undo_with).toBeUndefined();
+  });
+
   it("system.undo reaches a health change, through the same token and the same table", async () => {
     // THE CLAIM THIS WHOLE FILE COULD NOT MAKE BEFORE THE MERGE. Every test above drives
     // the handlers in HEALTH_UNDO directly, which proves the inverses are right and proves

@@ -33,6 +33,19 @@ import { safeEqual } from "./safeEqual.ts";
 
 export type Person = "gino" | "xinyan";
 
+/**
+ * Everyone in the household, as the rest of the system spells them: the
+ * push_subscriptions `owner` webpush.ts matches on, and the name a sentence uses.
+ *
+ * MOVED HERE 2026-10-09 from muse-write/kit.ts, which still re-exports it. The
+ * heartbeat needed the household list — it must check EVERY person's devices, not
+ * only the people who happen to have a row — and the one place the code already knew
+ * the household was a constant inside the write door, which nothing in _shared may
+ * import. One copy, below both doors, typed by Person so a third person cannot be
+ * added to the house without being added here.
+ */
+export const DISPLAY: Readonly<Record<Person, string>> = { gino: "Gino", xinyan: "Xinyan" };
+
 /** The configured read secrets, one per person. An empty value means "that person
  *  has no read access", never "let anybody in". */
 export interface ReadSecrets {

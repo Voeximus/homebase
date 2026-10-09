@@ -43,7 +43,8 @@ import type {
   PaidOverrideRow,
   RuleRow,
 } from "./dbFinance.ts";
-import { LIST_CAP } from "./dbFinance.ts";
+import { LIST_CAP, provesRolledBack, StatementRefused } from "./dbFinance.ts";
+import { MAX_ROWS, PAGE } from "../_shared/muse/paging.ts";
 import type { Person } from "./db.ts";
 import {
   checkSteps,
@@ -60,8 +61,21 @@ interface PgError {
   message?: string;
 }
 
+/**
+ * Throw on a PostgREST error, and say WHICH kind it was.
+ *
+ * The message is the same either way — `what: message` is what reaches the audit row, and
+ * that note is how the 2026-09-27 json bug was found. What changed on 2026-10-09 is the
+ * class: an error carrying a Postgres SQLSTATE that proves the statement rolled back is a
+ * StatementRefused, and everything else (a failed fetch, a gateway timeout, PostgREST's
+ * own PGRST codes) stays a plain Error, meaning "nobody knows whether it landed".
+ * dbFinance.ts says why commit() cannot do without the difference.
+ */
 function must(error: PgError | null, what: string): void {
-  if (error) throw new Error(`${what}: ${error.message ?? "unknown error"}`);
+  if (!error) return;
+  const message = `${what}: ${error.message ?? "unknown error"}`;
+  if (provesRolledBack(error.code)) throw new StatementRefused(message, error.code);
+  throw new Error(message);
 }
 
 const num = (v: unknown): number => Number(v ?? 0);
@@ -123,6 +137,10 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
 };
 
 export function financeDb(admin: SupabaseClient): FinanceDb {
+  /** Ledger statements on this connection that changed a row. See writesLanded in
+   *  dbFinance.ts. Bumped only AFTER must() has passed and the row count says the
+   *  statement did something — never on a guess. */
+  let landed = 0;
 
   /** One change out of muse_undo. `where` narrows the select; the two callers differ only
    *  in whether they ask by token or by "the newest undoable one", so the mapping and the
@@ -207,7 +225,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async readBill(id) {
       const { data, error } = await admin
         .from("recurring")
-        .select("id, name, amount, direction, category_id, active, variable, known_amount, due_days, starts_on, ends_on, linked_debt_id, account_id")
+        .select("id, name, amount, direction, cadence, category_id, active, variable, known_amount, due_days, anchor_date, starts_on, ends_on, linked_debt_id, account_id")
         .eq("id", id)
         .maybeSingle();
       must(error, "read recurring");
@@ -226,6 +244,8 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         endsOn: optStr(data.ends_on),
         linkedDebtId: optStr(data.linked_debt_id),
         accountId: optStr(data.account_id),
+        cadence: str(data.cadence),
+        anchorDate: optStr(data.anchor_date),
       };
       return row;
     },
@@ -361,6 +381,55 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       return count;
     },
 
+    async chargeNames() {
+      // THE WHOLE LEDGER, so it is paged rather than capped — the one read in this file
+      // that is. Added 2026-10-09 for finance.learn_merchant, which taught "FIRESTONE"
+      // on 10-05, said "Taught the app…", and saved a rule nothing could ever match:
+      // the charge's key is "FIRESTONE COMPLETE AUTO CARE", and a rule is an exact
+      // lookup. Counting the charges that carry a key is how the door finds that out
+      // before it says "taught".
+      //
+      // `description` only. The untouched bank descriptor is the one column no tool on
+      // either door reads, and the app's rules are keyed on the clean name anyway.
+      //
+      // THE ORDER IS TOTAL — date, then id — so a page boundary cannot skip a row or
+      // show one twice; date alone is not unique. Pages are smaller than PostgREST's
+      // own 1,000-row cap, so a page that comes back short is the END, never a trim.
+      // And every page carries the count on the same filter: if the count moves
+      // between pages, or the rows read do not add up to it, something landed or went
+      // missing mid-read and this throws rather than answering from part of the
+      // ledger. The tool has not written anything yet at that point, so a throw here
+      // means no rule is saved — the door fails closed.
+      const names: string[] = [];
+      let counted: number | null = null;
+      for (let from = 0; ; from += PAGE) {
+        const { data, error, count } = await admin
+          .from("transactions")
+          .select("id, description", { count: "exact" })
+          .eq("type", "expense")
+          .order("date", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        must(error, "read charge names");
+        if (count === null) throw new Error("read charge names: no count returned");
+        if (counted === null) {
+          if (count > MAX_ROWS) {
+            throw new Error(`read charge names: ${count} rows is more than this door will read (${MAX_ROWS})`);
+          }
+          counted = count;
+        } else if (count !== counted) {
+          throw new Error(`read charge names: the ledger changed while it was read (${counted} rows, then ${count})`);
+        }
+        const rows = data ?? [];
+        for (const r of rows) names.push(str(r.description));
+        if (rows.length < PAGE) break;
+      }
+      if (names.length !== counted) {
+        throw new Error(`read charge names: ${counted} rows exist and ${names.length} came back`);
+      }
+      return names;
+    },
+
     async bankSyncTimes() {
       // `select("*")` is not used here on purpose — this table holds the item_id,
       // the vault secret's NAME and the sync cursor, and none of them has any
@@ -397,6 +466,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         .not("id", "is", null)
         .select("id");
       must(error, "request bank refresh");
+      if ((data ?? []).length > 0) landed += 1;
       return (data ?? []).length;
     },
 
@@ -413,7 +483,9 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       // reported a write that changed nothing as a success.
       const { data, error } = await q.select("id");
       must(error, `update ${table}`);
-      return (data ?? []).length === 1 ? "ok" : "moved";
+      if ((data ?? []).length !== 1) return "moved";
+      landed += 1;
+      return "ok";
     },
 
     async insertRow(table, row) {
@@ -425,6 +497,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       }
       const { data, error } = await admin.from(t).insert(row).select("id").single();
       must(error, `insert ${table}`);
+      landed += 1;
       return String(data!.id);
     },
 
@@ -438,7 +511,9 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       for (const [col, want] of values) q = q.eq(col, want);
       const { data, error } = await q.select("id");
       must(error, `delete ${table}`);
-      return (data ?? []).length === 1 ? "ok" : "moved";
+      if ((data ?? []).length !== 1) return "moved";
+      landed += 1;
+      return "ok";
     },
 
     // ── the app's own money engine ───────────────────────────────────────────
@@ -460,6 +535,9 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         p_applies_to: null,
       });
       must(error, "apply_money_event");
+      // Counted HERE, before the stamp below: once the RPC has answered without an error
+      // the charge and its cash are in, and a stamp that then fails does not take them out.
+      landed += 1;
       const row = Array.isArray(data) ? data[0] : data;
       if (!row?.id) throw new Error("apply_money_event: no row came back");
       // `person` is not an argument the RPC takes, so it is stamped right after. It is
@@ -477,6 +555,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       if (!data) return "moved";
       const { error: rpcError } = await admin.rpc("reverse_money_event", { p_txn_id: id });
       must(rpcError, "reverse_money_event");
+      landed += 1;
       return "ok";
     },
 
@@ -486,7 +565,13 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       const { data, error } = await admin.rpc("restore_money_event", { p_row: row });
       must(error, "restore_money_event");
       const back = Array.isArray(data) ? data[0] : data;
-      return back?.id ? "ok" : "moved";
+      if (!back?.id) return "moved";
+      landed += 1;
+      return "ok";
+    },
+
+    writesLanded() {
+      return landed;
     },
 
     // ── the change log ──────────────────────────────────────────────────────

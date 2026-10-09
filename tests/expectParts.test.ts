@@ -24,9 +24,24 @@ describe("expectParts", () => {
     expect(values[0][1]).not.toBe("[object Object]");
   });
 
-  it("serialises an array the same way", () => {
-    const { values } = expectParts({ due_days: [15, 30] });
-    expect(values).toEqual([["due_days", "[15,30]"]]);
+  it("serialises a jsonb array the same way", () => {
+    // `splits` is jsonb, so JSON is the literal Postgres takes. This test used to use
+    // `due_days` here — see the next one for why that was the wrong column.
+    const { values } = expectParts({ splits: [{ categoryId: "dining", amount: 12 }] });
+    expect(values).toEqual([["splits", '[{"categoryId":"dining","amount":12}]']]);
+  });
+
+  it("writes due_days as a Postgres array literal, because it is int4[] and not jsonb", () => {
+    // FOUND 2026-10-09 while adding finance.set_bill_due_day, the first write that
+    // compares on this column. Against the live database: `due_days = '[29]'` is
+    // `22P02 malformed array literal`; `due_days = '{29}'` finds the T-Mobile row. The
+    // old expectation here was the JSON spelling, which would have made every due-day
+    // write — and every undo of one — a 500.
+    expect(expectParts({ due_days: [15, 30] }).values).toEqual([["due_days", "{15,30}"]]);
+    expect(expectParts({ due_days: [29] }).values).toEqual([["due_days", "{29}"]]);
+    // A stored empty array is still an array, and null still goes to .is().
+    expect(expectParts({ due_days: [] }).values).toEqual([["due_days", "{}"]]);
+    expect(expectParts({ due_days: null }).nulls).toEqual(["due_days"]);
   });
 
   it("sends null to .is(), never to .eq()", () => {

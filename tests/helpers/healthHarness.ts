@@ -45,6 +45,10 @@ export interface Req {
   table: string;
   op: "select" | "upsert" | "delete" | "insert" | "update";
   filters: [string, unknown][];
+  /** The `.order()` calls, in the order they were made: [column, ascending]. */
+  order: [string, boolean][];
+  /** The `.range(from, to)` asked for, inclusive — unset for a bare select. */
+  range?: [number, number];
   single: boolean;
   payload?: any;
   conflict: string[];
@@ -53,19 +57,36 @@ export interface Req {
 }
 export const reqs: Req[] = [];
 let reqNo = 0;
+let rowNo = 0;
 const clone = (x: any) => JSON.parse(JSON.stringify(x));
+
+/**
+ * PostgREST's max-rows, which the real server applies to EVERY select — a bare
+ * one and a ranged one alike — and says nothing about. The fake used to hand
+ * back the whole table, so a store that read 1,000 rows of a 2,500-row ledger
+ * passed here and failed on the phone (found 2026-10-09). Rows come back in
+ * insertion order; `order` is recorded, not applied.
+ */
+export const SERVER_MAX_ROWS = 1000;
 
 function execute(r: Req): any {
   const rows = (db[r.table] ??= []);
   const match = (row: any) => r.filters.every(([c, v]) => row[c] === v);
   if (r.op === "select") {
-    const out = rows.filter(match).map(clone);
+    let out = rows.filter(match);
+    if (r.range) out = out.slice(r.range[0], r.range[1] + 1);
+    out = out.slice(0, SERVER_MAX_ROWS).map(clone);
     return r.single ? { data: out[0] ?? null, error: null } : { data: out, error: null };
   }
   if (r.op === "upsert") {
     const i = rows.findIndex((x) => r.conflict.every((c) => x[c] === r.payload[c]));
-    if (i >= 0) rows[i] = clone(r.payload);
-    else rows.push(clone(r.payload));
+    const next = clone(r.payload);
+    // The real tables mint `id` by default and an upsert on another key keeps
+    // the row's id, so every row a fetch reads back carries one — and the paged
+    // reads need it (they order on it, and refuse a row without one).
+    next.id ??= i >= 0 && rows[i].id != null ? rows[i].id : `srv-${++rowNo}`;
+    if (i >= 0) rows[i] = next;
+    else rows.push(next);
   }
   if (r.op === "delete") db[r.table] = rows.filter((x) => !match(x));
   return { data: null, error: null };
@@ -89,11 +110,12 @@ export const one = (pred: (r: Req) => boolean) => {
 export const on = (table: string, op: Req["op"]) => (r: Req) => r.table === table && r.op === op;
 
 function builder(table: string) {
-  const r: Partial<Req> = { table, op: "select", filters: [], single: false, conflict: ["id"] };
+  const r: Partial<Req> = { table, op: "select", filters: [], order: [], single: false, conflict: ["id"] };
   let promise: Promise<any> | null = null;
   const b: any = {
     select: () => b,
-    order: () => b,
+    order: (c: string, o?: { ascending?: boolean }) => (r.order!.push([c, o?.ascending ?? true]), b),
+    range: (from: number, to: number) => ((r.range = [from, to]), b),
     eq: (c: string, v: unknown) => (r.filters!.push([c, v]), b),
     maybeSingle: () => ((r.single = true), b),
     upsert: (payload: any, opts?: { onConflict?: string }) => {

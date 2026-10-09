@@ -25,6 +25,7 @@ const healthy = (over: Partial<HeartbeatReadings> = {}): HeartbeatReadings => ({
   quietDays: 0,
   stuckReminders: 0,
   pushTargets: { Gino: 1, Xinyan: 5 },
+  alertOwner: "Gino",
   ...over,
 });
 
@@ -76,6 +77,16 @@ describe("heartbeat", () => {
     const r = heartbeat(healthy({ pushTargets: { Gino: 0, Xinyan: 5 } }));
     expect(find(r, "push:Gino").status).toBe("alarm");
     expect(find(r, "push:Xinyan").status).toBe("ok");
+  });
+
+  it("says it louder when the person with no device is the one every alarm goes to", () => {
+    // Added 2026-10-09, when that was exactly the live state: every alarm here is pushed
+    // to the alert owner, so at zero devices it is the reason none of them is heard.
+    const owner = heartbeat(healthy({ pushTargets: { Gino: 0, Xinyan: 5 }, alertOwner: "Gino" }));
+    expect(find(owner, "push:Gino").says).toMatch(/every alarm this check raises is sent to Gino/);
+    const other = heartbeat(healthy({ pushTargets: { Gino: 1, Xinyan: 0 }, alertOwner: "Gino" }));
+    expect(find(other, "push:Xinyan").status).toBe("alarm");
+    expect(find(other, "push:Xinyan").says).not.toMatch(/every alarm/);
   });
 
   it("treats the measured quiet stretch as normal and one more day as not", () => {

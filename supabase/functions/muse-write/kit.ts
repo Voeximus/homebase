@@ -18,8 +18,10 @@ import type { Db, Person, Push } from "./db.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 import type { UndoRecord } from "./undoContract.ts";
 
-/** The push_subscriptions "owner" spelling, and the name a sentence uses. */
-export const DISPLAY: Record<Person, string> = { gino: "Gino", xinyan: "Xinyan" };
+/** The push_subscriptions "owner" spelling, and the name a sentence uses. Lives in
+ *  _shared/muse/auth.ts since 2026-10-09, so the heartbeat can read the same household
+ *  list; re-exported here because every write tool has always asked kit.ts for it. */
+export { DISPLAY } from "../_shared/muse/auth.ts";
 
 export interface Ctx {
   db: Db;
@@ -53,6 +55,21 @@ export type Success = {
    * and the handler then tells the caller plainly that this one cannot be undone.
    */
   undo?: UndoRecord;
+  /**
+   * The change is ALREADY in muse_undo, under this token — the tool wrote its own row.
+   *
+   * The finance tools do it that way round on purpose (commit() in toolsFinance.ts
+   * writes the row BEFORE it changes anything, so a crash leaves `pending` rather than a
+   * change nobody can account for). That means there is nothing for handler.ts to mint
+   * or store; what it owes is to say the token out loud in the envelope.
+   *
+   * It did not, until 2026-10-09. The handler only looked at `undo` above, so every
+   * finance write came back with a real token in `result.undo` and, right beside it,
+   * `undo: null` and "Nothing was written down that could put this back." An assistant
+   * reading the envelope was told the one thing that was not true. A tool sets one of
+   * these two fields, never both.
+   */
+  recorded?: { token: string; says: string };
 };
 export type ToolOutcome = Refusal | Success;
 

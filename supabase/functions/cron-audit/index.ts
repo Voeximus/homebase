@@ -37,6 +37,7 @@ import { nowAZ } from "../_shared/muse/az.ts";
 import { createLoader } from "../_shared/muse/load.ts";
 import { supabaseDb } from "../_shared/supabaseDb.ts";
 import { selfAudit } from "../_shared/muse/lib/selfAudit.ts";
+import { DEFAULT_ALERT_OWNER } from "../_shared/muse/heartbeat.ts";
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -48,7 +49,7 @@ const APP = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
 /** Who is told. Bookkeeping errors are his to act on — the same reasoning, and the
  *  same environment variable, as the heartbeat's infrastructure alarms. A push with
  *  no owner fans out to every device in the household. */
-const ALERT_OWNER = Deno.env.get("HEARTBEAT_OWNER") ?? "Gino";
+const ALERT_OWNER = Deno.env.get("HEARTBEAT_OWNER") ?? DEFAULT_ALERT_OWNER;
 
 const JOB = "cron-audit";
 

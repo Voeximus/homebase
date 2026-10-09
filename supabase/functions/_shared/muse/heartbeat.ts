@@ -64,6 +64,15 @@ export const REMINDER_STUCK_MIN = 30;
  *
  * cron-heartbeat is deliberately absent. It cannot report its own death, and the
  * daily pass is what notices it.
+ *
+ * THE WEEKLY PRUNE IS ABSENT TOO, AND NOT BY CHOICE. Checked 2026-10-09: pg_cron runs
+ * `homebase-prune-job-runs` every Sunday (schema_v41_job_runs.sql), but it is a bare SQL
+ * function — `delete from job_runs where started_at < now() - 30 days` — and it writes no
+ * row of its own. job_runs holds runs of cron-audit, cron-bank-sync, cron-heartbeat,
+ * cron-notify and cron-reminders, and nothing else. A name added here with no rows behind
+ * it would read "has never finished a run" every hour, which is noise, not a watch. Until
+ * the function records itself, a stopped prune shows up the slow way: job_runs growing
+ * past readAll's ceiling, at which point every heartbeat read refuses.
  */
 export const WATCHED_JOBS: Readonly<Record<string, number>> = {
   "cron-bank-sync": 15,
@@ -104,9 +113,20 @@ export interface HeartbeatReadings {
   /** Reminders past due by more than REMINDER_STUCK_MIN with nothing sent. */
   stuckReminders: number;
   /** Push targets per person. A person at zero has reminders marked delivered into
-   *  nothing — the job says sent, and there is nobody to send to. */
+   *  nothing — the job says sent, and there is nobody to send to.
+   *
+   *  It must carry a ZERO for anyone who has none, not leave them out — see
+   *  heartbeatFrom.ts for the day it left the one person who mattered out. */
   pushTargets: Readonly<Record<string, number>>;
+  /** Who the heartbeat's own alarms are pushed to (HEARTBEAT_OWNER). At zero devices
+   *  that is not one alarm among several: it is every other alarm reaching nobody. */
+  alertOwner: string;
 }
+
+/** Who is told when the machinery breaks, unless HEARTBEAT_OWNER says otherwise. The
+ *  push_subscriptions spelling, which is what webpush.ts matches on. One copy, read by
+ *  cron-heartbeat, cron-audit and system.heartbeat alike. */
+export const DEFAULT_ALERT_OWNER = "Gino";
 
 export interface HeartbeatCheck {
   id: string;
@@ -213,7 +233,13 @@ export function heartbeat(r: HeartbeatReadings): Heartbeat {
             id: `push:${person}`,
             question: `Can ${person} still be reached by a notification?`,
             status: "alarm",
-            says: `${person} has no device registered, so every reminder for ${person} is marked delivered and reaches nobody.`,
+            // The alert owner gets the stronger sentence because it is the stronger
+            // fact: every alarm in this list is pushed to that one person, so with no
+            // device it is not one broken thing among several — it is the reason nobody
+            // will hear about any of them.
+            says: person === r.alertOwner
+              ? `${person} has no device registered, and every alarm this check raises is sent to ${person} — so none of them reaches anyone. Every reminder for ${person} is marked delivered and reaches nobody too.`
+              : `${person} has no device registered, so every reminder for ${person} is marked delivered and reaches nobody.`,
           },
     );
   }

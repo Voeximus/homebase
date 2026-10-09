@@ -69,7 +69,7 @@ export function openapi(baseUrl: string): Record<string, unknown> {
         "Every call needs the household secret, in Authorization: Bearer or in X-Muse-Token — the door takes either, because nobody has published which one a phone-built connector sends. It also needs an Idempotency-Key header. Send the same key if you retry — a repeat returns the first answer and writes nothing.",
         `At most ${WRITES_PER_HOUR} writes an hour, ${REMIND_PER_DAY} new reminders a day, and ${REMIND_OPEN_MAX} reminders waiting at once.`,
         "",
-        "EVERY CHANGE CAN BE PUT BACK. A successful reply carries an `undo` object with a token and a sentence saying what undoing would do. Read that sentence out; if he says undo, send the token back. Some undos say `only_until`, which names the thing that could overwrite the restore — say that too rather than promising it holds for ever. A reply whose `undo` is null could not capture a before-state, and says so.",
+        "EVERY CHANGE CAN BE PUT BACK. A successful reply carries an `undo` object with a token and a sentence saying what undoing would do. Read that sentence out; if he says undo, send the token back. Some undos say `only_until`, which names the thing that could overwrite the restore — say that too rather than promising it holds for ever. A memory change has no token: its reply names the call that puts it back in `undo_with` — memory.forget for something just put into use, memory.restore for a changed wording or a forget — with its key. Make that call, and no other. A reply whose `undo` is null and that names no such call could not capture a before-state, and says so in `cannot_undo`.",
         `Two people share this house and each has their own key. If the same write, with the same numbers, already came through either key in the last ${DUPLICATE_WINDOW_MIN} minutes, this door refuses it and says who did it — because neither of them knows what the other just asked for. Say that sentence as it stands. If they really do want it twice, send the same call again with ${UNIVERSAL_FIELDS[0]}: true, which every tool here accepts.`,
         "",
         "Reminders: schedule.list_reminders on the READ door is where the ids come from. What a repeat can be:",
@@ -159,6 +159,19 @@ export function openapi(baseUrl: string): Record<string, unknown> {
                             description: "What could overwrite the restore. Present only when something can.",
                           },
                         },
+                      },
+                      undo_with: {
+                        type: "object",
+                        description:
+                          "Present when the way back is a call rather than a token — a memory change, put back with memory.forget or memory.restore, whichever this names.",
+                        properties: {
+                          tool: { type: "string" },
+                          args: { type: "object" },
+                        },
+                      },
+                      cannot_undo: {
+                        type: "string",
+                        description: "Present only when nothing was written down that could put this change back.",
                       },
                     },
                   },

@@ -17,7 +17,8 @@
 //     harder than one canary does.
 //   · the transactions table holds exactly as many rows as paging.ts asks for in
 //     one page, which is the boundary where "a full page" and "a truncated page"
-//     are easiest to confuse.
+//     are easiest to confuse. (True of the snapshots taken before 2026-10-09,
+//     which held the newest 500. Later ones hold the whole ledger — see below.)
 //   · the numbers. Three figures are checked against the app's own modules in
 //     src/lib, called directly on the same snapshot, to the cent. The generator
 //     already proves the edge copies are byte-identical; this proves they compute
@@ -27,10 +28,12 @@
 // disk every test here skips and says so. Nothing in it is ever printed: the
 // assertions are on counts and on numbers, never on the strings themselves.
 //
-// AND WHAT IT IS NOT. A snapshot is not the ledger. scripts/snapshot.mjs caps
-// transactions at the most recent 500 rows, so anything the app computes from
-// older history differs here — see the note on the audit cross-check below. The
-// door reads the whole table in production (Rule 5); this file feeds it a window.
+// AND WHAT IT IS NOT. A snapshot is not the live ledger: it is the ledger as of
+// the moment it was taken. Until 2026-10-09 it was not even that — scripts/
+// snapshot.mjs capped transactions at the most recent 500 rows, so a snapshot
+// from before then is a WINDOW, and anything computed from older history differs
+// here (see the note on the audit cross-check below). Since then the script pages
+// the whole table, as the door does in production (Rule 5).
 
 import { describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -516,10 +519,11 @@ describeSnapshot("the read door against the real ledger", () => {
   // ── Rule 5, at the page boundary the real table sits on ─────────────────────
   it("reads a table that fills exactly one page without mistaking it for a truncation", async () => {
     const n = (SNAP!.tables.transactions ?? []).length;
-    // scripts/snapshot.mjs caps at 500 and paging.ts asks for 500 at a time, so
-    // this is the case where a full page and a trimmed page look alike. If the cap
-    // ever changes this stops being the interesting case, and the test says so
-    // instead of pretending.
+    // scripts/snapshot.mjs capped at 500 and paging.ts asks for 500 at a time, so
+    // on a snapshot from before 2026-10-09 this is the case where a full page and
+    // a trimmed page look alike. The cap is gone now (the script pages the whole
+    // ledger), so a newer snapshot lands on the boundary only by coincidence — and
+    // the test says so instead of pretending.
     if (n !== PAGE) {
       console.warn(`museSnapshot: transactions is ${n} rows, not the ${PAGE}-row page size — boundary not exercised`);
     }
@@ -720,10 +724,11 @@ describeSnapshot("Rule 1 — the door's number is the app's number", () => {
 
   it("4 — the self-audit passes and fails on exactly the checks the app's does", async () => {
     // Same data in, same verdict out, check for check. What this canNOT tell you is
-    // whether the LIVE audit agrees: the snapshot is the most recent 500 charges,
-    // and links-point-somewhere walks every charge, so a window can only ever show
-    // fewer broken links than the whole ledger has. The gate for "does the app
-    // disagree with itself" is his phone, beside the screen.
+    // whether the LIVE audit agrees: the snapshot is the ledger as it was when it
+    // was taken — and one taken before 2026-10-09 is only the newest 500 charges,
+    // a window in which links-point-somewhere can both miss broken links and
+    // report good ones to credits older than the window as broken. The gate for
+    // "does the app disagree with itself" is his phone, beside the screen.
     const body = JSON.parse(await (await ask("finance.audit")).text()) as Record<string, unknown>;
     const app = selfAudit(appData(), nowAZ(AT));
     expect(body.clean).toBe(app.clean);

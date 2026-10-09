@@ -15,6 +15,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readEveryRowSql } from "./read-every-row.mjs";
 
 const PROJECT_REF = "ganzefaciiyibselizqi";
 const API = `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`;
@@ -45,17 +46,25 @@ async function q(sql) {
   }
 }
 
-// Ordered so the summary below can read them by name. Transactions are capped —
-// the full ledger is thousands of rows and the recent window is what gets used.
+// Ordered so the summary below can read them by name.
+//
+// FOUND 2026-10-09: transactions used to be "capped — the full ledger is
+// thousands of rows and the recent window is what gets used", at 500 rows. The
+// ledger was 835 rows that day, so every snapshot since it passed 500 was a
+// window — and the snapshot is what DoctorLab's Worth a look and the self-audit
+// in tests/museSnapshot.test.ts run over, and the links check behind both reads
+// the ledger as a whole set: a payback credit older than the window looks
+// deleted. paid_bills had the same shape at 200. Both are now read whole, a page
+// at a time in a total order (see read-every-row.mjs); a string here is still
+// one statement, an object is paged.
 const TABLES = {
   accounts: "select * from accounts order by sort_order",
   recurring: "select * from recurring order by direction, name",
   debts: "select * from debts order by balance desc",
   savings_goals: "select * from savings_goals order by created_at",
-  paid_bills: "select * from paid_bills order by month desc limit 200",
+  paid_bills: { table: "paid_bills", orderBy: "month desc" },
   merchant_rules: "select * from merchant_rules order by created_at desc",
-  transactions:
-    "select * from transactions order by date desc, created_at desc limit 500",
+  transactions: { table: "transactions", orderBy: "date desc, created_at desc" },
 };
 
 const money = (n) =>
@@ -93,7 +102,7 @@ async function main() {
   for (const [name, sql] of Object.entries(TABLES)) {
     process.stdout.write(`  fetching ${name}... `);
     try {
-      data[name] = await q(sql);
+      data[name] = typeof sql === "string" ? await q(sql) : await readEveryRowSql(q, sql);
       console.log(`${data[name].length} rows`);
     } catch (err) {
       console.log("FAILED");

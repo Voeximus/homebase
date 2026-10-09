@@ -36,6 +36,7 @@ import { sendPush } from "../_shared/webpush.ts";
 import { safeEqual } from "../_shared/muse/safeEqual.ts";
 import { recordFinished } from "../_shared/jobRun.ts";
 import { heartbeatFrom, previousAlarms } from "../_shared/muse/heartbeatFrom.ts";
+import { DEFAULT_ALERT_OWNER } from "../_shared/muse/heartbeat.ts";
 import { createLoader } from "../_shared/muse/load.ts";
 import { supabaseDb } from "../_shared/supabaseDb.ts";
 import { nowAZ } from "../_shared/muse/az.ts";
@@ -48,8 +49,9 @@ const TOKEN = Deno.env.get("CRON_TOKEN") ?? "";
 const APP = Deno.env.get("APP_URL") ?? "https://voeximus.github.io/homebase/";
 
 /** Who gets told when the machinery breaks. The push_subscriptions spelling, which
- *  is what webpush.ts matches on. */
-const ALERT_OWNER = Deno.env.get("HEARTBEAT_OWNER") ?? "Gino";
+ *  is what webpush.ts matches on. Handed to heartbeatFrom too, so the person every
+ *  alarm is sent to is a person the heartbeat checks can be reached. */
+const ALERT_OWNER = Deno.env.get("HEARTBEAT_OWNER") ?? DEFAULT_ALERT_OWNER;
 
 
 Deno.serve(async (req) => {
@@ -75,7 +77,10 @@ Deno.serve(async (req) => {
     // hour while both were running — and an alarm stuck on is an alarm that cannot
     // announce a real outage.
     const load = createLoader(supabaseDb(admin));
-    const result = await heartbeatFrom(load, now, at);
+    // ALERT_OWNER goes in, so "can the person these alarms go to be reached?" is one
+    // of the things judged. Until 2026-10-09 it was not, and he had no device: every
+    // push below went nowhere while the run recorded itself clean.
+    const result = await heartbeatFrom(load, now, at, ALERT_OWNER);
     const alarming = result.checks.filter((c) => c.status === "alarm");
     alarms = alarming.length;
 

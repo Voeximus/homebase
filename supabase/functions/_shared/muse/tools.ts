@@ -63,7 +63,13 @@
 //   · sentenceFor / groupSentence in worthALook.ts.
 
 import { coverFor } from "./lib/pendingCover.ts";
-import { selfAudit, danglingLinks, type AuditCheck } from "./lib/selfAudit.ts";
+import {
+  selfAudit,
+  danglingLinks,
+  paidFromWrongAccount,
+  type AuditCheck,
+  type WrongAccountPayment,
+} from "./lib/selfAudit.ts";
 import {
   LEAN_VARIABLE,
   orderedDebts,
@@ -152,17 +158,69 @@ const DETAIL_SAFE: ReadonlySet<string> = new Set([
   "no-orphan-categories",
   "lines-sum-to-envelope",
   "settled-means-settled",
-  // Reviewed 2026-10-05, the day it was added, which is what this list is for. Its
-  // detail is built from a bill NAME (already forwarded by schedule-vs-plan), a
-  // month key, one charge's date and amount, and the two account OWNER labels that
-  // finance.position already says. No bank descriptor reaches it — it never reads
-  // `description` — so the injection surface this list guards against is absent.
+  // "paid-from-its-own-account" WAS ON THIS LIST, and being on it did nothing.
   //
-  // And without it the check is useless out loud: its failure would fall back to
-  // "This check failed", which cannot tell anyone which bill came out of the wrong
-  // account. The whole value of the check is in naming it.
-  "paid-from-its-own-account",
+  // FOUND 2026-10-09. It was added on 2026-10-05 so a failure could name the bill —
+  // the right reason: "a recent bill was paid from the wrong account" cannot tell
+  // anyone WHICH bill, and the whole value of the check is in naming it. But this list
+  // only decides whether the app's sentence is TRIED. Rule 4 then refuses any sentence
+  // longer than NAME_MAX (64), and that check's sentence is never shorter — "1 recent
+  // bill payment comes out of the wrong account: " is 54 characters before the first
+  // bill is named. So every failure fell back to the door's own sentence, and the
+  // allowlist entry was a promise with nothing behind it. Even its passing sentence is
+  // 73 characters, which is why it always read as CHECK_SAYS.ok.
+  //
+  // It now has a short sentence of its own, built from scrubbed PARTS rather than from
+  // the app's prose — see wrongAccountSays below.
 ]);
+
+/** The longest sentence finance.audit will build for a check out of scrubbed parts.
+ *  The same ceiling tests/museRead.test.ts holds every check's detail to: the app's own
+ *  cap plus room for the door's few words around a name. */
+const BUILT_DETAIL_MAX = NAME_MAX + 40;
+
+/** A month key as the ledger stores one. Checked rather than scrubbed: it is a
+ *  handle, and a month that is not this shape is not a month worth repeating. */
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * Which bills came out of the wrong account, in one sentence that survives Rule 4 —
+ * or null when there is nothing to say, and the caller keeps its fixed sentence.
+ *
+ * BUILT FROM PARTS, NOT FROM THE APP'S SENTENCE. The app's detail is a paragraph per
+ * offender (charge date, amount, both owners), which no 64-character cap will ever let
+ * through whole, and slicing it is what Rule 4 exists to prevent. So the door takes the
+ * offenders as DATA, off paidFromWrongAccount() — the same function the check itself
+ * runs, so there is one answer to "which payments are wrong" — scrubs each bill name on
+ * its own, checks each month is a month, and says as many of them as fit:
+ *
+ *   "Claude Pro for 2026-09 came out of the wrong account."
+ *   "Claude Pro for 2026-09 and Rent for 2026-10 came out of the wrong account."
+ *   "Claude Pro for 2026-09 and 2 others came out of the wrong account."
+ *
+ * The finished sentence goes through scrub() again, so what leaves is exactly what the
+ * cleaner passes rather than something assembled next to it.
+ */
+function wrongAccountSays(paid: readonly WrongAccountPayment[]): string | null {
+  if (paid.length === 0) return null;
+  const named = paid.map((p) => {
+    const bill = scrub(p.bill, 40) ?? "a bill";
+    return MONTH_KEY.test(p.monthKey) ? `${bill} for ${p.monthKey}` : bill;
+  });
+  // The most names that fit, never a sliced one. The last resort names the first bill
+  // and counts the rest, which is always shorter than the cap: 40 characters of name,
+  // a month, and a count.
+  for (let k = named.length; k >= 1; k--) {
+    const shown = named.slice(0, k);
+    const rest = named.length - k;
+    const tail = rest > 0 ? [`${rest} ${rest === 1 ? "other" : "others"}`] : [];
+    const all = [...shown, ...tail];
+    const who = all.length === 1 ? all[0] : `${all.slice(0, -1).join(", ")} and ${all[all.length - 1]}`;
+    const said = scrub(`${who} came out of the wrong account.`, BUILT_DETAIL_MAX);
+    if (said) return said;
+  }
+  return null;
+}
 
 /** What the door says when it will not forward the app's own words. Per check, per
  *  status, written here so every sentence in a reply has a source you can read. */
@@ -201,8 +259,9 @@ const CHECK_SAYS: Record<string, { ok: string; fail: string }> = {
   },
   "paid-from-its-own-account": {
     ok: "Every bill paid this month and last came out of the account that pays it.",
-    // Only used if Rule 4's cap ever drops the app's own sentence. Points at the
-    // read tool that answers the question, rather than at a screen.
+    // Only used when not one offender can be named safely — wrongAccountSays is what a
+    // failure normally says. Points at the read tool that answers the question, rather
+    // than at a screen.
     fail: "A recent bill was paid from the wrong account. Ask finance.search_transactions for that bill's charges.",
   },
 };
@@ -212,13 +271,20 @@ const UNKNOWN_CHECK = {
   fail: "This check failed. Open the app to see why.",
 };
 
-function sayCheck(c: AuditCheck): { [k: string]: Json } {
+/** Sentences finance.audit builds itself, from data, for checks whose app sentence can
+ *  never pass Rule 4. Keyed by check id; only consulted when that check FAILED. */
+interface BuiltDetails {
+  "paid-from-its-own-account": string | null;
+}
+
+function sayCheck(c: AuditCheck, built: BuiltDetails): { [k: string]: Json } {
   const says = CHECK_SAYS[c.id] ?? UNKNOWN_CHECK;
   const fallback = c.status === "fail" ? says.fail : says.ok;
   // The app's own wording when it is short enough to survive Rule 4's cap intact,
   // and the door's own when it is not. Never a sliced one: Rule 4 caps by DROPPING
   // what does not fit, because half a sentence about money is worse than none.
-  const detail = DETAIL_SAFE.has(c.id) ? (scrub(c.detail) ?? fallback) : fallback;
+  const own = c.id === "paid-from-its-own-account" && c.status === "fail" ? built[c.id] : null;
+  const detail = own ?? (DETAIL_SAFE.has(c.id) ? (scrub(c.detail) ?? fallback) : fallback);
   const out: { [k: string]: Json } = {
     id: c.id,
     question: scrubOr(c.question, "What this check compares is in the app."),
@@ -242,10 +308,15 @@ const financeAudit: Tool = {
     // counts the rows. Two spellings of one number is how this repo got five
     // different cycle keys.
     const { links, broken } = danglingLinks(data);
+    // The offenders behind the wrong-account check, off the same exported function the
+    // check runs — the danglingLinks pattern again, for the same reason.
+    const built: BuiltDetails = {
+      "paid-from-its-own-account": wrongAccountSays(paidFromWrongAccount(data, now)),
+    };
     return {
       clean: result.clean,
       failures: result.failures,
-      checks: result.checks.map(sayCheck),
+      checks: result.checks.map((c) => sayCheck(c, built)),
       links: { checked: links, rows_pointing_at_something_deleted: broken.length },
     };
   },
@@ -632,12 +703,14 @@ const financeNextBills: Tool = {
   summary: "What is still due before the next paycheck, and how much of it is already overdue.",
   async run({ load, now }) {
     const data = await load.appData();
-    // THE STILL-CLEARING CHARGES, AND NOT load.pendingCharges(). That one reads
-    // `pending_preview`, which holds charges the bank has reported that have NOT
-    // entered the ledger — it is empty here and it is the wrong question. Rent paid
-    // on the 1st is a real `transactions` row carrying `pending: true`, which is what
-    // the app's own money maths excludes. Reading the other table found nothing and
-    // reported rent overdue hours after it was paid.
+    // THE STILL-CLEARING CHARGES, read off the ledger this tool already loaded. This
+    // used to say "and not load.pendingCharges()", because that loader read
+    // `pending_preview` — a table nothing writes, empty here. Rent paid on the 1st is a
+    // real `transactions` row carrying `pending: true`, which is what the app's own
+    // money maths excludes. Reading the other table found nothing and reported rent
+    // overdue hours after it was paid. (load.pendingCharges() reads these same rows
+    // now — fixed 2026-10-09 — but this tool has the whole ledger in hand already, and
+    // a second read of the same rows is a second chance for them to disagree.)
     //
     // Signed the way pendingCover expects, which is the way a bank reports it:
     // negative is money going out. Transaction.amount is always positive and carries

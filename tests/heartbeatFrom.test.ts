@@ -37,13 +37,15 @@ function runsPastTheCap(): JobRunRow[] {
   return rows;
 }
 
-function fakeLoad(runs: JobRunRow[]): Loader {
+function fakeLoad(runs: JobRunRow[], targets: Record<string, number> = { Gino: 1, Xinyan: 4 }): Loader {
   return {
     jobRuns: async () => runs,
     bankConnections: async () => [
       { owner: "Gino", institution: "Bank of America", status: "ok", lastSyncAt: iso(4), consecutiveFailures: 0 },
     ],
-    pushTargets: async () => ({ Gino: 1 }),
+    // The push table's own counts, as loadFinance.pushTargets returns them: a person
+    // with no device has NO KEY here, not a zero — which is the whole of the bug below.
+    pushTargets: async () => targets,
     appData: async () => ({ transactions: [{ date: "2026-10-05" }] }),
     reminders: async () => [],
   } as unknown as Loader;
@@ -73,6 +75,60 @@ describe("heartbeatFrom reads every job run, however many there are", () => {
     const runs = runsPastTheCap().filter((r) => r.job !== "cron-bank-sync" || r.finishedAt! < iso(600));
     const hb = await heartbeatFrom(fakeLoad(runs), NOW, AT);
     expect(hb.checks.find((c) => c.id === "job:cron-bank-sync")!.status).toBe("alarm");
+  });
+});
+
+// FOUND 2026-10-09. push_subscriptions held 4 rows, all Xinyan's. Gino had none — and
+// Gino is HEARTBEAT_OWNER, the one person every alarm is pushed to. The readings were
+// the table's own counts, so Gino was not a zero, he was ABSENT, and the check loops over
+// whoever is present: the heartbeat said clean while every alarm it could raise was
+// going nowhere.
+describe("heartbeatFrom checks every household person and the alert owner, devices or not", () => {
+  const push = (hb: Awaited<ReturnType<typeof heartbeatFrom>>, who: string) =>
+    hb.checks.find((c) => c.id === `push:${who}`);
+
+  it("alarms when the alert owner has no device at all — the live state that read clean", async () => {
+    const hb = await heartbeatFrom(fakeLoad(runsPastTheCap(), { Xinyan: 4 }), NOW, AT);
+    const gino = push(hb, "Gino");
+    expect(gino, "Gino was never checked").toBeTruthy();
+    expect(gino!.status).toBe("alarm");
+    // The stronger sentence, because it is the stronger fact: nobody hears about ANY alarm.
+    expect(gino!.says).toMatch(/every alarm this check raises is sent to Gino/);
+    expect(hb.clean).toBe(false);
+    expect(push(hb, "Xinyan")!.status).toBe("ok");
+  });
+
+  it("checks every household person even when the table has nobody at all", async () => {
+    const hb = await heartbeatFrom(fakeLoad(runsPastTheCap(), {}), NOW, AT);
+    expect(push(hb, "Gino")!.status).toBe("alarm");
+    const xinyan = push(hb, "Xinyan")!;
+    expect(xinyan.status).toBe("alarm");
+    // Not the alert owner, so the ordinary sentence.
+    expect(xinyan.says).toMatch(/every reminder for Xinyan is marked delivered and reaches nobody/);
+    expect(xinyan.says).not.toMatch(/every alarm/);
+  });
+
+  it("checks whoever HEARTBEAT_OWNER names, even someone outside the household list", async () => {
+    const hb = await heartbeatFrom(fakeLoad(runsPastTheCap(), { Gino: 1, Xinyan: 4 }), NOW, AT, "Ops");
+    const ops = push(hb, "Ops")!;
+    expect(ops.status).toBe("alarm");
+    expect(ops.says).toMatch(/sent to Ops/);
+    // Gino has a device here and is no longer the alert owner: ordinary and fine.
+    expect(push(hb, "Gino")!.status).toBe("ok");
+  });
+
+  it("counts a Joint device as reaching him, because that is what sendPush does", async () => {
+    // webpush.ts sends an owner's push to that owner's devices AND every Joint one. A
+    // Joint phone is a real way to reach him; an alarm saying it is not would be false.
+    const hb = await heartbeatFrom(fakeLoad(runsPastTheCap(), { Joint: 1, Xinyan: 4 }), NOW, AT);
+    expect(push(hb, "Gino")!.status).toBe("ok");
+    expect(push(hb, "Xinyan")!.says).toContain("5 devices");
+  });
+
+  it("is clean when everyone, the alert owner included, can be reached", async () => {
+    const hb = await heartbeatFrom(fakeLoad(runsPastTheCap()), NOW, AT);
+    expect(push(hb, "Gino")!.status).toBe("ok");
+    expect(push(hb, "Xinyan")!.status).toBe("ok");
   });
 });
 

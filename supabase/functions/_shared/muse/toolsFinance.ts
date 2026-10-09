@@ -600,22 +600,48 @@ const financeBankStatus: Tool = {
 };
 
 // ── finance.bank_pending ──────────────────────────────────────────────────────
+//
+// IT READ A DEAD TABLE. FOUND 2026-10-09: asked what was processing, this answered
+// "0" while five charges were. It read `pending_preview`, which has 0 rows because
+// nothing writes it any more — the bank sync puts an in-flight charge straight into
+// `transactions` with status 'pending', and swaps it for the posted row when the bank
+// posts it. So the reply was a faithful reading of an empty table, which
+// is the most convincing kind of wrong: a zero, said confidently, with nothing on the
+// screen beside it.
+//
+// It now reads those rows (load.pendingCharges, paged and fail-closed), and the reply
+// SAYS which rows it read, so "nothing is processing" can be checked against where it
+// came from rather than taken on trust.
+//
+// The totals are added up here for the reason finance.search_transactions gives: "how
+// much is still processing" is the question, and an assistant told never to do
+// arithmetic on what it is handed cannot answer it from a list. Money out and money in
+// are kept apart, because a pending refund is not a smaller pending charge.
 const financeBankPending: Tool = {
   name: "finance.bank_pending",
-  summary: "Charges the bank has taken but not posted — they are not in the ledger yet.",
+  summary: "Charges the bank has taken but not posted yet — the ledger rows still marked processing.",
   async run({ load }) {
     const rows = await load.pendingCharges();
+    const total = (kind: "income" | "expense") =>
+      money(rows.filter((p) => p.kind === kind).reduce((s, p) => s + Math.abs(Number(p.amount) || 0), 0));
     return {
+      reads: "ledger rows whose status is pending",
       count: rows.length,
+      returned: Math.min(rows.length, LIST_MAX),
+      going_out: total("expense"),
+      coming_in: total("income"),
+      totals_cover: "every pending row, not only the ones listed here",
       note:
-        "These never enter the ledger, which is what stops them being counted twice when they post. " +
-        "The amount is signed the way the bank reports it: negative is money going out.",
+        "These are charges the bank has taken and not posted yet. They are already in the ledger, marked " +
+        "as still processing, and the bank swaps each one for its posted row when it posts — so nothing is " +
+        "counted twice. Each amount is positive; kind says whether it is going out or coming in.",
       charges: rows.slice(0, LIST_MAX).map((p) => ({
+        id: p.id,
         date: p.date,
         amount: money(p.amount),
+        kind: p.kind,
         merchant: scrubOr(p.description, "(a name I cannot say safely)"),
         category_id: p.categoryId ? scrubName(p.categoryId, NAME_MAX) || null : null,
-        owner: p.owner ? scrubOr(p.owner, "the household", LABEL_MAX) : null,
         account_id: p.accountId,
       })),
     };

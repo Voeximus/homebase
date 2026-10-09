@@ -194,6 +194,92 @@ export function learnedFor(
   return learned[rawKey];
 }
 
+// The payment rails and the bank's own account-to-account wording, as they read once
+// stripStatementNoise() has taken the card-line prefixes off. Each one names HOW money
+// moved, never WHO it went to — so a key that is nothing more than one of these is the
+// bank's sentence, not a merchant.
+const BARE_RAILS =
+  /^(?:POS|DEBIT|DEBIT CARD|CHECK|DEPOSIT|WITHDRAWAL|WITHDRWL|ACH(?: (?:DEBIT|CREDIT|PAYMENT|TRANSFER|WITHDRAWAL|DEPOSIT))?|ZELLE(?: (?:TRANSFER|PAYMENT)(?: (?:TO|FROM))?)?)$/;
+
+// "Online Banking payment to CRD 4728 Confirmation# …" and "Mobile Banking payment to
+// CRD 6813 …" both key to "… PAYMENT TO CR": merchantKey() cuts the card number off at
+// the digits, and its 28-character slice then cuts "CRD" in half. The account number
+// was the only thing that told the two cards apart, and it is gone from the key. So
+// these shapes are noise too, whether the account word survived whole, cut short, or
+// not at all — but ONLY when what is left is an account word. "PAYMENT TO JOHN" names
+// somebody and stays a merchant.
+const ACCOUNT_MOVE = /^(?:(?:ONLINE|MOBILE) BANKING )?(?:PAYMENT|TRANSFER)(?: (?:TO|FROM)(?: ([A-Z]+))?)?$/;
+const ACCOUNT_WORDS = ["CRD", "CHK", "SAV", "ACCT", "ACCOUNT", "CARD"];
+
+// The cash machine and the bank's own deposit channel. FOUND 2026-10-09 in review of
+// this very predicate, which let them through. Every Bank of America ATM line —
+// "BKOFAMERICA ATM 08/31 #000004567 WITHDRWL PHOENIX AZ", and the bare "Bkofamerica
+// Atm" the feed sends when it has nothing better — keys to "BKOFAMERICA ATM":
+// merchantKey() cuts the line at the date, so the WITHDRWL or DEPOSIT word that says
+// which way the cash went never reaches the key. Another bank's machine reads
+// "EFT 10/03 #XXXXX1234 WITHDRWL EFT" and keys to the bare "EFT" (the withdrawal and
+// its fee both), and a phone cheque deposit, "BKOFAMERICA MOBILE 09/25 … DEPOSIT",
+// keys to "BKOFAMERICA MOBILE". All three were live keys in the ledger that day, with
+// ten rows between them. Each one names the MACHINE or the CHANNEL, never
+// what the cash went on or who paid it in — which is exactly why classify() sends a
+// withdrawal to a person as "cash withdrawal — say what it went on" at low
+// confidence. A rule on one of these keys is looked up BEFORE that block (learnedFor
+// is step one), so one "Remember merchant" tap on a withdrawal spent on dinner would
+// file every later withdrawal as dining, at high confidence, and the question would
+// never be asked again. The CHECKCARD failure, through the cash machine.
+//
+// Narrow on purpose. Only the bank's own name, or nothing, may stand in front, and
+// only cash words after. "ATM FEE" is not here: every ATM fee IS a fee, so a rule on
+// it is right. An operator that names itself ("COINME ATM") is a merchant, not this.
+const CASH_MACHINE =
+  /^(?:(?:BKOFAMERICA|BANK OF AMERICA) )?(?:ATM|EFT)(?: (?:CASH|WITHDRAWAL|WITHDRWL|DEPOSIT))*$|^(?:BKOFAMERICA|BANK OF AMERICA) MOBILE(?: DEPOSIT)?$/;
+
+/**
+ * Is this merchant key the bank's own wording rather than a merchant?
+ *
+ * FOUND 2026-10-09. A saved rule "CHECKCARD -> dining", made on 2026-09-24 from one tap
+ * in the app, files every Bank of America card line that has no clean name as dining.
+ * learnedFor() above already says why in its own comment: merchantKey() on a raw card
+ * line returns the literal word "CHECKCARD" for every one of them, so a rule on that
+ * word is a rule on all of them — nine charges in the ledger carried that key that day.
+ * A "ZELLE TRANSFER" rule had been saved the same way.
+ *
+ * WHERE THE LIST COMES FROM. Not typed fresh: it is the prefixes stripStatementNoise()
+ * already strips (a key with nothing left after stripping is ALL prefix), plus the bare
+ * rails and the account-to-account shapes this file and flow.ts already recognise —
+ * the "TRANSFER TO ACCT", "PAYMENT FROM CHK" and "… payment to CRD nnnn" lines that
+ * classifyCredit, classifyCore and the card-payment bill rules read — and the cash
+ * machine keys ("BKOFAMERICA ATM", "EFT") that classify()'s ATM block reads.
+ *
+ * WHAT IT IS FOR, AND WHAT IT IS NOT FOR. Every path that SAVES a merchant rule asks
+ * this first and refuses the key — the write door's finance.learn_merchant and
+ * promote_to_bill, and the app's saveMerchantRule and makeRecurringBill. It does NOT
+ * change how a saved rule matches: learnedFor() is untouched, and the rules already in
+ * the table keep firing exactly as before. Deleting or editing those is Gino's call,
+ * not this function's.
+ *
+ * Deliberately exact rather than a prefix test. "INTEREST CHARGED ON PURCHASE" ends in
+ * a prefix word and is a real kind of charge with a real rule; "ZELLE PAYMENT TO MON"
+ * starts with a rail and is the Mom bill. Only a key with NOTHING distinctive left in
+ * it is noise.
+ */
+export function isStatementNoiseKey(key: string): boolean {
+  const k = (key ?? "").trim().toUpperCase();
+  // The same floor learnedFor() uses. Two characters can be a real merchant — "QT" is
+  // QuikTrip — so the floor is one, not two.
+  if (k.length < 2) return true;
+  const left = stripStatementNoise(k);
+  if (!left) return true;
+  if (BARE_RAILS.test(left)) return true;
+  if (CASH_MACHINE.test(left)) return true;
+  const move = ACCOUNT_MOVE.exec(left);
+  if (move) {
+    const word = move[1];
+    return !word || ACCOUNT_WORDS.some((w) => w.startsWith(word));
+  }
+  return false;
+}
+
 /** For an INCOMING credit (positive amount): is it real income — to surface and to
  *  match reimbursement paybacks against — or just an internal transfer between the
  *  household's OWN accounts (same dollars moving, not new money → stays hidden)?

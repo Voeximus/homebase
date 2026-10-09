@@ -306,7 +306,9 @@ describe("deleting a session", () => {
 describe("the meal screen", () => {
   it("getDay read during render shows the day as committed, on the same render", async () => {
     const D = "2026-09-14";
-    H.db.meal_days = [{ person: "gino", date: D, meals: [{ id: "m1", name: "Breakfast", items: [] }], status: null, note: null }];
+    // With its `id`, as every real row has one: the store pages in an order that
+    // ends on it (src/lib/pagedRead.ts), and refuses a row that has none.
+    H.db.meal_days = [{ id: "md1", person: "gino", date: D, meals: [{ id: "m1", name: "Breakfast", items: [] }], status: null, note: null }];
     const seen: { getDay: number; context: number }[] = [];
     const app = await H.mountStore(HealthProvider, useHealth, (v) =>
       seen.push({ getDay: v.getDay("gino", D).meals.length, context: v.mealDays[`gino|${D}`]?.meals.length ?? 0 }),

@@ -77,6 +77,61 @@ export interface Db {
   select(query: DbQuery): DbSelect;
 }
 
+/** One page as supabase-js hands it back: rows, or an error — and an error is never
+ *  the same thing as no rows. */
+export interface PageResult<T> {
+  data: T[] | null;
+  error: { message: string } | null;
+}
+
+/**
+ * Every row of a query the CALLER builds — its own columns, its own filter, its own
+ * total order — fetched `PAGE` rows at a time until a page comes back short.
+ *
+ * WHY THIS EXISTS BESIDE readAll. readAll takes equality filters only, and a scheduled
+ * function sometimes needs a different one: cron-notify reads "every charge attached to
+ * something" (`applies_to is not null`), five columns of it, and nothing else. It read
+ * that with ONE bare select — no order, no range, and `{ data }` destructured with the
+ * error thrown away. FOUND 2026-10-09: PostgREST caps that at 1,000 rows and says
+ * nothing, so past the cap the bill payments it judged "already paid" were whichever
+ * 1,000 the server happened to return; and a failed read was `data: null`, which the
+ * code read as "nothing has been paid" and went on to ping bills that were.
+ *
+ * So this is the same two promises readAll makes, for a query it cannot express:
+ *   · paged, below the server's own cap, so a short page is the real end and not a trim;
+ *   · an error THROWS (as LedgerUnreadable, the same refusal the doors give), so a
+ *     caller cannot mistake "could not read" for "there is nothing".
+ *
+ * The page function must apply a TOTAL order (a unique column last, e.g.
+ * `.order("date", { ascending: false }).order("id")`), or offsets can skip or repeat a
+ * row between pages. That is the caller's half, and it is said here because it cannot
+ * be checked from here.
+ */
+export async function readPages<T>(
+  table: string,
+  page: (from: number, to: number) => PromiseLike<PageResult<T>>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (;;) {
+    const from = rows.length;
+    let got: PageResult<T>;
+    try {
+      got = await page(from, from + PAGE - 1);
+    } catch (e) {
+      throw new LedgerUnreadable(table, `page from ${from} failed (${String((e as Error)?.message ?? e)})`);
+    }
+    if (got.error) throw new LedgerUnreadable(table, `page from ${from} failed (${got.error.message})`);
+    if (!Array.isArray(got.data)) {
+      throw new LedgerUnreadable(table, `page from ${from} came back as something that is not rows`);
+    }
+    rows.push(...got.data);
+    if (rows.length > MAX_ROWS) {
+      throw new LedgerUnreadable(table, `more than ${MAX_ROWS} rows is more than this will read`);
+    }
+    if (got.data.length < PAGE) return rows;
+  }
+}
+
 /**
  * Every row of a table, or nothing at all.
  *

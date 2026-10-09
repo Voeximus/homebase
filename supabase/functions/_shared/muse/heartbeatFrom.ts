@@ -31,10 +31,60 @@
 // are both passed in.
 
 import type { Loader } from "./load.ts";
+import { DISPLAY } from "./auth.ts";
 import { azDateISO, minutesSince } from "./az.ts";
-import { heartbeat, REMINDER_STUCK_MIN, WATCHED_JOBS, type Heartbeat } from "./heartbeat.ts";
+import {
+  DEFAULT_ALERT_OWNER,
+  heartbeat,
+  REMINDER_STUCK_MIN,
+  WATCHED_JOBS,
+  type Heartbeat,
+} from "./heartbeat.ts";
 
-export async function heartbeatFrom(load: Loader, now: Date, at: Date): Promise<Heartbeat> {
+/**
+ * Devices a notification for each person actually reaches — with a ZERO for anyone
+ * who has none.
+ *
+ * FOUND 2026-10-09. The readings used to be the push table's own counts, and that
+ * table only has rows for people who HAVE devices. So a person with none was not a
+ * zero; they were absent, and the check loops over whoever is present. Gino had 0
+ * devices — and Gino is HEARTBEAT_OWNER, the one person every alarm here is pushed to —
+ * so the check that exists to say "this person cannot be reached" never ran for him,
+ * and the heartbeat said clean. Every alarm it raised was going nowhere, and the one
+ * reading that could have said so was the one that was missing.
+ *
+ * So the household is always checked (DISPLAY, the one list of who lives here), and so
+ * is the alert owner even when HEARTBEAT_OWNER names someone outside it. Anyone else
+ * the table holds is still reported as before.
+ *
+ * "Reaches" means what webpush.ts's sendPush does with an owner: it sends to that
+ * owner's devices AND every "Joint" device (`q.in("owner", [owner, "Joint"])`). A Joint
+ * device is a real way to reach him, so counting only his own rows would raise this
+ * alarm about a person who can in fact be reached. That rule lives in webpush.ts, which
+ * nothing here may import; this is the only other place it is spelled, and it is
+ * spelled here so the alarm is true.
+ */
+export function reachable(targets: Readonly<Record<string, number>>, alertOwner: string): Record<string, number> {
+  const joint = targets["Joint"] ?? 0;
+  const reach = (who: string) => (targets[who] ?? 0) + (who === "Joint" ? 0 : joint);
+  const out: Record<string, number> = {};
+  for (const who of [...Object.values(DISPLAY), alertOwner]) out[who] = reach(who);
+  for (const who of Object.keys(targets)) if (!(who in out)) out[who] = reach(who);
+  return out;
+}
+
+/**
+ * `alertOwner` is HEARTBEAT_OWNER where the caller can read it — cron-heartbeat — and
+ * DEFAULT_ALERT_OWNER otherwise. The read door reads no environment, so system.heartbeat
+ * judges against the default; if the variable is ever set to someone else, the two will
+ * name different people, and cron-heartbeat's is the one that decides who is pushed.
+ */
+export async function heartbeatFrom(
+  load: Loader,
+  now: Date,
+  at: Date,
+  alertOwner: string = DEFAULT_ALERT_OWNER,
+): Promise<Heartbeat> {
   const [runs, conns, targets, data, gino, xin] = await Promise.all([
     load.jobRuns(),
     load.bankConnections(),
@@ -92,7 +142,8 @@ export async function heartbeatFrom(load: Loader, now: Date, at: Date): Promise<
     })),
     quietDays,
     stuckReminders: stuck,
-    pushTargets: targets,
+    pushTargets: reachable(targets, alertOwner),
+    alertOwner,
   });
 }
 

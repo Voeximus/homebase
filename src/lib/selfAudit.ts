@@ -493,13 +493,21 @@ function onePaymentPerBillCycle(data: AppData): AuditCheck {
  * an opinion.
  *
  * ONE ASSUMPTION, stated because it is the only way this check can lie: it reads
- * whole-table sets, so it is exact only on a COMPLETE load. The app itself is fine
- * — the store selects every ledger row rather than a page. But `settledByTxnId`
+ * whole-table sets, so it is exact only on a COMPLETE load. `settledByTxnId`
  * points at another TRANSACTION, so any caller that hands this function a WINDOW
- * of the ledger (tests/live-selfaudit.test.ts takes the newest 2000 rows;
- * scripts/snapshot.mjs takes 500) can make an old credit look deleted. Today the
- * whole table fits inside both windows. The day it does not, either the window
- * goes or `settledByTxnId` does — a check that can be wrong does not belong here.
+ * of the ledger can make an old credit look deleted.
+ *
+ * This used to say the store "selects every ledger row rather than a page". That
+ * held only while the ledger was under 1,000 rows: the store ran one bare select,
+ * and PostgREST cuts a bare select off at 1,000 rows without a word (FOUND
+ * 2026-10-09 — 835 rows, about 4.2 more a day, so it would have crossed around
+ * 2026-11-17). The two windows named here were wrong already: scripts/snapshot.mjs
+ * took 500 rows of an 835-row ledger, and tests/live-selfaudit.test.ts took 2,000.
+ * Every caller now reads the WHOLE ledger, a page at a time in an order that ends
+ * on `id` — the stores through src/lib/pagedRead.ts, the snapshot and the live
+ * audit test through scripts/read-every-row.mjs, the Muse doors through
+ * _shared/muse/paging.ts. A new caller that hands this a window brings the lie
+ * back; page it instead.
  */
 /** One row carrying at least one id that names something no longer in the data. */
 export interface DanglingLink {
@@ -659,7 +667,35 @@ export const MONTHLY_ENVELOPE = 1600;
  * A bill with no paying account, or a charge with no account, is skipped: there is
  * nothing to disagree with.
  */
-function paidFromItsOwnAccount(data: AppData, now: Date): AuditCheck {
+/** One recent bill payment that came out of an account other than the one the bill
+ *  is paid from — check 9's offenders, as data rather than as a sentence. */
+export interface WrongAccountPayment {
+  /** The bill's own name, as the app shows it. */
+  bill: string;
+  /** The cycle the charge settles, "2026-09". */
+  monthKey: string;
+  /** The charge that settled it. */
+  date: string;
+  amount: number;
+  /** Who the money came out of, and who the bill is set to be paid by — the
+   *  account's owner label, or its name when it has no owner. */
+  paidFrom: string;
+  paysFrom: string;
+}
+
+/**
+ * The offenders behind check 9, as data.
+ *
+ * SPLIT OUT 2026-10-09, for the same reason danglingLinks was: a second caller needs
+ * the SAME resolution the check uses. The read door's finance.audit has to be able to
+ * say WHICH bill came out of the wrong account, and the check's own sentence can never
+ * reach it — the door only forwards an app sentence of 64 characters or fewer, and this
+ * one is always longer, so the door said "a recent bill was paid from the wrong
+ * account" and nothing else. The whole value of the check is in naming the bill. The
+ * door builds its own short sentence from these fields instead of re-deriving them,
+ * which is what a second implementation of "which payments are wrong" would be.
+ */
+export function paidFromWrongAccount(data: AppData, now: Date): WrongAccountPayment[] {
   const y = now.getFullYear();
   const m = now.getMonth(); // 0-based
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -669,17 +705,30 @@ function paidFromItsOwnAccount(data: AppData, now: Date): AuditCheck {
 
   const bills = new Map(data.recurring.map((r) => [r.id, r]));
   const owner = new Map(data.accounts.map((a) => [a.id, a.owner ?? a.name ?? "an account"]));
-  const offenders: string[] = [];
+  const out: WrongAccountPayment[] = [];
   for (const t of data.transactions) {
     const at = (t.appliesTo ?? null) as { kind?: string; recurringId?: string; monthKey?: string } | null;
     if (at?.kind !== "bill" || !at.recurringId || !at.monthKey || !recent.has(at.monthKey)) continue;
     const bill = bills.get(at.recurringId);
     if (!bill?.accountId || !t.accountId) continue;
     if (bill.accountId === t.accountId) continue;
-    offenders.push(
-      `${bill.name} ${at.monthKey} is settled by ${t.date} $${t.amount.toFixed(2)} from ${owner.get(t.accountId) ?? "another account"}, but it is paid from ${owner.get(bill.accountId) ?? "a different account"}`,
-    );
+    out.push({
+      bill: bill.name,
+      monthKey: at.monthKey,
+      date: t.date,
+      amount: t.amount,
+      paidFrom: owner.get(t.accountId) ?? "another account",
+      paysFrom: owner.get(bill.accountId) ?? "a different account",
+    });
   }
+  return out;
+}
+
+function paidFromItsOwnAccount(data: AppData, now: Date): AuditCheck {
+  const offenders = paidFromWrongAccount(data, now).map(
+    (p) =>
+      `${p.bill} ${p.monthKey} is settled by ${p.date} $${p.amount.toFixed(2)} from ${p.paidFrom}, but it is paid from ${p.paysFrom}`,
+  );
   return {
     id: "paid-from-its-own-account",
     question: "Was every recent bill paid from the account that pays it?",

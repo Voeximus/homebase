@@ -71,10 +71,20 @@ create table if not exists public.muse_undo (
   --   pending    written, the change is being attempted. If a row sits here, the
   --              door stopped mid-call and NOBODY KNOWS whether it landed. That is
   --              the honest report, and it is what handler.ts already says about a
-  --              crashed write: "we cannot prove nothing happened."
+  --              crashed write: "we cannot prove nothing happened." Since 2026-10-09
+  --              it is also where a write that FAILED stays, unless the door can show
+  --              nothing landed (next line): a fetch that died after the commit, a
+  --              refusal on the second row of a two-row write, or a refusal after the
+  --              tool had already inserted its new row.
   --   undoable   the change landed. This is what system.undo will act on.
   --   abandoned  the change was refused before anything was written — usually
   --              because the row had moved since it was read. Nothing happened.
+  --              Since 2026-10-09, also: Postgres refused the write's statement with
+  --              a code that proves it rolled back, nothing had been inserted first,
+  --              and no earlier statement in the same write had changed a row.
+  --              commit() in supabase/functions/muse-write/toolsFinance.ts holds the
+  --              rule and the 2026-09-27 json failure that prompted it. (Comment only:
+  --              the column and its check are unchanged.)
   --   undone     it landed and has since been put back.
   --
   -- The alternative was to write the row afterwards and delete it on failure, which

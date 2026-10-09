@@ -24,8 +24,9 @@ import { REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { todayISO } from "../lib/format";
 import { DEFAULT_CATEGORIES } from "../lib/seed";
-import { merchantKey } from "../lib/categorize";
+import { isStatementNoiseKey, merchantKey } from "../lib/categorize";
 import { SEED_ACCOUNTS, SEED_DEBTS, SEED_RECURRING } from "../lib/household";
+import { readEveryRow } from "../lib/pagedRead";
 import {
   type Food,
   loadCustomFoods,
@@ -215,6 +216,24 @@ function invalidate(m: TicketMap, ...tables: SyncTable[]): void {
 /** Trailing-edge window that folds a burst of realtime events into one refetch. */
 const REFETCH_DEBOUNCE_MS = 250;
 
+// ── the whole ledger ─────────────────────────────────────────────────────────
+// FOUND 2026-10-09: loadTransactions and resyncLedger each ran one bare
+// `select * from transactions`, and PostgREST cuts that off at 1,000 rows without
+// a word. 835 rows that day, about 4.2 more a day — so from around 2026-11-17
+// the app would have held only the newest 1,000, and import dedup, the Profile
+// self-check and every older month would have been working from part of the
+// ledger while looking complete. Both readers now go through this one paged read
+// (src/lib/pagedRead.ts), so they cannot disagree about what "the ledger" is.
+//
+// Newest first, as before; the paged read adds `id` as the last tiebreak.
+// It THROWS on failure rather than answering with an empty list — see each
+// caller for what it keeps instead.
+const readLedger = () =>
+  readEveryRow(supabase, "transactions", [
+    { column: "date", ascending: false },
+    { column: "created_at", ascending: false },
+  ]);
+
 export interface FinanceStore {
   data: AppData;
   loading: boolean;
@@ -342,13 +361,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     // guarded unmount, never staleness.
     async function loadTransactions() {
       const ticket = claimTicket(seq.current, "transactions");
-      const { data: rows } = await supabase
-        .from("transactions")
-        .select("*")
-        .order("date", { ascending: false })
-        .order("created_at", { ascending: false });
+      let rows: any[];
+      try {
+        rows = await readLedger();
+      } catch (e) {
+        // FOUND 2026-10-09: this used to keep `data` and throw `error` away, so any
+        // refetch that failed (say, the phone coming back to the foreground before
+        // it has signal, which refetches every table) came back as `null`, `?? []`
+        // made that an empty ledger, and every transaction vanished from every
+        // screen until a later refetch happened to land. The ledger already on
+        // screen is the last one the server confirmed; keep it, and say so.
+        console.error("loadTransactions failed — keeping the ledger already on screen", e);
+        return;
+      }
       if (active && isNewest(seq.current, "transactions", ticket)) {
-        setData((p) => ({ ...p, transactions: (rows ?? []).map(mapTxn) }));
+        setData((p) => ({ ...p, transactions: rows.map(mapTxn) }));
       }
     }
     async function loadDebts() {
@@ -387,17 +414,34 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (active && isNewest(seq.current, "recurring", ticket))
         setData((p) => ({ ...p, recurring: (rows ?? []).map(mapRecurring) }));
     }
+    // paid_bills and merchant_rules are paged for the same reason as the ledger
+    // (2026-10-09): neither has a ceiling. paid_bills gains a row per bill per
+    // month, and merchant_rules a row per merchant ever taught (88 that day) — and
+    // the import sheet treats a rule missing from this list as never learned. A
+    // failed read keeps what is on screen, like loadTransactions.
     async function loadPaidBills() {
       const ticket = claimTicket(seq.current, "paid_bills");
-      const { data: rows } = await supabase.from("paid_bills").select("*");
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "paid_bills");
+      } catch (e) {
+        console.error("loadPaidBills failed — keeping the paid marks already on screen", e);
+        return;
+      }
       if (active && isNewest(seq.current, "paid_bills", ticket))
-        setData((p) => ({ ...p, paidBills: (rows ?? []).map(mapPaidBill) }));
+        setData((p) => ({ ...p, paidBills: rows.map(mapPaidBill) }));
     }
     async function loadMerchantRules() {
       const ticket = claimTicket(seq.current, "merchant_rules");
-      const { data: rows } = await supabase.from("merchant_rules").select("*");
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "merchant_rules");
+      } catch (e) {
+        console.error("loadMerchantRules failed — keeping the rules already loaded", e);
+        return;
+      }
       if (active && isNewest(seq.current, "merchant_rules", ticket))
-        setData((p) => ({ ...p, merchantRules: (rows ?? []).map(mapMerchantRule) }));
+        setData((p) => ({ ...p, merchantRules: rows.map(mapMerchantRule) }));
     }
     async function loadFoods() {
       let ticket = claimTicket(seq.current, "foods");
@@ -596,7 +640,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const tDe = claimTicket(seq.current, "debts");
       const tGo = claimTicket(seq.current, "savings_goals");
       const [tx, ac, de, go] = await Promise.all([
-        supabase.from("transactions").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }),
+        // The SAME paged read as loadTransactions (2026-10-09). This was its own
+        // bare select, capped at 1,000 rows like the other one — and this is the
+        // recovery path, the read that is supposed to restore server truth.
+        readLedger().catch((e: unknown) => {
+          console.error("resyncLedger could not read the ledger — keeping the one on screen", e);
+          return null;
+        }),
         supabase.from("accounts").select("*").order("sort_order", { ascending: true }),
         supabase.from("debts").select("*").order("created_at", { ascending: true }),
         supabase.from("savings_goals").select("*").order("created_at", { ascending: true }),
@@ -604,7 +654,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       setData((p) => ({
         ...p,
         transactions:
-          tx.data && isNewest(seq.current, "transactions", tTx) ? tx.data.map(mapTxn) : p.transactions,
+          tx && isNewest(seq.current, "transactions", tTx) ? tx.map(mapTxn) : p.transactions,
         accounts:
           ac.data && isNewest(seq.current, "accounts", tAc) ? ac.data.map(mapAccount) : p.accounts,
         debts: de.data && isNewest(seq.current, "debts", tDe) ? de.data.map(mapDebt) : p.debts,
@@ -821,6 +871,22 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (rule.kind === "variable" && (rule.categoryId ?? "other") === "other") {
           console.warn(
             `saveMerchantRule: refusing to learn "Misc" for "${rule.pattern}" — that would stop the labeller trying on this merchant.`,
+          );
+          return;
+        }
+        // Never learn the BANK'S OWN WORDING as a merchant. FOUND 2026-10-09: a
+        // "CHECKCARD -> dining" rule saved from one tap on 2026-09-24 files every
+        // Bank of America card line with no clean name as dining, because
+        // merchantKey() reduces every such line to the literal word "CHECKCARD" —
+        // a rule on it is a rule on all of them, whoever was paid. The tap that
+        // made it came through here, with the Remember toggle on and nothing to
+        // say that the "merchant" on screen was the card prefix. Same backstop
+        // shape as the two above, and the same predicate the write door refuses
+        // with (isStatementNoiseKey in categorize.ts). Rules already saved are left
+        // exactly as they are; this only stops new ones.
+        if (isStatementNoiseKey(rule.pattern)) {
+          console.warn(
+            `saveMerchantRule: refusing to learn "${rule.pattern}" — that is the bank's statement wording, not a merchant, and a rule on it would catch every charge that carries it.`,
           );
           return;
         }
@@ -1198,11 +1264,20 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const monthKey = txn.date.slice(0, 7);
         // A clean display name (the real merchant), not the normalized key.
         const cleanName = (txn.description || "Subscription").trim().slice(0, 40);
+        // A charge whose name is only the BANK'S WORDING — "CHECKCARD 0628 AZ MVD
+        // FEE…" keys to the bare "CHECKCARD" — has no merchant to match on or to
+        // teach. FOUND 2026-10-09 with a "CHECKCARD -> dining" rule that files every
+        // card line with no clean name. So such a charge still becomes its own bill,
+        // but it neither reuses another bill by that key (it would attach to
+        // whichever unrelated charge was promoted first) nor teaches the key below.
+        const noMerchant = isStatementNoiseKey(key);
 
         // Reuse an existing active bill whose merchant matches (kills duplicates).
-        const existing = dataRef.current.recurring.find(
-          (r) => r.active && r.direction === "out" && merchantKey(r.name) === key,
-        );
+        const existing = noMerchant
+          ? undefined
+          : dataRef.current.recurring.find(
+              (r) => r.active && r.direction === "out" && merchantKey(r.name) === key,
+            );
         let recId = existing?.id;
         let billName = existing?.name ?? cleanName;
         if (!recId) {
@@ -1237,6 +1312,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           .from("transactions")
           .update({ applies_to: appliesTo, category_id: "subscriptions" })
           .eq("id", txnId);
+        if (noMerchant) {
+          console.warn(
+            `makeRecurringBill: not teaching "${key}" — that is the bank's statement wording, not a merchant.`,
+          );
+          return;
+        }
         await supabase
           .from("merchant_rules")
           .upsert({ pattern: key, kind: "bill", category_id: null, bill_name: billName }, { onConflict: "pattern" });

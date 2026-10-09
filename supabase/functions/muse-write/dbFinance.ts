@@ -34,6 +34,8 @@
 // Rule 5 is satisfied the same way db.ts satisfies it: every read below is a single
 // row, a count, or a list with a hard cap AND a count cross-check, so a read that
 // PostgREST silently truncated at 1,000 rows cannot be mistaken for a complete one.
+// The one exception to the cap, chargeNames, reads the whole ledger and so is PAGED
+// instead — in a stable order, until a short page, counted, and throwing on any gap.
 
 import type { UndoStep, UndoTable, UndoValue } from "../_shared/muse/undo.ts";
 import type { UndoRecord, UndoState } from "../_shared/muse/undo.ts";
@@ -92,6 +94,11 @@ export interface BillRow {
    *  nineteen were null, which is how "nothing is due" was true while the joint
    *  account was short of rent. */
   accountId: string | null;
+  /** Read for finance.set_bill_due_day, which has to know when a due day is NOT what
+   *  places the row: a biweekly row with an anchor date is laid out every 14 days from
+   *  the anchor (schedule.ts biweeklyDays), and its due_days are never read. */
+  cadence: string;
+  anchorDate: string | null;
 }
 
 /** Just enough of a bill to run the three guards that compare names. */
@@ -169,6 +176,54 @@ export interface ChangeInsert {
  *  is a different situation. */
 export const LIST_CAP = 500;
 
+/**
+ * The database answered, and its answer was "no": Postgres refused this one statement
+ * with an error code, so the transaction PostgREST wrapped it in was rolled back and
+ * nothing from THIS statement landed.
+ *
+ * WHY A FAILURE NEEDS TO SAY WHICH KIND IT IS. FOUND 2026-10-09, in review. commit() in
+ * toolsFinance.ts had just learned to mark a change row `abandoned` when its write threw
+ * — and `abandoned` tells him "this did not go through, there is nothing to put back".
+ * But a throw on its own does not prove that. A fetch that dies after PostgREST has
+ * committed comes back as an error too, and before this class every failure reached
+ * commit() as the same bare Error, so the two could not be told apart: a write that had
+ * LANDED would have been reported as one that never happened, with its undo made
+ * unreachable. Only an error that carries a Postgres code says the statement itself was
+ * refused; everything else is "nobody knows", which is what `pending` is for.
+ */
+export class StatementRefused extends Error {
+  /** The SQLSTATE Postgres answered with — 22P02 is the 2026-09-27 json bug. */
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "StatementRefused";
+    this.code = code;
+  }
+}
+
+/**
+ * Does this error code PROVE the statement rolled back? Only a Postgres SQLSTATE does,
+ * and not every one of those:
+ *
+ *   five characters, digits and capitals   a SQLSTATE — the statement ran and Postgres
+ *                                          refused it, so its transaction did not commit.
+ *   PGRST…                                 PostgREST's own codes. Eight characters, so
+ *                                          they fail the shape check — some of them are
+ *                                          about the response, after the work was done.
+ *   class 08 (connection exception)        the link to Postgres broke; whether the
+ *                                          statement committed is exactly what is unknown.
+ *   40003 (statement_completion_unknown)   Postgres's own word for "nobody knows".
+ *   empty or missing                       a transport failure — supabase-js reports a
+ *                                          failed fetch with no code at all. The write may
+ *                                          have landed and its answer been lost.
+ */
+export function provesRolledBack(code: unknown): code is string {
+  if (typeof code !== "string" || !/^[0-9A-Z]{5}$/.test(code)) return false;
+  if (code.startsWith("08")) return false;
+  if (code === "40003") return false;
+  return true;
+}
+
 export interface FinanceDb {
   // ── reads ─────────────────────────────────────────────────────────────────
   readCharge(id: string): Promise<ChargeRow | null>;
@@ -187,6 +242,23 @@ export interface FinanceDb {
   billPayments(recurringId: string): Promise<BillPaymentRow[]>;
   /** How many charges point at this debt. Only ever compared against zero. */
   countDebtPayments(debtId: string): Promise<number>;
+
+  /**
+   * The cleaned name — `description`, NEVER `raw_description` — of every charge in the
+   * ledger (money out), for the one question finance.learn_merchant asks of it: does
+   * any charge actually carry the key this rule is about to be saved under?
+   *
+   * WHY IT IS THE WHOLE LEDGER. A learned rule is an EXACT lookup on merchantKey()
+   * (learnedFor in categorize.ts), and the key is the app's own derivation from the
+   * name — so the only way to know whether a rule will ever fire is to derive the key
+   * from every name and look. A filter in the database cannot do that derivation.
+   *
+   * Paged in a stable total order (date, then id) and counted on the same filter, and
+   * it THROWS rather than returning part of the ledger. A short read here would make
+   * the door tell him "this rule matches nothing yet" about a rule that matches
+   * charges it simply did not read.
+   */
+  chargeNames(): Promise<string[]>;
 
   /**
    * Every bank connection's two time columns, and NOTHING else.
@@ -246,6 +318,21 @@ export interface FinanceDb {
   reverseMoneyEvent(id: string): Promise<"ok" | "moved">;
   /** restore_money_event. "moved" when a row with that id is already back. */
   restoreMoneyEvent(row: Record<string, UndoValue>): Promise<"ok" | "moved">;
+
+  /**
+   * How many ledger statements on this connection have CHANGED a row — counted when one
+   * resolves having done so: an insert, an "ok" update or delete, a money event. A
+   * compare-and-set that matched nothing ("moved") changed nothing and is not counted;
+   * nor is the change log itself (recordChange, setChangeState), which is the record of
+   * a change and not one.
+   *
+   * It exists for one reader. commit() in toolsFinance.ts reads it before and after a
+   * write that throws, because a tool that writes two rows can fail on the second, and
+   * "the database refused this statement" is then only half the story: the first row
+   * is in. A connection is made per request (index.ts builds a fresh one for every
+   * call), so the count is this call's and no one else's.
+   */
+  writesLanded(): number;
 
   // ── the change log ────────────────────────────────────────────────────────
   /** Write the 'pending' row that holds the token and the inverse, BEFORE the

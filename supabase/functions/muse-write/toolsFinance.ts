@@ -46,6 +46,9 @@
 //   · never learn "other"/Misc as a merchant rule              (FinanceStore 819-826)
 //   · one payment per bill cycle, via cycleKeyOf               (reviewApply 245-270)
 //   · never delete the bank's own row, or an imported record   (reviewApply 178-186)
+// A fifth, added 2026-10-09, is NOT re-stated, because it was written to be shared:
+// never learn the bank's own wording ("CHECKCARD", "ZELLE TRANSFER") as a merchant.
+// That one is isStatementNoiseKey in categorize.ts, and the app imports the same one.
 //
 // AND THE THING THIS FILE STILL DOES NOT DO: ARITHMETIC. Adding a charge goes down
 // the app's own apply_money_event, which clamps the debt paydown and stamps the
@@ -58,13 +61,13 @@ import { UNDO_REGISTRY } from "./undoRegistry.ts";
 // A type-only import above, and this one from _shared: tools.ts imports THIS file's
 // registry as a value, so anything imported back out of it would close a runtime cycle.
 import { UUID } from "../_shared/muse/args.ts";
-import type { BillRow, ChargeRow, FinanceDb } from "./dbFinance.ts";
+import { StatementRefused, type BillRow, type ChargeRow, type FinanceDb } from "./dbFinance.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 // The cooldown, and the sentences that explain it, shared with the read door's
 // freshness stamp so "too soon" has one definition rather than two.
 import { REFRESH_TICK_MIN, refreshDecision } from "../_shared/muse/freshness.ts";
-import { scrubCap } from "../_shared/muse/scrub.ts";
-import { merchantKey } from "../_shared/muse/lib/categorize.ts";
+import { scrub, scrubCap, scrubOr } from "../_shared/muse/scrub.ts";
+import { isStatementNoiseKey, merchantKey } from "../_shared/muse/lib/categorize.ts";
 import { cycleKeyOf } from "../_shared/muse/lib/selfAudit.ts";
 import { DUE_DAYS } from "../_shared/muse/lib/schedule.ts";
 import { DEFAULT_CATEGORIES } from "../_shared/muse/lib/seed.ts";
@@ -155,6 +158,12 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 // ── the commit, which is the whole of the undo contract ──────────────────────
 
+/** What undoing a finance change does, said the same way for every one of them. The
+ *  specific sentence — what was changed — is the summary he was just told; this is the
+ *  other half, and its condition is the real one: every step is a compare-and-set, so
+ *  the undo refuses rather than overwriting something changed since. */
+const RECORDED_SAYS = "put this back the way it was, unless something has changed it since";
+
 /**
  * Record the inverse, make the change, say what happened.
  *
@@ -166,8 +175,43 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
  *   every write lands  → `undoable`, and he gets the token
  *   a write reports "moved" (the row changed since it was read) → `abandoned`,
  *                        and NOTHING was written
+ *   a write THROWS, and the door can show nothing landed → `abandoned` too, and the
+ *                        error goes on to handler.ts, which answers 500 and keeps the
+ *                        reason in the audit row
+ *   a write THROWS any other way → the row stays `pending`, error rethrown the same
  *   the door dies      → the row stays `pending`, and system.changes says plainly
  *                        that it cannot prove what happened
+ *
+ * THE THROWN CASE WAS MISSING UNTIL 2026-10-09, and it is not hypothetical. Two
+ * finance.settle_reimbursable calls on 2026-09-27 failed on `invalid input syntax for
+ * type json` (the compare-and-set handing Postgres "[object Object]" — expectParts.ts
+ * has that story). The exception went straight past the state change below, so both
+ * change rows stayed `pending`, and system.changes still reads them out as "I started
+ * this and could not confirm it finished" — about two writes the database refused
+ * outright. Those two old rows are left exactly as they are: this changes what the door
+ * writes from now on, not the history.
+ *
+ * "CAN SHOW NOTHING LANDED" IS THREE THINGS, ALL REQUIRED. The first version of this fix
+ * (same day) marked the row `abandoned` on ANY throw, and review caught what that says:
+ * "this did not go through, there is nothing for me to put back" — and a throw does not
+ * prove that. So, together:
+ *
+ *   1. The error is a StatementRefused: Postgres answered with a code that proves the
+ *      statement rolled back (dbFinance.ts). A failed fetch is NOT one — PostgREST may
+ *      have committed and the answer been lost on the way back.
+ *   2. No row was INSERTED before this was called. An insert has to land before commit()
+ *      runs (see below — there is no row to delete until it exists), and its inverse is
+ *      the step that says so: `delete_row`, or `reverse_money_event` for a cash charge.
+ *      promote_to_bill is the case: it inserts the bill and the merchant rule, then its
+ *      write() sets transactions.applies_to — the very column the json bug was on. Had
+ *      that failed, `abandoned` would have said nothing landed while a new bill and a new
+ *      rule were live, and the delete_row steps that remove them would be unreachable.
+ *   3. No earlier statement inside write() changed a row. settle_reimbursable writes the
+ *      charge and then the deposit; a refusal on the deposit leaves the charge written.
+ *      db.writesLanded() is read before write() and again at the throw.
+ *
+ * Anything short of all three leaves `pending`, which is the true state: something may
+ * be in, and system.changes tells him to check the app rather than guessing either way.
  *
  * The middle case is why every write in this file is a compare-and-set. The app
  * writes blind and gets away with it because a human is looking at the row; an
@@ -199,6 +243,14 @@ async function commit(
     steps: UndoStep[];
     /** One plain sentence, in the past tense, said to him and stored in the log. */
     summary: string;
+    /**
+     * A warning about the state the change leaves behind, said right after the summary
+     * and NOT stored in the log. Added 2026-10-09 for learn_merchant's "this rule
+     * matches no charge yet": that is true at the moment of saying it and stops being
+     * true the day a matching charge arrives, so it belongs in the reply and not in
+     * the permanent record of what changed. Must already be scrubbed.
+     */
+    note?: string;
     /** Anything else worth putting in the structured reply. */
     result?: Record<string, unknown>;
     /** The rows this touched, for muse_audit's row_ids column. */
@@ -227,7 +279,33 @@ async function commit(
   const token = mintToken((into) => crypto.getRandomValues(into));
   await db.recordChange({ token, person: ctx.person, tool, summary, steps });
 
-  const refusal = await plan.write();
+  // Point 2 above: an insert-first tool has already changed the ledger by now.
+  const insertedFirst = steps.some((s) => s.kind === "delete_row" || s.kind === "reverse_money_event");
+  // Point 3: read again at a throw. Anything that moved it changed a row.
+  const landedBefore = db.writesLanded();
+
+  let refusal: Refusal | void;
+  try {
+    refusal = await plan.write();
+  } catch (e) {
+    // Closed off only when nothing can have landed, then rethrown either way. The
+    // rethrow is what keeps handler.ts's 500 and the statement-level reason in the audit
+    // row — which is how the json bug was found. If closing the row fails too, the
+    // original error is the one worth reporting, so that second failure is logged and
+    // swallowed; the row then stays `pending`, which is still a true thing to say.
+    const nothingLanded =
+      e instanceof StatementRefused && !insertedFirst && db.writesLanded() === landedBefore;
+    if (nothingLanded) {
+      try {
+        await db.setChangeState(token, "abandoned", {});
+      } catch (stateErr) {
+        console.error("muse-write: could not close the change row for", tool, String((stateErr as Error)?.message ?? stateErr));
+      }
+    } else {
+      console.error("muse-write: left the change row pending — part of", tool, "may have landed");
+    }
+    throw e;
+  }
   if (refusal) {
     await db.setChangeState(token, "abandoned", {});
     return refusal;
@@ -241,7 +319,14 @@ async function commit(
     // The token in the sentence, not only in the JSON: the sentence is what an
     // assistant repeats, and "say undo and I will put it back" is useless if the
     // handle is only in a field it decided not to read.
-    say: `${summary} Say "undo ${token}" and I will put it back.`,
+    say: `${summary}${plan.note ? ` ${plan.note}` : ""} Say "undo ${token}" and I will put it back.`,
+    // AND IN THE ENVELOPE. FOUND 2026-10-09: finance.set_bill_amount handed back a
+    // token in result.undo, naming a real undoable row, while the envelope beside it
+    // said `undo: null` and "Nothing was written down that could put this back."
+    // handler.ts only knew about a record IT would write, and this row is already
+    // written. `recorded` is how a tool says "the change is in muse_undo under this
+    // token" — see kit.ts.
+    recorded: { token, says: RECORDED_SAYS },
   };
 }
 
@@ -391,11 +476,13 @@ async function oneRow(
   before: Record<string, UndoValue>,
   summary: string,
   result?: Record<string, unknown>,
+  note?: string,
 ): Promise<ToolOutcome> {
   const db = ctx.db as FinanceDb;
   return commit(ctx, tool, {
     steps: [{ kind: "set_columns", table: target.table, id: target.id, before, after: patch }],
     summary,
+    note,
     result: { ...(result ?? {}), id: target.id },
     rowIds: [target.id],
     async write() {
@@ -875,11 +962,31 @@ const setBillAmount: Tool = {
       { table: "recurring", id: bill.id },
       { amount },
       { amount: bill.amount },
-      `${name} is now ${dollars(amount)} a time, up from ${dollars(bill.amount)}.`,
+      `${name} is now ${dollars(amount)} a time, ${movedFrom(bill.amount, amount)}.`,
       { column: "amount", was: bill.amount },
     );
   },
 };
+
+/**
+ * "up from $X", "down from $X", or "the same as before" — which way a figure moved.
+ *
+ * FOUND 2026-10-09: finance.set_bill_amount lowered a bill and said "up from" the old
+ * price. The sentence hardcoded "up from", so every decrease was announced as an
+ * increase — and the sentence is the part an assistant reads out, so a bill that had
+ * gone DOWN was reported as going up, with the two numbers in the same breath saying
+ * otherwise.
+ * Compared in cents, like the split check above, because two two-decimal numbers are not
+ * exactly two-decimal numbers. That is also why the "same" arm exists: the refusal above
+ * compares exactly, so two figures that differ only by float noise get through it, and
+ * "down from $0.30" about $0.30 would be the same lie in the other direction.
+ */
+function movedFrom(was: number, now: number): string {
+  const cents = (n: number) => Math.round(n * 100);
+  if (cents(now) > cents(was)) return `up from ${dollars(was)}`;
+  if (cents(now) < cents(was)) return `down from ${dollars(was)}`;
+  return "the same as before";
+}
 
 // ── finance.set_flow ─────────────────────────────────────────────────────────
 //
@@ -983,6 +1090,87 @@ const setBillAccount: Tool = {
       { account_id: bill.accountId ?? null },
       `${scrubCap(bill.name, 36)} comes out of ${scrubCap(account.owner, 12)}'s ${scrubCap(account.name, 30)}.`,
       { column: "account_id", was: bill.accountId ?? null },
+    );
+  },
+};
+
+// ── finance.set_bill_due_day ─────────────────────────────────────────────────
+//
+// Which day of the month a bill actually comes out.
+//
+// FOUND 2026-10-09: NOTHING COULD MOVE ONE. T-Mobile's row says the 29th; the charge
+// landed on the 14th in July, August and September. The calendar (schedule.ts) places a
+// bill on its due days, and "what is due before the next paycheck" reads the calendar —
+// so with the paychecks on the 15th and the 31st, a bill that really leaves on the 14th
+// was being counted against the wrong check. The app has no screen that edits due_days
+// either; it is written once, when a bill is made. Modelled on set_bill_amount and
+// set_bill_account: one row, one column, compare-and-set, and an undo.
+//
+// ONE DAY ONLY — A BILL WITH SEVERAL DUE DAYS IS REFUSED, AND THAT IS A DECISION. A row
+// with two due days is paid in installments: schedule.ts puts `monthly / dueDays.length`
+// on each day, and cycleKeyOf() decides WHICH installment a payment settled by finding
+// the due day nearest the payment's own day. Mom is [15, 30] — $300 a month as two
+// payments of $150. A single `due_day` cannot say which of the two to move; replacing
+// both with one would double each calendar entry and fold two installments into one
+// cycle, so a month already paid in two parts could read as one cycle paid twice. Moving a
+// single-day bill has none of that: with one due day every payment is installment 0
+// whatever day it carries, so past payments keep settling exactly the cycles they did.
+//
+// A biweekly row with an anchor date is refused too, for a different reason: its dates
+// come every 14 days from the anchor and its due days are never read, so writing one
+// would be a change that changes nothing — the failure set_bill_amount's comment warns
+// about, of a fix that reads as done and did nothing.
+const setBillDueDay: Tool = {
+  kind: "direct",
+  does: "Move a bill to the day of the month it actually comes out. Only for a bill that comes out on one day a month.",
+  fields: ["bill_id", "due_day"],
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const id = idArg(payload.bill_id, "the bill");
+    if (isRefusal(id)) return id;
+    const day = payload.due_day;
+    if (typeof day !== "number" || !Number.isInteger(day) || day < 1 || day > 31) {
+      return refuse(400, "The due day is a whole number from 1 to 31.");
+    }
+    const bill = await db.readBill(id);
+    if (!bill) return refuse(404, "There is no bill with that id.");
+    const name = scrubCap(bill.name, 40) || "That bill";
+
+    if (bill.cadence === "biweekly" && bill.anchorDate) {
+      return refuse(
+        409,
+        `${name} comes every two weeks, counted from its first date, so a day of the month is not what places it. There is nothing for a due day to move.`,
+      );
+    }
+
+    // The days the calendar uses TODAY: the row's own, or — for a row made before
+    // due_days was stored — the app's legacy map, exactly as schedule.ts and
+    // link_charge_to_bill read it. Judged on what is in force, not only on the column.
+    const stored = bill.dueDays?.length ? bill.dueDays : null;
+    const inForce = stored ?? (DUE_DAYS[bill.name]?.length ? DUE_DAYS[bill.name] : null);
+    if (inForce && inForce.length > 1) {
+      return refuse(
+        409,
+        `${name} is paid in ${inForce.length} parts, on days ${inForce.join(" and ")}. One day cannot say which part to move, and folding them into one would change which payment counts for which part — so I only move a bill that comes out on one day.`,
+      );
+    }
+    if (stored && stored[0] === day) return refuse(409, `${name} is already due on day ${day}.`);
+
+    const was = inForce ? inForce[0] : null;
+    return oneRow(
+      ctx,
+      "finance.set_bill_due_day",
+      { table: "recurring", id: bill.id },
+      { due_days: [day] },
+      // The STORED value, not the one in force: the compare-and-set and the undo are
+      // about the column, and a row that held null must get null back.
+      { due_days: bill.dueDays },
+      was === null
+        ? `${name} is now due on day ${day} of the month. It had no due day before.`
+        : was === day
+          ? `${name} is now due on day ${day} of the month, stored on the bill itself.`
+          : `${name} is now due on day ${day} of the month, moved from day ${was}.`,
+      { column: "due_days", was: bill.dueDays, now: [day] },
     );
   },
 };
@@ -1144,19 +1332,78 @@ const addBill: Tool = {
 // A LEARNED RULE BEATS EVERY BUILT-IN RULE, so a wrong one re-teaches the feed
 // permanently. Both of the app's backstops are ported, and both exist because the
 // failure had already happened.
+//
+// AND A RULE ONLY MATCHES THE WHOLE KEY. FOUND 2026-10-09. A learned rule is an exact
+// lookup on merchantKey() of the charge's name (learnedFor in categorize.ts) — not a
+// prefix, not a search. On 10-05 this tool was taught "FIRESTONE", replied "Taught the
+// app…", and saved a rule that could never fire: the charge it was about reads
+// "FIRESTONE COMPLETE AUTO CARE". Eight of the 88 saved rules on 10-09 matched no
+// charge in the ledger at all. The matching is
+// right and stays as it is — a prefix rule on "FIRE" would be the CHECKCARD problem
+// below with a different word. What was wrong was the door saying "taught" about a
+// rule it had no way of knowing would match.
+//
+// So two things changed. The key can come FROM THE CHARGE — `transaction_id` reads the
+// charge's own name and derives the key from it with the app's own function, so the
+// key is the one the labeller will compute and cannot be mistyped. And every save now
+// counts how many charges in the ledger carry exactly that key, says the number, and
+// when it is zero says so plainly, with the nearest real keys that start with what was
+// typed.
+//
+// AND A RULE ON THE BANK'S OWN WORDING CAPTURES EVERYTHING. A "CHECKCARD -> dining"
+// rule, saved from one tap in the app on 2026-09-24, files every Bank of America card
+// line with no clean name as dining. Refused here, in the app, and in promote_to_bill,
+// all through one predicate (isStatementNoiseKey in categorize.ts).
 const learnMerchant: Tool = {
   kind: "direct",
-  does: "Teach the app what a merchant is, so future charges label themselves.",
-  fields: ["merchant", "kind", "category_id", "bill_name"],
+  does: "Teach the app what a merchant is, so future charges label themselves. Give the charge's transaction_id and the name is read off the charge exactly.",
+  fields: ["merchant", "transaction_id", "kind", "category_id", "bill_name"],
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const typed = scrubCap(payload.merchant, 60);
-    if (!typed) return refuse(400, "Tell me the merchant, as it reads on the charge.");
-    // Normalised with the app's own function, so the door's rule lands in the same
-    // key space the labeller reads. A rule written under a raw descriptor would
-    // simply never match anything.
-    const pattern = merchantKey(typed);
-    if (!pattern) return refuse(400, "There was nothing left of that merchant name once it was normalised.");
+    const typed = payload.merchant === undefined ? "" : scrubCap(payload.merchant, 60);
+
+    // WHERE THE KEY COMES FROM. A charge, when one is named — its `description`, the
+    // clean name, never the raw bank line — or else what was typed. Either way it is
+    // normalised with the app's own function, so the door's rule lands in the same key
+    // space the labeller reads. A rule written under a raw descriptor would simply
+    // never match anything.
+    let pattern: string;
+    let fromCharge = false;
+    if (payload.transaction_id !== undefined) {
+      const id = idArg(payload.transaction_id, "the charge");
+      if (isRefusal(id)) return id;
+      const t = await db.readCharge(id);
+      if (!t) return refuse(404, "There is no charge with that id.");
+      pattern = merchantKey(t.description);
+      if (!pattern) return refuse(400, "I cannot work out a merchant from that charge's name.");
+      fromCharge = true;
+      // Both given and they disagree: the id is probably the wrong charge. "FIRESTONE"
+      // against "FIRESTONE COMPLETE AUTO CARE" is the case this exists for and is
+      // fine — the charge's whole name wins. "SAFEWAY" against it is not.
+      const typedKey = typed ? merchantKey(typed) : "";
+      if (typedKey && !pattern.startsWith(typedKey)) {
+        return refuse(
+          409,
+          `That charge reads ${scrubOr(pattern, "as something else", 60)}, not ${typed}. Check the id — or leave merchant out and I will use the charge's own name.`,
+        );
+      }
+    } else {
+      if (!typed) {
+        return refuse(400, "Tell me the merchant, as it reads on the charge — or give me the charge's transaction_id and I will read the name off it.");
+      }
+      pattern = merchantKey(typed);
+      if (!pattern) return refuse(400, "There was nothing left of that merchant name once it was normalised.");
+    }
+    // What is said back. From a charge it is the charge's own key, which came out of
+    // the database and so goes through the cleaner like every other string out.
+    const name = fromCharge ? scrubOr(pattern, "that merchant", 60) : typed;
+
+    if (isStatementNoiseKey(pattern)) {
+      return refuse(
+        400,
+        `${name} is how the bank labels a kind of charge, not a merchant. A rule on it would catch every charge the bank labels that way, whoever was paid, so I will not teach it. Put the charge in a category on its own instead.`,
+      );
+    }
 
     const kind = payload.kind;
     if (kind !== "variable" && kind !== "bill" && kind !== "skip") {
@@ -1198,26 +1445,66 @@ const learnMerchant: Tool = {
       if (isBill) {
         return refuse(
           409,
-          `${typed} is one of your bills. Teaching it as ${kind === "skip" ? "something to skip" : "ordinary spending"} would make the app stop treating its payments as bill payments.`,
+          `${name} is one of your bills. Teaching it as ${kind === "skip" ? "something to skip" : "ordinary spending"} would make the app stop treating its payments as bill payments.`,
         );
       }
     }
 
+    const existing = await db.readMerchantRule(pattern);
+    if (existing && existing.kind === kind && existing.categoryId === categoryId && existing.billName === billName) {
+      return refuse(409, `The app already knows that about ${name}.`);
+    }
+
+    // DOES ANY CHARGE CARRY THIS KEY? Read BEFORE anything is written, through the paged
+    // read in dbFinanceSupabase.ts, which throws rather than answering from part of the
+    // ledger — so a ledger that cannot be read cleanly saves no rule at all, and the
+    // handler says something went wrong. The key of every charge is derived with the
+    // app's own merchantKey(), the same call learnedFor() makes when it looks a rule up.
+    const near = new Map<string, number>();
+    let matchesNow = 0;
+    for (const chargeName of await db.chargeNames()) {
+      const key = merchantKey(chargeName);
+      if (key === pattern) matchesNow += 1;
+      else if (key.startsWith(pattern)) near.set(key, (near.get(key) ?? 0) + 1);
+    }
+    // The nearest real keys: the fewest extra characters beyond what was typed, then
+    // the most charges. A suggestion is only offered if the cleaner says it back
+    // EXACTLY, character for character — "SAMS CLUB.COM" cleans to "SAMS" because
+    // ".COM" reads as a link, and a key merchantKey() cut at 28 characters can end in
+    // a space the cleaner trims. Either way, typing the suggestion back would teach
+    // the next rule that matches nothing. Noise keys are never offered; they would only
+    // be refused.
+    const closest = [...near.entries()]
+      .filter(([key]) => !isStatementNoiseKey(key))
+      .sort((a, b) => a[0].length - b[0].length || b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([key]) => ({ key, said: scrub(key, 60) }))
+      .filter((k): k is { key: string; said: string } => k.said === k.key)
+      .slice(0, 3)
+      .map((k) => k.said);
+    // Through the cleaner as a whole as well as piece by piece, so "which strings out
+    // were scrubbed" is never a judgement call made line by line.
+    const note = matchesNow > 0
+      ? undefined
+      : scrubCap(
+          `But no charge in the ledger reads exactly ${name} yet, so this rule matches nothing today — a rule only matches the whole name as it reads on the charge.` +
+            (closest.length
+              ? ` Charges that start with it read: ${closest.join("; ")}. Teach one of those, or give me the charge's transaction_id and I will read its name off it.`
+              : " Give me the charge's transaction_id and I will read its name off it."),
+          480,
+        );
+
     const said =
       kind === "variable"
-        ? `Taught the app that ${typed} is ordinary ${categoryId} spending.`
+        ? `Taught the app that ${name} is ordinary ${categoryId} spending.`
         : kind === "bill"
-          ? `Taught the app that ${typed} pays ${billName}.`
-          : `Taught the app to drop ${typed} from the ledger entirely.`;
+          ? `Taught the app that ${name} pays ${billName}.`
+          : `Taught the app to drop ${name} from the ledger entirely.`;
     // This does NOT relabel existing rows, and neither does the app's own rule — so
     // the undo is complete: putting the rule back the way it was is the whole of it.
     const tail = " It does not change any charge already in the ledger, only the ones that come next.";
+    const merchant = scrubOr(pattern, "(a merchant key I cannot say safely)", 60);
 
-    const existing = await db.readMerchantRule(pattern);
     if (existing) {
-      if (existing.kind === kind && existing.categoryId === categoryId && existing.billName === billName) {
-        return refuse(409, `The app already knows that about ${typed}.`);
-      }
       return oneRow(
         ctx,
         "finance.learn_merchant",
@@ -1227,7 +1514,8 @@ const learnMerchant: Tool = {
         { kind, category_id: categoryId, bill_name: billName },
         { kind: existing.kind, category_id: existing.categoryId, bill_name: existing.billName },
         said + tail,
-        { merchant: pattern, replaced: existing.kind },
+        { merchant, replaced: existing.kind, matches_now: matchesNow, closest },
+        note,
       );
     }
 
@@ -1240,7 +1528,8 @@ const learnMerchant: Tool = {
     return commit(ctx, "finance.learn_merchant", {
       steps: [{ kind: "delete_row", table: "merchant_rules", id, after: { kind } }],
       summary: said + tail,
-      result: { id, merchant: pattern, kind },
+      note,
+      result: { id, merchant, kind, matches_now: matchesNow, closest },
       rowIds: [id],
       write: () => Promise.resolve(),
     });
@@ -1631,10 +1920,22 @@ const promoteToBill: Tool = {
     const month = t.date.slice(0, 7);
     const cleanName = scrubCap(t.description, 40) || "Subscription";
 
+    // A CHARGE WHOSE NAME IS ONLY THE BANK'S WORDING. FOUND 2026-10-09: a card line with
+    // no clean name keys to the bare word "CHECKCARD", and the live rules table already
+    // holds "CHECKCARD -> dining", which files every such line as dining. Promoting one
+    // of those charges used to do worse: it would REWRITE that rule into a bill rule, so
+    // every card line with no clean name would settle this bill — and the dedupe below
+    // would attach the charge to whichever unrelated bill happened to key to the same
+    // word. So for such a charge the bill is still made and the charge still attached,
+    // exactly as asked, but nothing is reused by that key and nothing is taught. The
+    // app's makeRecurringBill does the same, through the same predicate.
+    const noMerchant = isStatementNoiseKey(key);
+
     // Reuse an existing active bill whose merchant matches — the app's own dedupe,
     // which is what stops this spawning a copy every time it is asked.
-    const bills = await db.allBillNames();
-    const existing = bills.find((b) => b.active && b.direction === "out" && merchantKey(b.name) === key);
+    const existing = noMerchant
+      ? undefined
+      : (await db.allBillNames()).find((b) => b.active && b.direction === "out" && merchantKey(b.name) === key);
 
     const steps: UndoStep[] = [];
     let billId: string;
@@ -1671,9 +1972,13 @@ const promoteToBill: Tool = {
       after: { applies_to: applies, category_id: "subscriptions" },
     });
 
-    const rule = await db.readMerchantRule(key);
-    let ruleId: string;
-    if (rule) {
+    // Not read at all for a noise key: an existing rule on that word is exactly the one
+    // this must not rewrite, and what happens to it is Gino's call.
+    const rule = noMerchant ? null : await db.readMerchantRule(key);
+    let ruleId: string | null = null;
+    if (noMerchant) {
+      // Nothing taught; see above.
+    } else if (rule) {
       ruleId = rule.id;
       steps.push({
         kind: "set_columns",
@@ -1695,11 +2000,19 @@ const promoteToBill: Tool = {
     const ruleRow = rule;
     return commit(ctx, "finance.promote_to_bill", {
       steps,
-      summary: existing
-        ? `Attached the ${dollars(t.amount)} charge from ${t.date} to the ${scrubCap(billName, 40)} bill you already have, and taught the app that merchant pays it.`
-        : `Made ${scrubCap(billName, 40)} a ${cadence} bill of ${dollars(t.amount)} due on day ${day}, attached this charge to it, and taught the app to recognise the merchant.`,
-      result: { bill_id: billId, charge_id: t.id, rule_id: ruleId, reused_existing_bill: !!existing },
-      rowIds: [billId, t.id, ruleId],
+      summary: noMerchant
+        ? `Made ${scrubCap(billName, 40)} a ${cadence} bill of ${dollars(t.amount)} due on day ${day} and attached this charge to it. I did not teach the app the merchant: the charge's name is the bank's own wording, and a rule on it would catch every charge that carries it.`
+        : existing
+          ? `Attached the ${dollars(t.amount)} charge from ${t.date} to the ${scrubCap(billName, 40)} bill you already have, and taught the app that merchant pays it.`
+          : `Made ${scrubCap(billName, 40)} a ${cadence} bill of ${dollars(t.amount)} due on day ${day}, attached this charge to it, and taught the app to recognise the merchant.`,
+      result: {
+        bill_id: billId,
+        charge_id: t.id,
+        rule_id: ruleId,
+        reused_existing_bill: !!existing,
+        taught_merchant: !noMerchant,
+      },
+      rowIds: ruleId ? [billId, t.id, ruleId] : [billId, t.id],
       async write() {
         if (
           (await db.setColumns(
@@ -1945,6 +2258,7 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.set_bill_amount": setBillAmount,
   "finance.set_flow": setFlow,
   "finance.set_bill_account": setBillAccount,
+  "finance.set_bill_due_day": setBillDueDay,
   "finance.turn_bill_off": turnBillOff,
   "finance.set_bill_window": setBillWindow,
   "finance.add_bill": addBill,

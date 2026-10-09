@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { selfAudit } from "../src/lib/selfAudit";
 import { DEFAULT_CATEGORIES } from "../src/lib/seed";
 import type { AppData } from "../src/types";
+import { readEveryRowSql } from "../scripts/read-every-row.mjs";
 
 // Runs the self-audit against the REAL household data.
 //
@@ -34,9 +35,15 @@ describe.skipIf(!PAT)("self-audit against LIVE data", () => {
     // Deliberately mirrors the store's mappers rather than importing them —
     // FinanceStore.tsx is a React module and cannot be loaded headlessly. Keep
     // these field lists in step with mapTxn / mapRecurring.
+    //
+    // The WHOLE ledger, paged (2026-10-09). This was "the newest 2000", and the
+    // links check reads whole-table sets — a payback credit older than the window
+    // looks deleted — so once the ledger passed 2,000 a perfectly good link to an
+    // older credit would have failed this test. Paged in a total order ending on
+    // id; see scripts/read-every-row.mjs.
     const [rec, txs, debts, accts, rules] = await Promise.all([
       q("select * from recurring"),
-      q("select * from transactions order by date desc limit 2000"),
+      readEveryRowSql((sql: string) => q(sql), { table: "transactions", orderBy: "date desc" }),
       q("select * from debts"),
       q("select * from accounts"),
       q("select * from merchant_rules"),

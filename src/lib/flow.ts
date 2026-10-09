@@ -88,7 +88,7 @@ export function ownAccountsFrom(accounts: readonly Account[]): OwnAccounts {
 /**
  * The bank's confirmation code for a transfer, if the descriptor carries one.
  *
- * "Zelle Transfer CONF# YOMIM8KBL; GIO" and "Zelle Transfer Conf# YOMIM8KBL; XINYAN LI"
+ * "Zelle Transfer CONF# TESTPAIR1; GIO" and "Zelle Transfer Conf# TESTPAIR1; XINYAN LI"
  * are the TWO HALVES OF ONE TRANSFER, and the code is the only thing in either row that
  * says so. The literal word "conf" is required rather than matching any long token: an
  * account number or an order reference would otherwise pair rows that have nothing to do
@@ -96,9 +96,29 @@ export function ownAccountsFrom(accounts: readonly Account[]): OwnAccounts {
  *
  * Case is thrown away because Bank of America writes it both ways on the same day, on
  * the two sides of the same transfer.
+ *
+ * THE CODE STARTS AFTER A REAL "Conf#" OR "Confirmation#" TOKEN, and nowhere else.
+ * FOUND 2026-10-09: the old pattern, `conf\s*#?\s*…`, matched the first four letters
+ * of "Confirmation#" with the `#` optional, and took the next six letters as the code —
+ * so "Mobile Banking payment to CRD 6813 Confirmation# x7k2m9q4p" read as the code
+ * "irmation", and all fifteen card-payment rows in the ledger shared that one false
+ * code. Pairing needs exactly two rows per code, so fifteen sharing one were all left
+ * alone — harmless by accident, not by design. The `#` is required now and the word
+ * must be whole, so "Conference" or a merchant that happens to start with "conf" is
+ * not a confirmation code either.
+ *
+ * WHAT THAT CHANGES, said out loud because it changes figures. With their real codes,
+ * a card payment leaving checking ("… payment to CRD 6813 Confirmation# X") and its
+ * arrival at the card ("PAYMENT FROM CHK 1211 CONF#X") now carry the SAME code — they
+ * are the two halves of one movement, which is exactly what the pairing is for. On the
+ * 2026-10-09 ledger that is seven pairs, April to July. Both halves already counted
+ * toward nothing in the net figures (the payment read `repaid`, the arrival `moved`);
+ * the payment now reads `moved` too. And the four of those payments that were never
+ * attached to a card-payment bill stop counting as `other` spending in their month's
+ * budget — card payments, which are not Misc spending.
  */
 export const transferRef = (description: string | undefined): string | null => {
-  const m = (description ?? "").match(/conf\s*#?\s*([a-z0-9]{6,})/i);
+  const m = (description ?? "").match(/\bconf(?:irmation)?\s*#\s*([a-z0-9]{6,})/i);
   return m ? m[1].toLowerCase() : null;
 };
 
@@ -184,7 +204,7 @@ export function classify(
  *
  * WHY A SEPARATE PASS AND NOT A RULE IN flowOf. Every rule up there reads ONE row. This
  * one cannot: a Zelle between their own two checking accounts looks exactly like real
- * spending from the row alone — "Zelle Transfer CONF# YOMIM8KBL; GIO" is money leaving,
+ * spending from the row alone — "Zelle Transfer CONF# TESTPAIR1; GIO" is money leaving,
  * full stop. What makes it a transfer is that the OTHER row exists.
  *
  * WHAT WENT WRONG WITHOUT IT, found on 2026-10-04. Two Zelles from Xinyan to Gino, $250

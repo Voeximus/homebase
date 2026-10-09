@@ -7,7 +7,7 @@ import { Search, Trash2 } from "lucide-react";
 import type { Transaction } from "../types";
 import { useStore } from "../store/FinanceStore";
 import { getCategory } from "../lib/seed";
-import { merchantKey } from "../lib/categorize";
+import { isStatementNoiseKey, merchantKey } from "../lib/categorize";
 import { LEAN_VARIABLE, variableSpentThisMonth } from "../lib/plan";
 import { formatMoney, formatDate, monthLabel } from "../lib/format";
 import { t } from "../lib/i18n";
@@ -42,6 +42,13 @@ export function LedgerSheet({
   const [quick, setQuick] = useState<Quick>("all");
   const [edit, setEdit] = useState<Transaction | null>(null);
   const [remember, setRemember] = useState(true);
+  // The row being edited names no merchant — only the BANK'S WORDING, the bare
+  // "CHECKCARD" of a card line with no clean name, or "BKOFAMERICA ATM". FOUND
+  // 2026-10-09: saveMerchantRule refuses such a key now, but only with a console
+  // warning, so the "✓ Remember merchant" pill below would read ON while nothing was
+  // remembered. Withhold the pill and both rule writes, and show the "Sets only this
+  // charge" line instead — the same treatment TxnSheet gives it.
+  const bankWording = !!edit && isStatementNoiseKey(merchantKey(edit.description));
   const expenseCats = data.categories.filter((c) => c.type === "expense" || c.type === "both");
 
   const counts = (tx: Transaction) => tx.type === "expense" && !tx.appliesTo;
@@ -194,14 +201,16 @@ export function LedgerSheet({
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className={labelClass}>{t("Category")}</label>
-                <button
-                  onClick={() => setRemember((r) => !r)}
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition ${
-                    remember ? "bg-accent/15 text-accent" : "bg-raised text-faint"
-                  }`}
-                >
-                  {remember ? t("✓ Remember merchant") : t("Just this one")}
-                </button>
+                {!bankWording && (
+                  <button
+                    onClick={() => setRemember((r) => !r)}
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition ${
+                      remember ? "bg-accent/15 text-accent" : "bg-raised text-faint"
+                    }`}
+                  >
+                    {remember ? t("✓ Remember merchant") : t("Just this one")}
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-4 gap-2">
                 {expenseCats.map((c) => (
@@ -216,7 +225,7 @@ export function LedgerSheet({
                       // charge would teach the app that every future Verizon
                       // charge is ordinary spending — quietly counting a fixed
                       // bill against the variable envelope from then on.
-                      if (remember && !edit.appliesTo)
+                      if (remember && !edit.appliesTo && !bankWording)
                         await saveMerchantRule({
                           pattern: merchantKey(edit.description),
                           kind: "variable",
@@ -233,7 +242,7 @@ export function LedgerSheet({
                   </button>
                 ))}
               </div>
-              {!remember && (
+              {(!remember || bankWording) && (
                 <p className="mt-1.5 text-[11px] text-faint">
                   {t(
                     "Sets only this charge — other charges from this merchant stay as they are. (Gas stations, warehouse stores, etc.)",
@@ -280,7 +289,7 @@ export function LedgerSheet({
                 // it from a bill row would silently stop every future Verizon
                 // charge from ever entering the ledger. Excluding THIS row is
                 // still fine — it's the generalisation that's destructive.
-                if (remember && !edit.appliesTo)
+                if (remember && !edit.appliesTo && !bankWording)
                   await saveMerchantRule({ pattern: merchantKey(edit.description), kind: "skip" });
                 setEdit(null);
               }}

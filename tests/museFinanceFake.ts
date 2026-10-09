@@ -91,6 +91,10 @@ export class FinanceFake implements FinanceDb {
   onReadCharge: ((id: string) => void) | null = null;
   /** Tokens handed out, in order, so a test can undo the first change by name. */
   tokens: string[] = [];
+  /** Ledger statements that changed a row, counted the way dbFinanceSupabase.ts counts
+   *  them — so commit()'s "did anything land before this failed" has something real to
+   *  read here too. */
+  landed = 0;
 
   /**
    * The bank connections, for the refresh tool. NOT in `tables` above, because that
@@ -177,6 +181,9 @@ export class FinanceFake implements FinanceDb {
       startsOn: (r.starts_on as string | null) ?? null,
       endsOn: (r.ends_on as string | null) ?? null,
       linkedDebtId: (r.linked_debt_id as string | null) ?? null,
+      accountId: (r.account_id as string | null) ?? null,
+      cadence: String(r.cadence ?? "monthly"),
+      anchorDate: (r.anchor_date as string | null) ?? null,
     };
     return Promise.resolve(row);
   }
@@ -256,6 +263,24 @@ export class FinanceFake implements FinanceDb {
     );
   }
 
+  /** Set to make chargeNames fail the way the real paged read does when the ledger
+   *  moves under it or a page comes back short — so "a ledger that cannot be read
+   *  cleanly saves no rule" is tested against a real throw, not assumed. */
+  chargeNamesFail = false;
+  /** How many times the whole-ledger read ran, so a test can see it was not skipped. */
+  chargeNameReads = 0;
+
+  chargeNames(): Promise<string[]> {
+    this.chargeNameReads += 1;
+    if (this.chargeNamesFail) {
+      return Promise.reject(new Error("read charge names: 836 rows exist and 835 came back"));
+    }
+    // Money out only, like the real filter — a rule never fires on a deposit.
+    return Promise.resolve(
+      this.tables.transactions.filter((r) => r.type === "expense").map((r) => String(r.description ?? "")),
+    );
+  }
+
   bankSyncTimes(): Promise<{ id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[]> {
     if (this.noRefreshColumn) {
       // PostgREST's own wording for an unknown column, because the tool branches on
@@ -271,6 +296,7 @@ export class FinanceFake implements FinanceDb {
   requestBankRefresh(atISO: string): Promise<number> {
     this.writes.push({ op: "requestBankRefresh", table: "bank_connections" });
     for (const c of this.connections) c.refreshRequestedAt = atISO;
+    if (this.connections.length > 0) this.landed += 1;
     return Promise.resolve(this.connections.length);
   }
 
@@ -292,6 +318,7 @@ export class FinanceFake implements FinanceDb {
       if (!sameJson(row[col] ?? null, want ?? null)) return Promise.resolve("moved");
     }
     Object.assign(row, patch);
+    this.landed += 1;
     return Promise.resolve("ok");
   }
 
@@ -300,6 +327,7 @@ export class FinanceFake implements FinanceDb {
     const id = this.newId();
     this.writes.push({ op: "insert", table, id });
     this.tables[table].push({ id, ...row });
+    this.landed += 1;
     return Promise.resolve(id);
   }
 
@@ -313,6 +341,7 @@ export class FinanceFake implements FinanceDb {
       if (!sameJson(row[col] ?? null, want ?? null)) return Promise.resolve("moved");
     }
     this.tables[table].splice(i, 1);
+    this.landed += 1;
     return Promise.resolve("ok");
   }
 
@@ -338,6 +367,7 @@ export class FinanceFake implements FinanceDb {
         acct.balance = Number(acct.balance) + (ev.type === "income" ? ev.amount : -ev.amount);
       }
     }
+    this.landed += 1;
     return Promise.resolve(id);
   }
 
@@ -356,6 +386,7 @@ export class FinanceFake implements FinanceDb {
       }
     }
     this.tables.transactions.splice(i, 1);
+    this.landed += 1;
     return Promise.resolve("ok");
   }
 
@@ -376,7 +407,12 @@ export class FinanceFake implements FinanceDb {
         acct.balance = Number(acct.balance) + (row.type === "income" ? Number(row.amount) : -Number(row.amount));
       }
     }
+    this.landed += 1;
     return Promise.resolve("ok");
+  }
+
+  writesLanded(): number {
+    return this.landed;
   }
 
   // ── the change log ────────────────────────────────────────────────────────

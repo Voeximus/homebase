@@ -25,7 +25,9 @@
 //      history of, so it lasts as long as the memory does.
 //
 // So memory's undo is `memory.restore <key>`: one call, no token to carry, and it
-// works from a conversation started next month. The cost, stated plainly because it
+// works from a conversation started next month. (Or `memory.forget <key>`, when the
+// write put a key INTO use — every reply names which one in `result.undo`; see done()
+// below for the day it named restore for all of them.) The cost, stated plainly because it
 // is a real one: a generic "undo the last thing you did" tool that reads muse_audit
 // will not cover these three writes. It has to call memory.restore instead, and
 // docs/research/muse-bridge/API.md says so where an assistant will read it.
@@ -149,12 +151,43 @@ function beforeOf(row: MemoryRecord, atISO: string) {
   return { value: row.value, kind: row.kind, tags: row.tags, at: atISO };
 }
 
+/**
+ * The call that reverses one memory write. Not always restore, and that is the point.
+ *
+ *   a NEW key, a REVIVED key, a BROUGHT-BACK key   → memory.forget. Before the write
+ *       nothing was in use under that key, and forget is what puts it back out of use.
+ *   a REPLACED wording, a FORGET, a SWAP            → memory.restore. Each of those
+ *       left the state before it in `previous` (or left the row's own words behind a
+ *       `forgotten_at`), and restore is the swap that puts it back.
+ *
+ * FOUND 2026-10-09, in review, the day the write door started repeating this field in
+ * its envelope as `undo_with` — "the call that puts it back". Until then every memory
+ * reply named memory.restore, including the three where restore is not the inverse:
+ *   · a brand-new key — restore refused with "has not been changed, so there is nothing
+ *     to put back", about the one thing the assistant had just been told would undo it;
+ *   · a key brought back by restore — following "undo" ran restore AGAIN, which does not
+ *     forget it: it swapped the wording for the OLDER one in `previous` and left the
+ *     memory live. A silent wrong write, made in the name of undo;
+ *   · a forgotten key revived by remember — the same swap.
+ *
+ * A REVIVED key comes back out of use, not with its old forgotten words: remember wrote
+ * the new words over them, and nothing kept them. "Not in use" is what the household
+ * could see before, and it is what forget restores.
+ */
+type MemoryUndo = "memory.restore" | "memory.forget";
+
 /** Everything a memory reply says. NOT ONE MEMORY'S WORDS — handler.ts stores both
  *  the sentence and the result in muse_audit, and that log holds no content. */
-function done(key: string, rowId: string, say: string, extra: Record<string, unknown> = {}): ToolOutcome {
+function done(
+  key: string,
+  rowId: string,
+  say: string,
+  undoWith: MemoryUndo,
+  extra: Record<string, unknown> = {},
+): ToolOutcome {
   return {
     ok: true,
-    result: { key, undo: { tool: "memory.restore", args: { key } }, ...extra },
+    result: { key, undo: { tool: undoWith, args: { key } }, ...extra },
     rowIds: [rowId],
     say,
   };
@@ -227,15 +260,23 @@ const remember: Tool = {
     });
 
     if (!existing) {
-      return done(key.value, rowId, `Remembered, under ${key.value}. Say "forget ${key.value}" and it goes.`);
+      return done(
+        key.value,
+        rowId,
+        `Remembered, under ${key.value}. Say "forget ${key.value}" and it goes.`,
+        "memory.forget",
+      );
     }
     if (existing.forgottenAt) {
-      return done(key.value, rowId, `Brought ${key.value} back, with what you just told me.`, { revived: true });
+      return done(key.value, rowId, `Brought ${key.value} back, with what you just told me.`, "memory.forget", {
+        revived: true,
+      });
     }
     return done(
       key.value,
       rowId,
       `Changed what I had under ${key.value}. The old wording is still there — "restore ${key.value}" puts it back.`,
+      "memory.restore",
       { replaced: true },
     );
   },
@@ -269,7 +310,12 @@ const forget: Tool = {
       // that did not happen.
       return refuse(409, `${key.value} changed while I was working on it. Nothing was changed — ask me again.`);
     }
-    return done(key.value, existing.id, `Forgotten. It is kept, so "restore ${key.value}" brings it back.`);
+    return done(
+      key.value,
+      existing.id,
+      `Forgotten. It is kept, so "restore ${key.value}" brings it back.`,
+      "memory.restore",
+    );
   },
 };
 
@@ -317,7 +363,11 @@ const restore: Tool = {
         atISO,
         previous: existing.previous,
       });
-      return done(key.value, rowId, `Brought ${key.value} back, exactly as it was.`, { brought_back: true });
+      // Undone by FORGET, not by a second restore: restore on a live row is the swap,
+      // and the swap would put the older wording in `previous` live instead.
+      return done(key.value, rowId, `Brought ${key.value} back, exactly as it was.`, "memory.forget", {
+        brought_back: true,
+      });
     }
 
     if (!existing.previous) {
@@ -338,9 +388,13 @@ const restore: Tool = {
       atISO,
       previous: beforeOf(existing, atISO),
     });
-    return done(key.value, rowId, `Put ${key.value} back the way it was. Say it again and it swaps back.`, {
-      swapped: true,
-    });
+    return done(
+      key.value,
+      rowId,
+      `Put ${key.value} back the way it was. Say it again and it swaps back.`,
+      "memory.restore",
+      { swapped: true },
+    );
   },
 };
 

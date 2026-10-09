@@ -83,7 +83,13 @@ export const UNDO_COLUMNS: Record<UndoTable, readonly string[]> = {
   // which is how "nothing is due" was true while the joint account was $1,023 short
   // of rent — the household was being treated as one wallet because the data said
   // nothing about three.
-  recurring: ["amount", "known_amount", "variable", "active", "starts_on", "ends_on", "account_id"],
+  //
+  // `due_days` is the day of the month a bill actually comes out, added 2026-10-09 for
+  // finance.set_bill_due_day: T-Mobile's row says the 29th and the charge landed on
+  // the 14th in July, August and September, and nothing could move it. Reversible like the
+  // rest — the undo writes the old array back, and the tool only ever touches a row
+  // with one day, so the before-state is never a split it would have to reassemble.
+  recurring: ["amount", "known_amount", "variable", "active", "starts_on", "ends_on", "account_id", "due_days"],
   accounts: ["balance"],
   debts: ["provider_account_id", "balance"],
   paid_bills: ["paid"],
@@ -192,7 +198,22 @@ export const STATE_SAYS: Record<UndoState, string> = {
   pending:
     "I started this and could not confirm it finished. Check it in the app — I will not put back something I am not sure I did.",
   undoable: "This is done, and I can put it back.",
-  abandoned: "I did not do this. Something had changed the row since I read it, so I stopped.",
+  // TWO CAUSES SINCE 2026-10-09, and the sentence names both rather than guessing which.
+  // `abandoned` used to mean only "the row moved between my read and my write". It now
+  // also means "the database refused the write itself": two finance.settle_reimbursable
+  // calls on 2026-09-27 died on `invalid input syntax for type json`, the door answered
+  // 500, and their rows sat in `pending` for ever — which this table reads out as "I
+  // could not confirm it finished", about two writes the database had flatly refused.
+  //
+  // ONLY A REFUSAL THAT PROVES NOTHING LANDED. Review the same day caught the first
+  // version marking ANY failed write abandoned, and this sentence says "there is nothing
+  // for me to put back" — untrue after a lost answer from a write that committed, or a
+  // failure on the second row of a write whose first row was in. commit() in
+  // muse-write/toolsFinance.ts leaves those `pending`, and says why. The last clause
+  // stays for the older, narrower case it was written for: a two-row write whose second
+  // row had MOVED, where the first had already landed.
+  abandoned:
+    "This did not go through — the row had changed since I read it, or the database refused the write itself — so I stopped, and there is nothing for me to put back. If it touched more than one row, check them in the app.",
   undone: "I did this and have since put it back.",
 };
 

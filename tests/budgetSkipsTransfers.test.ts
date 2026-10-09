@@ -21,12 +21,12 @@ const row = (over: Partial<Transaction>): Transaction =>
 
 // The two real pairs: Xinyan sends, Gino receives, same code, same amount.
 const OCTOBER = (): Transaction[] => [
-  row({ amount: 250, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# YOMIM8KBL; GIO" }),
-  row({ amount: 250, type: "income", accountId: "gino", categoryId: "other-income", description: "Zelle Transfer Conf# YOMIM8KBL; XINYAN LI" }),
-  row({ amount: 50, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# XZ31RH99F; GIO" }),
-  row({ amount: 50, type: "income", accountId: "gino", categoryId: "other-income", description: "Zelle Transfer Conf# XZ31RH99F; XINYAN LI" }),
+  row({ amount: 250, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# TESTPAIR1; GIO" }),
+  row({ amount: 250, type: "income", accountId: "gino", categoryId: "other-income", description: "Zelle Transfer Conf# TESTPAIR1; XINYAN LI" }),
+  row({ amount: 50, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# TESTPAIR2; GIO" }),
+  row({ amount: 50, type: "income", accountId: "gino", categoryId: "other-income", description: "Zelle Transfer Conf# TESTPAIR2; XINYAN LI" }),
   // A Zelle to someone OUTSIDE the household: one row, its own code. Real spending.
-  row({ amount: 40, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# UGNG0672V; PINGTING YANG" }),
+  row({ amount: 40, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# TESTSOLO1; SAM SAMPLE" }),
   // Ordinary household spending, so the line is not empty.
   row({ amount: 29.82, type: "expense", accountId: "xinyan", description: "Walmart" }),
 ];
@@ -35,12 +35,12 @@ const shopping = (txns: Transaction[]) => spentByCategoryBetween(txns, "2026-10-
 
 describe("the budget leaves out transfers between their own accounts", () => {
   it("counts the October household line without the $300 that never left", () => {
-    // $40 to Pingting + $29.82 at Walmart. Not $369.82.
+    // $40 to Sam + $29.82 at Walmart. Not $369.82.
     expect(shopping(OCTOBER())).toBeCloseTo(69.82, 2);
   });
 
   it("still counts a Zelle to someone outside the household", () => {
-    const txns = OCTOBER().filter((t) => !t.description.includes("YOMIM8KBL") && !t.description.includes("XZ31RH99F"));
+    const txns = OCTOBER().filter((t) => !t.description.includes("TESTPAIR1") && !t.description.includes("TESTPAIR2"));
     expect(shopping(txns)).toBeCloseTo(69.82, 2);
     expect([...transferIds(txns)]).toEqual([]);
   });
@@ -52,7 +52,7 @@ describe("the budget leaves out transfers between their own accounts", () => {
 
   it("keeps a row a person marked as spent, even if it looks like half a transfer", () => {
     // A correction by hand outranks the inference — rule 0 in flowOf, and here too.
-    const txns = OCTOBER().map((t) => (t.description.includes("YOMIM8KBL") && t.type === "expense" ? { ...t, flowOverride: "spent" as const } : t));
+    const txns = OCTOBER().map((t) => (t.description.includes("TESTPAIR1") && t.type === "expense" ? { ...t, flowOverride: "spent" as const } : t));
     expect(shopping(txns)).toBeCloseTo(69.82 + 250, 2);
   });
 

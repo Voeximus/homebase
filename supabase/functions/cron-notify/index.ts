@@ -5,6 +5,7 @@
 
 import { recordFinished } from "../_shared/jobRun.ts";
 import { safeEqual } from "../_shared/muse/safeEqual.ts";
+import { readPages } from "../_shared/muse/paging.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/webpush.ts";
 
@@ -141,29 +142,52 @@ Deno.serve(async (req) => {
     }
 
     // 2) bills due today / tomorrow that aren't recorded paid this month
-    const { data: recs } = await admin
+    //
+    // EVERY READ BELOW CHECKS ITS ERROR, since 2026-10-09. They used to destructure
+    // `{ data }` and nothing else, so a failed read was `null`, and `null ?? []` is an
+    // empty list: no bills to check, no payments recorded, no debts cleared — each one a
+    // confident wrong answer rather than a failure. A throw lands in the catch below,
+    // which is what records this run as failed in job_runs, which is what the heartbeat
+    // reads. A silent empty list recorded ok:true.
+    const { data: recs, error: recsErr } = await admin
       .from("recurring")
       .select(
         "id, name, due_days, amount, direction, active, cadence, anchor_date, linked_debt_id, starts_on, ends_on, variable, known_amount",
       )
       .eq("active", true);
+    if (recsErr) throw new Error(`recurring: ${recsErr.message}`);
     // amount/date/type are needed for the rolling-average estimate, not just the
     // paid-check. The applies_to filter stays: billExpectedMonthly only consumes
     // rows whose applies_to.kind is "bill", so it is a strict superset.
-    const { data: paid } = await admin
-      .from("transactions")
-      .select("applies_to, amount, date, type")
-      .not("applies_to", "is", null);
+    //
+    // PAGED, IN A TOTAL ORDER. FOUND 2026-10-09: this was one bare select with no
+    // order and no range, which PostgREST silently caps at 1,000 rows — and every
+    // charge ever attached to a bill, a debt, a goal or a set-aside is in this set, so
+    // it only grows. Past the cap, "is this bill already paid" was answered from
+    // whichever 1,000 rows the server returned, in no particular order, and a paid bill
+    // whose payment fell outside them was pinged as due. readPages loops until a short
+    // page and throws on an error; newest first, then id, so no row can be skipped or
+    // read twice between pages.
+    const paid = await readPages<Row>("transactions", (from, to) =>
+      admin
+        .from("transactions")
+        .select("id, applies_to, amount, date, type")
+        .not("applies_to", "is", null)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
     // A card-payment bill exists only to service its debt: clear the debt and the
     // minimum stops existing, so the reminder must stop too. The app gates on this
     // live (src/lib/schedule.ts); without it here, a paid-off card kept pinging its
     // $35 minimum every month.
-    const { data: debts } = await admin.from("debts").select("id, balance");
+    const { data: debts, error: debtsErr } = await admin.from("debts").select("id, balance");
+    if (debtsErr) throw new Error(`debts: ${debtsErr.message}`);
     const clearedDebts = new Set(
       (debts ?? []).filter((d: { balance: number }) => Number(d.balance) <= 0).map((d: { id: string }) => d.id),
     );
     const paidSet = new Set<string>();
-    for (const t of paid ?? []) {
+    for (const t of paid) {
       const k = paidKey((t as { applies_to: unknown }).applies_to);
       if (k) paidSet.add(k);
     }
@@ -199,7 +223,7 @@ Deno.serve(async (req) => {
         // Divide the monthly figure by the FULL due-day count, BEFORE any
         // window filtering. Dividing by the surviving days would inflate every
         // remaining payment in a month a bill starts or stops partway.
-        const perPayment = billExpectedMonthly(r, paid ?? []) / r.due_days.length;
+        const perPayment = billExpectedMonthly(r, paid) / r.due_days.length;
         for (const d of r.due_days) {
           const dd = Math.min(d, p.dim);
           if (dd !== p.day) continue;

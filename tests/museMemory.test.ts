@@ -451,10 +451,26 @@ describe("memory.remember", () => {
     // how it was capitalised the day it was stored.
     expect(row.tags).toEqual(["sleep"]);
     expect(row.previous).toBeNull();
+    // FORGET, not restore. A brand-new key has nothing in `previous`, so restore
+    // refuses — and until 2026-10-09 this said restore, and the write door's envelope
+    // repeated it as the way back.
     expect((r.body.result as Record<string, unknown>).undo).toEqual({
-      tool: "memory.restore",
+      tool: "memory.forget",
       args: { key: "works-nights" },
     });
+  });
+
+  it("does not tell the caller it cannot be undone — it names the call that undoes it", async () => {
+    // FOUND 2026-10-09 with the finance writes: the envelope said `undo: null` and
+    // "Nothing was written down that could put this back" beside a result that held the
+    // way back. Here the way back is a tool rather than a token (see memoryWrites.ts), and
+    // `previous` in the row is exactly what was written down.
+    const db = new Fake();
+    const r = await write(db, "memory.remember", { key: "quiet", kind: "fact", value: "Quiet after ten." });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.undo).toBeNull();
+    expect(r.body.cannot_undo).toBeUndefined();
+    expect(r.body.undo_with).toEqual({ tool: "memory.forget", args: { key: "quiet" } });
   });
 
   it("puts no memory words in the reply or in the audit log", async () => {
@@ -647,5 +663,98 @@ describe("memory.forget and memory.restore", () => {
     const good = await write(db, "memory.remember", { key: "fix-me", kind: "fact", value: "Fixed." }, key);
     expect(good.status, JSON.stringify(good.body)).toBe(200);
     expect(db.memories.get("gino|fix-me")!.value).toBe("Fixed.");
+  });
+});
+
+describe("the call a memory write names as its undo really undoes it", () => {
+  // FOUND 2026-10-09, in review of the change that made the write door repeat
+  // `result.undo` in its envelope as `undo_with`. Every memory write named
+  // memory.restore, and for three of them restore is not the inverse:
+  //   · a NEW key — restore refuses ("has not been changed, so there is nothing to put
+  //     back");
+  //   · a key restore had just BROUGHT BACK — restore again swaps in the OLDER wording
+  //     from `previous` and leaves the memory live. A silent wrong write, in the name of
+  //     undo;
+  //   · a forgotten key REVIVED by remember — the same.
+  // So each case below makes the write, FOLLOWS the envelope's `undo_with` exactly as an
+  // assistant would, and checks that what is in use under the key is what was in use
+  // before the write — not merely that the call returned 200.
+
+  /** What the household sees under a key: the live words, or nothing in use. */
+  const inUse = (db: Fake, key: string) => {
+    const row = db.memories.get(`gino|${key}`);
+    if (!row || row.forgottenAt) return null;
+    return { value: row.value, kind: row.kind, tags: [...row.tags] };
+  };
+
+  async function undoes(db: Fake, key: string, tool: string, args: Record<string, unknown>) {
+    const before = inUse(db, key);
+    const r = await write(db, tool, args);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.cannot_undo).toBeUndefined();
+    const call = r.body.undo_with as { tool: string; args: Record<string, unknown> };
+    expect(call, JSON.stringify(r.body)).toBeTruthy();
+    // The envelope and the result say the same thing — two fields, one answer.
+    expect((r.body.result as Record<string, unknown>).undo).toEqual(call);
+    const back = await write(db, call.tool, call.args);
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+    expect(inUse(db, key)).toEqual(before);
+    return call.tool;
+  }
+
+  it("a new key is undone by forgetting it", async () => {
+    const db = new Fake();
+    expect(await undoes(db, "quiet", "memory.remember", { key: "quiet", kind: "fact", value: "Quiet after ten." })).toBe(
+      "memory.forget",
+    );
+  });
+
+  it("a key restore brought back is undone by forgetting it, not by swapping its wording", async () => {
+    // The reviewer's case, exactly: a memory with an older wording behind it is
+    // forgotten, then brought back. Following the old `undo_with` (restore) put
+    // "Older wording." live.
+    const db = new Fake();
+    db.plant({
+      key: "no-jargon", kind: "preference", value: "Newer wording.",
+      previous: { value: "Older wording.", kind: "preference", tags: [], at: "2026-09-27T02:00:00Z" },
+      forgottenAt: "2026-10-01T02:00:00Z",
+    });
+    expect(await undoes(db, "no-jargon", "memory.restore", { key: "no-jargon" })).toBe("memory.forget");
+    // Forgotten again, with the wording it had — the older one did not come back.
+    expect(db.memories.get("gino|no-jargon")!.value).toBe("Newer wording.");
+  });
+
+  it("a forgotten key revived by remember is undone by forgetting it", async () => {
+    const db = new Fake();
+    db.plant({
+      key: "old-thing", kind: "fact", value: "Dropped.", forgottenAt: "2026-09-20T04:00:00Z",
+      previous: { value: "Even older.", kind: "fact", tags: [], at: "2026-09-10T02:00:00Z" },
+    });
+    expect(
+      await undoes(db, "old-thing", "memory.remember", { key: "old-thing", kind: "fact", value: "Back, and different." }),
+    ).toBe("memory.forget");
+  });
+
+  it("a changed wording is undone by restore", async () => {
+    const db = new Fake();
+    db.plant({ key: "no-jargon", kind: "preference", value: "Short sentences." });
+    expect(
+      await undoes(db, "no-jargon", "memory.remember", { key: "no-jargon", kind: "preference", value: "Plain words." }),
+    ).toBe("memory.restore");
+  });
+
+  it("a forget is undone by restore", async () => {
+    const db = new Fake();
+    db.plant({ key: "old-thing", kind: "fact", value: "Something to drop.", tags: ["x"] });
+    expect(await undoes(db, "old-thing", "memory.forget", { key: "old-thing" })).toBe("memory.restore");
+  });
+
+  it("a swap is undone by restore, which swaps it back", async () => {
+    const db = new Fake();
+    db.plant({
+      key: "no-jargon", kind: "preference", value: "Plain words, no jargon.",
+      previous: { value: "Short sentences.", kind: "preference", tags: [], at: "2026-09-27T02:00:00Z" },
+    });
+    expect(await undoes(db, "no-jargon", "memory.restore", { key: "no-jargon" })).toBe("memory.restore");
   });
 });

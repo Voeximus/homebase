@@ -476,8 +476,8 @@ describe("attachedByCategoryBetween — the half the budget deliberately ignores
     tx({ amount: 500, type: "income", date: "2026-08-02" }),
     // A transfer between their own accounts. Without this pair the guard below kept
     // passing on 2026-10-05 while the real partition dropped $300 between its halves.
-    tx({ amount: 250, accountId: "xinyan", description: "Zelle Transfer CONF# YOMIM8KBL; GIO" }),
-    tx({ amount: 250, type: "income", accountId: "gino", description: "Zelle Transfer Conf# YOMIM8KBL; XINYAN LI" }),
+    tx({ amount: 250, accountId: "xinyan", description: "Zelle Transfer CONF# TESTPAIR1; GIO" }),
+    tx({ amount: 250, type: "income", accountId: "gino", description: "Zelle Transfer Conf# TESTPAIR1; XINYAN LI" }),
   ];
   const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
 

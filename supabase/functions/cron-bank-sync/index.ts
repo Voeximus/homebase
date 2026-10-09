@@ -61,6 +61,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { safeEqual } from "../_shared/muse/safeEqual.ts";
 import { recordRun } from "../_shared/jobRun.ts";
+import { countsFrom } from "../_shared/syncCounts.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -136,6 +137,10 @@ Deno.serve(async (req) => {
     // response body: a bank's error text and a list of merchant names have no
     // business leaving this function. Filtering by TYPE rather than by field name
     // keeps that true even if the sync's shape changes underneath.
+    //
+    // countsFrom lives in _shared/syncCounts.ts since 2026-10-09, when plaid-webhook
+    // started recording its syncs too: two callers counting the same answer two
+    // ways would make their rows impossible to add up.
     return {
       ok: true,
       detail: { forced: force, ...(await countsFrom(res)) },
@@ -156,30 +161,3 @@ Deno.serve(async (req) => {
   }
   });
 });
-
-/**
- * The numeric half of the sync's own answer, per connection, and nothing else.
- *
- * Reading the body here is not a contradiction of "the body is not forwarded": it is
- * read, reduced to counts, and stored where only the service role can see it. What
- * never leaves is the text — descriptors, merchant names, a bank's error prose.
- */
-async function countsFrom(res: Response): Promise<Record<string, number>> {
-  try {
-    const body = await res.json();
-    const per = Array.isArray(body?.synced) ? body.synced : [];
-    const totals: Record<string, number> = { connections: per.length, failed: 0 };
-    for (const one of per) {
-      if (one && typeof one === "object") {
-        if ("error" in one) totals.failed += 1;
-        for (const [k, v] of Object.entries(one)) {
-          if (typeof v === "number") totals[k] = (totals[k] ?? 0) + v;
-        }
-      }
-    }
-    return totals;
-  } catch {
-    // A body that will not parse is not a reason to fail a sync that worked.
-    return {};
-  }
-}

@@ -12,7 +12,7 @@
 // under the same confirmation code. Half these tests are the cases that must NOT fire,
 // because a wrong `moved` deletes real spending from the month.
 import { describe, expect, it } from "vitest";
-import { classify, transferRef } from "../src/lib/flow";
+import { classify, transferIds, transferRef } from "../src/lib/flow";
 import type { Account, Transaction } from "../src/types";
 
 const acct = (id: string, owner: string, last4: string): Account => ({
@@ -49,13 +49,13 @@ const PAIR = (): Transaction[] => [
     amount: 250,
     type: "expense",
     accountId: "xinyan",
-    description: "Zelle Transfer CONF# YOMIM8KBL; GIO",
+    description: "Zelle Transfer CONF# TESTPAIR1; GIO",
   }),
   txn({
     amount: 250,
     type: "income",
     accountId: "gino",
-    description: "Zelle Transfer Conf# YOMIM8KBL; XINYAN LI",
+    description: "Zelle Transfer Conf# TESTPAIR1; XINYAN LI",
   }),
 ];
 
@@ -63,8 +63,8 @@ const flows = (txns: Transaction[]) => classify(txns, ACCOUNTS).map((r) => r.ver
 
 describe("transferRef", () => {
   it("reads the code whichever way the bank capitalises it", () => {
-    expect(transferRef("Zelle Transfer CONF# YOMIM8KBL; GIO")).toBe("yomim8kbl");
-    expect(transferRef("Zelle Transfer Conf# YOMIM8KBL; XINYAN LI")).toBe("yomim8kbl");
+    expect(transferRef("Zelle Transfer CONF# TESTPAIR1; GIO")).toBe("testpair1");
+    expect(transferRef("Zelle Transfer Conf# TESTPAIR1; XINYAN LI")).toBe("testpair1");
     // The code at the end of the descriptor, which is how an older row reads.
     expect(transferRef('Zelle payment to Gio for "Rent"; Conf# sj8fhx6l3')).toBe("sj8fhx6l3");
   });
@@ -77,6 +77,64 @@ describe("transferRef", () => {
     expect(transferRef("")).toBeNull();
     expect(transferRef(undefined)).toBeNull();
   });
+
+  it("reads the code AFTER Confirmation#, not the tail of the word itself", () => {
+    // FOUND 2026-10-09. The old pattern matched "Conf" inside "Confirmation#" with the
+    // `#` optional and took "irmation" as the code — all fifteen card-payment rows in
+    // the ledger shared it.
+    expect(transferRef("Mobile Banking payment to CRD 6813 Confirmation# x7k2m9q4p")).toBe("x7k2m9q4p");
+    expect(transferRef("Online Banking payment to CRD 4728 Confirmation# 1234567890")).toBe("1234567890");
+    expect(transferRef("Mobile Banking payment to CRD 6813 Confirmation# x7k2m9q4p")).not.toBe(
+      transferRef("Mobile Banking payment to CRD 6813 Confirmation# qq88wmx2a"),
+    );
+    // The card-side arrival writes the token with no space before the code.
+    expect(transferRef("PAYMENT FROM CHK 1211 CONF#X7K2M9Q4P")).toBe("x7k2m9q4p");
+  });
+
+  it("wants a real Conf# token — a word that only starts with conf is not one", () => {
+    expect(transferRef("CONFERENCE CENTER PHOENIX")).toBeNull();
+    expect(transferRef("Confirmation pending ABCDEF123")).toBeNull();
+    expect(transferRef("Zelle Transfer Conf TESTPAIR1; GIO")).toBeNull();
+    expect(transferRef("SKYCONF# ABCDEF123")).toBeNull();
+  });
+});
+
+describe("a card payment and its arrival at the card are one movement", () => {
+  // With the real codes read, the two halves of a card payment share one — which is
+  // what the pairing is for. On the 2026-10-09 ledger that is seven pairs. The payment
+  // half used to read `repaid` (rule 3); it now reads `moved`. Neither counts toward net
+  // worth, so the net figures do not move — but an UNATTACHED payment stops counting as
+  // budget spending, which is right: paying a card is not spending.
+  const CARD_ACCOUNTS: Account[] = [
+    acct("checking", "Gino", "0366"),
+    { ...acct("card", "Gino", "6813"), type: "credit card" },
+  ];
+  const payment = (): Transaction[] => [
+    txn({ amount: 35, type: "expense", accountId: "checking", categoryId: "other", description: "Mobile Banking payment to CRD 6813 Confirmation# x7k2m9q4p" }),
+    txn({ amount: 35, type: "income", accountId: "card", categoryId: "other-income", description: "PAYMENT FROM CHK 1211 CONF#X7K2M9Q4P" }),
+  ];
+
+  it("pairs the two halves on their shared confirmation code", () => {
+    const rows = classify(payment(), CARD_ACCOUNTS);
+    expect(rows.map((r) => r.verdict.flow)).toEqual(["moved", "moved"]);
+    expect(rows[0].verdict.why).toContain("x7k2m9q4p");
+  });
+
+  it("leaves the budget, which no longer files a card payment as Misc", () => {
+    const rows = payment();
+    expect([...transferIds(rows)].sort()).toEqual(rows.map((r) => r.id).sort());
+  });
+
+  it("does not pair fifteen payments that merely all say Confirmation#", () => {
+    // The shape that used to be the only thing protecting this: every payment now has
+    // its own code, so none pairs with another payment.
+    const many = Array.from({ length: 15 }, (_, i) =>
+      txn({ amount: 35, type: "expense", accountId: "checking", description: `Mobile Banking payment to CRD 6813 Confirmation# code${String(i).padStart(5, "0")}` }),
+    );
+    const refs = new Set(many.map((t) => transferRef(t.description)));
+    expect(refs.size).toBe(15);
+    expect(transferIds(many).size).toBe(0);
+  });
 });
 
 describe("the two halves of one transfer", () => {
@@ -87,14 +145,14 @@ describe("the two halves of one transfer", () => {
       expect(r.verdict.why).toContain("transfer between their own accounts");
       // The code is named, so the claim can be checked against the ledger rather
       // than believed.
-      expect(r.verdict.why).toContain("yomim8kbl");
+      expect(r.verdict.why).toContain("testpair1");
     }
   });
 
   it("is what stops $300 of invented spending — the live case, both pairs", () => {
     const fifty = [
-      txn({ amount: 50, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# XZ31RH99F; GIO" }),
-      txn({ amount: 50, type: "income", accountId: "gino", description: "Zelle Transfer Conf# XZ31RH99F; XINYAN LI" }),
+      txn({ amount: 50, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# TESTPAIR2; GIO" }),
+      txn({ amount: 50, type: "income", accountId: "gino", description: "Zelle Transfer Conf# TESTPAIR2; XINYAN LI" }),
     ];
     const rows = classify([...PAIR(), ...fifty], ACCOUNTS);
     expect(rows.map((r) => r.verdict.flow)).toEqual(["moved", "moved", "moved", "moved"]);
@@ -106,15 +164,15 @@ describe("the cases it must not fire on", () => {
     // The live row that SHOULD stay spending: $40 out, its own code, no sibling —
     // because the other side of it is in a stranger's bank, not this ledger.
     const flow = flows([
-      txn({ amount: 40, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# UGNG0672V; PINGTING YANG" }),
+      txn({ amount: 40, type: "expense", accountId: "xinyan", description: "Zelle Transfer CONF# TESTSOLO1; SAM SAMPLE" }),
     ]);
     expect(flow).toEqual(["spent"]);
   });
 
   it("leaves money arriving from outside as earned", () => {
     const flow = flows([
-      txn({ amount: 20, type: "income", accountId: "xinyan", description: "Zelle Transfer Conf# 99CYLXDNO; YINAN LI" }),
-      txn({ amount: 6, type: "income", accountId: "xinyan", description: "Zelle Transfer Conf# 99CYPE3V5; YINAN LI" }),
+      txn({ amount: 20, type: "income", accountId: "xinyan", description: "Zelle Transfer Conf# TESTSOLO2; YINAN LI" }),
+      txn({ amount: 6, type: "income", accountId: "xinyan", description: "Zelle Transfer Conf# TESTSOLO3; YINAN LI" }),
     ]);
     expect(flow).toEqual(["earned", "earned"]);
   });
