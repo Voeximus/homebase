@@ -5,7 +5,7 @@ import { fmtWeight, type Ghost } from "../../lib/sessionOps";
 import type { SetEntry } from "../../lib/workoutLog";
 
 // One set row of the logger, ported from the workout lab mockup
-// (public/_workoutlab.html, `.setrow`): set number · weight · reps · tick.
+// (docs/labs/_workoutlab.html, local only, `.setrow`): set number · weight · reps · tick.
 //
 // Empty boxes show the ghost as a placeholder: faint and normal weight, where a
 // typed number is bone and semibold, so the two can be told apart by colour AND

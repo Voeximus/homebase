@@ -6,7 +6,7 @@ import { t } from "../../lib/i18n";
 import { GRADE_GLYPH, GRADE_LABEL, categoryLabel, loadEvidence } from "./viewHelpers";
 
 // ── "What studies found" on the exercise page ─────────────────────────────────
-// Ported from the lab mockup's claim cards (public/_workoutlab.html, `.claim`).
+// Ported from the lab mockup's claim cards (docs/labs/_workoutlab.html, local only, `.claim`).
 // The note text is shown word for word — it is the checked wording from the
 // evidence register, so nothing here trims, rewrites or re-cases it.
 //

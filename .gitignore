@@ -39,3 +39,13 @@ docs/research/muse-bridge/START-HERE.md
 docs/research/muse-bridge/XINYAN-SETUP.md
 docs/research/muse-bridge/XINYAN-PASTES.md
 docs/research/muse-bridge/GINO-PASTES.md
+
+# Real household figures — never in this PUBLIC repo (2026-10-09 audit found them published)
+docs/daily/
+docs/labs/
+year.json
+chartyear.json
+# Key files, wherever they end up
+**/START-HERE.md
+**/XINYAN-SETUP.md
+**/*-PASTES.md

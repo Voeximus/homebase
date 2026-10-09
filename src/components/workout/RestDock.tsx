@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { t } from "../../lib/i18n";
 
-// The rest dock, ported from the workout lab mockup (public/_workoutlab.html,
+// The rest dock, ported from the workout lab mockup (docs/labs/_workoutlab.html, local only,
 // `.restdock`). It sits just above the bottom tab bar because that is where the
 // thumb already is between sets, so −15 / +15 / Skip are one reach away.
 //

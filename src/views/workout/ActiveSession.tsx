@@ -31,7 +31,7 @@ import { ConfirmSheet, FinishSheet } from "./FinishSheet";
 import { SetColumns, SetRow } from "./SetRow";
 
 // ── The set logger (V1.md Ships §1) ──────────────────────────────────────────
-// Ported from the workout lab mockup (public/_workoutlab.html, "Active · rest
+// Ported from the workout lab mockup (docs/labs/_workoutlab.html, local only, "Active · rest
 // timer running"): a sticky session bar, one card per exercise with last
 // time's sets in one faint line, set rows with a big tick, and the rest dock.
 //

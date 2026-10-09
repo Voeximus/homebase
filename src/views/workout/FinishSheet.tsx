@@ -7,7 +7,7 @@ import { hardSetsByRegion } from "../../lib/trainingMath";
 import type { Exercise, Person, Workout } from "../../lib/workoutLog";
 
 // The finish summary and the confirm sheet, ported from the workout lab mockup
-// (public/_workoutlab.html, `finishSheet` and the "confirm" sheet) in the app's
+// (docs/labs/_workoutlab.html, local only, `finishSheet` and the "confirm" sheet) in the app's
 // existing centred-sheet style (the same shell as the add-exercise sheet).
 //
 // The summary reads the session as Finish will save it (finishWorkout), so the

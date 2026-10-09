@@ -1,5 +1,5 @@
 // ── Body map drawing data: the front and back figures ──────────────────────────
-// Ported from the hand-drawn figures in public/_workoutlab.html (the mockup Gino
+// Ported from the hand-drawn figures in docs/labs/_workoutlab.html, local only (the mockup Gino
 // signed off on), so the app shows the same body he saw. Pure data — the SVG is
 // assembled in components/workout/BodyMap.tsx.
 //
