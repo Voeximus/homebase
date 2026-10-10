@@ -351,8 +351,9 @@ at the moment it is spoken (§6 says why no figure is ever baked into a reminder
 
 **One thing for him to settle (see §9, item 3):** 8:30 AM on a work night lands in the
 drive home (8:00–8:45 AM in §2), and J1 records why money at clock-out was moved once
-already. This job is a CHAT message, never an ALARM, so it waits on the phone until he
-is home; whether it stays at 8:30 AM is his call.
+already. This job is a CHAT message, never an ALARM — but a scheduled message can still
+arrive as a push on his drive home (only Do Not Disturb silences it), so never promise it
+waits quietly. Whether it stays at 8:30 AM or folds into the 4:30 PM message is his call.
 
 ### What no job does
 
