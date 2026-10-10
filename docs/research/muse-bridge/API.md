@@ -1488,6 +1488,67 @@ the debt (`closed: false`) and then link it.
 It refuses to rename a debt into or out of the payoff plan's fixed order, because that
 order is kept by exact name.
 
+#### `finance.add_history_row` — put in a bank row the statement has and the ledger does not
+
+**For reconciling a statement, not for cash.** When a statement line is missing from
+the ledger — the bank feed never sent it, or the app used to skip it — this writes that
+one row as history. **No balance moves**: the money is already inside what the bank
+reports, which is why `finance.add_transaction` (which takes the amount off the account)
+is the wrong tool for it. The row is the same kind the app's statement import writes:
+it counts in spending like any charge, and `finance.delete_charge` refuses it (deleting
+one in the app's ledger screen moves no cash either).
+
+**Takes `account_id`, `date`, `amount`, `type`, `description`, and optionally
+`category_id`, `confirm` and `override`.** The account is the one the statement is for
+(`finance.accounts`). `date` is **the POSTING date** the statement shows for that line —
+not the day the card was swiped, if the statement prints both — not in the future, at
+most 24 months back. `amount` is dollars and cents above zero, exactly as printed. `type`
+is `"expense"` for money out, `"income"` for money in. `description` is **the bank's line,
+word for word** as the statement prints it (it is cleaned and capped on the way in).
+Those two are what let a later bank delivery of the same charge be recognised as this
+row instead of landing twice: the bank sync matches a row like this one up to three days
+off and in either the statement's wording or the feed's clean name, by the same rule this
+tool's own duplicate check uses — but the closer the row is to what the bank printed, the
+surer that match is.
+
+**Leave `category_id` out to have it filed the way the app would** — his saved rule for
+that merchant first, then the app's own labeller. A guess the app is unsure of is filed
+and flagged for review, and the reply says so. Name a category to file an ordinary charge
+yourself; a named category is treated as his answer. **A named category does not get a row
+past the app's own judgement** — the checks below run either way.
+
+**It refuses, with what to send instead:**
+
+- a row that looks like one already there — same account, direction and amount, within
+  three days, same merchant. The refusal names that row and its id. If the statement
+  really shows two (a $6 parking charge twice in a week is real), send it again with
+  `confirm` set to `true` — only after he has said so. `confirm` answers this refusal
+  and no other.
+- money moving between their own accounts (in or out), and anything else the app keeps
+  out of the ledger on purpose. These turn up as "missing" on every reconciliation,
+  because the app leaves them out deliberately: recording one leg would show money spent
+  that the household still has. If he tells you the app is wrong about a row — it really
+  is money that left the household, or came from outside it — send it again with the
+  `category_id` he gave it and `override: "kept_out"`, and tell him you are overriding
+  the app. The row is filed and flagged for review.
+- a payment on a bill. If the bill already shows paid for that month, the payment is
+  already counted — add nothing. If it shows unpaid, add the row with `category_id`
+  `"bills"` and `override: "bill_payment"`, then attach it with
+  `finance.link_charge_to_bill`.
+- a payment on a debt — one the bank sync credits by pattern, or one his labels call a
+  debt. **Nothing overrides this one**: a debt's balance is worked out from the payments
+  the bank feed links to it, so a row added here would count as spending and give the
+  debt no credit. If it is not a payment on that debt at all, tell him.
+- an `override` that does not match the refusal — the wrong name, or an override on a
+  row the app would file anyway. Send one only for the refusal that named it.
+
+**Same amount under another name nearby** is not refused — the row is written and the
+reply asks to check it is not the same money. Pass that on.
+
+**The undo takes the row back out**, and refuses once something has been attached to it
+(a bill, a split, a reimbursement), because removing it then would leave that pointing at
+nothing. It is the only way on this door to remove one of these rows.
+
 #### `health.edit_session` — correct a finished workout without deleting it
 
 **Takes the session, and at least one of `name`, `notes`, `date`, `exercises`.**

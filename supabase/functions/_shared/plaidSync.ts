@@ -98,11 +98,21 @@ export interface LedgerOps {
 //     same day) still land the second one. The residual error leans toward an
 //     extra VISIBLE row rather than silently deleting real spend — a duplicate
 //     on screen gets fixed in one tap; hidden spend is never noticed.
+//
+// `claimCopy` (added 2026-10-10) is the third rule, for a STATEMENT COPY — a
+// record_only row the statement import or finance.add_history_row wrote from a bank
+// statement. Such a row is a copy of a bank line by construction, so it is matched more
+// loosely than an exact key: a day or two apart and worded the statement's way still
+// counts (see dedupGuard.ts for the probe that found the gap, and claimStatementCopy for
+// the rule). It is asked only after the exact key says no, only for an id we do not
+// already store, and it spends the copy it matches — so it keeps both rules above.
+// Leaving it out is the guard as it was before that day.
 export function reconcile(
   sync: SyncResponse,
   contentKey: (r: NormalRow) => string,
   existingContentKeys: Set<string> = new Set(),
   knownProviderIds: Set<string> = new Set(),
+  claimCopy: (r: NormalRow) => boolean = () => false,
 ): LedgerOps {
   const ops: LedgerOps = { upsertPosted: [], reverse: [], pendingUpsert: [], pendingRemove: [], absorbed: [] };
   // Consume from a copy: the caller's set is theirs, and it may be reused.
@@ -122,9 +132,12 @@ export function reconcile(
     } else {
       ops.pendingRemove.push(row.providerTxnId);
       const key = contentKey(row);
-      if (!knownProviderIds.has(row.providerTxnId) && unclaimed.has(key)) {
+      const known = knownProviderIds.has(row.providerTxnId);
+      if (!known && unclaimed.has(key)) {
         unclaimed.delete(key); // spent: the next row with this key posts normally
         ops.absorbed.push(row);
+      } else if (!known && claimCopy(row)) {
+        ops.absorbed.push(row); // the copy it matched is spent inside claimCopy
       } else {
         ops.upsertPosted.push(row);
       }

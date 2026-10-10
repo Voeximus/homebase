@@ -148,7 +148,7 @@ argument. Leave these alone.
 | `acknowledgeAnomaly` | `src/views/redesign/AnomalySheet.tsx` | Clearing an "unusual purchase" flag |
 | `makeRecurringBill`, `setRecurringVariable` | `TxnSheet.tsx`, `LedgerSheet.tsx`, `FinanceTabs.tsx` | Turning a charge into a bill; marking a bill variable |
 | `linkDebtToCard`, `unlinkDebtCard`, `createDebtFromCard` | `src/views/sheets.tsx:578-693` | Keeping a card's balance auto-synced from the bank |
-| `commitImport` | `src/components/ImportSheet.tsx` | Importing a statement. Needs a file picker, so it cannot leave a device anyway (§2). |
+| `commitImport` | `src/components/ImportSheet.tsx` | Importing a statement. Needs a file picker, so it cannot leave a device anyway (§2). One line at a time it can: since 2026-10-10 `finance.add_history_row` writes the same `record_only` row for a single statement line the ledger is missing. |
 | `seedHousehold`, `resetAll` | `src/views/sheets.tsx:694` `SettingsSheet` | First-run and nuclear. Should never be reachable from a chat. |
 | the fixes in `src/views/redesign/reviewApply.ts` | `ReviewSheet.tsx` | The one place a "worth a look" suggestion turns into a write, with a re-read-and-refuse guard at tap time |
 

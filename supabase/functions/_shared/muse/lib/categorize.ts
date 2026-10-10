@@ -541,12 +541,41 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   // one miscall this remap creates, and it is worth it.)
   "Travel/Other": { kind: "variable", appCategory: "travel" },
   Other: { kind: "variable", appCategory: "other" },
+  // Money SENT to a friend or relative is spending, so it is recorded — filed in
+  // `other` (the same place an unknown merchant lands) and, because `other` is the
+  // vague answer, at low confidence, which flags it for a one-tap review. A learned
+  // rule on that person's merchant key still wins, exactly as it does for any
+  // merchant, because learned rules are checked before this table is read.
+  //
+  // WHY, FOUND 2026-10-10 by reconciling the bank statements line by line against the
+  // ledger. This label said `skip`, and `skip` does not mean "not budget spend" — it
+  // means the importer writes the row NOWHERE (see the Zelle-to-mom note in
+  // classifyCore: "being unsure what a charge was is not a reason to pretend it did
+  // not happen"). So a real Zelle that left the household for someone outside it was
+  // simply absent from the ledger, and every figure built on the ledger — spending,
+  // the run rate, what the month netted — was short by exactly that amount. The
+  // statement had it; the app did not.
+  //
+  // What did NOT change, on purpose:
+  //   · Money COMING IN from a friend or relative. classify() never sees a credit (it
+  //     returns skip for any amount ≥ 0 before this table is read); a credit goes
+  //     through classifyCredit(), which only calls a row a transfer for an
+  //     "Internal:" label or a cash deposit — so a friends/family Zelle in was already
+  //     income, and still is.
+  //   · Money moving between the household's OWN accounts. "Internal: spouse" and
+  //     "Internal: account transfer" stay `skip` just below: the same dollars moving
+  //     from one of their pockets to another is not spending, and recording one leg
+  //     would show money spent that the household still has.
+  //   · The pending path (supabase/functions/_shared/pendingRow.ts) asks this same
+  //     function in the posted wording, so a pending friends/family Zelle is now
+  //     written too — a preview of the posted row, not a row that is missing for a
+  //     day and then appears.
+  "Zelle: friends/family": { kind: "variable", appCategory: "other" },
   // Everything below is real, but not lean-variable living spend → skip on import.
   "Income: Paycheck": { kind: "skip" },
   "Income: Tax refund": { kind: "skip" },
   "Internal: spouse": { kind: "skip" },
   "Internal: account transfer": { kind: "skip" },
-  "Zelle: friends/family": { kind: "skip" },
   "Family support": { kind: "skip" }, // caught earlier as the "Mom" bill anyway
   "Remittance (abroad)": { kind: "skip" },
   Cashback: { kind: "skip" },

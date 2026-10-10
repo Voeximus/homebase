@@ -171,6 +171,23 @@ export interface BillPaymentRow {
   appliesTo: UndoValue;
 }
 
+/**
+ * A charge on one account near one date, as finance.add_history_row's duplicate guard
+ * reads it (2026-10-10). Narrow on purpose: the guard compares the date, the amount,
+ * the direction and the merchant key — which is the app's own merchantKey() of
+ * `description` — and says which row it matched. `raw_description` is not read, as
+ * everywhere on this door.
+ */
+export interface NearChargeRow {
+  id: string;
+  date: string;
+  amount: number;
+  type: "income" | "expense";
+  description: string;
+  /** "pending" while the bank has not posted it — still the same money. */
+  pending: boolean;
+}
+
 export interface AccountRow {
   id: string;
   name: string;
@@ -321,6 +338,25 @@ export interface FinanceDb {
   billPayments(recurringId: string): Promise<BillPaymentRow[]>;
   /** How many charges point at this debt. Only ever compared against zero. */
   countDebtPayments(debtId: string): Promise<number>;
+
+  /**
+   * Every row on this account dated `fromISO` to `toISO`, both included, whatever its
+   * source (bank feed, statement import, hand entry) and whether it has posted — for
+   * finance.add_history_row, which must not add a row that is already there.
+   *
+   * Capped and counted like billPayments: a week on one account is a handful of rows,
+   * and a read that came back truncated would tell the guard "nothing like this is
+   * here" about a charge that is. It throws instead.
+   */
+  chargesNear(accountId: string, fromISO: string, toISO: string): Promise<NearChargeRow[]>;
+
+  /**
+   * Every debt that carries a track_pattern — the debts the bank sync credits by finding
+   * that pattern in a charge's description — for finance.add_history_row (2026-10-10),
+   * which refuses to write a payment on one of them as spending. Capped and counted like
+   * allDebtNames: a truncated list would let a debt payment through as spending.
+   */
+  trackedDebts(): Promise<{ id: string; name: string; trackPattern: string }[]>;
 
   /**
    * Every merchant rule that names a bill (`bill_name` set), for finance.edit_bill.

@@ -29,6 +29,7 @@ import type {
   FinanceDb,
   LabelRow,
   MoneyEvent,
+  NearChargeRow,
   PaidOverrideRow,
   RuleRow,
 } from "../supabase/functions/muse-write/dbFinance";
@@ -68,7 +69,20 @@ export function sameJson(a: unknown, b: unknown): boolean {
 }
 
 const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
-  transactions: ["date", "amount", "type", "category_id", "description", "account_id", "applies_to", "person"],
+  transactions: [
+    "date",
+    "amount",
+    "type",
+    "category_id",
+    "description",
+    "account_id",
+    "applies_to",
+    "person",
+    // finance.add_history_row, 2026-10-10 — the same three dbFinanceSupabase.ts allows.
+    "record_only",
+    "user_categorized",
+    "needs_review",
+  ],
   recurring: ["name", "amount", "direction", "cadence", "category_id", "active", "due_days"],
   accounts: [],
   debts: ["name", "balance", "original_balance", "apr", "min_payment", "color"],
@@ -226,6 +240,9 @@ export class FinanceFake implements FinanceDb {
     const row: AccountRow = {
       id: String(r.id),
       name: String(r.name ?? ""),
+      // Mapped since 2026-10-10 (add_history_row names the account it wrote to). The
+      // real read selects it; a fake that dropped it made every owner read undefined.
+      owner: String(r.owner ?? ""),
       balance: Number(r.balance ?? 0),
       providerAccountId: (r.provider_account_id as string | null) ?? null,
       last4: (r.last4 as string | null) ?? null,
@@ -260,6 +277,14 @@ export class FinanceFake implements FinanceDb {
     }
     const r = this.find("debts", id);
     return Promise.resolve(r ? ((r.closed_at as string | null) ?? null) : null);
+  }
+
+  trackedDebts(): Promise<{ id: string; name: string; trackPattern: string }[]> {
+    return Promise.resolve(
+      this.tables.debts
+        .filter((r) => r.track_pattern != null)
+        .map((r) => ({ id: String(r.id), name: String(r.name ?? ""), trackPattern: String(r.track_pattern) })),
+    );
   }
 
   allDebtNames(): Promise<{ id: string; name: string }[]> {
@@ -332,6 +357,26 @@ export class FinanceFake implements FinanceDb {
   countDebtPayments(debtId: string): Promise<number> {
     return Promise.resolve(
       this.tables.transactions.filter((r) => (r.applies_to as Row | null)?.debtId === debtId).length,
+    );
+  }
+
+  /** How many times add_history_row's duplicate read ran, so a test can see a refused
+   *  shape never reached it. */
+  nearReads = 0;
+
+  chargesNear(accountId: string, fromISO: string, toISO: string): Promise<NearChargeRow[]> {
+    this.nearReads += 1;
+    return Promise.resolve(
+      this.tables.transactions
+        .filter((r) => r.account_id === accountId && String(r.date) >= fromISO && String(r.date) <= toISO)
+        .map((r) => ({
+          id: String(r.id),
+          date: String(r.date),
+          amount: Number(r.amount),
+          type: r.type === "income" ? ("income" as const) : ("expense" as const),
+          description: String(r.description ?? ""),
+          pending: r.status === "pending",
+        })),
     );
   }
 

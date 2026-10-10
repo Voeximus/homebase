@@ -311,6 +311,16 @@ can be reversed:
   on my own key; from Xinyan's key those changes come back 403 either way.
 - `finance.add_transaction` — `date`, `amount`, `category_id`, `description` (cash
   the bank will never see; up to 60 days back)
+- `finance.add_history_row` — `account_id`, `date`, `amount`, `type`, `description`,
+  optional `category_id`, `confirm` and `override`. A bank row a statement shows and the
+  ledger is missing, recorded as history: **no balance moves** (never use
+  `finance.add_transaction` for a statement row — it takes the money off the account a
+  second time). Send the statement's **posting date** and the bank's line **word for
+  word**. Leave `category_id` out and it is filed the way the app would. It refuses a row
+  that looks like one already there and names it; send `confirm` true only when I have
+  said the statement really shows two. It refuses transfers between our own accounts and
+  bill payments even with a category — send the `override` it names only after I have
+  said the app is wrong, and tell me you overrode it. A debt payment has no override.
 - `health.log_meal` — `date`, `items` (up to 12 foods, each with a name and
   `kcal`, `p`, `c`, `f`, optional `grams`), date up to 2 days back. Send no totals;
   the app adds them up. The read door's `calories`, `protein_g`, `carbs_g` and

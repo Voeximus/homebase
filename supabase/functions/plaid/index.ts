@@ -24,12 +24,19 @@ import {
   carryCorrection,
   reconcile,
   type CarriedCorrection,
-  type NormalRow,
   type PendingCorrection,
   type PlaidTxn,
 } from "../_shared/plaidSync.ts";
-import { billsPayableFrom, classify, classifyCredit, isPaycheck, merchantKey, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import { billsPayableFrom, classify, classifyCredit, isPaycheck, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
 import { pendingFields } from "../_shared/pendingRow.ts";
+import {
+  armDedupGuard,
+  claimStatementCopy,
+  contentKey,
+  dedupScanWindow,
+  type DedupScanRow,
+  type StatementCopy,
+} from "../_shared/dedupGuard.ts";
 import { readAllPages } from "../_shared/readAllPages.ts";
 import { denyUnlessCaller } from "../_shared/callerAuth.ts";
 
@@ -75,8 +82,8 @@ const GRADED_CATS = new Set([
   "subscriptions", "entertainment", "housing", "pets", "other", "kids",
 ]);
 
-const contentKey = (r: NormalRow) =>
-  `${r.date}|${r.amount.toFixed(2)}|${merchantKey(r.description)}`;
+// contentKey and the loop that arms the duplicate guard live in _shared/dedupGuard.ts
+// since 2026-10-10, unchanged, so a test can hold them — see that file for why.
 
 // Which balance is "truth": for checking/savings the spendable (available)
 // balance — what's actually there after pending holds, matching what you see in
@@ -406,10 +413,14 @@ async function syncConnection(connId: string, force = false) {
     // content check for those, which is what keeps a cursor-reset re-pull a heal
     // instead of a no-op.
     const postedDelta = [...added, ...modified].filter((t) => !t.pending);
-    const existingKeys = new Set<string>();
-    const knownProviderIds = new Set<string>();
+    let existingKeys = new Set<string>();
+    let knownProviderIds = new Set<string>();
+    let copies: StatementCopy[] = [];
     if (postedDelta.length) {
-      const dates = postedDelta.map((t) => t.date).sort();
+      // Three days wider than the delta at each end since 2026-10-10: a statement copy
+      // (record_only, no provider) is matched up to three days from the bank's date, so
+      // the scan has to reach that far or the copy is never seen. See dedupScanWindow.
+      const scanWindow = dedupScanWindow(postedDelta.map((t) => t.date));
       const ourAcctIds = new Set((ourAccts ?? []).map((a: any) => a.id));
       // Page explicitly: PostgREST caps a select (1000 rows by default) and
       // truncates SILENTLY, and a first sync can span 24 months — a half-armed
@@ -430,28 +441,38 @@ async function syncConnection(connId: string, force = false) {
       const prior = await readAllPages("dedup scan", () =>
         admin
           .from("transactions")
-          .select("date, amount, type, description, account_id, provider_txn_id, status")
-          .gte("date", dates[0])
-          .lte("date", dates[dates.length - 1])
+          .select("date, amount, type, description, account_id, provider_txn_id, status, record_only")
+          .gte("date", scanWindow.from)
+          .lte("date", scanWindow.to)
       );
-      for (const r of prior) {
-        if (r.provider_txn_id) knownProviderIds.add(r.provider_txn_id as string);
-        if (r.status !== "posted") continue;
-        if (r.provider_txn_id && ourAcctIds.has(r.account_id)) continue;
-        // Signed the way NormalRow is (− = spend) and merchant-keyed the way
-        // importStatement's dupeKey is, so all three write paths agree on what
-        // "the same purchase" means.
-        const signed = r.type === "income" ? Number(r.amount) : -Number(r.amount);
-        existingKeys.add(`${r.date}|${signed.toFixed(2)}|${merchantKey(r.description ?? "")}`);
-      }
+      // Signed the way NormalRow is (− = spend) and merchant-keyed the way
+      // importStatement's dupeKey is, so all three write paths agree on what
+      // "the same purchase" means. The loop is armDedupGuard (_shared/dedupGuard.ts),
+      // lifted out on 2026-10-10 so a test can hold it. A STATEMENT COPY — a record_only
+      // row with no provider, written by the statement import or by the write door's
+      // finance.add_history_row — is armed as a copy rather than an exact key, and is
+      // matched a few days either side and in the statement's wording too: those two
+      // drifts are exactly how such a row differs from the bank's own delivery of it,
+      // and an exact-only match let a cursor reset or a re-link put it in twice.
+      ({ existingKeys, knownProviderIds, copies } = armDedupGuard(prior as DedupScanRow[], ourAcctIds));
     }
 
-    const ops = reconcile({ added, modified, removed }, contentKey, existingKeys, knownProviderIds);
+    const ops = reconcile(
+      { added, modified, removed },
+      contentKey,
+      existingKeys,
+      knownProviderIds,
+      (row) => claimStatementCopy(copies, row),
+    );
     if (ops.absorbed.length) {
       // Never silent: an absorb means the bank's copy was dropped in favour of a
-      // row already in the ledger, and that has to be readable in the logs.
+      // row already in the ledger, and that has to be readable in the logs — and
+      // how many of them a statement copy took, since that match is the looser one.
+      const byCopy = copies.filter((c) => c.claimed).length;
       console.log(
-        `dedup: absorbed ${ops.absorbed.length} already-in-ledger row(s) — ` +
+        `dedup: absorbed ${ops.absorbed.length} already-in-ledger row(s)` +
+          (byCopy ? ` (${byCopy} by a statement copy within a few days)` : "") +
+          " — " +
           ops.absorbed
             .map((r) => `${r.date} ${r.amount.toFixed(2)} ${r.description}`)
             .join("; ")

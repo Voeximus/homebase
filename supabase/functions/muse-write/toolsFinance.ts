@@ -129,6 +129,17 @@ import {
   type UndoTable,
   type UndoValue,
 } from "../_shared/muse/undo.ts";
+// finance.add_history_row's deciding half (2026-10-10) — its own file, which imports
+// nothing back out of this one, so this closes no cycle.
+import {
+  duplicateSays,
+  duplicateWindow,
+  fileHistoryRow,
+  findDuplicate,
+  nearbySays,
+  planHistoryRow,
+  ruleKeysFor,
+} from "./historyRow.ts";
 
 // ── small shared checks ──────────────────────────────────────────────────────
 
@@ -507,6 +518,171 @@ const addTransaction: Tool = {
       rowIds: [id],
       // The write already happened above, because apply_money_event has to run before
       // there is an id to undo. Nothing here can fail, so there is no refusal.
+      write: () => Promise.resolve(),
+    });
+  },
+};
+
+// ── finance.add_history_row ──────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. Write ONE bank row that a statement shows and the ledger does not
+// have, as history — without moving any balance.
+//
+// WHY IT EXISTS. That day the three bank statements were reconciled line by line against
+// the ledger, and real rows were missing from it: a Zelle sent to someone outside the
+// household had been skipped by the categorizer, and the bank feed never re-sends a row
+// that has not changed at the bank, so fixing the categorizer could stop the NEXT one
+// going missing and could not bring that one back. The only way to put it in was the
+// app's statement import, which takes a whole statement file on a phone — the very
+// screens being retired in favour of this door.
+//
+// WHY IT IS NOT finance.add_transaction. That tool is for cash the bank will never see,
+// and it goes down apply_money_event, which takes the amount OFF the account's balance.
+// A statement row's money is already inside the balance the bank reports — so adding it
+// that way would make the account read lighter than the bank by exactly the row. This
+// one writes the statement import's own kind of row instead (`record_only`), column for
+// column; historyRow.ts lists the columns and what each one is for, and what the rest of
+// the app does with such a row.
+//
+// THE GUARDS, in the order they run:
+//   1. Shape, before anything is counted (historyRow.ts planHistoryRow): a date the
+//      statement could show (not in the future, not more than 24 months back), dollars
+//      and cents above zero, a direction, a merchant, and a category of the right kind
+//      if one is named.
+//   2. The account exists.
+//   3. What the app would file it as (fileHistoryRow): his learned rule for that
+//      merchant, then the app's own classify() — asked EVERY time, a named category or
+//      not (since a review later on 2026-10-10: the first version skipped it whenever a
+//      category was named, so a transfer between their own accounts sent with "other"
+//      was written as spending). A payment on a tracked debt is refused outright. Rows
+//      the app deliberately keeps out of the ledger — money between their own accounts,
+//      a remittance — and bill payments, which only settle a cycle through
+//      finance.link_charge_to_bill, are refused with what to send instead, and only an
+//      override that names the refusal ("kept_out", "bill_payment"), sent after he has
+//      said so, gets past them. The reply then says what was overridden.
+//   4. Not already there: same account, same direction, same amount to the cent, within
+//      three days either side, same merchant — refused, naming the row it matches.
+//      `confirm: true` is how to say the statement really does show two (a $6 parking
+//      charge twice in one week is real).
+//
+// THE UNDO is a delete of exactly that row, and only while nothing has been attached to
+// it: `applies_to` and `splits` must still be null. Every link in this app is written ON
+// the row it involves — a bill or debt link, a set-aside, and both halves of a settled
+// reimbursement (the deposit carries the back-link) — so a row something has since
+// pointed at fails that compare-and-set and the undo refuses instead of leaving the
+// other end pointing at nothing. It is the ONLY way on this door to take one of these
+// rows back out: finance.delete_charge and the app's own review both refuse to delete a
+// record-only row, on purpose, because its cash is inside the anchored balance. (The
+// app's ledger sheet can still delete one by hand, and reverse_money_event moves no cash
+// for it, so even that path leaves the balance alone.)
+//
+// ONE RACE IS ACCEPTED, said out loud: the duplicate read and the insert are two
+// statements, so a bank sync landing the same charge in between would not be caught
+// here. The sync's own guard catches the other order — this row is armed there as a
+// statement copy, matched up to three days off and in either wording by the same rule
+// this tool's own duplicate check uses (_shared/dedupGuard.ts, _shared/sameCharge.ts) —
+// and a near-simultaneous double is visible and undoable, which is the trade every
+// insert on this door makes.
+const addHistoryRow: Tool = {
+  kind: "direct",
+  does:
+    "Record a bank row a statement shows and the ledger is missing, as history — no balance moves. " +
+    "Send the statement's POSTING date and the bank's line word for word.",
+  fields: ["account_id", "date", "amount", "type", "description", "category_id", "confirm", "override"],
+  // Made-up values; the all-zero account id finds no account and is refused with a 404.
+  example: { account_id: EXAMPLE_ID, date: "2026-09-14", amount: 18.4, type: "expense", description: "Sample Merchant" },
+  check: (payload, ctx) => problemsOf(planHistoryRow(payload, ctx)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const plan = planHistoryRow(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const p = plan.value;
+
+    const acct = await db.readAccount(p.accountId);
+    if (!acct) return refuse(404, "There is no account with that id. finance.accounts lists them.");
+
+    // His learned rule for this merchant outranks everything the classifier would say,
+    // exactly as it does on the feed and in the import — and the tracked debts, which
+    // the sync credits by pattern before it classifies anything. Both are read for
+    // every row of money out, a named category or not, because the app's judgement
+    // runs for every row (a rule saying "skip" or "bill" is part of that judgement).
+    // Money in is judged by classifyCredit, which reads neither.
+    const out = p.type === "expense";
+    const [rules, debts] = await Promise.all([
+      out ? Promise.all(ruleKeysFor(p.description).map((k) => db.readMerchantRule(k))) : Promise.resolve([]),
+      out ? db.trackedDebts() : Promise.resolve([]),
+    ]);
+    const learned: Record<string, { kind: "bill" | "variable" | "skip"; categoryId?: string; billName?: string }> = {};
+    for (const r of rules) {
+      if (!r || (r.kind !== "bill" && r.kind !== "variable" && r.kind !== "skip")) continue;
+      learned[r.pattern] = { kind: r.kind, categoryId: r.categoryId ?? undefined, billName: r.billName ?? undefined };
+    }
+    const filing = fileHistoryRow(p, learned, debts);
+    if (isRefusal(filing)) return filing;
+
+    const { from, to } = duplicateWindow(p.date);
+    const { duplicate, nearby } = findDuplicate(p, await db.chargesNear(acct.id, from, to));
+    if (duplicate && !p.confirmed) return refuse(409, duplicateSays(duplicate));
+
+    // The statement import's columns (FinanceStore.commitImport), plus the two review
+    // flags it never needed because its sheet asks before it commits — this door cannot
+    // ask first, so a low-confidence guess is flagged the way the bank feed flags one.
+    const row: Record<string, UndoValue> = {
+      date: p.date,
+      amount: p.amount,
+      type: p.type,
+      category_id: filing.categoryId,
+      description: p.description,
+      account_id: acct.id,
+      applies_to: null,
+      record_only: true,
+      user_categorized: filing.userCategorized,
+      needs_review: filing.needsReview,
+      person: ctx.person,
+    };
+    const id = await db.insertRow("transactions", row);
+
+    // Whose account, said out loud: two of the household's accounts carry the same
+    // product name, so the name alone does not say which.
+    const owner = scrubCap(acct.owner, 12);
+    const where = owner ? `${owner}'s ${scrubCap(acct.name, 30)}` : scrubCap(acct.name, 30);
+    // An override is said out loud, every time, with what the app had said — the
+    // caller was told to tell him it overrode the app, and this is the sentence it
+    // repeats. Both pieces are already scrubbed (fileHistoryRow caps them).
+    const overrode = filing.overridden
+      ? filing.overridden.what === "kept_out"
+        ? `This overrides the app, which keeps that row out of the ledger (${filing.overridden.appSaid}). ` +
+          `It is flagged for review so he sees it once more.`
+        : `This overrides the app, which reads it as a payment on ${filing.overridden.appSaid}. ` +
+          `Attach it with finance.link_charge_to_bill, or the bill still reads unpaid.`
+      : "";
+    const notes = [
+      overrode,
+      filing.needsReview && !filing.overridden
+        ? `I filed it in ${filing.categoryId} (${filing.reason}) and flagged it for review.`
+        : "",
+      duplicate ? "You said the statement shows it twice, so it sits beside the one that was already there." : "",
+      nearbySays(nearby) ?? "",
+    ].filter(Boolean);
+    return commit(ctx, "finance.add_history_row", {
+      steps: [{ kind: "delete_row", table: "transactions", id, after: { applies_to: null, splits: null } }],
+      summary:
+        `Recorded the ${dollars(p.amount)} ${p.type === "income" ? "deposit" : "charge"} from ${p.date} on ${where} ` +
+        `as history, in ${filing.categoryId}: ${p.description}. No balance moved.`,
+      note: notes.length ? notes.join(" ") : undefined,
+      result: {
+        id,
+        account_id: acct.id,
+        date: p.date,
+        amount: p.amount,
+        type: p.type,
+        category_id: filing.categoryId,
+        needs_review: filing.needsReview,
+        overrode: filing.overridden?.what ?? null,
+        records_money_moved_elsewhere: true,
+      },
+      rowIds: [id],
+      // The insert already happened above, because the undo step needs the row's id.
       write: () => Promise.resolve(),
     });
   },
@@ -4635,6 +4811,8 @@ const refreshBank: Tool = {
 export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.refresh_bank": refreshBank,
   "finance.add_transaction": addTransaction,
+  // 2026-10-10: a bank row a statement shows and the ledger is missing, as history.
+  "finance.add_history_row": addHistoryRow,
   "finance.delete_charge": deleteCharge,
   "finance.categorize_charge": categorizeCharge,
   "finance.split_charge": splitCharge,

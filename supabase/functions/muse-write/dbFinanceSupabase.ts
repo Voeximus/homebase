@@ -132,6 +132,19 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
     // correction somebody made by hand — the row returns classified the way the app
     // works it out, which is the answer they had already overruled.
     "flow_override",
+    // finance.add_history_row (2026-10-10) writes a bank row a statement shows and the
+    // ledger is missing, with the statement import's own column choices: `record_only`
+    // true, because the money is already inside the balance the bank anchored, so
+    // deleting it must never credit the account (schema_v28_record_only.sql); and the
+    // two review flags, because a category somebody named is an answer
+    // (`user_categorized`) and one the app guessed at low confidence is a question
+    // (`needs_review`). `record_only` is insert-only and stays OFF the UPDATE allowlist
+    // in undo.ts: the inverse of the insert is a delete, and nothing on this door may
+    // flip an existing row between "moved cash" and "did not", which would change what
+    // deleting it does to a balance.
+    "record_only",
+    "user_categorized",
+    "needs_review",
   ],
   recurring: ["name", "amount", "direction", "cadence", "category_id", "active", "due_days"],
   // Nothing inserts an account: they come from the bank or from the household seed.
@@ -333,6 +346,24 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       return rows;
     },
 
+    async trackedDebts() {
+      // finance.add_history_row (2026-10-10). Every debt with a pattern, closed or not:
+      // the sync's own filter adds "has a baseline" and "is not a linked card", but a
+      // payment matching ANY debt's pattern is not something this door may file as
+      // spending, so the refusal reads the wider set.
+      const { data, error, count } = await admin
+        .from("debts")
+        .select("id, name, track_pattern", { count: "exact" })
+        .not("track_pattern", "is", null)
+        .limit(LIST_CAP);
+      must(error, "read tracked debts");
+      const rows = (data ?? []).map((r) => ({ id: str(r.id), name: str(r.name), trackPattern: str(r.track_pattern) }));
+      if (count !== null && count !== rows.length) {
+        throw new Error(`read tracked debts: ${count} rows exist and ${rows.length} came back`);
+      }
+      return rows;
+    },
+
     async billRules() {
       // Counted on the same filter, for the reason allBillNames is: a rename that missed
       // a rule because the list was cut short would orphan that rule silently.
@@ -480,6 +511,38 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       must(error, "count debt payments");
       if (count === null) throw new Error("count debt payments: no count returned");
       return count;
+    },
+
+    async chargesNear(accountId, fromISO, toISO) {
+      // finance.add_history_row's duplicate guard (2026-10-10). One account, a week of
+      // dates: filtered in the database, capped, and counted on the SAME filter — a
+      // truncated list here would let the door add a second copy of a charge the ledger
+      // already has, which is the one thing that tool exists not to do. Every source and
+      // both statuses: a pending bank row is the same money as the statement line.
+      // `description`, never `raw_description`.
+      const filter = () =>
+        admin
+          .from("transactions")
+          .select("id, date, amount, type, description, status", { count: "exact" })
+          .eq("account_id", accountId)
+          .gte("date", fromISO)
+          .lte("date", toISO)
+          .order("date", { ascending: true })
+          .order("id", { ascending: true });
+      const { data, error, count } = await filter().limit(LIST_CAP);
+      must(error, "read charges near a date");
+      const rows = (data ?? []).map((r) => ({
+        id: str(r.id),
+        date: str(r.date),
+        amount: num(r.amount),
+        type: r.type === "income" ? ("income" as const) : ("expense" as const),
+        description: str(r.description),
+        pending: r.status === "pending",
+      }));
+      if (count !== null && count !== rows.length) {
+        throw new Error(`read charges near a date: ${count} rows exist and ${rows.length} came back`);
+      }
+      return rows;
     },
 
     async chargeNames() {

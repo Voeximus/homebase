@@ -333,6 +333,16 @@ describe("every finance write is driven here", () => {
   /** One call each tool accepts, against the seeded ledger. */
   const DRIVEN: Record<string, Record<string, unknown>> = {
     "finance.add_transaction": { amount: 6, category_id: "transport", description: "parking" },
+    // 2026-10-10: a statement row the ledger is missing, written as history. Its undo is
+    // a delete of exactly that row, so the byte-for-byte check below covers it.
+    "finance.add_history_row": {
+      account_id: ACCOUNT,
+      date: "2026-09-14",
+      amount: 12.34,
+      type: "expense",
+      description: "Corner bakery",
+      category_id: "dining",
+    },
     "finance.delete_charge": { transaction_id: CHARGE },
     "finance.categorize_charge": { transaction_id: CHARGE, category_id: "groceries" },
     "finance.split_charge": { transaction_id: CHARGE, slices: [{ category_id: "groceries", amount: 30 }, { category_id: "shopping", amount: 12 }] },

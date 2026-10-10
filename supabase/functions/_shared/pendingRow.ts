@@ -72,10 +72,15 @@ export function pendingFields(row: NormalRow, learned: LearnedRules): PendingFie
   // So the fix is not a second test of what counts as internal. It is the same
   // test, asked in the words the test was written for. A Zelle to someone outside
   // the household translates to a name with no internal label and is filed below
-  // exactly as before. One consequence, deliberately kept: a pending Zelle to a
-  // name the history labels "Zelle: friends/family" is now dropped too, because the
-  // posted path drops that one as well, and the pending row is supposed to be a
-  // preview of the posted one — not a row that exists for a day and then vanishes.
+  // exactly as before.
+  //
+  // CHANGED 2026-10-10: a pending Zelle to a name the history labels "Zelle:
+  // friends/family" is NO LONGER dropped. It used to be, because the posted path
+  // dropped that one as well — and the posted path was wrong: money sent to a friend
+  // or relative left the household, and a statement reconciliation found a real one
+  // that never reached the ledger (see the "Zelle: friends/family" entry in
+  // categorize.ts). The posted path records it now, so this preview of it does too,
+  // and it is filed the way the posted row will be — see `labelled` below.
   //
   // The clean name first, then the raw line: Plaid sends no merchant_name for a
   // Zelle today, so the two are the same text, but if it ever starts sending one
@@ -110,9 +115,29 @@ export function pendingFields(row: NormalRow, learned: LearnedRules): PendingFie
   // (plaid/index.ts). Asked here with the posted wording as both the clean name and
   // the raw line, which is what a posted Zelle carries — so the learned
   // 'ZELLE TRANSFER' rule, keyed on the pending wording, cannot answer first.
-  if (asPosted && classify(asPosted, row.amount, learned, asPosted).kind === "skip") return null;
+  const posted = asPosted ? classify(asPosted, row.amount, learned, asPosted) : null;
+  if (posted?.kind === "skip") return null;
 
-  const c = classify(row.description, row.amount, learned, row.raw);
+  // WHEN THE POSTED WORDING NAMES SOMEONE THE HOUSEHOLD'S OWN HISTORY KNOWS, file the
+  // pending row the way the posted row will be filed. Added 2026-10-10 with the
+  // friends/family change above.
+  //
+  // Without it the pending row and its posted twin disagree about the same money for
+  // a day or two. The pending wording's merchant key is the bare "ZELLE TRANSFER",
+  // and a learned rule on exactly that key (taught on one pending row, long ago)
+  // files every pending Zelle as Household + Hygiene, confidently, with no review
+  // flag — while the posted twin, read in the words the history label was written
+  // for, lands in `other` and asks. So a Zelle to a relative would have been graded
+  // against the household line while it processed and then jumped to Misc the day it
+  // settled.
+  //
+  // Scoped to a history label (hisCategory) on purpose, so nothing else moves: a
+  // Zelle to a name the history does not know is filed below exactly as it was
+  // before this change, learned "ZELLE TRANSFER" rule and all. Whether that blunt
+  // rule should keep applying to pending Zelles is a separate question and his call,
+  // not this function's (see isStatementNoiseKey in categorize.ts).
+  const labelled = posted && posted.hisCategory ? posted : null;
+  const c = labelled ?? classify(row.description, row.amount, learned, row.raw);
   if (c.kind === "skip") return null;
   // A pending BILL payment is not discretionary spending and must not be
   // graded as any. This wrote c.appCategory ?? "other", and classify() returns
