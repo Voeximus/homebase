@@ -204,7 +204,7 @@ muted.
 The rules Muse follows on all of them are in `MUSE-SKILL.md`, which is what gets pasted
 into Muse, and in `API.md`, which is where those rules come from. The two that
 matter most here: never re-derive a number, and never read out a merchant or a single
-charge.
+charge — except where a job below says so, which only J6's review does.
 
 ### J1 — Evening money check · 6:05 PM, daily
 
@@ -306,11 +306,60 @@ Homebase's own daily push still carries the bills-due heads-up in the meantime.
   must not say "today is push day" — it hands him the routines and he chooses.
 - **An exercise with nothing on file:** say so. That is usually the useful part.
 
+### J6 — Daily money check-in · start and end of each person's day
+
+Added 2026-10-10. **One household budget, two people on opposite clocks** — so the same
+two questions get asked at two different pairs of hours. They spend from one pool and
+both keys get the same figures: never split it into his and hers, and never name an
+account to explain a number. Account names are plumbing.
+
+| Who | Start of day | Tool | Review | Tool |
+|---|---|---|---|---|
+| **Gino** | about **4:30 PM**, daily | `finance.daily_allowance` `{}` | about **8:30 AM**, daily — the **previous** calendar date | `finance.day_review` `{"date": "yesterday"}` |
+| **Xinyan** | about **8:00 AM**, daily | `finance.daily_allowance` `{}` | about **9:00 PM**, daily — that **same** date | `finance.day_review` `{}` |
+
+Needs the read door redeployed with these two tools (added 2026-10-10). Until then the
+door answers `unknown_tool` — say that sentence and skip the job.
+
+**Why those hours, and what each one is actually looking at.**
+
+- **Gino's 4:30 PM start** is after the 4:00 PM wake and the 4:10 PM bowl, and before he
+  leaves at 7:15 PM for the 8:00 PM shift. By then the calendar date is already sixteen
+  hours old — the 1:00 AM break and anything on the drive home are on it. That is fine:
+  `spent_on_date` holds it and `left_on_date` is what is left of today. Lead with that.
+- **Gino's 8:30 AM review** covers the calendar date that ended at midnight, so the whole
+  date is finished. `"yesterday"` makes the door choose the date — Muse never works it
+  out. To him the shift that just ended is "today", so **say the date out loud first**.
+- **Xinyan's 8:00 AM start** is the plain case: today's allowance, nothing spent yet.
+- **Xinyan's 9:00 PM review** covers a date that is not over — `is_today` is `true`. Say
+  "so far today".
+
+**Exact words** — a shape rather than a script, because every figure comes from the reply
+at the moment it is spoken (§6 says why no figure is ever baked into a reminder):
+
+- **Start:** `Today, <date>: $X to spend across the budget, $Y of it already gone.` Then,
+  only if there are any, the planned items and the bills due, said **as their own
+  sentence** — `And tonight's the dinner you planned, about $Z.` — never folded into what
+  can be spent. Then one clause on `pace`.
+- **Allowance is zero:** `This cycle's budget is used up — today's allowance is $0.`
+- **Review:** `<date>: the allowance was $X, you spent $Y — under by $Z` (or `over by`).
+  Then the line that went over most and its largest charge (the cleaned merchant name the
+  reply gives — that one charge, no more), then two counts from `patterns`, then **one**
+  thing to keep doing and **one** to cut back, **labelled as Muse's own judgement**: `My
+  read: …`. The door gives facts and counts; the coaching is Muse's, and says so.
+- **Refused:** the door's own sentence, and no number at all.
+
+**One thing for him to settle (see §9, item 3):** 8:30 AM on a work night lands in the
+drive home (8:00–8:45 AM in §2), and J1 records why money at clock-out was moved once
+already. This job is a CHAT message, never an ALARM, so it waits on the phone until he
+is home; whether it stays at 8:30 AM is his call.
+
 ### What no job does
 
 No job runs between 8:55 AM and 4:00 PM. No job writes anything to Homebase. Nothing in
-Part B touches money, marks a bill paid, or names a merchant — those doors do not exist,
-by design.
+Part B touches money or marks a bill paid — those doors do not exist, by design. Only
+J6's review names a merchant: the cleaned name the door gives, for the one largest charge
+on the line that went over most.
 
 ---
 
@@ -332,7 +381,7 @@ Restraint is part of the design, not an omission.
 
 ---
 
-## 9. Two conflicts in the source documents — he settles these, not Muse
+## 9. Three conflicts — he settles these, not Muse
 
 **1. Dinner is 6:15 PM in the meal plan and 5:40 PM in the work-day timeline.** The
 timeline wins on work nights — the 7:15 PM door is fixed and 6:15 PM does not fit in
@@ -351,6 +400,14 @@ food either way.
 
 **2. The door plan's suggested 3:30 PM hour for the daily push is inside his sleep
 window.** Covered in J1. Use 6:05 PM.
+
+**3. J6's 8:30 AM review sits in the work-night drive home.** The daily money check-in
+(2026-10-10) puts his review of the previous date at about 8:30 AM; §2 has him driving
+8:00–8:45 AM on his four work nights, and J1 already moved one money check away from
+clock-out for his sleep. It is written at 8:30 AM because that is the time he asked for,
+as a CHAT message he can read once home. The choice is his: keep it, or fold the review
+into the 4:30 PM start so one message carries both yesterday's review and today's
+allowance. Moving it later is not an option — from 8:45 AM he is in the sleep off-ramp.
 
 ---
 

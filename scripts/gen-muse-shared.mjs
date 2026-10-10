@@ -103,6 +103,11 @@ const MODULES = [
   // finance.unusual and the screen answer from one function. The write door had
   // dismiss_unusual and nothing that could list what it dismisses from.
   "src/lib/unusual.ts",
+  // The daily money check-in (2026-10-10): what the household can spend on one date —
+  // the cycle's target less what the cycle already spent before that date, over the days
+  // left — and how a finished day went against it. Muse's finance.daily_allowance and
+  // finance.day_review report what this file works out; the door divides nothing itself.
+  "src/lib/dailyAllowance.ts",
 ];
 
 /** Deno needs the file extension, and this folder is FLAT, so every relative

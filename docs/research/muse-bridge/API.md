@@ -928,6 +928,131 @@ checking in the app.
 
 ---
 
+## The daily money check-in — the start of a day and the end of it
+
+Added 2026-10-10, for a routine they asked for: at the start of each person's day, *what
+can we spend today*; at the end of it, *the goal against what we spent, what to keep
+doing, what to cut back*. Two tools, one for each end of the day. `ROUTINES.md` (J6) has
+the times.
+
+**Every figure is worked out already, and that is the whole reason these exist.** Before
+them the only way to answer "what can we spend today" was to take `finance.budget_status`
+and divide by the days left yourself — arithmetic in a chat, which rule 1 forbids. Now the
+door does the division with the app's own pay cycle, the cycle's own targets (this cycle's
+goal where one is set, the standard budget's share where not) and the app's own idea of
+spending: charges still processing **count**, money moved between their own accounts
+**does not**, and a charge tied to a bill, a debt or a planned item is not everyday
+spending. Do not add, subtract or divide anything on top of these replies.
+
+**One household.** Both keys get the same figures — they spend from one budget. Never
+split it into his and hers, and never name an account to explain a figure.
+
+**The rule, in one place, so you can say it when asked:**
+
+```
+allowance for a date = (the cycle's target − what the cycle spent BEFORE that date)
+                       ÷ the days left in the cycle, that date included
+                       — and never below zero
+```
+
+So money spent over one day's allowance makes every later day's smaller, and money left
+unspent makes them bigger. It is re-worked every morning. Zero means the cycle's target is
+already used up — say exactly that.
+
+### `finance.daily_allowance` — what can we spend today?
+
+**Takes** `date` (optional): `YYYY-MM-DD`, or the word `"yesterday"`. Leave it out for
+today in Arizona. Up to 7 days ahead or 366 back; further is refused in a sentence.
+
+**What comes back:**
+
+- `date`, `is_today`, and `date_is_ahead` — a day ahead assumes nothing more is spent
+  before it, so its figure is a ceiling, not a promise.
+- `cycle` — `start`, `end`, a ready-to-say `label`, which `day` of the cycle the date is,
+  how many `days` the cycle has, and `days_left_including_date`.
+- `targets_are` — "this cycle's goal", "the standard budget", or the mixed wording, exactly
+  as `finance.budget_status` says it. Say which. `goal_table_set_up: false` means the
+  database has no goal table yet, not that nobody set a goal.
+- `total` — `target`, `spent_before` (the cycle's first day through the day before the
+  date), `allowance` (what the date can take, as it stood that morning), `spent_on_date`
+  (so far), `left_on_date`, and `even_daily_share` — the target spread evenly over the
+  whole cycle, for "is today's allowance big or small". Context only; the allowance is the
+  figure.
+- `lines` — the same per budget line, each with `target_is`.
+- `pace` — `is` ("on pace" or "over pace"), what the days before the date `spent`, and what
+  an even pace would have spent in them. Over pace is the same fact as today's allowance
+  being below the even daily share.
+- `this_week` — the week holding the date, **Sunday to Saturday**: `spent_before_date`,
+  `days_left_including_date`, and `rest_of_week_can_take`. `parts` shows how that last
+  figure was built when the week crosses a payday (`crosses_into_next_cycle`): days in
+  this cycle are counted at this date's allowance; days after it at the next cycle's
+  opening allowance, because a new paycheck starts a new pace.
+- `planned_items` — rows the bill calendar fires **once**, dated this day and not yet paid:
+  a dinner booked for one evening, a one-day purchase they planned. `budget_line` is the
+  line its charge lands on if the charge is not tied to the row with
+  `finance.link_charge_to_bill` — worth saying, because until it is tied, buying it counts
+  as everyday spending on that line.
+- `bills_due` — every other bill due that day, paid or not, with `paid` and the same
+  `paying_now` / `maybe_already_paid` evidence `finance.next_bills` gives.
+- `note` — read it.
+
+**The traps.**
+
+- **`total.allowance` is not the lines added up.** A line already over its own target is
+  floored at zero by itself, but on the whole envelope its overspend still pulls every
+  other line down. The household spends from one pool, so the total is the figure to lead
+  with.
+- **`planned_items` and `bills_due` are not everyday spending** and are in no figure above
+  them. Say them separately — "and the dinner you planned is tonight" — never as part of
+  what can be spent.
+- **`rest_of_week_can_take` counts today at its whole allowance.** It does not take off
+  what today already spent; `left_on_date` is the figure for the rest of today.
+- `left_on_date` can be negative. Say "over by $12", not "−12 left".
+
+### `finance.day_review` — how did the day go against its allowance?
+
+**Takes** `date` (optional): `YYYY-MM-DD`, or the word `"yesterday"` — the Arizona date
+before today, which is what a morning review of the day before sends. Leave it out for
+today. Up to 366 days back; a day that has not happened yet is refused.
+
+**What comes back:**
+
+- `date`, `is_today` — when it is `true` the day is not over yet; say so.
+- `cycle`, `targets_are`, `goal_table_set_up` — as above.
+- `total` and `lines` — each with `allowance` (as it stood at the **start** of that day,
+  by the same rule — the morning figure for that date), `spent`, `left`, and `over`.
+- `charges` — the day's everyday spending, largest first: `id`, `date`, the merchant's
+  **cleaned** name with any long run of digits masked, the budget `line`, `amount`,
+  `still_processing`, and `part_of_a_split` (the amount is then that line's share of one
+  charge). Per line they add up to that line's `spent`. `charges_found` is how many there
+  were; at most 50 are listed.
+- `other_money_out` — money that left that day and is **not** everyday spending, each with
+  `why`: it paid a bill, a debt or a set-aside; it moved between their own accounts; or it
+  is in a category no budget line covers. It is in no figure above it — do not call any of
+  it overspending.
+- `cycle_to_date` — `spent` through the end of the date against the cycle's `target`,
+  `pace`, and `projected_cycle_total`: the spending so far carried forward at the same
+  daily rate to the cycle's last day. A straight line, not a forecast — call it "at this
+  pace", never "you will spend".
+- `patterns` — plain counts over the 7 days ending on the date (`from` to `to`):
+  `gas_and_convenience_stops` and `dining_out_charges` (charges, not dollars; a split
+  charge counts once); then, for the cycle, `days_over_allowance_this_cycle` out of
+  `days_counted_this_cycle`, `streak_at_or_under_allowance` (days in a row ending on the
+  date, each against its own morning allowance, so a streak can cross a payday), and
+  `line_most_over_pace` — the line furthest ahead of its even pace, with how far, and how
+  far past its whole cycle target it already is. `null` when no line is ahead of pace.
+  `streak_reached_limit: true` means the count stopped at `streak_limit_days`: say "at
+  least".
+- `series` — the 7 days ending on the date, oldest first, each `{date, allowance, spent}`,
+  for a chart.
+
+**Facts and counts only.** The door never says "cut back on dining". What to keep doing
+and what to cut back is yours to say — and per rule 3, say it as your judgement, built on
+the counts in front of you: "four dining charges this week and dining is the line most
+ahead of pace — that's where I'd look", not a figure you worked out.
+
+---
+
 ---
 
 ## Phase 2 — the rest of the health and workout side

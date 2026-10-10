@@ -692,7 +692,50 @@ export function spentByCategoryBetween(
   startISO: string,
   endISO: string,
 ): Record<string, number> {
+  // The totals are the slices below, added up per category, in ledger order — so the
+  // sum is formed in exactly the order it always was and not one figure moves by a
+  // float's rounding. The rule for WHICH rows count lives in spendingSlicesBetween,
+  // once; read it there.
   const out: Record<string, number> = {};
+  for (const s of spendingSlicesBetween(transactions, startISO, endISO)) {
+    out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;
+  }
+  return out;
+}
+
+/** One piece of graded-or-gradable spending: a whole charge, or one slice of a split
+ *  charge, with the category it is filed under and the dollars it puts there. */
+export interface SpendSlice {
+  tx: Transaction;
+  categoryId: string;
+  amount: number;
+}
+
+/**
+ * The rows spentByCategoryBetween adds up, one entry per category a charge puts money
+ * into — the partition itself rather than its totals.
+ *
+ * WHY THIS WAS SPLIT OUT — 2026-10-10
+ *
+ * The daily money check-in (src/lib/dailyAllowance.ts, Muse's finance.day_review) has
+ * to list the charges behind a day's spending, and the list has to add up to the day's
+ * figure to the cent or the review contradicts itself in one reply. The repo already has
+ * three hand-written copies of this predicate for the same reason (the rows under each
+ * budget bar in buildVMs.ts, and the bar-vs-rows self-check in selfAudit.ts), and each
+ * one has drifted from the bar at least once — pending charges, then transfers. A fourth
+ * copy would be the next drift. So the predicate moved here, spentByCategoryBetween is
+ * now built on top of it, and the day review reads the same slices — the totals and the
+ * rows cannot disagree, because they are one loop.
+ *
+ * Behaviour is exactly what spentByCategoryBetween always did; the comments below are
+ * the ones that function carried, because they explain this predicate.
+ */
+export function spendingSlicesBetween(
+  transactions: Transaction[],
+  startISO: string,
+  endISO: string,
+): SpendSlice[] {
+  const out: SpendSlice[] = [];
   // TRANSFERS BETWEEN THEIR OWN ACCOUNTS DO NOT COUNT. Asked on 2026-10-05, after a
   // $250 and a $50 Zelle from Xinyan to Gino sat in October's household line: "Well
   // it shouldn't I thought that was already fixed." It was, for the net-worth figures
@@ -724,9 +767,9 @@ export function spentByCategoryBetween(
       !t.appliesTo
     ) {
       if (t.splits && t.splits.length) {
-        for (const s of t.splits) out[s.categoryId] = (out[s.categoryId] ?? 0) + s.amount;
+        for (const s of t.splits) out.push({ tx: t, categoryId: s.categoryId, amount: s.amount });
       } else {
-        out[t.categoryId] = (out[t.categoryId] ?? 0) + t.amount;
+        out.push({ tx: t, categoryId: t.categoryId, amount: t.amount });
       }
     }
   }

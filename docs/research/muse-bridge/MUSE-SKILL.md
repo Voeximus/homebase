@@ -157,7 +157,7 @@ Do not turn on "always allow" for either of these.
 ## What you can ask — the read door
 
 **THE DOOR'S OWN LIST IS THE AUTHORITY, NOT THIS ONE.** Fetch `openapi.json` and use
-what it names — 44 tools as this is written, and that number only goes up. The ones
+what it names — 46 tools as this is written, and that number only goes up. The ones
 below are the handful I reach for most, written out because a summary reads faster
 than a schema. **If the door lists something this message does not mention, it
 exists and you should use it.** A heading here once said "eleven questions", stayed
@@ -219,6 +219,26 @@ include things one of us already waved away — say so.
 **`finance.unusual`** — this month's unusual purchases (or `{"month": "2026-09"}`):
 charges far bigger than their category usually runs. A judgement call, not an error.
 Each comes with its id; `finance.dismiss_unusual` waves one away.
+
+**`finance.daily_allowance`** — what we can spend today, for the daily money check-in
+(`{}` for today, or `{"date": "YYYY-MM-DD"}`). The door works it out: the pay cycle's
+target, less what the household already spent this cycle **before** that date, split
+over the days left with that date included — never below zero. So overspending one day
+shrinks every later day's allowance. Lead with `total.allowance` and `left_on_date`;
+it is **not** the lines added up, because a line already over its target still pulls
+the whole envelope down. `this_week` is Sunday to Saturday. `planned_items` (one-day
+things we planned) and `bills_due` are **not** everyday spending and are in no figure
+above them — say them separately. Never divide or subtract anything yourself.
+
+**`finance.day_review`** — how one day went against its allowance (`{"date":
+"yesterday"}` for the day before, `{}` for today so far). Per line: the allowance as
+it stood that morning, what was spent, over or under; the day's charges with cleaned
+merchant names; money out that was not spending (bills, moves between our accounts),
+kept apart; the cycle so far with `projected_cycle_total` (a straight line at this
+pace, not a forecast); and plain counts over the week — gas stops, dining charges,
+days over this cycle, the current streak at or under, the line most ahead of its pace.
+**Facts and counts only:** what to keep doing and what to cut back is your judgement,
+built on those counts, and you say it as yours.
 
 **`health.macros_today`** — target, eaten and remaining for calories, protein,
 carbs and fat, plus `meals_logged`. **This is the Arizona calendar day.** I work

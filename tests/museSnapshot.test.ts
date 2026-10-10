@@ -210,6 +210,12 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     // 2026-10-10: the month's unusual purchases, with the ids finance.dismiss_unusual
     // takes. It says a cleaned merchant name, so the descriptor check below covers it.
     { tool: "finance.unusual", body: {} },
+    // 2026-10-10: the daily money check-in. Run against the real ledger because the
+    // allowance walks the whole pay cycle and the review walks up to two months back for
+    // its streak — a real ledger is where a row shape the fixtures never imagined would
+    // surface. The review says cleaned merchant names, so the descriptor check covers it.
+    { tool: "finance.daily_allowance", body: {} },
+    { tool: "finance.day_review", body: {} },
   ];
 }
 

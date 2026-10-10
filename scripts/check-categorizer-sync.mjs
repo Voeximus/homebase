@@ -223,6 +223,13 @@ const SHARED_ONLY = [
   "worthALook.ts",
   "healthRead.ts",
   "memoryTools.ts",
+  // The daily money check-in (2026-10-10) and the words both it and budget_status use for
+  // where a cycle's targets came from. A door-private copy of either would be a second
+  // spelling of "what can we spend today" or of "this cycle's goal" — the first is a
+  // number that can disagree with the read door's, the second a goal one tool calls by
+  // a different name.
+  "toolsDaily.ts",
+  "cycleWords.ts",
 ];
 const DOOR_DIRS = ["supabase/functions/muse-read", "supabase/functions/muse-write"];
 let privateCopies = false;

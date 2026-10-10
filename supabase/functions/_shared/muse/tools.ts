@@ -93,7 +93,8 @@ import {
 // A pay cycle's budget goal (2026-10-10): the goals set for the cycles AFTER this one,
 // and the words for where a target came from. The targets themselves come out of
 // envelopeStatus above, which calls the same file.
-import { goalsAhead, type TargetSource, type TargetsFrom } from "./lib/cycleBudget.ts";
+import { goalsAhead, type TargetsFrom } from "./lib/cycleBudget.ts";
+import { LINE_TARGET_IS, TARGETS_ARE } from "./cycleWords.ts";
 // Gino's pay floor: the one test for which row carries it, read off the live data so
 // no amount is ever written into this public repository.
 import { payFloorOf } from "./payFloor.ts";
@@ -118,6 +119,10 @@ import { HEALTH_ABSENT, HEALTH_READS } from "./healthRead.ts";
 // The memory store's three read tools. Their own file, so nothing about how a memory
 // works lives in here and nothing about finance or health lives in there.
 import { MEMORY_READ_TOOLS } from "./memoryTools.ts";
+// The daily money check-in (2026-10-10): what the household can spend today, and how a
+// day went against it. Its own file, like the domains above, and every figure in it comes
+// out of src/lib/dailyAllowance.ts through the generated copy.
+import { DAILY_TOOLS } from "./toolsDaily.ts";
 
 // The shape of a tool, the argument checks, and BadArgs live in args.ts, so every tool
 // file can use them without one importing another. Re-exported here because handler.ts,
@@ -379,19 +384,10 @@ const financePosition: Tool = {
 // plan (cycleBudget.ts says why the two are never mixed). No other read tool reports a
 // cycle target.
 
-/** What a cycle's targets are, in the words the reply says them. One table, so changing
- *  what an assistant hears is finding a line rather than reading code. */
-const TARGETS_ARE: Record<TargetsFrom, string> = {
-  goal: "this cycle's goal",
-  standard: "the standard budget",
-  mixed: "this cycle's goal for some lines, the standard budget for the rest",
-};
-
-/** What one line's target is, in the same words. */
-const LINE_TARGET_IS: Record<TargetSource, string> = {
-  goal: "this cycle's goal",
-  standard: "the standard budget",
-};
+// TARGETS_ARE and LINE_TARGET_IS — what a cycle's targets are, and what one line's target
+// is, in the words the reply says them — moved to cycleWords.ts on 2026-10-10, when the
+// daily money check-in needed to say the same words about the same targets. One table,
+// still; it just lives where both tool files can import it without an import cycle.
 
 /** The note, built from what is true of this reply — never a sentence about a goal when
  *  there is none, and never "nobody set one" when the table to hold one is missing. */
@@ -1425,6 +1421,8 @@ export const TOOLS: readonly Tool[] = [
   ...FINANCE_TOOLS,
   ...HEALTH_READS,
   ...MEMORY_READ_TOOLS,
+  // Appended for the same reason: the daily money check-in, 2026-10-10.
+  ...DAILY_TOOLS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));

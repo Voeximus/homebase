@@ -112,6 +112,13 @@ export const SAYS_DESCRIPTION: ReadonlySet<string> = new Set([
   // Activity sheet showed the merchant for the same reason. The cleaned name only, the
   // one finance.transaction already says; never `raw_description`.
   "finance.unusual",
+  // Added 2026-10-10, for the daily money check-in. "Goal against what we spent" is only
+  // a conversation if it can say WHAT was spent — "dining went over by $18" with no way
+  // to name the charge is a verdict nobody can act on. The cleaned name only, with long
+  // digit runs masked as finance.run_rate masks them (the day's money out includes card
+  // payments and transfers, whose descriptors carry account digits); never
+  // `raw_description`.
+  "finance.day_review",
 ]);
 
 /** The most rows one search will return. A chat cannot use more than this, and a
@@ -832,7 +839,10 @@ const systemHeartbeat: Tool = {
  * the back door of a merchant name. Masked rather than dropped: "PAYMENT TO ACCT
  * #••••" still says what the row is, which is the whole reason it is listed.
  */
-const maskDigits = (name: string): string => name.replace(/\d{4,}/g, "••••");
+// Exported since 2026-10-10: finance.day_review (toolsDaily.ts) lists the day's money
+// out, transfers and card payments included, and those are exactly the descriptors that
+// carry an account's digits. One mask, not a second copy of the regex.
+export const maskDigits = (name: string): string => name.replace(/\d{4,}/g, "••••");
 const sayRow = (r: { date: string; amount: number; description: string; why: string }) => ({
   date: r.date,
   amount: r.amount,

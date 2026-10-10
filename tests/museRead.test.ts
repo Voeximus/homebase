@@ -490,6 +490,13 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "finance.run_rate", body: {} },
   // The unusual-purchase list, moved out of the Activity screen on 2026-10-10.
   { tool: "finance.unusual", body: {} },
+  // The daily money check-in, 2026-10-10: the start-of-day allowance and the end-of-day
+  // review. Both called bare, because the bare call is the one a routine makes — the
+  // date defaults to the Arizona date, which is exactly what the Rule 2 sweep below
+  // checks. The review says a cleaned merchant name (it is on SAYS_DESCRIPTION), so the
+  // Rule 4 sweep is the check that its URL, newline and injection filtering holds.
+  { tool: "finance.daily_allowance", body: {} },
+  { tool: "finance.day_review", body: {} },
   // ── phase 2: health and workout parity ──────────────────────────────────────
   // Every one of these answers about a row rather than a summary, which phase 1
   // deliberately refused to do. He asked for it: "Muse has to have every
@@ -2242,6 +2249,12 @@ describe("API.md's field names exist", () => {
       // exists once a goal is set for a later cycle (2026-10-10). This fixture sets none;
       // the tests under "grades against this cycle's goal" drive it.
       "envelope_target",
+      // The daily money check-in (2026-10-10). `line`, `part_of_a_split` and `why` are on
+      // a finance.day_review charge or other-money-out ROW, and `budget_line` on a
+      // finance.daily_allowance planned item — and this fixture has no charge on its
+      // "today" and no one-day planned row, so the lists come back empty and the keys never
+      // appear. tests/dailyAllowance.test.ts drives a ledger that fills every one of them.
+      "line", "part_of_a_split", "why", "budget_line",
     ]) keys.add(k);
     // The keys INSIDE finance.set_cycle_budget's `lines` — the six budget lines — off the
     // shared module rather than typed here, so API.md can name the lines a goal takes.
