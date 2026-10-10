@@ -53,6 +53,39 @@ export class LedgerUnreadable extends Error {
   }
 }
 
+/**
+ * Is this error PostgREST saying the table is not there at all?
+ *
+ * Added 2026-10-10 for review_dismissals, whose migration (schema_v43) is written and
+ * not yet run. A tool that needs a table the database does not have yet should say so
+ * in a sentence — the refresh_bank pattern, for a missing column — rather than answer
+ * 500, and it must NOT say so about any other failure, or an outage would read as a
+ * setup instruction.
+ *
+ * Two spellings, because PostgREST has used both: `relation "public.x" does not exist`
+ * (Postgres's own 42P01, passed through) and `Could not find the table 'public.x' in
+ * the schema cache` (PostgREST 12's PGRST205). The table's name has to sit INSIDE those
+ * words, so a different missing table cannot be mistaken for this one — and so the
+ * "read x:" prefix both doors put on their errors, which names the table on every
+ * failure, can never be what matched.
+ *
+ * ONLY ON A GET OR A WRITE. A HEAD request — which is how readAll's count asks — gets
+ * an empty 404 for a missing table, and supabase-js reports that as success with no
+ * count (its own 404-with-empty-body branch), which the read adapter turns into zero.
+ * So a missing table reads as an EMPTY table through readAll, and this check is only
+ * reachable through a request that has a body to carry the sentence. loadFinance.ts
+ * probes with one page for exactly that reason.
+ */
+export function isMissingTable(e: unknown, table: string): boolean {
+  const msg = String((e as Error)?.message ?? e);
+  const quoted = `public.${table}`;
+  return (
+    msg.includes(`relation "${quoted}" does not exist`) ||
+    msg.includes(`relation "${table}" does not exist`) ||
+    msg.includes(`Could not find the table '${quoted}'`)
+  );
+}
+
 /** One filtered, ordered view of a table. Implemented over supabase-js in the
  *  door's entry file, and faked in the tests — so nothing tested here has to
  *  import a Supabase client. */

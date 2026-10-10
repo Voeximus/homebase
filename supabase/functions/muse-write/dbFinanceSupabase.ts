@@ -37,9 +37,13 @@ import type {
   BillRow,
   ChangeInsert,
   ChargeRow,
+  DebtNameRow,
   DebtRow,
+  DismissalRow,
   FinanceDb,
+  LabelRow,
   MoneyEvent,
+  PaidMarkRow,
   PaidOverrideRow,
   RuleRow,
 } from "./dbFinance.ts";
@@ -134,6 +138,9 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
   debts: ["name", "balance", "original_balance", "apr", "min_payment", "color"],
   paid_bills: ["month", "bill_key", "paid"],
   merchant_rules: ["pattern", "kind", "category_id", "bill_name"],
+  // The suggestion's key and who waved it away. `id` and `at` are the table's own
+  // defaults (schema_v43_review_dismissals.sql), so the database picks them.
+  review_dismissals: ["key", "person"],
 };
 
 export function financeDb(admin: SupabaseClient): FinanceDb {
@@ -225,7 +232,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async readBill(id) {
       const { data, error } = await admin
         .from("recurring")
-        .select("id, name, amount, direction, cadence, category_id, active, variable, known_amount, due_days, anchor_date, starts_on, ends_on, linked_debt_id, account_id")
+        .select("id, name, amount, direction, cadence, category_id, active, variable, known_amount, due_days, anchor_date, starts_on, ends_on, linked_debt_id, account_id, owner")
         .eq("id", id)
         .maybeSingle();
       must(error, "read recurring");
@@ -246,6 +253,7 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         accountId: optStr(data.account_id),
         cadence: str(data.cadence),
         anchorDate: optStr(data.anchor_date),
+        owner: optStr(data.owner),
       };
       return row;
     },
@@ -276,7 +284,9 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async readDebt(id) {
       const { data, error } = await admin
         .from("debts")
-        .select("id, name, balance, provider_account_id, track_pattern")
+        // apr and min_payment since 2026-10-10, for finance.edit_debt. NOT closed_at:
+        // see readDebtClosedAt for why that one is asked for on its own.
+        .select("id, name, balance, provider_account_id, track_pattern, apr, min_payment")
         .eq("id", id)
         .maybeSingle();
       must(error, "read debts");
@@ -287,8 +297,94 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         balance: num(data.balance),
         providerAccountId: optStr(data.provider_account_id),
         trackPattern: optStr(data.track_pattern),
+        apr: optNum(data.apr),
+        minPayment: optNum(data.min_payment),
       };
       return row;
+    },
+
+    async readDebtClosedAt(id) {
+      // Named, so a database without schema_v44 answers 42703 instead of quietly
+      // returning a row without it — the tool needs to know the column is missing, not
+      // read "open" off an absence and then try to write a column that is not there.
+      const { data, error } = await admin.from("debts").select("closed_at").eq("id", id).maybeSingle();
+      // The label does NOT name the column. edit_debt recognises "the column is missing"
+      // by the column name in Postgres's own message, so a label carrying it would make
+      // every failure — a dropped connection included — read as "not set up yet".
+      must(error, "read when a debt was closed");
+      return data ? optStr(data.closed_at) : null;
+    },
+
+    async allDebtNames() {
+      const { data, error, count } = await admin
+        .from("debts")
+        .select("id, name", { count: "exact" })
+        .limit(LIST_CAP);
+      must(error, "read debt names");
+      const rows = (data ?? []).map((r): DebtNameRow => ({ id: str(r.id), name: str(r.name) }));
+      if (count !== null && count !== rows.length) {
+        throw new Error(`read debt names: ${count} rows exist and ${rows.length} came back`);
+      }
+      return rows;
+    },
+
+    async billRules() {
+      // Counted on the same filter, for the reason allBillNames is: a rename that missed
+      // a rule because the list was cut short would orphan that rule silently.
+      const { data, error, count } = await admin
+        .from("merchant_rules")
+        .select("id, pattern, kind, category_id, bill_name", { count: "exact" })
+        .not("bill_name", "is", null)
+        .limit(LIST_CAP);
+      must(error, "read bill rules");
+      const rows = (data ?? []).map(
+        (r): RuleRow => ({
+          id: str(r.id),
+          pattern: str(r.pattern),
+          kind: str(r.kind),
+          categoryId: optStr(r.category_id),
+          billName: optStr(r.bill_name),
+        }),
+      );
+      if (count !== null && count !== rows.length) {
+        throw new Error(`read bill rules: ${count} rows exist and ${rows.length} came back`);
+      }
+      return rows;
+    },
+
+    async paidMarks() {
+      // Paged like chargeNames, and for the same reasons: a total order (month, then
+      // id) so a page boundary cannot skip a row or show one twice; pages under
+      // PostgREST's own cap, so a short page is the end; and the count read on every
+      // page, so a mark landing mid-read throws rather than being missed. A rename that
+      // missed a mark would leave it keyed to a name no bill has.
+      const marks: PaidMarkRow[] = [];
+      let counted: number | null = null;
+      for (let from = 0; ; from += PAGE) {
+        const { data, error, count } = await admin
+          .from("paid_bills")
+          .select("id, month, bill_key", { count: "exact" })
+          .order("month", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        must(error, "read paid marks");
+        if (count === null) throw new Error("read paid marks: no count returned");
+        if (counted === null) {
+          if (count > MAX_ROWS) {
+            throw new Error(`read paid marks: ${count} rows is more than this door will read (${MAX_ROWS})`);
+          }
+          counted = count;
+        } else if (count !== counted) {
+          throw new Error(`read paid marks: the table changed while it was read (${counted} rows, then ${count})`);
+        }
+        const rows = data ?? [];
+        for (const r of rows) marks.push({ id: str(r.id), month: str(r.month), billKey: str(r.bill_key) });
+        if (rows.length < PAGE) break;
+      }
+      if (marks.length !== counted) {
+        throw new Error(`read paid marks: ${counted} rows exist and ${marks.length} came back`);
+      }
+      return marks;
     },
 
     async readMerchantRule(pattern) {
@@ -431,6 +527,113 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
         throw new Error(`read charge names: ${counted} rows exist and ${names.length} came back`);
       }
       return names;
+    },
+
+    async readCharges(ids) {
+      // One select, bounded by the ids asked for. Added 2026-10-10 for
+      // finance.confirm_charges, whose list mode names up to MAX_STEPS charges: a
+      // readCharge per id would be that many round trips before the first write, each
+      // one a gap for the phone to write in. `description`, never `raw_description`.
+      if (ids.length === 0) return [];
+      const { data, error } = await admin
+        .from("transactions")
+        .select("id, date, amount, type, category_id, description, applies_to, splits, needs_review, user_categorized, status")
+        .in("id", [...ids])
+        .order("id", { ascending: true });
+      must(error, "read transactions by id");
+      const asked = new Set(ids);
+      const seen = new Set<string>();
+      const rows: LabelRow[] = [];
+      for (const r of data ?? []) {
+        const id = str(r.id);
+        // Fail closed on a read that does not add up: a row nobody asked for, or one
+        // twice, means this is not the answer to the question that was asked.
+        if (!asked.has(id) || seen.has(id)) throw new Error("read transactions by id: an unexpected row came back");
+        seen.add(id);
+        rows.push({
+          id,
+          date: str(r.date),
+          amount: num(r.amount),
+          type: r.type === "income" ? "income" : "expense",
+          categoryId: str(r.category_id),
+          description: str(r.description),
+          appliesTo: (r.applies_to ?? null) as UndoValue,
+          splits: (r.splits ?? null) as UndoValue,
+          needsReview: !!r.needs_review,
+          userCategorized: !!r.user_categorized,
+          pending: r.status === "pending",
+        });
+      }
+      return rows;
+    },
+
+    async chargeLabels() {
+      // THE WHOLE LEDGER, paged the way chargeNames pages it and for the same reason —
+      // see chargeNames above for why the order is (date, then id), why a page is
+      // smaller than PostgREST's own cap, and why the count is checked on every page.
+      // Added 2026-10-10 for finance.confirm_charges' merchant mode. Nothing has been
+      // written when this runs, so a throw here means nothing changed.
+      const rows: LabelRow[] = [];
+      let counted: number | null = null;
+      for (let from = 0; ; from += PAGE) {
+        const { data, error, count } = await admin
+          .from("transactions")
+          .select(
+            "id, date, amount, type, category_id, description, applies_to, splits, needs_review, user_categorized, status",
+            { count: "exact" },
+          )
+          .order("date", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        must(error, "read charge labels");
+        if (count === null) throw new Error("read charge labels: no count returned");
+        if (counted === null) {
+          if (count > MAX_ROWS) {
+            throw new Error(`read charge labels: ${count} rows is more than this door will read (${MAX_ROWS})`);
+          }
+          counted = count;
+        } else if (count !== counted) {
+          throw new Error(`read charge labels: the ledger changed while it was read (${counted} rows, then ${count})`);
+        }
+        const page = data ?? [];
+        for (const r of page) {
+          rows.push({
+            id: str(r.id),
+            date: str(r.date),
+            amount: num(r.amount),
+            type: r.type === "income" ? "income" : "expense",
+            categoryId: str(r.category_id),
+            description: str(r.description),
+            appliesTo: (r.applies_to ?? null) as UndoValue,
+            splits: (r.splits ?? null) as UndoValue,
+            needsReview: !!r.needs_review,
+            userCategorized: !!r.user_categorized,
+            pending: r.status === "pending",
+          });
+        }
+        if (page.length < PAGE) break;
+      }
+      if (rows.length !== counted) {
+        throw new Error(`read charge labels: ${counted} rows exist and ${rows.length} came back`);
+      }
+      return rows;
+    },
+
+    async readDismissal(key) {
+      // A GET, so a missing table comes back as PostgREST's own sentence in the error
+      // body ("Could not find the table 'public.review_dismissals'…") rather than the
+      // empty 404 a HEAD request gets — which supabase-js reports as success with no
+      // rows. That difference is the whole of how the tool can tell "not set up yet"
+      // from "nothing dismissed under that key".
+      const { data, error } = await admin
+        .from("review_dismissals")
+        .select("id, key, person")
+        .eq("key", key)
+        .maybeSingle();
+      must(error, "read review_dismissals");
+      if (!data) return null;
+      const row: DismissalRow = { id: str(data.id), key: str(data.key), person: str(data.person) };
+      return row;
     },
 
     async bankSyncTimes() {

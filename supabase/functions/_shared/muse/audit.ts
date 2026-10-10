@@ -46,6 +46,13 @@ export interface AuditRow {
   ms: number;
   /** Byte size of the reply that went out. */
   bytes: number;
+  /**
+   * Why a call was refused, in plain words — the `note` column the write door has
+   * filled from the start. Absent on a success. Added 2026-10-10, when a scan of the
+   * log found every failed read with an empty note and no way to tell a guessed tool
+   * from a guessed argument without reproducing the call.
+   */
+  note?: string;
 }
 
 export interface AuditSink {
@@ -108,6 +115,9 @@ export function createAuditSink(db: AuditInsert): AuditSink {
         // The table's `result` column is "what was returned, for a replay". For a
         // read, the honest answer is its size — see the note at the top.
         result: { bytes: row.bytes },
+        // Only when there is one, so a successful read writes exactly the row it always
+        // has. The column has existed since schema_v36; no migration is needed.
+        ...(row.note ? { note: row.note } : {}),
       });
     },
   };

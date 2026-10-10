@@ -33,9 +33,25 @@
 //   bill      the recurring row's id — an id, not a name
 //   sentence  written HERE, from a fixed template, naming at most a bill row
 //
-// Never `detail`, never `title`, never `evidence`, never `fix`, never `key` (the
-// key carries a merchant for W3 and transaction ids for W5), never a charge date,
-// never a merchant string.
+// Never `detail`, never `title`, never `evidence`, never `fix`, never a charge date,
+// never a merchant string — outside `charges`, which has its own note below.
+//
+// `key` USED TO BE ON THAT LIST, AND CAME OFF IT ON 2026-10-10. The reason it was there
+// ("the key carries a merchant for W3 and transaction ids for W5") stopped being a
+// reason on 2026-10-02, when `charges` started carrying the cleaned merchant and the
+// charge ids for exactly those rules. What it cost to keep it off: nothing could POINT
+// at a suggestion. Dismissals lived only in each phone's own storage, the door had no
+// way to wave one away, and once the Activity tab is retired nothing anywhere could —
+// so every suggestion somebody had already decided about came back on every call.
+//
+// So each suggestion now carries `key`, and finance.dismiss_suggestion on the write door
+// takes it back. It goes out through the same cleaner as everything else, and the rule
+// is stricter than for a name: the key is only handed out if scrub() gives it back
+// UNCHANGED, character for character, because a key that came back different would be
+// stored as a dismissal that matches nothing. A key that would not survive — a merchant
+// key with something link- or instruction-shaped in it — goes out as a fixed-shape
+// stand-in instead ("h:" and sixteen hex digits, a hash of the real key), which says
+// nothing about the charge and still names exactly one suggestion. See suggestionKey.
 //
 // TWO RULES CANNOT BE SAID AT ALL. W5a ("two charges of the same amount on the
 // same day in the same account") and W7 ("this charge looks like your X bill")
@@ -55,6 +71,9 @@ export interface RedactedSuggestion {
   rule: SuggestionRule;
   kind: Suggestion["kind"];
   sentence: string;
+  /** What finance.dismiss_suggestion takes to wave this one away — see suggestionKey.
+   *  Absent only on a grouped count, which stands for several suggestions at once. */
+  key?: string;
   /** Rounded to the dollar. Absent on the two rules that come back as a count. */
   amount?: number;
   /** "YYYY-MM" — a bill cycle, never the date of a charge. */
@@ -103,6 +122,59 @@ const UNSAYABLE: ReadonlySet<SuggestionRule> = new Set<SuggestionRule>();
  * says how many it left out.
  */
 export const MAX_SUGGESTIONS = 24;
+
+// ── the key, and dismissing by it ─────────────────────────────────────────────
+
+/** The longest key either door hands out or accepts. The engine's longest real key
+ *  is two ids and a month (`unlinked:<bill>:<YYYY-MM>:<charge>`), well under this. */
+export const SUGGESTION_KEY_MAX = 200;
+
+/**
+ * What a suggestion key looks like on the wire: one of the engine's own kinds and a
+ * colon (src/lib/reviewTypes.ts lists the key shapes, spec §B.9), or the hashed
+ * stand-in. The write door refuses anything else before it reads a row, so a guess
+ * or a half-copied key is a refusal rather than a dismissal that silently matches
+ * nothing.
+ */
+export const SUGGESTION_KEY =
+  /^(?:(?:drift|phantom|unmodelled|missing|duplicate|income-landed|unlinked|dangling):\S.*|h:[0-9a-f]{16})$/;
+
+/** FNV-1a, 64-bit, over the key's UTF-8 bytes. Not a secret and not meant to be one:
+ *  it only has to name one key, the same way on every call, with no clock and no
+ *  randomness — and to say nothing about the charge behind it. */
+function fnv1a64(s: string): string {
+  let h = 0xcbf29ce484222325n;
+  for (const b of new TextEncoder().encode(s)) {
+    h ^= BigInt(b);
+    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return h.toString(16).padStart(16, "0");
+}
+
+/**
+ * The key this door hands out for one of the engine's keys.
+ *
+ * The engine's own key when the cleaner gives it back character for character and it
+ * has a known shape — which is every key whose parts are ids, months, amounts and a
+ * merchant key with nothing odd in it. Otherwise `h:` and a hash of it, so a merchant
+ * key the cleaner would change never leaves the door, and the dismissal still names
+ * exactly the suggestion it was handed for.
+ */
+export function suggestionKey(engineKey: string): string {
+  const said = scrub(engineKey, SUGGESTION_KEY_MAX);
+  return said === engineKey && SUGGESTION_KEY.test(engineKey) ? engineKey : `h:${fnv1a64(engineKey)}`;
+}
+
+/**
+ * Has somebody waved this suggestion away? `dismissed` holds what review_dismissals
+ * holds: keys exactly as this door handed them out, so either the engine's own key or
+ * its stand-in. The engine already drops the first kind when it is handed the set
+ * (reviewLedger's own `dismissedKeys`); this is the check for the second, which the
+ * engine cannot see because it never made it.
+ */
+export function isDismissed(engineKey: string, dismissed: ReadonlySet<string>): boolean {
+  return dismissed.has(engineKey) || dismissed.has(suggestionKey(engineKey));
+}
 
 /** A sentence per rule, with and without a bill name, because the name is the one
  *  hole in it and a name someone typed does not always survive the scrubber. */
@@ -177,6 +249,7 @@ export function redactSuggestions(
       rule: s.rule,
       kind: s.kind,
       sentence: sentenceFor(s.rule, name, month, amount),
+      key: suggestionKey(s.key),
     };
     if (amount != null) entry.amount = amount;
     if (month) entry.month = month;

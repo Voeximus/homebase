@@ -58,24 +58,48 @@
 
 import type { Ctx, Refusal, Tool, ToolOutcome } from "./tools.ts";
 import { UNDO_REGISTRY } from "./undoRegistry.ts";
+// Values, not types: kit.ts imports nothing back out of this file, so this closes no
+// cycle. The placeholder id every example uses, and the shape-refusal pieces.
+import { EXAMPLE_ID, problemPad, problemsOf, shapeRefused, type ShapeCtx, type Shaped } from "./kit.ts";
+import { itemSays, kindOfValue, labelOf, renameBy, unknownKeysSays, type ListShape } from "./shapes.ts";
 // A type-only import above, and this one from _shared: tools.ts imports THIS file's
 // registry as a value, so anything imported back out of it would close a runtime cycle.
 import { UUID } from "../_shared/muse/args.ts";
-import { StatementRefused, type BillRow, type ChargeRow, type FinanceDb } from "./dbFinance.ts";
+import { isMissingTable, StatementRefused, type BillRow, type ChargeRow, type FinanceDb, type LabelRow } from "./dbFinance.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 // The cooldown, and the sentences that explain it, shared with the read door's
 // freshness stamp so "too soon" has one definition rather than two.
 import { REFRESH_TICK_MIN, refreshDecision } from "../_shared/muse/freshness.ts";
 import { NAME_MAX, scrub, scrubCap, scrubName, scrubOr } from "../_shared/muse/scrub.ts";
-import { isStatementNoiseKey, merchantKey, stripStatementNoise } from "../_shared/muse/lib/categorize.ts";
+// Gino's pay floor: the one sentence of the rule and the one test for its row, shared
+// with the read door so the two cannot describe it two ways again.
+import { isPayFloorRow, PAY_FLOOR_RULE } from "../_shared/muse/payFloor.ts";
+import {
+  billKey,
+  BUILT_IN_BILL_NAMES,
+  isMultiDepartment,
+  isStatementNoiseKey,
+  matchRecurringName,
+  merchantKey,
+  stripStatementNoise,
+} from "../_shared/muse/lib/categorize.ts";
+// The key finance.worth_a_look hands out, and the shape a dismissal must have. Shared with
+// the read door, so the key it gives and the key this takes are one definition.
+import { SUGGESTION_KEY, SUGGESTION_KEY_MAX } from "../_shared/muse/worthALook.ts";
+import { DISPLAY } from "../_shared/muse/auth.ts";
 import { MERCHANT_RULE_INSERT, ruleHabit } from "./financeUndo.ts";
 import { cycleKeyOf } from "../_shared/muse/lib/selfAudit.ts";
-import { DUE_DAYS } from "../_shared/muse/lib/schedule.ts";
+import { DUE_DAYS, STEP_DOWNS } from "../_shared/muse/lib/schedule.ts";
+import { isCardName } from "../_shared/muse/lib/forecast.ts";
+import { ATTACK_ORDER } from "../_shared/muse/lib/plan.ts";
 import { DEFAULT_CATEGORIES } from "../_shared/muse/lib/seed.ts";
 import {
   applyUndo,
+  applyUndoRowByRow,
   checkSteps,
+  MAX_STEPS,
   mintToken,
+  ROW_BY_ROW_TOOLS,
   STATE_SAYS,
   undoSummary,
   UndoRefused,
@@ -138,7 +162,7 @@ const dollars = (n: number) => `$${n.toFixed(2)}`;
 /** The date this write is for, defaulting to Arizona's today — never the runtime's,
  *  which from 5 PM onward is already tomorrow. Copied in shape from tools.ts's own
  *  dateFor; kept here so the finance tools can have their own back-window. */
-function dateFor(payload: Record<string, unknown>, ctx: Ctx, backDays: number): { date: string } | Refusal {
+function dateFor(payload: Record<string, unknown>, ctx: ShapeCtx, backDays: number): { date: string } | Refusal {
   const today = azDateISO(ctx.az);
   if (payload.date === undefined) return { date: today };
   if (!isDateISO(payload.date)) {
@@ -156,6 +180,52 @@ function dateFor(payload: Record<string, unknown>, ctx: Ctx, backDays: number): 
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+// ── every problem, before anything is read ───────────────────────────────────
+//
+// ADDED IN REVIEW 2026-10-10. Every tool in this file used to check its fields inside
+// `run`, one at a time, stopping at the first — and `run` is only reached after the
+// hourly write counter is bumped. So finance.add_transaction with a bad amount AND a bad
+// category took two round trips and two slots of the hour to hear both, and a call
+// whose amount was a string spent a slot for nothing that ever reached the ledger.
+//
+// Now each tool's checks that need no database are one `plan…` function: its `check`
+// returns that function's problems (handler.ts runs it before anything is counted), and
+// its `run` calls the same function first, so a tool driven directly refuses the same
+// way. What does need the database — that the row exists, that it is not already in
+// that state, that the slices add up to the charge — stays in `run`, where it was.
+
+/** One or more ids, each the read door's, as a shape answer. `what` says whose id. */
+function planIds(payload: Record<string, unknown>, ...wanted: [field: string, what: string][]): Shaped<string[]> {
+  const pad = problemPad();
+  const ids = wanted.map(([field, what]) => pad.take(idArg(payload[field], what)));
+  return pad.done(() => ids.map((x) => x!));
+}
+
+/** A dollar figure above zero and not absurd, or the problem with it. */
+function amountArg(v: unknown, say: string): number | Refusal {
+  const n = money(v);
+  if (n === null || n <= 0 || n > 100_000) return refuse(400, say);
+  return n;
+}
+
+/** A month the caller MAY leave out, checked only when it was sent. */
+function optionalMonth(v: unknown, say: string): string | null | Refusal {
+  if (v === undefined) return null;
+  if (typeof v !== "string" || !MONTH.test(v)) return refuse(400, say);
+  return v;
+}
+
+const CADENCES = ["weekly", "biweekly", "semimonthly", "monthly", "quarterly", "semiannual", "yearly"];
+
+/** A bill's cadence, monthly when it is left out. */
+function cadenceArg(v: unknown): string | Refusal {
+  const cadence = v === undefined ? "monthly" : v;
+  if (typeof cadence !== "string" || !CADENCES.includes(cadence)) {
+    return refuse(400, `The cadence is one of: ${CADENCES.join(", ")}.`);
+  }
+  return cadence;
+}
 
 // ── the commit, which is the whole of the undo contract ──────────────────────
 
@@ -342,29 +412,54 @@ const MOVED = "Something changed that row while I was working on it, so I stoppe
 // payment that cleared a debt adds back exactly what came off, not the face value.
 // That is the most exact inverse in the whole door, and it is exact because the door
 // did not write it.
+
+/** add_transaction's date, amount, category, kind, description and account id — every
+ *  problem with any of them, so a wrong amount and a wrong category are heard together. */
+function planCash(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{
+  date: string;
+  amount: number;
+  category: string;
+  kind: "expense" | "income";
+  description: string;
+  accountId: string | null;
+}> {
+  const pad = problemPad();
+  const when = pad.take(dateFor(payload, ctx, 60));
+  const amount = pad.take(amountArg(payload.amount, "I need the amount as a number above zero."));
+  const category = pad.take(categoryArg(payload.category_id));
+  const kind = payload.kind === undefined ? "expense" : payload.kind;
+  if (kind !== "expense" && kind !== "income") pad.no("kind is expense or income.");
+  const description = scrubCap(payload.description, 40);
+  if (!description) pad.no("Tell me what the charge was for, in a few words.");
+  const accountId = payload.account_id === undefined ? null : pad.take(idArg(payload.account_id, "the account"));
+  return pad.done(() => ({
+    date: when!.date,
+    amount: amount!,
+    category: category!,
+    kind: kind as "expense" | "income",
+    description,
+    accountId: accountId ?? null,
+  }));
+}
+
 const addTransaction: Tool = {
   kind: "direct",
   does: "Add a cash charge the bank will never see.",
   fields: ["date", "amount", "category_id", "description", "account_id", "kind"],
+  // Placeholder words, not a believable purchase: a call that is exactly the example is
+  // refused (handler.ts), and "$12.50 at the farmers market" is a real thing to say.
+  example: { amount: 12.5, category_id: "groceries", description: "Sample purchase" },
+  check: (payload, ctx) => problemsOf(planCash(payload, ctx)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const when = dateFor(payload, ctx, 60);
-    if ("ok" in when) return when;
-    const amount = money(payload.amount);
-    if (amount === null || amount <= 0 || amount > 100_000) {
-      return refuse(400, "I need the amount as a number above zero.");
-    }
-    const category = categoryArg(payload.category_id);
-    if (isRefusal(category)) return category;
-    const kind = payload.kind === undefined ? "expense" : payload.kind;
-    if (kind !== "expense" && kind !== "income") return refuse(400, "kind is expense or income.");
-    const description = scrubCap(payload.description, 40);
-    if (!description) return refuse(400, "Tell me what the charge was for, in a few words.");
+    const plan = planCash(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { amount, category, kind, description } = plan.value;
+    const when = { date: plan.value.date };
 
     let accountId: string | null = null;
-    if (payload.account_id !== undefined) {
-      const id = idArg(payload.account_id, "the account");
-      if (isRefusal(id)) return id;
+    if (plan.value.accountId !== null) {
+      const id = plan.value.accountId;
       const acct = await db.readAccount(id);
       if (!acct) return refuse(404, "There is no account with that id.");
       accountId = acct.id;
@@ -401,10 +496,13 @@ const deleteCharge: Tool = {
   kind: "direct",
   does: "Remove a hand-entered charge, and put its cash, debt and goal back the way they were.",
   fields: ["transaction_id"],
+  example: { transaction_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["transaction_id", "the charge"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, ["transaction_id", "the charge"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [id] = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id. It may have been deleted already.");
 
@@ -505,16 +603,25 @@ async function oneRow(
 // leave `user_categorized = true` behind, and that flag PERMANENTLY blocks the sync
 // from ever relabelling the row. The wrong category would be gone and the thing that
 // froze it would remain.
+/** categorize_charge's charge id and category — both problems at once. */
+function planCategorize(payload: Record<string, unknown>): Shaped<{ id: string; category: string }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.transaction_id, "the charge"));
+  const category = pad.take(categoryArg(payload.category_id));
+  return pad.done(() => ({ id: id!, category: category! }));
+}
+
 const categorizeCharge: Tool = {
   kind: "direct",
   does: "Put one charge in a category.",
   fields: ["transaction_id", "category_id"],
+  example: { transaction_id: EXAMPLE_ID, category_id: "dining" },
+  check: (payload) => problemsOf(planCategorize(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
-    const category = categoryArg(payload.category_id);
-    if (isRefusal(category)) return category;
+    const plan = planCategorize(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, category } = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id. It may have been deleted since you read it.");
     if (t.splits) {
@@ -539,34 +646,72 @@ const categorizeCharge: Tool = {
 // ── finance.split_charge ─────────────────────────────────────────────────────
 const MAX_SLICES = 8;
 
+/** What one slice takes. Anything else inside a slice is refused by name. */
+const SLICE_KEYS = ["category_id", "amount"] as const;
+const SLICE_SHAPE: ListShape = { takes: SLICE_KEYS };
+
+/**
+ * split_charge's charge id and slices — EVERY problem with them, before any database
+ * read, or the slices.
+ *
+ * FOUND 2026-10-10. The slices used to be checked only after the charge was read, one
+ * at a time, stopping at the first bad one — and a key inside a slice that was not
+ * category_id or amount was ignored. Now the whole list is read to the end, a stray key
+ * is refused by name, and because none of it needs the database, handler.ts runs it
+ * before the hourly write counter is bumped. Whether the slices add up to the charge
+ * DOES need the charge, so that one is still decided in run.
+ */
+function planSlices(payload: Record<string, unknown>): { ok: true; id: string; slices: { categoryId: string; amount: number }[] } | { ok: false; problems: string[] } {
+  const problems: string[] = [];
+  const id = idArg(payload.transaction_id, "the charge");
+  if (isRefusal(id)) problems.push(id.say);
+  const raw = payload.slices;
+  const slices: { categoryId: string; amount: number }[] = [];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const what = raw === undefined || Array.isArray(raw) ? "" : ` slices has to be a list — it was ${kindOfValue(raw)}.`;
+    problems.push(`I need at least one slice, each with a category_id and an amount.${what}`);
+  } else if (raw.length > MAX_SLICES) {
+    problems.push(`That is more than ${MAX_SLICES} slices.`);
+  } else {
+    raw.forEach((s, i) => {
+      if (typeof s !== "object" || s === null || Array.isArray(s)) {
+        problems.push(itemSays(labelOf("Slice", i), [`It is ${kindOfValue(s)}, not an object like {"category_id": "groceries", "amount": 30}.`], null));
+        return;
+      }
+      const row = s as Record<string, unknown>;
+      const { value, unknown, clashes } = renameBy(row, SLICE_SHAPE);
+      const mine = [...clashes];
+      if (unknown.length) mine.push(unknownKeysSays(unknown, SLICE_KEYS));
+      const cat = categoryArg(value.category_id);
+      if (isRefusal(cat)) mine.push(cat.say);
+      const amt = money(value.amount);
+      if (amt === null || amt <= 0) mine.push("It needs an amount above zero.");
+      const label = labelOf("Slice", i, isRefusal(cat) ? undefined : cat);
+      if (mine.length || isRefusal(cat) || amt === null) problems.push(itemSays(label, mine, row));
+      else slices.push({ categoryId: cat, amount: amt });
+    });
+  }
+  if (problems.length || isRefusal(id)) return { ok: false, problems };
+  return { ok: true, id, slices };
+}
+
 const splitCharge: Tool = {
   kind: "direct",
   does: "Allocate one charge across several categories. The cash does not move.",
   fields: ["transaction_id", "slices"],
+  example: { transaction_id: EXAMPLE_ID, slices: [{ category_id: "groceries", amount: 30 }, { category_id: "shopping", amount: 12.5 }] },
+  lists: { slices: SLICE_SHAPE },
+  check: (payload) => {
+    const plan = planSlices(payload);
+    return plan.ok ? [] : plan.problems;
+  },
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planSlices(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, slices } = plan;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
-
-    const raw = payload.slices;
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return refuse(400, "I need at least one slice, each with a category and an amount.");
-    }
-    if (raw.length > MAX_SLICES) return refuse(400, `That is more than ${MAX_SLICES} slices.`);
-    const slices: { categoryId: string; amount: number }[] = [];
-    for (const s of raw) {
-      if (typeof s !== "object" || s === null || Array.isArray(s)) {
-        return refuse(400, "Each slice is an object with category_id and amount.");
-      }
-      const row = s as Record<string, unknown>;
-      const cat = categoryArg(row.category_id);
-      if (isRefusal(cat)) return cat;
-      const amt = money(row.amount);
-      if (amt === null || amt <= 0) return refuse(400, `The ${cat} slice needs an amount above zero.`);
-      slices.push({ categoryId: cat, amount: amt });
-    }
 
     // THE SLICES MUST ADD UP TO THE CHARGE, and this is the door's own check rather
     // than arithmetic it is doing on his behalf: the app's `splits-sum` self-check
@@ -630,10 +775,13 @@ const unlinkCharge: Tool = {
   kind: "direct",
   does: "Release a charge that was wrongly attached to a bill.",
   fields: ["transaction_id"],
+  example: { transaction_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["transaction_id", "the charge"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, ["transaction_id", "the charge"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [id] = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     if (!t.appliesTo) return refuse(409, "That charge is not attached to anything.");
@@ -657,16 +805,28 @@ const unlinkCharge: Tool = {
 // The most dangerous write here, because it SETTLES A BILL CYCLE: the calendar will
 // read that bill as paid for that month. So it carries the app's own collision guard,
 // ported verbatim.
+const LINK_MONTH_SAYS = "The month goes in as 2026-09, or leave it out and I will use the charge's own month.";
+
+/** link_charge_to_bill's two ids and, when it was sent, its month. */
+function planLink(payload: Record<string, unknown>): Shaped<{ txnId: string; billId: string }> {
+  const pad = problemPad();
+  const txnId = pad.take(idArg(payload.transaction_id, "the charge"));
+  const billId = pad.take(idArg(payload.bill_id, "the bill"));
+  pad.take(optionalMonth(payload.month, LINK_MONTH_SAYS));
+  return pad.done(() => ({ txnId: txnId!, billId: billId! }));
+}
+
 const linkChargeToBill: Tool = {
   kind: "direct",
   does: "Attach a charge to a bill, which records that bill as paid for that month.",
   fields: ["transaction_id", "bill_id", "month"],
+  example: { transaction_id: EXAMPLE_ID, bill_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planLink(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const txnId = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(txnId)) return txnId;
-    const billId = idArg(payload.bill_id, "the bill");
-    if (isRefusal(billId)) return billId;
+    const plan = planLink(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { txnId, billId } = plan.value;
     const [t, bill] = await Promise.all([db.readCharge(txnId), db.readBill(billId)]);
     if (!t) return refuse(404, "There is no charge with that id.");
     if (!bill) return refuse(404, "There is no bill with that id.");
@@ -686,9 +846,12 @@ const linkChargeToBill: Tool = {
     // on the 24th would be written to a different cycle than the one anybody was
     // looking at. The day comes off the bill's own due days, which is where the
     // calendar reads it.
+    // A month that was SENT was checked by planLink, before anything was counted. This
+    // is the derived one, off the charge's own date — a row whose date did not give a
+    // month would be the ledger's problem, and it is still refused rather than written.
     const month = payload.month === undefined ? t.date.slice(0, 7) : payload.month;
     if (typeof month !== "string" || !MONTH.test(month)) {
-      return refuse(400, "The month goes in as 2026-09, or leave it out and I will use the charge's own month.");
+      return refuse(400, LINK_MONTH_SAYS);
     }
     const dueDays = bill.dueDays?.length ? bill.dueDays : DUE_DAYS[bill.name];
     const day = dueDays?.length ? dueDays[0] : Number(t.date.slice(8, 10)) || 1;
@@ -732,25 +895,29 @@ const linkChargeToBill: Tool = {
 // a plain delete of the row it inserted — reverse_money_event would short-circuit on
 // the settled flag and delete it too, but a delete is the honest spelling of "take
 // back the row I added".
+/** mark_bill_paid's bill id, amount and month — this month when it is left out. */
+function planPaid(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ billId: string; amount: number; month: string }> {
+  const pad = problemPad();
+  const billId = pad.take(idArg(payload.bill_id, "the bill"));
+  const amount = pad.take(amountArg(payload.amount, "I need what was paid, as a number above zero."));
+  const month = pad.take(optionalMonth(payload.month, "The month goes in as 2026-09, or leave it out and I will use this month."));
+  return pad.done(() => ({ billId: billId!, amount: amount!, month: month ?? azDateISO(ctx.az).slice(0, 7) }));
+}
+
 const markBillPaid: Tool = {
   kind: "direct",
   does: "Record a bill as already paid, without moving any cash.",
   fields: ["bill_id", "amount", "month"],
+  example: { bill_id: EXAMPLE_ID, amount: 54.99 },
+  check: (payload, ctx) => problemsOf(planPaid(payload, ctx)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const billId = idArg(payload.bill_id, "the bill");
-    if (isRefusal(billId)) return billId;
+    const plan = planPaid(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { billId, amount, month } = plan.value;
     const bill = await db.readBill(billId);
     if (!bill) return refuse(404, "There is no bill with that id.");
     if (bill.direction !== "out") return refuse(409, "That row is not a bill going out.");
-    const amount = money(payload.amount);
-    if (amount === null || amount <= 0 || amount > 100_000) {
-      return refuse(400, "I need what was paid, as a number above zero.");
-    }
-    const month = payload.month === undefined ? azDateISO(ctx.az).slice(0, 7) : payload.month;
-    if (typeof month !== "string" || !MONTH.test(month)) {
-      return refuse(400, "The month goes in as 2026-09, or leave it out and I will use this month.");
-    }
     const dueDays = bill.dueDays?.length ? bill.dueDays : DUE_DAYS[bill.name];
     const day = dueDays?.length ? dueDays[0] : 1;
 
@@ -801,18 +968,28 @@ const markBillPaid: Tool = {
 // have existed, and "put it back" then means REMOVE it, not "set it to false".
 // Setting it to false would be a new override saying the opposite, which is a
 // different state from having no opinion at all.
+/** set_paid_override's month, bill key and flag — every problem at once. */
+function planOverride(payload: Record<string, unknown>): Shaped<{ month: string; key: string; paid: boolean }> {
+  const pad = problemPad();
+  const month = payload.month;
+  if (typeof month !== "string" || !MONTH.test(month)) pad.no("The month goes in as 2026-09.");
+  const key = scrubCap(payload.bill_key, 80);
+  if (!key) pad.no("I need the bill key, which finance.paid_bills gives you.");
+  if (typeof payload.paid !== "boolean") pad.no("paid is either true or false.");
+  return pad.done(() => ({ month: month as string, key, paid: payload.paid as boolean }));
+}
+
 const setPaidOverride: Tool = {
   kind: "direct",
   does: "Set or clear the hand-made paid/unpaid mark on one bill in one month.",
   fields: ["month", "bill_key", "paid"],
+  example: { month: "2026-10", bill_key: "Sample bill@3", paid: true },
+  check: (payload) => problemsOf(planOverride(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const month = payload.month;
-    if (typeof month !== "string" || !MONTH.test(month)) return refuse(400, "The month goes in as 2026-09.");
-    const key = scrubCap(payload.bill_key, 80);
-    if (!key) return refuse(400, "I need the bill key, which finance.paid_bills gives you.");
-    if (typeof payload.paid !== "boolean") return refuse(400, "paid is either true or false.");
-    const paid = payload.paid;
+    const plan = planOverride(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { month, key, paid } = plan.value;
 
     const existing = await db.readPaidOverride(month, key);
     if (existing && existing.paid === paid) {
@@ -849,10 +1026,13 @@ const dismissUnusual: Tool = {
   kind: "direct",
   does: "Dismiss the unusual-purchase flag on one charge.",
   fields: ["transaction_id"],
+  example: { transaction_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["transaction_id", "the charge"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, ["transaction_id", "the charge"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [id] = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     if (t.anomalyAck) return refuse(409, "That flag is already dismissed.");
@@ -871,10 +1051,13 @@ const excludeFromBudget: Tool = {
   kind: "direct",
   does: "Take one charge out of the variable budget, without deleting it or moving cash.",
   fields: ["transaction_id"],
+  example: { transaction_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["transaction_id", "the charge"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, ["transaction_id", "the charge"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [id] = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     if (t.appliesTo) return refuse(409, "That charge is already attached to something, so it is already out of the budget.");
@@ -893,32 +1076,144 @@ const excludeFromBudget: Tool = {
   },
 };
 
+/** set_bill_variable's bill id and flag. */
+function planVariable(payload: Record<string, unknown>): Shaped<{ id: string; variable: boolean }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.bill_id, "the bill"));
+  if (typeof payload.variable !== "boolean") pad.no("variable is either true or false.");
+  return pad.done(() => ({ id: id!, variable: payload.variable as boolean }));
+}
+
 const setBillVariable: Tool = {
   kind: "direct",
   does: "Mark a bill as varying month to month, or stop marking it that way.",
   fields: ["bill_id", "variable"],
+  example: { bill_id: EXAMPLE_ID, variable: true },
+  check: (payload) => problemsOf(planVariable(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.bill_id, "the bill");
-    if (isRefusal(id)) return id;
-    if (typeof payload.variable !== "boolean") return refuse(400, "variable is either true or false.");
+    const plan = planVariable(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, variable } = plan.value;
     const bill = await db.readBill(id);
     if (!bill) return refuse(404, "There is no bill with that id.");
-    if (bill.variable === payload.variable) {
+    if (bill.variable === variable) {
       return refuse(409, `${scrubCap(bill.name, 40)} is already marked that way.`);
     }
     return oneRow(
       ctx,
       "finance.set_bill_variable",
       { table: "recurring", id: bill.id },
-      { variable: payload.variable },
+      { variable },
       { variable: bill.variable },
-      payload.variable
+      variable
         ? `${scrubCap(bill.name, 40)} now counts as a bill whose amount varies, so the plan prices it from real payments.`
         : `${scrubCap(bill.name, 40)} now counts as a fixed bill, priced at its stored amount.`,
     );
   },
 };
+
+// ── incoming rows: the plan's income, and Gino's pay floor ───────────────────
+//
+// FOUND 2026-10-10: NOTHING STOOD BETWEEN A SENTENCE AND THE FLOOR. Gino's standing rule
+// is that his paycheck row's amount is a deliberate floor — a planned paycheck amount
+// set low on purpose, anything above it upside, never raised. finance.set_bill_amount
+// had no direction check at all, so "my check was bigger this time, update it" would
+// have raised it: undoably, but with no refusal and nobody told the rule. Two other bill
+// tools refuse anything that is not an outgoing bill (link_charge_to_bill and
+// mark_bill_paid); these three are the ones that legitimately touch income rows too, so
+// they cannot simply refuse them.
+//
+// So three changes to ANY incoming row now need the call to carry `confirm: true`:
+// raising its amount, turning it off, and ending (or shrinking) its window. Every one of
+// them makes the plan count on less money arriving — or, for a raise, on more money than
+// anyone has promised — and every figure the doors say is built on these rows: planMath
+// takes income from them, and forecast() lays them down as paychecks.
+//
+// LOWERING ONE, TURNING ONE BACK ON, OR WIDENING ITS WINDOW STAYS FREE. Those only make
+// the plan more cautious, and refusing them would train the assistant to send
+// `confirm: true` by habit, which is how a confirmation stops meaning anything.
+//
+// The refusal for the floor row says the rule itself, in PAY_FLOOR_RULE's one sentence
+// (_shared/muse/payFloor.ts, which the read door's notes follow), so the assistant hears
+// why — not only that it was refused. `confirm` is the assistant saying the person told
+// it to in this conversation; the door cannot check that, and says so in the refusal
+// rather than pretending a flag is a signature.
+//
+// FOUND 2026-10-10, IN REVIEW: ON THE FLOOR ROW, `confirm` WAS ACCEPTED FROM EITHER KEY.
+// The refusal said Gino had to be the one asking, but nothing checked who was calling,
+// so Xinyan's assistant — told "his checks are bigger now, update his paycheck" — would
+// have been handed the refusal, resent it with confirm: true as the refusal invited, and
+// raised Gino's floor without Gino anywhere in it. What the door CAN check is the key:
+// ctx.person comes from the secret that was presented, never from the body. So on the
+// floor row a raise, an off or a shortened window goes through only on Gino's key, with
+// confirm; on any other key it is refused with 403 whether or not confirm is sent, and
+// the refusal does not invite a resend that cannot work. Lowering it stays free from
+// either key, for the reason above: it only makes the plan more careful.
+//
+// Only the floor row is held to a key. It is the one row with a standing rule attached,
+// and the one isPayFloorRow can name by what it is; other incoming rows are guarded by
+// confirm alone.
+
+/** `confirm`, read as a boolean and nothing else: absent is false, and a truthy string
+ *  is refused rather than taken to mean yes. */
+function confirmArg(payload: Record<string, unknown>): boolean | Refusal {
+  if (payload.confirm === undefined) return false;
+  if (typeof payload.confirm !== "boolean") return refuse(400, "confirm is either true or false.");
+  return payload.confirm;
+}
+
+/**
+ * The refusal for a change that takes money out of the plan's income, or null to let it
+ * through. Null for every outgoing row; for any other incoming row once `confirm` is
+ * true; and for Gino's floor row only when `confirm` is true AND the call came in on
+ * his key (`person`, which is ctx.person — taken from the secret, never the body).
+ *
+ * `window` finishes the sentence for a window change — "after 2026-12-31", "until
+ * 2026-11-01" — and is unused for the other two.
+ */
+function incomeChangeRefused(
+  bill: BillRow,
+  change: "raise" | "off" | "window",
+  confirmed: boolean,
+  person: Ctx["person"],
+  window = "",
+): Refusal | null {
+  if (bill.direction !== "in") return null;
+  const name = scrubCap(bill.name, 40) || "That income";
+  if (isPayFloorRow(bill)) {
+    const what =
+      change === "raise"
+        ? `So I have not raised ${name}.`
+        : change === "off"
+          ? `Turning ${name} off would take his planned pay out of every plan and forecast, so I have not.`
+          : `That window would take his planned pay out of the plan ${window}, so I have not changed it.`;
+    // Not his key: refused with or without confirm, and no resend is suggested,
+    // because none would work. See the FOUND 2026-10-10, IN REVIEW note above.
+    if (person !== "gino") {
+      return refuse(
+        403,
+        `${PAY_FLOOR_RULE} ${what} Only Gino can change his own floor, from his own assistant; a call on this key is refused even with confirm: true.`,
+      );
+    }
+    if (confirmed) return null;
+    return refuse(
+      409,
+      `${PAY_FLOOR_RULE} ${what} If Gino has told you himself, in this conversation, to do it anyway, send the same call again with confirm: true.`,
+    );
+  }
+  if (confirmed) return null;
+  const what =
+    change === "raise"
+      ? `${name} is planned income, and raising it makes every plan and forecast count on money nobody has promised, so I have not.`
+      : change === "off"
+        ? `${name} is planned income, and turning it off takes it out of every plan and forecast, so I have not.`
+        : `${name} is planned income, and that window would take it out of the plan ${window}, so I have not changed it.`;
+  return refuse(
+    409,
+    `${what} If the person it belongs to has told you in this conversation to do it anyway, send the same call again with confirm: true.`,
+  );
+}
 
 // ── finance.set_bill_amount ──────────────────────────────────────────────────
 //
@@ -929,21 +1224,52 @@ const setBillVariable: Tool = {
 // lives in `known_amount`, a fixed row's price is `amount`. Writing the wrong one
 // leaves the old figure in force and reads as a fix that did nothing — which is
 // exactly what reviewApply.ts:117-124 records.
+/** set_bill_amount's bill id, amount and confirm — every problem at once. */
+function planBillAmount(payload: Record<string, unknown>): Shaped<{ id: string; amount: number; confirmed: boolean }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.bill_id, "the bill"));
+  const amount = pad.take(amountArg(payload.amount, "I need the amount off the bill, as a number above zero."));
+  const confirmed = pad.take(confirmArg(payload));
+  return pad.done(() => ({ id: id!, amount: amount!, confirmed: confirmed! }));
+}
+
 const setBillAmount: Tool = {
   kind: "direct",
-  does: "Record what a bill actually costs. Goes to the right column for a fixed or a variable bill.",
-  fields: ["bill_id", "amount"],
+  does: "Record what a bill actually costs. Goes to the right column for a fixed or a variable bill. Raising an incoming row (a paycheck) needs confirm: true, and on Gino's pay floor only his own key can confirm.",
+  fields: ["bill_id", "amount", "confirm"],
+  example: { bill_id: EXAMPLE_ID, amount: 64.2 },
+  check: (payload) => problemsOf(planBillAmount(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.bill_id, "the bill");
-    if (isRefusal(id)) return id;
+    const plan = planBillAmount(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, amount, confirmed } = plan.value;
     const bill = await db.readBill(id);
     if (!bill) return refuse(404, "There is no bill with that id.");
-    const amount = money(payload.amount);
-    if (amount === null || amount <= 0 || amount > 100_000) {
-      return refuse(400, "I need the amount off the bill, as a number above zero.");
-    }
     const name = scrubCap(bill.name, 40) || "that bill";
+    // ── AN INCOMING ROW IS PRICED AT `amount`, AND ONLY THERE ─────────────────
+    // The variable/fixed split below is about BILLS: billExpected() honours
+    // known_amount for an outgoing variable row. Income never reads known_amount —
+    // planMath, monthlySchedule and the forecast all price an incoming row with
+    // monthlyAmount(), off `amount` — so writing known_amount on a paycheck row would be
+    // the fix that reads as done and changed nothing. Income goes to `amount`, compared
+    // in cents so float noise cannot make a lowering look like a raise.
+    if (bill.direction === "in") {
+      if (Math.round(amount * 100) > Math.round(bill.amount * 100)) {
+        const no = incomeChangeRefused(bill, "raise", confirmed, ctx.person);
+        if (no) return no;
+      }
+      if (bill.amount === amount) return refuse(409, `${name} is already planned at ${dollars(amount)}.`);
+      return oneRow(
+        ctx,
+        "finance.set_bill_amount",
+        { table: "recurring", id: bill.id },
+        { amount },
+        { amount: bill.amount },
+        `${name} is now planned at ${dollars(amount)} a time, ${movedFrom(bill.amount, amount)}.`,
+        { column: "amount", was: bill.amount },
+      );
+    }
     if (bill.variable) {
       if (bill.knownAmount === amount) return refuse(409, `${name} is already recorded at ${dollars(amount)}.`);
       return oneRow(
@@ -1003,26 +1329,36 @@ function movedFrom(was: number, now: number): string {
 // lands in. This decides whether it counts AT ALL. Both cards are synced, so a card
 // payment appears twice — leaving checking and arriving at the card — and getting that
 // wrong inflated one month's income and its spending by $2,500 each.
+const FLOWS = ["earned", "spent", "moved", "repaid", "returned", "clear"];
+
+/** set_flow's charge id and what the charge really is — null for "clear". */
+function planFlow(payload: Record<string, unknown>): Shaped<{ id: string; next: string | null }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.transaction_id, "the charge"));
+  const raw = payload.flow;
+  // "clear" is spelled out rather than accepting null, because an omitted field and
+  // a field meaning "undo my correction" must not be the same request.
+  const asked = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!FLOWS.includes(asked)) {
+    pad.no(`flow is one of: ${FLOWS.join(", ")}. "clear" puts it back to what the app works out itself.`);
+  }
+  return pad.done(() => ({ id: id!, next: asked === "clear" ? null : asked }));
+}
+
 const setFlow: Tool = {
   kind: "direct",
   does: "Say what a charge really is — spending, money in, a transfer between our own accounts, a debt payment, or money coming back. Overrules what the app worked out.",
   fields: ["transaction_id", "flow"],
+  example: { transaction_id: EXAMPLE_ID, flow: "moved" },
+  check: (payload) => problemsOf(planFlow(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planFlow(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, next } = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
 
-    const raw = payload.flow;
-    // "clear" is spelled out rather than accepting null, because an omitted field and
-    // a field meaning "undo my correction" must not be the same request.
-    const asked = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-    const ALLOWED = ["earned", "spent", "moved", "repaid", "returned", "clear"];
-    if (!ALLOWED.includes(asked)) {
-      return refuse(400, `flow is one of: ${ALLOWED.join(", ")}. "clear" puts it back to what the app works out itself.`);
-    }
-    const next = asked === "clear" ? null : asked;
     if ((t.flowOverride ?? null) === next) {
       return refuse(409, next === null ? "That charge has no correction on it already." : `That charge is already set to ${next}.`);
     }
@@ -1065,15 +1401,16 @@ const setBillAccount: Tool = {
   kind: "direct",
   does: "Say which account a bill is paid from, so what is due can be read per account instead of as one household total.",
   fields: ["bill_id", "account_id"],
+  example: { bill_id: EXAMPLE_ID, account_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["bill_id", "the bill"], ["account_id", "the account"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.bill_id, "the bill");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, ["bill_id", "the bill"], ["account_id", "the account"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [id, acctId] = plan.value;
     const bill = await db.readBill(id);
     if (!bill) return refuse(404, "There is no bill with that id.");
 
-    const acctId = idArg(payload.account_id, "the account");
-    if (isRefusal(acctId)) return acctId;
     const account = await db.readAccount(acctId);
     // Checked against the real list rather than trusted: an id that is not an account
     // would leave the bill pointing at nothing, which is the orphan the app's own
@@ -1121,18 +1458,33 @@ const setBillAccount: Tool = {
 // come every 14 days from the anchor and its due days are never read, so writing one
 // would be a change that changes nothing — the failure set_bill_amount's comment warns
 // about, of a fix that reads as done and did nothing.
+/** A day of the month, the way every bill tool takes one. */
+function dueDayArg(v: unknown): number | Refusal {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 31) {
+    return refuse(400, "The due day is a whole number from 1 to 31.");
+  }
+  return v;
+}
+
+/** set_bill_due_day's bill id and day — both problems at once. */
+function planDueDay(payload: Record<string, unknown>): Shaped<{ id: string; day: number }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.bill_id, "the bill"));
+  const day = pad.take(dueDayArg(payload.due_day));
+  return pad.done(() => ({ id: id!, day: day! }));
+}
+
 const setBillDueDay: Tool = {
   kind: "direct",
   does: "Move a bill to the day of the month it actually comes out. Only for a bill that comes out on one day a month.",
   fields: ["bill_id", "due_day"],
+  example: { bill_id: EXAMPLE_ID, due_day: 15 },
+  check: (payload) => problemsOf(planDueDay(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.bill_id, "the bill");
-    if (isRefusal(id)) return id;
-    const day = payload.due_day;
-    if (typeof day !== "number" || !Number.isInteger(day) || day < 1 || day > 31) {
-      return refuse(400, "The due day is a whole number from 1 to 31.");
-    }
+    const plan = planDueDay(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, day } = plan.value;
     const bill = await db.readBill(id);
     if (!bill) return refuse(404, "There is no bill with that id.");
     const name = scrubCap(bill.name, 40) || "That bill";
@@ -1182,20 +1534,38 @@ const setBillDueDay: Tool = {
 // (reviewApply.ts:128-135, "§D.3 — a bill that looks finished. Never a delete"). A
 // deleted bill leaves every charge that ever paid it pointing at nothing, which the
 // app's own `links-point-somewhere` self-check then reports for ever.
+/** turn_bill_off's bill id, whether it should be on — off when it is left out — and
+ *  confirm, every problem at once. */
+function planActive(payload: Record<string, unknown>): Shaped<{ id: string; active: boolean; confirmed: boolean }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.bill_id, "the bill"));
+  const active = payload.active === undefined ? false : payload.active;
+  if (typeof active !== "boolean") pad.no("active is either true or false.");
+  const confirmed = pad.take(confirmArg(payload));
+  return pad.done(() => ({ id: id!, active: active as boolean, confirmed: confirmed! }));
+}
+
 const turnBillOff: Tool = {
   kind: "direct",
-  does: "Turn a bill off, or back on. Never deletes it.",
-  fields: ["bill_id", "active"],
+  does: "Turn a bill off, or back on. Never deletes it. Turning an incoming row (a paycheck) off needs confirm: true, and on Gino's pay floor only his own key can confirm.",
+  fields: ["bill_id", "active", "confirm"],
+  example: { bill_id: EXAMPLE_ID, active: false },
+  check: (payload) => problemsOf(planActive(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.bill_id, "the bill");
-    if (isRefusal(id)) return id;
-    const active = payload.active === undefined ? false : payload.active;
-    if (typeof active !== "boolean") return refuse(400, "active is either true or false.");
+    const plan = planActive(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, active, confirmed } = plan.value;
     const bill = await db.readBill(id);
     if (!bill) return refuse(404, "There is no bill with that id.");
     if (bill.active === active) {
       return refuse(409, `${scrubCap(bill.name, 40)} is already ${active ? "on" : "off"}.`);
+    }
+    // Turning income OFF takes it out of every plan; turning it back on is free. See
+    // incomeChangeRefused above.
+    if (!active) {
+      const no = incomeChangeRefused(bill, "off", confirmed, ctx.person);
+      if (no) return no;
     }
     return oneRow(
       ctx,
@@ -1211,14 +1581,41 @@ const turnBillOff: Tool = {
 };
 
 // ── finance.set_bill_window ──────────────────────────────────────────────────
+
+/**
+ * set_bill_window's bill id and dates — everything that can be judged from the call.
+ * A window whose two SENT dates run backwards is refused here; one that runs backwards
+ * only against the date already on the bill needs the bill, so run still decides that.
+ */
+function planWindow(payload: Record<string, unknown>): Shaped<{ id: string; confirmed: boolean }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.bill_id, "the bill"));
+  const confirmed = pad.take(confirmArg(payload));
+  for (const field of ["starts_on", "ends_on"] as const) {
+    const v = payload[field];
+    if (v !== undefined && v !== null && !isDateISO(v)) {
+      pad.no(`${field} has to be a date like 2026-11-01, or null to clear it.`);
+    }
+  }
+  if (payload.starts_on === undefined && payload.ends_on === undefined) {
+    pad.no("Tell me a starts_on or an ends_on, or null to clear one.");
+  }
+  const s0 = payload.starts_on;
+  const e0 = payload.ends_on;
+  if (isDateISO(s0) && isDateISO(e0) && s0 > e0) pad.no("That window starts after it ends.");
+  return pad.done(() => ({ id: id!, confirmed: confirmed! }));
+}
 const setBillWindow: Tool = {
   kind: "direct",
-  does: "Set the first or last date a bill or an income may fire.",
-  fields: ["bill_id", "starts_on", "ends_on"],
+  does: "Set the first or last date a bill or an income may fire. Ending or shortening an incoming row's window (a paycheck) needs confirm: true, and on Gino's pay floor only his own key can confirm.",
+  fields: ["bill_id", "starts_on", "ends_on", "confirm"],
+  example: { bill_id: EXAMPLE_ID, ends_on: "2027-06-30" },
+  check: (payload) => problemsOf(planWindow(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.bill_id, "the bill");
-    if (isRefusal(id)) return id;
+    const plan = planWindow(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, confirmed } = plan.value;
     const bill = await db.readBill(id);
     if (!bill) return refuse(404, "There is no bill with that id.");
 
@@ -1249,6 +1646,33 @@ const setBillWindow: Tool = {
       return refuse(400, "That window starts after it ends.");
     }
 
+    // ── A WINDOW THAT TAKES INCOME OUT OF THE PLAN ───────────────────────────
+    // Ending an incoming row — an end date where there was none, or an earlier one —
+    // stops it being planned after that day. Pushing its start into the future stops it
+    // being planned until then, which is the same loss with the dates the other way
+    // round, so it is held to the same confirmation. Clearing a bound, an end moved
+    // later, or a start in the past takes nothing out and stays free.
+    if (bill.direction === "in") {
+      const endsSooner =
+        "ends_on" in patch && patch.ends_on !== null && (bill.endsOn === null || String(patch.ends_on) < bill.endsOn);
+      const today = azDateISO(ctx.az);
+      const startsLater =
+        "starts_on" in patch &&
+        patch.starts_on !== null &&
+        String(patch.starts_on) > today &&
+        (bill.startsOn === null || String(patch.starts_on) > bill.startsOn);
+      if (endsSooner || startsLater) {
+        const no = incomeChangeRefused(
+          bill,
+          "window",
+          confirmed,
+          ctx.person,
+          endsSooner ? `after ${String(patch.ends_on)}` : `until ${String(patch.starts_on)}`,
+        );
+        if (no) return no;
+      }
+    }
+
     const name = scrubCap(bill.name, 40) || "that row";
     const parts: string[] = [];
     if ("starts_on" in patch) parts.push(patch.starts_on ? `starts ${String(patch.starts_on)}` : "has no start date");
@@ -1264,38 +1688,396 @@ const setBillWindow: Tool = {
   },
 };
 
+// ── finance.edit_bill ────────────────────────────────────────────────────────
+//
+// ADDED 2026-10-10: rename a bill, or file it under another category — the two things
+// about a bill NOBODY could change. FOUND that day in a scan of the door's own calls:
+// bills sat in `other` while a category that fits them existed, one still carried the
+// bank's all-caps name, and the only change the app has
+// ever made to a bill is its variable flag. The door's bill tools change the amount,
+// the account, the due day, the window and on/off; none of them touched these two.
+//
+// A CATEGORY CHANGE IS ONE COLUMN and goes down oneRow, like set_bill_account. It takes
+// the app's own list (categoryArg) and two refusals that are the app's own idea of a
+// category: `other` is the absence of one (add_bill refuses it for the same reason, from
+// reviewApply.ts:159-162), and a bill going out is filed under a spending category, an
+// income under an income one — the list says which is which. A transfer carries none.
+//
+// A RENAME IS NOT ONE COLUMN, and that is most of this tool. The name is how other things
+// find the bill:
+//   · a saved merchant rule of kind `bill` stores the bill it pays in `bill_name`, and
+//     the importer finds the bill again with matchRecurringName;
+//   · a paid mark is keyed "<label>@<day>" (schema_v3.sql), and the label is the bill's
+//     name for every mark written that way;
+//   · the app's own CODE knows some bills by name: the built-in bank rules
+//     (categorize.ts BUILT_IN_BILL_NAMES), the old due-day table and the pre-July 2026
+//     step-downs (schedule.ts DUE_DAYS, STEP_DOWNS), and the forecast's card line
+//     (forecast.ts isCardName).
+// The first two are rewritten IN THE SAME CHANGE: one token, and one undo that puts all
+// of them back. The third is code, and a door cannot rewrite code — so a rename that
+// would change what any of it finds is REFUSED, plainly, before anything is written.
+// One exception, because it can be kept exactly rather than refused: a bill whose due day
+// the old table knew only by its old name gets that day written onto the bill itself in
+// the same step, so the calendar keeps placing it where it did.
+//
+// "CHANGE WHAT IT FINDS" IS CHECKED, NOT GUESSED. For every name something points at —
+// each built-in rule name, each saved rule's bill_name — matchRecurringName is asked which
+// bill it finds before the rename and after it, over every bill and over this bill on its
+// own (the importer narrows the list to the bills live on a payment's date and account, so
+// this bill alone is a real case). If the answer moves either way, the rename is refused.
+// The two directions are the same bug: a rule that stops finding this bill leaves its
+// payments in needs_review; a rule that starts finding it settles this bill with somebody
+// else's payment — the parking charge that paid September's rent, by name.
+//
+// CADENCE AND DUE DAYS ARE NOT HERE, and that is a decision, made by reading
+// src/lib/schedule.ts. Due days already have finance.set_bill_due_day, which refuses the
+// two-part and biweekly cases for reasons it writes down. Cadence cannot be changed
+// safely from here at all: quarterly, semiannual and yearly bills are placed by
+// firesInMonth() from `anchor_date`, and a true biweekly by biweeklyDaysIn() from the same
+// column — which no door tool writes. Without an anchor, firesInMonth() answers "fires
+// every month" (so a real bill is never hidden), and the calendar prices a periodic bill
+// at its FULL charge on every one of those months: a monthly bill switched to yearly
+// would put its whole yearly charge into every month of the calendar and the forecast.
+// Changing a cadence also re-prices the plan through monthlyAmount(). A tool that offered
+// it would be one that made the calendar wrong in the common case.
+type ColumnStep = Extract<UndoStep, { kind: "set_columns" }>;
+
+/**
+ * Write several one-row compare-and-sets that belong together, in order — and if one of
+ * them finds its row moved, put the ones already written back before refusing.
+ *
+ * WHY THE PUTTING BACK. commit() marks a refused change `abandoned`, and STATE_SAYS reads
+ * that out as "there is nothing for me to put back". For a rename that is only true if
+ * the bill and its rules end up exactly as they were: a bill renamed while its rule still
+ * names the old one is the orphan this tool exists to prevent. So a later row that moved
+ * makes the earlier ones go back too, each with its own compare-and-set. `putBack` false
+ * means one of THOSE had moved as well — said out loud rather than hidden.
+ */
+async function writeInStep(
+  db: FinanceDb,
+  steps: ColumnStep[],
+): Promise<"ok" | { moved: number; putBack: boolean }> {
+  const written: ColumnStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if ((await db.setColumns(s.table, s.id, s.after, s.before)) === "moved") {
+      let putBack = true;
+      for (const w of [...written].reverse()) {
+        if ((await db.setColumns(w.table, w.id, w.before, w.after)) === "moved") putBack = false;
+      }
+      return { moved: i, putBack };
+    }
+    written.push(s);
+  }
+  return "ok";
+}
+
+/** What kind of category each id is, off the app's own list: a bill going out is filed
+ *  under spending, an income under income, and a "both" category fits either. */
+const CATEGORY_TYPE = new Map(DEFAULT_CATEGORIES.map((c) => [c.id, c.type]));
+
+/** The label half of a paid mark's "<label>@<day>" key, split at the LAST @ so a bill
+ *  name with an @ in it still splits at the day. Null for a key with no day. */
+function markLabel(key: string): { label: string; day: string } | null {
+  const at = key.lastIndexOf("@");
+  return at < 0 ? null : { label: key.slice(0, at), day: key.slice(at + 1) };
+}
+
+/** edit_bill's id, new name and new category — every problem with them at once. Whether
+ *  the category fits THIS bill, and what a rename would move, are read off the bill. */
+function planEditBill(payload: Record<string, unknown>): Shaped<{ id: string; category: string | null; typed: string | null }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.bill_id, "the bill"));
+  if (payload.name === undefined && payload.category_id === undefined) {
+    pad.no("Tell me the new name, the new category_id, or both. Cadence and due days are not changed here — finance.set_bill_due_day moves a due day.");
+  }
+  let category: string | null = null;
+  if (payload.category_id !== undefined) category = pad.take(categoryArg(payload.category_id)) ?? null;
+  let typed: string | null = null;
+  if (payload.name !== undefined) {
+    typed = scrubCap(payload.name, 40);
+    if (!typed) pad.no("A bill needs a name.");
+  }
+  return pad.done(() => ({ id: id!, category, typed }));
+}
+
+const editBill: Tool = {
+  kind: "direct",
+  does: "Rename a bill, or file it under another category. A rename carries every saved merchant rule and paid mark that names the bill along with it, in one change that can be undone.",
+  fields: ["bill_id", "name", "category_id"],
+  // A placeholder name, for the reason on add_transaction's example.
+  example: { bill_id: EXAMPLE_ID, name: "Sample streaming service", category_id: "entertainment" },
+  check: (payload) => problemsOf(planEditBill(payload)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const plan = planEditBill(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, category, typed } = plan.value;
+
+    const bill = await db.readBill(id);
+    if (!bill) return refuse(404, "There is no bill with that id.");
+    const was = scrubCap(bill.name, 40) || "That bill";
+
+    const patch: Record<string, UndoValue> = {};
+    const before: Record<string, UndoValue> = {};
+
+    if (category !== null && category !== (bill.categoryId ?? null)) {
+      if (bill.direction === "transfer") {
+        return refuse(409, `${was} moves money between your own accounts, so it is filed under no category — nothing would read one.`);
+      }
+      if (category === "other") {
+        return refuse(400, "Give it a real category. `other` is the absence of one, and a bill filed there is watched by no budget line.");
+      }
+      const type = CATEGORY_TYPE.get(category);
+      const fits = type === "both" || type === (bill.direction === "in" ? "income" : "expense");
+      if (!fits) {
+        return refuse(
+          400,
+          bill.direction === "in"
+            ? `${was} is money coming in, so it goes under an income category. Ask finance.categories for the list.`
+            : `${was} is a bill going out, so it goes under a spending category. Ask finance.categories for the list.`,
+        );
+      }
+      patch.category_id = category;
+      before.category_id = bill.categoryId;
+    }
+    // The cleaner rewrites an ellipsis as three dots, so a bill stored with one ("Card
+    // payment (…1234)") sent back exactly as it reads would otherwise be "renamed" to the
+    // cleaned spelling. That is the same name, and it is treated as one.
+    const newName = typed !== null && typed !== bill.name && typed !== scrubCap(bill.name, 40) ? typed : null;
+
+    if (!newName && Object.keys(patch).length === 0) {
+      return refuse(409, `${was} already reads that way. Nothing to change.`);
+    }
+
+    // ── category only: one row ──────────────────────────────────────────────
+    if (!newName) {
+      return oneRow(
+        ctx,
+        "finance.edit_bill",
+        { table: "recurring", id: bill.id },
+        patch,
+        before,
+        `Filed ${was} under ${category}, from ${scrubCap(bill.categoryId, NAME_MAX) || "no category"}.`,
+        { column: "category_id", was: bill.categoryId, now: category },
+      );
+    }
+
+    // ── a rename ────────────────────────────────────────────────────────────
+    const shown = scrubCap(newName, 40);
+    const key = billKey(newName);
+    if (!key) {
+      return refuse(400, "A bill's name needs letters or numbers in it — the app matches bills by those, so a name without any would match nothing.");
+    }
+    const bills = await db.allBillNames();
+    // Compared the way the app compares bill names, not by the exact string: billKey()
+    // folds case and drops spaces and punctuation, and matchRecurringName resolves a name
+    // through it. Two bills whose names read the same that way are two bills the app
+    // cannot tell apart — the first one found would take every payment meant for both.
+    const clash = bills.find((b) => b.id !== bill.id && billKey(b.name) === key);
+    if (clash) {
+      return refuse(
+        409,
+        `There is already a bill called ${scrubCap(clash.name, 40) || "that"}. Two bills whose names read the same would leave the app unable to tell which one a payment is for, so I changed nothing.`,
+      );
+    }
+
+    // The calendar's pre-July 2026 prices are keyed on the EXACT name. A rename of one of
+    // those — even to the same letters in other capitals — would re-price every month
+    // before July; a rename TO one of those would give this bill that old price.
+    if (STEP_DOWNS.has(bill.name) || STEP_DOWNS.has(newName)) {
+      return refuse(
+        409,
+        `The calendar prices the months before July 2026 for a bill called ${STEP_DOWNS.has(bill.name) ? was : shown} by that exact name, so this rename would change what those months show. I changed nothing.`,
+      );
+    }
+    // The forecast walks the card down by the first bill line whose name starts "Card
+    // payment" (isCardName). A rename across that line either stops the card being paid
+    // down in the forecast or starts paying it with the wrong bill.
+    if (isCardName(bill.name) !== isCardName(newName)) {
+      return refuse(
+        409,
+        isCardName(bill.name)
+          ? `The forecast pays the card down with the bill whose name starts "Card payment", and ${was} is that bill — so renaming it to ${shown} would leave the card unpaid in every month the forecast shows. I changed nothing.`
+          : `The forecast pays the card down with the bill whose name starts "Card payment", so naming ${was} ${shown} would make the forecast pay the card with this bill. I changed nothing.`,
+      );
+    }
+
+    const rules = await db.billRules();
+    const after = bills.map((b) => (b.id === bill.id ? { ...b, name: newName } : b));
+    const alone = [{ id: bill.id, name: bill.name }];
+    const aloneAfter = [{ id: bill.id, name: newName }];
+    const finds = (name: string, list: readonly { id: string; name: string }[]) =>
+      matchRecurringName(name, list)?.id ?? null;
+    const moves = (name: string) =>
+      finds(name, bills) !== finds(name, after) || finds(name, alone) !== finds(name, aloneAfter);
+
+    // The rules that find THIS bill now are carried: their bill_name becomes the new name,
+    // which finds it exactly. Every other name must find what it found before.
+    const carried = rules.filter((r) => r.billName !== null && finds(r.billName, bills) === bill.id);
+    const carriedIds = new Set(carried.map((r) => r.id));
+    const builtIn = BUILT_IN_BILL_NAMES.find(moves);
+    if (builtIn) {
+      const lost = finds(builtIn, bills) === bill.id || finds(builtIn, alone) === bill.id;
+      return refuse(
+        409,
+        `The app's own bank rules match a charge to a bill called ${scrubCap(builtIn, 40)}, by name, and renaming ${was} to ${shown} would ${lost ? "stop that rule finding it — its payments would stop settling it" : "make that rule find this bill instead"}. I changed nothing. A name that reads the same once capitals, spaces and punctuation are ignored keeps it working.`,
+      );
+    }
+    const stray = rules.find((r) => !carriedIds.has(r.id) && r.billName !== null && moves(r.billName));
+    if (stray) {
+      return refuse(
+        409,
+        `The saved rule for ${scrubOr(stray.pattern, "a merchant", 60)} pays the bill it finds by the name ${scrubOr(stray.billName, "it was given", 40)}, and renaming ${was} to ${shown} would change which bill that is. I changed nothing. Re-teach that rule with finance.learn_merchant first, or pick a name that does not read like it.`,
+      );
+    }
+
+    // A due day the old table knew only by the OLD name is written onto the row in the
+    // same step, so the calendar keeps placing the bill where it did. Own-property lookups
+    // only: DUE_DAYS is a plain object, and a bill called "constructor" must find nothing.
+    const stored = bill.dueDays?.length ? bill.dueDays : null;
+    const legacy = (name: string) => (Object.hasOwn(DUE_DAYS, name) && DUE_DAYS[name].length ? DUE_DAYS[name] : null);
+    let pinned: number[] | null = null;
+    if (!stored) {
+      const fromOld = legacy(bill.name);
+      if (fromOld) {
+        pinned = [...fromOld];
+        patch.due_days = pinned;
+        before.due_days = bill.dueDays;
+      } else if (legacy(newName)) {
+        return refuse(
+          409,
+          `${was} has no due day of its own, and the calendar's old table gives a bill called ${shown} one — so the rename would quietly move it on the calendar. Give it its own due day first with finance.set_bill_due_day, then rename it.`,
+        );
+      }
+    }
+    patch.name = newName;
+    before.name = bill.name;
+
+    // Paid marks under the old name move with it. Marks already saved under the NEW name
+    // — left by an older bill that was called that — would be read as this bill's, and
+    // could collide with its own on (month, bill_key), which is unique.
+    const marks = await db.paidMarks();
+    const moving = marks.filter((m) => markLabel(m.billKey)?.label === bill.name);
+    if (marks.some((m) => markLabel(m.billKey)?.label === newName)) {
+      return refuse(
+        409,
+        `There are paid marks saved under the name ${shown} already, from an older bill of that name, so moving ${was}'s marks onto it would mix the two. I changed nothing.`,
+      );
+    }
+
+    // The bill row FIRST, then its rules, then its marks — and the undo runs backwards.
+    const steps: ColumnStep[] = [
+      { kind: "set_columns", table: "recurring", id: bill.id, before, after: patch },
+      ...carried.map((r): ColumnStep => ({
+        kind: "set_columns",
+        table: "merchant_rules",
+        id: r.id,
+        before: { bill_name: r.billName },
+        after: { bill_name: newName },
+      })),
+      ...moving.map((m): ColumnStep => ({
+        kind: "set_columns",
+        table: "paid_bills",
+        id: m.id,
+        before: { bill_key: m.billKey },
+        after: { bill_key: `${newName}@${markLabel(m.billKey)!.day}` },
+      })),
+    ];
+    if (steps.length > MAX_STEPS) {
+      return refuse(
+        409,
+        `Renaming ${was} would have to rewrite ${carried.length} saved ${carried.length === 1 ? "rule" : "rules"} and ${moving.length} paid ${moving.length === 1 ? "mark" : "marks"} along with it — more rows than I will change, and put back, in one go. I changed nothing.`,
+      );
+    }
+
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const carriedSaid = [
+      carried.length ? plural(carried.length, "saved merchant rule", "saved merchant rules") : "",
+      moving.length ? plural(moving.length, "paid mark", "paid marks") : "",
+    ].filter(Boolean);
+    return commit(ctx, "finance.edit_bill", {
+      steps,
+      summary:
+        `Renamed ${was} to ${shown}` +
+        (patch.category_id !== undefined ? ` and filed it under ${category}` : "") +
+        "." +
+        (carriedSaid.length ? ` Its ${carriedSaid.join(" and ")} now name it that way too.` : ""),
+      // Not stored: true when said, and about the calendar rather than about the change.
+      note: pinned
+        ? `Its due day (${pinned.join(" and ")}) is now stored on the bill itself — the app's old table knew it only by the old name.`
+        : undefined,
+      result: {
+        id: bill.id,
+        name: shown,
+        was_name: was,
+        category_id: patch.category_id !== undefined ? category : bill.categoryId,
+        rules_carried: carried.length,
+        paid_marks_carried: moving.length,
+        due_days_pinned: pinned,
+      },
+      rowIds: [bill.id, ...carried.map((r) => r.id), ...moving.map((m) => m.id)],
+      async write() {
+        const hit = await writeInStep(db, steps);
+        if (hit === "ok") return;
+        return refuse(
+          409,
+          hit.putBack
+            ? `Something changed ${hit.moved === 0 ? was : "a rule or a paid mark that names it"} while I was renaming it, so I put back what I had already changed and changed nothing. Read it again and ask me once more.`
+            : `Something changed a row that names ${was} while I was renaming it, and one I had already changed had moved again too — so it may not all be back. Have a look at ${was} in the app before asking me again.`,
+        );
+      },
+    });
+  },
+};
+
 // ── finance.add_bill ─────────────────────────────────────────────────────────
+
+/** add_bill's six fields — every problem with any of them, in one answer. */
+function planBill(payload: Record<string, unknown>): Shaped<{
+  name: string;
+  amount: number;
+  dueDay: number;
+  cadence: string;
+  direction: "out" | "in";
+  category: string;
+}> {
+  const pad = problemPad();
+  const name = scrubCap(payload.name, 40);
+  if (!name) pad.no("That bill needs a name.");
+  const amount = pad.take(amountArg(payload.amount, "That amount does not look right."));
+  const dueDay = pad.take(dueDayArg(payload.due_day));
+  const cadence = pad.take(cadenceArg(payload.cadence));
+  const direction = payload.direction === undefined ? "out" : payload.direction;
+  if (direction !== "out" && direction !== "in") pad.no("direction is out or in.");
+  const category = pad.take(categoryArg(payload.category_id));
+  // PORTED from reviewApply.ts:159-162. A bill row landing in an ungraded category
+  // is the exact defect the app's orphan-category self-check exists to catch, and
+  // `other` is the ABSENCE of a category rather than a category.
+  if (category === "other") {
+    pad.no("Give it a real category first. `other` is the absence of one, and a bill filed there is watched by no budget line.");
+  }
+  return pad.done(() => ({
+    name,
+    amount: amount!,
+    dueDay: dueDay!,
+    cadence: cadence!,
+    direction: direction as "out" | "in",
+    category: category!,
+  }));
+}
 const addBill: Tool = {
   kind: "direct",
   does: "Model a repeating charge as a bill.",
   fields: ["name", "amount", "due_day", "cadence", "category_id", "direction"],
+  // A placeholder name — see add_transaction's example for why.
+  example: { name: "Sample subscription", amount: 25, due_day: 3, cadence: "monthly", category_id: "entertainment" },
+  check: (payload) => problemsOf(planBill(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const name = scrubCap(payload.name, 40);
-    if (!name) return refuse(400, "That bill needs a name.");
-    const amount = money(payload.amount);
-    if (amount === null || amount <= 0 || amount > 100_000) {
-      return refuse(400, "That amount does not look right.");
-    }
-    const dueDay = payload.due_day;
-    if (typeof dueDay !== "number" || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
-      return refuse(400, "The due day is a whole number from 1 to 31.");
-    }
-    const cadence = payload.cadence === undefined ? "monthly" : payload.cadence;
-    const CADENCES = ["weekly", "biweekly", "semimonthly", "monthly", "quarterly", "semiannual", "yearly"];
-    if (typeof cadence !== "string" || !CADENCES.includes(cadence)) {
-      return refuse(400, `The cadence is one of: ${CADENCES.join(", ")}.`);
-    }
-    const direction = payload.direction === undefined ? "out" : payload.direction;
-    if (direction !== "out" && direction !== "in") return refuse(400, "direction is out or in.");
-    const category = categoryArg(payload.category_id);
-    if (isRefusal(category)) return category;
-    // PORTED from reviewApply.ts:159-162. A bill row landing in an ungraded category
-    // is the exact defect the app's orphan-category self-check exists to catch, and
-    // `other` is the ABSENCE of a category rather than a category.
-    if (category === "other") {
-      return refuse(400, "Give it a real category first. `other` is the absence of one, and a bill filed there is watched by no budget line.");
-    }
+    const plan = planBill(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { name, amount, dueDay, cadence, direction, category } = plan.value;
 
     // PORTED from reviewApply.ts:167-172. A bill that is already modelled must not be
     // modelled twice — the calendar would show both and the plan would price both.
@@ -1399,12 +2181,55 @@ function shadowNote(name: string, matches: number, shadowed: number, rules: numb
   );
 }
 
+/**
+ * Everything learn_merchant can judge before it reads anything: the id's shape, a typed
+ * merchant when there is no id (and that it is not the bank's own wording), the kind,
+ * and the category or bill name the kind needs. Said together. What depends on the
+ * charge — its name, and whether that name is the bank's wording — is still decided in
+ * run, after the charge is read.
+ */
+function planRule(payload: Record<string, unknown>): Shaped<null> {
+  const pad = problemPad();
+  if (payload.transaction_id !== undefined) {
+    pad.take(idArg(payload.transaction_id, "the charge"));
+  } else {
+    const typed = payload.merchant === undefined ? "" : scrubCap(payload.merchant, 60);
+    const key = typed ? merchantKey(typed) : "";
+    if (!typed) {
+      pad.no("Tell me the merchant, as it reads on the charge — or give me the charge's transaction_id and I will read the name off it.");
+    } else if (!key) {
+      pad.no("There was nothing left of that merchant name once it was normalised.");
+    } else if (isStatementNoiseKey(key)) {
+      pad.no(
+        `${typed} is how the bank labels a kind of charge, not a merchant. A rule on it would catch every charge the bank labels that way, whoever was paid, so I will not teach it. Put the charge in a category on its own instead.`,
+      );
+    }
+  }
+  const kind = payload.kind;
+  if (kind !== "variable" && kind !== "bill" && kind !== "skip") {
+    pad.no("kind is variable (ordinary spending), bill (it pays a bill), or skip (drop it from the ledger).");
+  }
+  if (kind === "variable") {
+    const cat = pad.take(categoryArg(payload.category_id));
+    if (cat === "other") {
+      pad.no("I will not teach `other` for a merchant — that stops the app ever trying on it again. Filing one charge there is fine; teaching it is not.");
+    }
+  } else if (kind === "bill" && !scrubCap(payload.bill_name, 40)) {
+    pad.no("For a bill rule I need the name of the bill it pays.");
+  }
+  return pad.done(() => null);
+}
+
 const learnMerchant: Tool = {
   kind: "direct",
   does: "Teach the app what a merchant is, so future charges label themselves. Give the charge's transaction_id and the name is read off the charge exactly.",
   fields: ["merchant", "transaction_id", "kind", "category_id", "bill_name"],
+  example: { transaction_id: EXAMPLE_ID, kind: "variable", category_id: "groceries" },
+  check: (payload) => problemsOf(planRule(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
+    const plan = planRule(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
     const typed = payload.merchant === undefined ? "" : scrubCap(payload.merchant, 60);
 
     // WHERE THE KEY COMES FROM. A charge, when one is named — its `description`, the
@@ -1678,18 +2503,30 @@ const learnMerchant: Tool = {
 // so even a door that dies mid-call leaves the rule's whole content recorded. The undo
 // puts it back under the same id, and refuses rather than overwrite if the merchant has
 // been given a rule again since.
+/** forget_merchant's merchant, as the key the rule is saved under. */
+function planForgetRule(payload: Record<string, unknown>): Shaped<string> {
+  const pad = problemPad();
+  const typed = payload.merchant === undefined ? "" : scrubCap(payload.merchant, 60);
+  const pattern = typed ? merchantKey(typed) : "";
+  if (!typed) {
+    pad.no("Tell me the merchant the rule is saved under — finance.merchant_rules lists them, by the names they match.");
+  } else if (!pattern) {
+    pad.no("There was nothing left of that merchant name once it was normalised.");
+  }
+  return pad.done(() => pattern);
+}
+
 const forgetMerchant: Tool = {
   kind: "direct",
   does: "Stop applying a saved merchant rule. Charges already filed keep their category.",
   fields: ["merchant"],
+  example: { merchant: "Sample Bakery" },
+  check: (payload) => problemsOf(planForgetRule(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const typed = payload.merchant === undefined ? "" : scrubCap(payload.merchant, 60);
-    if (!typed) {
-      return refuse(400, "Tell me the merchant the rule is saved under — finance.merchant_rules lists them, by the names they match.");
-    }
-    const pattern = merchantKey(typed);
-    if (!pattern) return refuse(400, "There was nothing left of that merchant name once it was normalised.");
+    const plan = planForgetRule(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const pattern = plan.value;
     // NO isStatementNoiseKey HERE. See above: removing a rule on the bank's wording is
     // the main thing this tool is for.
 
@@ -1763,18 +2600,26 @@ const forgetMerchant: Tool = {
 // is derived from — safe-to-spend, the per-cycle budget, the bills runway — and a
 // Plaid sync SETS it from the bank's own figure. So the undo restores the number this
 // door replaced, and holds until the next sync re-anchors it.
+/** set_account_balance's account id and balance — both problems at once. */
+function planBalance(payload: Record<string, unknown>): Shaped<{ id: string; balance: number }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.account_id, "the account"));
+  const balance = money(payload.balance);
+  if (balance === null || balance < -100_000 || balance > 1_000_000) pad.no("I need the balance as a number.");
+  return pad.done(() => ({ id: id!, balance: balance! }));
+}
+
 const setAccountBalance: Tool = {
   kind: "direct",
   does: "Set an account's balance by hand. This is the number every other figure is derived from.",
   fields: ["account_id", "balance"],
+  example: { account_id: EXAMPLE_ID, balance: 250 },
+  check: (payload) => problemsOf(planBalance(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.account_id, "the account");
-    if (isRefusal(id)) return id;
-    const balance = money(payload.balance);
-    if (balance === null || balance < -100_000 || balance > 1_000_000) {
-      return refuse(400, "I need the balance as a number.");
-    }
+    const plan = planBalance(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, balance } = plan.value;
     const acct = await db.readAccount(id);
     if (!acct) return refuse(404, "There is no account with that id.");
     if (acct.balance === balance) {
@@ -1796,30 +2641,42 @@ const setAccountBalance: Tool = {
 };
 
 // ── finance.add_debt ─────────────────────────────────────────────────────────
+
+/** add_debt's name, balance, APR and minimum — every problem with them. */
+function planDebt(payload: Record<string, unknown>): Shaped<{
+  name: string;
+  balance: number;
+  apr: number | null;
+  minPayment: number | null;
+}> {
+  const pad = problemPad();
+  const name = scrubCap(payload.name, 40);
+  if (!name) pad.no("That debt needs a name.");
+  const balance = money(payload.balance);
+  if (balance === null || balance < 0 || balance > 1_000_000) pad.no("I need what is owed, as a number of zero or more.");
+  let apr: number | null = null;
+  if (payload.apr !== undefined && payload.apr !== null) {
+    apr = money(payload.apr);
+    if (apr === null || apr < 0 || apr > 100) pad.no("The APR is a percentage between 0 and 100.");
+  }
+  let minPayment: number | null = null;
+  if (payload.min_payment !== undefined && payload.min_payment !== null) {
+    minPayment = money(payload.min_payment);
+    if (minPayment === null || minPayment < 0 || minPayment > 100_000) pad.no("The minimum payment is a number of zero or more.");
+  }
+  return pad.done(() => ({ name, balance: balance!, apr, minPayment }));
+}
 const addDebt: Tool = {
   kind: "direct",
   does: "Add a debt to track.",
   fields: ["name", "balance", "apr", "min_payment"],
+  example: { name: "Sample store card", balance: 300, apr: 24.99, min_payment: 25 },
+  check: (payload) => problemsOf(planDebt(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const name = scrubCap(payload.name, 40);
-    if (!name) return refuse(400, "That debt needs a name.");
-    const balance = money(payload.balance);
-    if (balance === null || balance < 0 || balance > 1_000_000) {
-      return refuse(400, "I need what is owed, as a number of zero or more.");
-    }
-    let apr: number | null = null;
-    if (payload.apr !== undefined && payload.apr !== null) {
-      apr = money(payload.apr);
-      if (apr === null || apr < 0 || apr > 100) return refuse(400, "The APR is a percentage between 0 and 100.");
-    }
-    let minPayment: number | null = null;
-    if (payload.min_payment !== undefined && payload.min_payment !== null) {
-      minPayment = money(payload.min_payment);
-      if (minPayment === null || minPayment < 0 || minPayment > 100_000) {
-        return refuse(400, "The minimum payment is a number of zero or more.");
-      }
-    }
+    const plan = planDebt(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { name, balance, apr, minPayment } = plan.value;
 
     const id = await db.insertRow("debts", {
       name,
@@ -1841,24 +2698,67 @@ const addDebt: Tool = {
   },
 };
 
+/**
+ * When a debt was closed, null while it is open — or undefined when the database has no
+ * `closed_at` column yet (supabase/schema_v44_debt_closed.sql not run).
+ *
+ * The one failure worth naming, exactly as finance.refresh_bank names schema_v39's: the
+ * column is not there. It is recognised by the column's name in Postgres's own message,
+ * which the wiring's label deliberately does not carry. Anything else is a real failure
+ * and goes on to the handler's 500 — a door that answered "not set up" to every error
+ * would hide an outage behind a setup instruction.
+ *
+ * What undefined MEANS is the caller's call: edit_debt cannot close a debt without the
+ * column, so it refuses; link_debt_to_card reads it as open, which is true — nothing can
+ * have closed a debt on a database that cannot record it.
+ */
+async function readClosedAt(db: FinanceDb, id: string): Promise<string | null | undefined> {
+  try {
+    return await db.readDebtClosedAt(id);
+  } catch (e) {
+    if (/closed_at/.test(String((e as Error)?.message ?? e))) return undefined;
+    throw e;
+  }
+}
+
 // ── finance.link_debt_to_card ────────────────────────────────────────────────
 //
 // Pointing a debt at a connected card makes the bank drive its balance: the DB trigger
 // keeps it in sync from there. So the write is TWO columns — the link and a snap of
 // the card's current balance (FinanceStore.tsx:1254) — and the undo puts both back.
+//
+// A CLOSED DEBT IS REFUSED. FOUND in review 2026-10-10: edit_debt refuses to close a debt
+// that follows a card, so a finished debt cannot quietly owe money again — and this tool
+// was the other way into exactly that state. It copies the card's balance onto the debt
+// on the spot and never touches closed_at, so a paid-off card used again and linked here
+// read as `closed: true` with real money owed, and API.md tells the assistant to call a
+// closed debt finished. Re-opening first (finance.edit_debt, closed false) is one call,
+// and it keeps "closed" meaning one thing. A database without the column reads every
+// debt as open (readClosedAt), so this check costs nothing there.
 const linkDebtToCard: Tool = {
   kind: "direct",
-  does: "Point a debt at a connected credit card, so the bank keeps its balance current.",
+  does: "Point a debt at a connected credit card, so the bank keeps its balance current. A closed debt is refused — re-open it first with finance.edit_debt.",
   fields: ["debt_id", "account_id"],
+  example: { debt_id: EXAMPLE_ID, account_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["debt_id", "the debt"], ["account_id", "the account"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const debtId = idArg(payload.debt_id, "the debt");
-    if (isRefusal(debtId)) return debtId;
-    const acctId = idArg(payload.account_id, "the account");
-    if (isRefusal(acctId)) return acctId;
-    const [debt, acct] = await Promise.all([db.readDebt(debtId), db.readAccount(acctId)]);
+    const plan = planIds(payload, ["debt_id", "the debt"], ["account_id", "the account"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [debtId, acctId] = plan.value;
+    const [debt, acct, closedAt] = await Promise.all([
+      db.readDebt(debtId),
+      db.readAccount(acctId),
+      readClosedAt(db, debtId),
+    ]);
     if (!debt) return refuse(404, "There is no debt with that id.");
     if (!acct) return refuse(404, "There is no account with that id.");
+    if (closedAt) {
+      return refuse(
+        409,
+        `${scrubCap(debt.name, 40) || "That debt"} is closed — it was marked finished — so it cannot start following a card while it reads that way. Re-open it first with finance.edit_debt (closed: false), then link it. I changed nothing.`,
+      );
+    }
     if (!acct.providerAccountId) {
       return refuse(409, `${scrubCap(acct.name, 40)} is not bank-linked, so there is nothing for the debt to follow.`);
     }
@@ -1882,10 +2782,13 @@ const unlinkDebtCard: Tool = {
   kind: "direct",
   does: "Stop a debt following a card. Its balance then stays where it is until somebody changes it.",
   fields: ["debt_id"],
+  example: { debt_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["debt_id", "the debt"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const debtId = idArg(payload.debt_id, "the debt");
-    if (isRefusal(debtId)) return debtId;
+    const plan = planIds(payload, ["debt_id", "the debt"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [debtId] = plan.value;
     const debt = await db.readDebt(debtId);
     if (!debt) return refuse(404, "There is no debt with that id.");
     if (!debt.providerAccountId) return refuse(409, "That debt does not follow a card.");
@@ -1900,20 +2803,245 @@ const unlinkDebtCard: Tool = {
   },
 };
 
+// ── finance.edit_debt ────────────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. The debt tools could add a debt and point it at a card, and nothing —
+// not the door, not the app (FinanceStore.tsx has addDebt, link and unlink, and no update)
+// — could change one. FOUND in that day's scan of the door's calls: the card's minimum
+// payment changes after every statement, finance.debts reads the stored minimum out loud,
+// and the stored one could only be corrected with raw SQL, which leaves no audit row and
+// no way back. So: the name, the minimum, the rate, and closing a finished debt.
+//
+// ONE ROW, ONE COMPARE-AND-SET, ONE UNDO, through oneRow like set_bill_account — however
+// many of the four are changed at once. Each field has three spellings, the rule
+// set_bill_window follows: absent leaves it alone, a value sets it, and null clears the
+// minimum or the rate (a debt with no rate on record is a different state from 0%).
+//
+// WHAT EACH ONE MOVES, said in the reply because a person cannot see it from a chat:
+//   · the MINIMUM is read by the debt list and nothing else. What the plan sets aside for
+//     a card each month is the amount on the bill that pays it (plannedMonthly reads the
+//     bill, and set_bill_amount changes that one). The reply says so, so "I updated the
+//     minimum" is not heard as "the plan now pays it".
+//   · the RATE is what payoffSchedule() and the forecast charge interest at, so the payoff
+//     projection moves with it.
+//   · the NAME is how ATTACK_ORDER in plan.ts puts the debts in order, by exact string. A
+//     rename of a debt on that list would drop it to the back of the payoff order — and a
+//     rename onto it would pull another debt forward — so both are refused, plainly.
+//
+// CLOSING IS A FLAG, NEVER A DELETE — `closed_at`, from supabase/schema_v44_debt_closed.sql,
+// which this commit adds and does not run. Until it is run the column is missing, and
+// closing or re-opening is refused with a sentence that names the file; everything else
+// here still works, because closed_at is read on its own (readDebtClosedAt) and only when
+// asked for. Two refusals, both about money that is still moving:
+//   · a debt that still shows money owed. Closing it would take real money out of the
+//     payoff plan and the debt total, with nothing in the ledger saying it was paid.
+//   · a debt that still follows a card. The bank sets its balance on every sync
+//     (schema_v12's trigger), so a card used again would quietly owe money on a debt
+//     marked finished. Unlinking first (finance.unlink_debt_card) is the honest order.
+// At a zero balance nothing the app adds up moves either way: the plan and the payoff
+// already skip a debt at zero, and the calendar already drops the bill that pays it.
+/**
+ * edit_debt's id and its four changes — every problem with any of them, before anything
+ * is read, so a bad field costs no round trip and none of the hour.
+ *
+ * Both money columns hold two decimals (numeric(12,2) and numeric(6,2)), so a figure is
+ * taken to the cent HERE, before it is written: the undo compares what is stored against
+ * what this call wrote, and 140.005 written is 140.01 stored — an undo that would then
+ * refuse as "changed since" about a row nothing touched.
+ */
+function planEditDebt(payload: Record<string, unknown>): Shaped<{
+  id: string;
+  typed: string | null;
+  minPayment: number | null | undefined;
+  apr: number | null | undefined;
+}> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.debt_id, "the debt"));
+  if (
+    payload.name === undefined &&
+    payload.min_payment === undefined &&
+    payload.apr === undefined &&
+    payload.closed === undefined
+  ) {
+    pad.no("Tell me what to change: name, min_payment, apr (null clears either of those two), or closed (true or false).");
+  }
+  let typed: string | null = null;
+  if (payload.name !== undefined) {
+    typed = scrubCap(payload.name, 40);
+    if (!typed) pad.no("A debt needs a name.");
+  }
+  const cents = (n: number) => Math.round(n * 100) / 100;
+  let minPayment: number | null | undefined;
+  if (payload.min_payment !== undefined) {
+    minPayment = payload.min_payment === null ? null : money(payload.min_payment);
+    if (payload.min_payment !== null && (minPayment === null || minPayment < 0 || minPayment > 100_000)) {
+      pad.no("The minimum payment is a number of zero or more, or null to clear it.");
+    } else if (minPayment !== null) minPayment = cents(minPayment);
+  }
+  let apr: number | null | undefined;
+  if (payload.apr !== undefined) {
+    apr = payload.apr === null ? null : money(payload.apr);
+    if (payload.apr !== null && (apr === null || apr < 0 || apr > 100)) {
+      pad.no("The APR is a percentage between 0 and 100, or null to clear it.");
+    } else if (apr !== null) apr = cents(apr);
+  }
+  if (payload.closed !== undefined && typeof payload.closed !== "boolean") {
+    pad.no("closed is either true or false.");
+  }
+  return pad.done(() => ({ id: id!, typed, minPayment, apr }));
+}
+
+const editDebt: Tool = {
+  kind: "direct",
+  does: "Change a debt's name, minimum payment or interest rate (null clears the minimum or the rate), or close a paid-off debt without deleting it — closed true, or false to re-open it.",
+  fields: ["debt_id", "name", "min_payment", "apr", "closed"],
+  example: { debt_id: EXAMPLE_ID, min_payment: 35 },
+  check: (payload) => problemsOf(planEditDebt(payload)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    // Every shape is checked before anything is read, so a bad field costs no round trip.
+    const plan = planEditDebt(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, typed, minPayment, apr } = plan.value;
+
+    const debt = await db.readDebt(id);
+    if (!debt) return refuse(404, "There is no debt with that id.");
+    const label = scrubCap(debt.name, 40) || "That debt";
+    const patch: Record<string, UndoValue> = {};
+    const before: Record<string, UndoValue> = {};
+    const said: string[] = [];
+    const notes: string[] = [];
+
+    // Same rule as edit_bill: a name the cleaner merely re-spells is the same name.
+    const newName = typed !== null && typed !== debt.name && typed !== scrubCap(debt.name, 40) ? typed : null;
+    const now = newName ? scrubCap(newName, 40) : label;
+    if (newName) {
+      const ordered = ATTACK_ORDER.includes(debt.name);
+      if (ordered || ATTACK_ORDER.includes(newName)) {
+        return refuse(
+          409,
+          ordered
+            ? `The payoff plan puts the debts in order by their exact names, and ${label} is one of them — renaming it would drop it to the back of that order. I changed nothing.`
+            : `The payoff plan puts the debts in order by their exact names, and ${now} is one of those names — renaming ${label} to it would move it up the order. I changed nothing.`,
+        );
+      }
+      const same = (a: string) => a.trim().toLowerCase() === newName.trim().toLowerCase();
+      const clash = (await db.allDebtNames()).find((d) => d.id !== debt.id && same(d.name));
+      if (clash) return refuse(409, `There is already a debt called ${scrubCap(clash.name, 40) || "that"}.`);
+      patch.name = newName;
+      before.name = debt.name;
+      said.push(`Renamed ${label} to ${now}.`);
+    }
+
+    if (minPayment !== undefined && minPayment !== debt.minPayment) {
+      patch.min_payment = minPayment;
+      before.min_payment = debt.minPayment;
+      said.push(
+        minPayment === null
+          ? `${now} has no minimum payment recorded any more (it was ${dollars(debt.minPayment ?? 0)}).`
+          : debt.minPayment === null
+            ? `${now}'s minimum payment is now ${dollars(minPayment)}, where none was recorded before.`
+            : `${now}'s minimum payment is now ${dollars(minPayment)}, ${movedFrom(debt.minPayment, minPayment)}.`,
+      );
+      notes.push(
+        "Only the debt list reads the minimum. What the plan sets aside for this debt each month is the amount on the bill that pays it, which finance.set_bill_amount changes.",
+      );
+    }
+
+    if (apr !== undefined && apr !== debt.apr) {
+      patch.apr = apr;
+      before.apr = debt.apr;
+      said.push(
+        apr === null
+          ? `${now} has no interest rate recorded any more (it was ${debt.apr}%).`
+          : debt.apr === null
+            ? `${now}'s interest rate is now ${apr}%, where none was recorded before.`
+            : `${now}'s interest rate is now ${apr}%, ${apr > debt.apr ? "up" : "down"} from ${debt.apr}%.`,
+      );
+      notes.push("The payoff plan charges interest at this rate, so its projection moves with it.");
+    }
+
+    if (payload.closed !== undefined) {
+      // readClosedAt says which failure is "the column is not there yet" and lets every
+      // other one through to the handler's 500.
+      const closedAt = await readClosedAt(db, debt.id);
+      if (closedAt === undefined) {
+        return refuse(
+          503,
+          "I cannot close or re-open a debt yet: the database is missing the column that records it " +
+            "(schema_v44_debt_closed.sql has not been run). The name, the minimum payment and the rate can " +
+            "still be changed — I changed nothing this time.",
+        );
+      }
+      if (payload.closed && !closedAt) {
+        if (Math.round(debt.balance * 100) > 0) {
+          return refuse(
+            409,
+            `${label} still shows ${dollars(debt.balance)} owed, so closing it would take money that is owed out of the payoff plan. Close it once it reads $0.00. I changed nothing.`,
+          );
+        }
+        if (debt.providerAccountId) {
+          return refuse(
+            409,
+            `${label} still follows a card, so the bank sets its balance on every sync — a card used again would owe money on a debt marked finished. Stop it following the card first (finance.unlink_debt_card). I changed nothing.`,
+          );
+        }
+        patch.closed_at = ctx.at.toISOString();
+        before.closed_at = null;
+        said.push(`Closed ${now}. It stays in the app at ${dollars(0)} with its history — it is finished, not deleted.`);
+      } else if (!payload.closed && closedAt) {
+        patch.closed_at = null;
+        before.closed_at = closedAt;
+        said.push(`Re-opened ${now}.`);
+      }
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return refuse(409, `${label} already reads that way. Nothing to change.`);
+    }
+    return oneRow(
+      ctx,
+      "finance.edit_debt",
+      { table: "debts", id: debt.id },
+      patch,
+      before,
+      said.join(" "),
+      {
+        name: now,
+        min_payment: "min_payment" in patch ? patch.min_payment : debt.minPayment,
+        apr: "apr" in patch ? patch.apr : debt.apr,
+        ...("closed_at" in patch ? { closed: patch.closed_at !== null } : {}),
+        changed: Object.keys(patch),
+      },
+      notes.length ? notes.join(" ") : undefined,
+    );
+  },
+};
+
 // ── the two set-aside writes ─────────────────────────────────────────────────
+
+/** set_aside's charge id and reason — both problems at once. */
+function planSetAside(payload: Record<string, unknown>): Shaped<{ id: string; reason: "excluded" | "reimbursable" }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.transaction_id, "the charge"));
+  const reason = payload.reason;
+  if (reason !== "excluded" && reason !== "reimbursable") {
+    pad.no("reason is excluded (not your budget) or reimbursable (owed back to you).");
+  }
+  return pad.done(() => ({ id: id!, reason: reason as "excluded" | "reimbursable" }));
+}
 
 const setAside: Tool = {
   kind: "direct",
   does: "Set a charge aside — out of the budget but still visible — as excluded or as owed back to you.",
   fields: ["transaction_id", "reason", "note"],
+  example: { transaction_id: EXAMPLE_ID, reason: "reimbursable", note: "Work lunch" },
+  check: (payload) => problemsOf(planSetAside(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
-    const reason = payload.reason;
-    if (reason !== "excluded" && reason !== "reimbursable") {
-      return refuse(400, "reason is excluded (not your budget) or reimbursable (owed back to you).");
-    }
+    const plan = planSetAside(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, reason } = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     if (t.appliesTo) return refuse(409, "That charge is already attached to something. Release it first.");
@@ -1937,14 +3065,27 @@ const setAside: Tool = {
   },
 };
 
+/** settle_reimbursable's charge id and, when it was sent, the deposit's. */
+function planSettle(payload: Record<string, unknown>): Shaped<{ id: string; creditId: string | null }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.transaction_id, "the charge"));
+  const creditId = payload.credit_transaction_id === undefined
+    ? null
+    : pad.take(idArg(payload.credit_transaction_id, "the deposit"));
+  return pad.done(() => ({ id: id!, creditId: creditId ?? null }));
+}
+
 const settleReimbursable: Tool = {
   kind: "direct",
   does: "Mark a reimbursable as paid back, optionally linking the deposit that paid it.",
   fields: ["transaction_id", "credit_transaction_id"],
+  example: { transaction_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planSettle(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planSettle(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id } = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     const at = t.appliesTo as { kind?: string; reason?: string; settled?: boolean; note?: string } | null;
@@ -1957,10 +3098,8 @@ const settleReimbursable: Tool = {
     // link a credit that is STILL a free, unlinked income row — otherwise a stale
     // suggestion would claim a deposit another reimbursable already used.
     let credit: ChargeRow | null = null;
-    if (payload.credit_transaction_id !== undefined) {
-      const creditId = idArg(payload.credit_transaction_id, "the deposit");
-      if (isRefusal(creditId)) return creditId;
-      credit = await db.readCharge(creditId);
+    if (plan.value.creditId !== null) {
+      credit = await db.readCharge(plan.value.creditId);
       if (!credit) return refuse(404, "There is no deposit with that id.");
       if (credit.type !== "income") return refuse(409, "That row is not a deposit.");
       if (credit.appliesTo) return refuse(409, "That deposit is already attached to something else.");
@@ -2038,10 +3177,13 @@ const unsettleReimbursable: Tool = {
   kind: "direct",
   does: "Re-open a reimbursable as still owed, and free the deposit it was tied to.",
   fields: ["transaction_id"],
+  example: { transaction_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, ["transaction_id", "the charge"])),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, ["transaction_id", "the charge"]);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const [id] = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     const at = t.appliesTo as
@@ -2116,19 +3258,25 @@ const unsettleReimbursable: Tool = {
 // (FinanceStore.tsx:1190): insert the bill unless one already matches the merchant,
 // point THIS charge at it so it leaves variable spend, and teach the categoriser so
 // the next one lands on its own.
+/** promote_to_bill's charge id and cadence — both problems at once. */
+function planPromote(payload: Record<string, unknown>): Shaped<{ id: string; cadence: string }> {
+  const pad = problemPad();
+  const id = pad.take(idArg(payload.transaction_id, "the charge"));
+  const cadence = pad.take(cadenceArg(payload.cadence));
+  return pad.done(() => ({ id: id!, cadence: cadence! }));
+}
+
 const promoteToBill: Tool = {
   kind: "direct",
   does: "Turn a repeating charge into a bill, attach this charge to it, and remember the merchant.",
   fields: ["transaction_id", "cadence"],
+  example: { transaction_id: EXAMPLE_ID, cadence: "monthly" },
+  check: (payload) => problemsOf(planPromote(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    const id = idArg(payload.transaction_id, "the charge");
-    if (isRefusal(id)) return id;
-    const cadence = payload.cadence === undefined ? "monthly" : payload.cadence;
-    const CADENCES = ["weekly", "biweekly", "semimonthly", "monthly", "quarterly", "semiannual", "yearly"];
-    if (typeof cadence !== "string" || !CADENCES.includes(cadence)) {
-      return refuse(400, `The cadence is one of: ${CADENCES.join(", ")}.`);
-    }
+    const plan = planPromote(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { id, cadence } = plan.value;
     const t = await db.readCharge(id);
     if (!t) return refuse(404, "There is no charge with that id.");
     if (t.appliesTo) return refuse(409, "That charge is already attached to something.");
@@ -2257,6 +3405,598 @@ const promoteToBill: Tool = {
   },
 };
 
+// ── finance.confirm_charges ──────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. "Yes, these are right" for many charges in one call.
+//
+// WHY. A scan of the door's real calls on 2026-10-10 found a backlog of charges flagged
+// for review, most of them at a handful of merchants and already filed in the right
+// category. The only way through the door to clear a flag was finance.categorize_charge,
+// one charge per call, against a cap of 60 writes an hour — hours of the cap just to say
+// "yes" to each. The app's review screen, the one place that could do it faster, is
+// being retired.
+//
+// TWO WAYS TO NAME THE BATCH, never both:
+//   · `charges` — a list of up to CONFIRM_MAX charges. Each item is a charge id (it
+//     keeps its category) or {transaction_id, category_id}. A top-level `category_id`
+//     is the category for every item that does not name its own.
+//   · `merchant` + `category_id` — every charge at that merchant still FLAGGED for
+//     review, not chosen by hand, not paying a bill and not split.
+//
+// WHY MERCHANT MODE TOUCHES ONLY FLAGGED CHARGES, though the first sketch of this tool
+// said "every matching charge". The flag is the question; a charge with no flag has
+// already been answered — by a rule, a bank tag, or a person. The cases that matter are
+// the merchants that run a fuel pump AND a store under one name (MULTI_DEPARTMENT in
+// categorize.ts): a pump charge the bank tagged is filed as transport at high
+// confidence, unflagged, and "confirm this merchant as groceries" would have moved it
+// into groceries. Leaving unflagged charges alone is what makes the bulk version as
+// safe as answering one at a time. They are counted in the reply, never touched.
+//
+// AND AT THOSE SAME MERCHANTS, IT NEVER MOVES A FLAGGED CHARGE EITHER. FOUND 2026-10-10
+// in review: protecting the unflagged pump charges missed that the FLAGGED ones there
+// are the ambiguous fill-ups. classify() flags them precisely because the bank's line
+// does not say pump or store and the amount could be one tank — the household's own
+// labels split about evenly, and categorize.ts records a bulk re-decide that once moved
+// hundreds of dollars at once. Filing every one of them into the asked-for category, locked as chosen
+// by hand so no sync or rule could correct it afterwards, was that same bulk re-decide.
+// So at a fuel-and-store merchant merchant mode confirms only the flagged charges
+// ALREADY in the asked-for category (the backlog the scan measured: charges sitting in
+// the right place, asking anyway), counts the rest as `would_change_category`, and the
+// reply says each one is its own answer, to be sent as a list after looking at it.
+//
+// AND NEVER A CHARGE STILL PROCESSING. FOUND 2026-10-10 in review: the bank sync deletes
+// a processing charge and inserts it again under a NEW id, both when the bank re-sends
+// it and when it posts (plaid/index.ts, the pending section). The person's answer is
+// carried across, but this batch's undo names the OLD id and could never find that row
+// again. Merchant mode counts them as `pending`; a list naming one is refused by item.
+//
+// WHAT IT WRITES is exactly what categorize_charge writes, per charge: the category,
+// `user_categorized` (a human chose this — the sync never re-guesses it) and
+// `needs_review` false (the question has been answered). The undo restores all three,
+// for the reason categorize_charge gives: restoring only the category would leave the
+// flag that freezes the row.
+//
+// ONE CHANGE, ONE TOKEN, one compare-and-set per charge — the steps are ordinary
+// set_columns steps, one per row. system.undo puts a batch back ROW BY ROW
+// (ROW_BY_ROW_TOOLS in undo.ts): every charge that still holds what this wrote goes
+// back, one somebody has changed since keeps that change, and the reply counts both.
+// It used to stop at the first row that moved, which froze the whole batch for good.
+//
+// ALL OR NOTHING. If a charge has moved between the read and its write (the phone
+// re-filed it in the gap), the rows already written are put back, each by its own
+// compare-and-set, and the reply says nothing changed. settle_reimbursable accepts "a
+// small lie" for its two-row case; a batch of fifty that stopped at the thirtieth and
+// called itself abandoned would be a large one. A row somebody changed AGAIN while it
+// was being put back keeps that newer change, which is still "none of mine is left".
+// A database FAILURE mid-batch puts back what it can and then fails as every other
+// write does: the change row stays `pending`, because a put-back that also failed
+// cannot be proved either way.
+
+/** The most charges one confirm will touch. The same number as the most rows one undo
+ *  will run, because each charge is one step of it. */
+const CONFIRM_MAX = MAX_STEPS;
+
+/** What an item of `charges` may carry when it is an object rather than a bare id.
+ *  Anything else is refused by name — the scan found Muse's commonest failure was
+ *  guessing what goes INSIDE a list. Declared once, as a ListShape, so the parser below
+ *  and the tool's `lists` read the same thing (see shapes.ts). */
+const CONFIRM_ITEM_KEYS = ["transaction_id", "category_id"] as const;
+const CONFIRM_ITEM_SHAPE: ListShape = { takes: CONFIRM_ITEM_KEYS };
+
+type SetColumnsStep = Extract<UndoStep, { kind: "set_columns" }>;
+
+interface ConfirmPlan {
+  /** The charges that will change, in the order they are written. */
+  rows: { row: LabelRow; to: string }[];
+  /** Charges named or matched that this left alone, by why. */
+  leftAlone: Record<string, number>;
+  /** Merchant mode: the merchant, as it is safe to say. */
+  merchant?: string;
+  /** Said after the summary and not stored — see commit()'s `note`. */
+  note?: string;
+}
+
+/** Every problem with a list, said in one refusal: the scan found the write door
+ *  naming only the first problem, so a batch with three bad items took three round
+ *  trips and three of the hour's writes to get right. */
+function problemsSay(problems: string[]): string {
+  const shown = problems.slice(0, 5);
+  const more = problems.length - shown.length;
+  return `${shown.join(" ")}${more > 0 ? ` And ${more} more like that.` : ""} Nothing was changed.`;
+}
+
+const paysABill = (at: UndoValue): boolean =>
+  typeof at === "object" && at !== null && !Array.isArray(at) && at.kind === "bill";
+
+/** One charge the caller named in a list: its number in the list (from one), its id,
+ *  and the category it should end up in — null for "keep the one it has". */
+type ConfirmItem = { n: number; id: string; to: string | null };
+
+/**
+ * A `charges` list, every item read to the end — or every problem with it, item by item.
+ * Nothing here reads the ledger: whether each id finds a charge, and what that charge
+ * holds, is planConfirmList's, in run(), after the door has counted the call.
+ */
+function readConfirmItems(raw: unknown, fallback: string | null): Shaped<ConfirmItem[]> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const what = Array.isArray(raw) || raw === undefined ? "" : ` It was ${kindOfValue(raw)}.`;
+    return { ok: false, problems: [`charges is a list of charge ids — each item the id itself, or {transaction_id, category_id}.${what}`] };
+  }
+  if (raw.length > CONFIRM_MAX) {
+    return {
+      ok: false,
+      problems: [
+        `That is ${raw.length} charges. I confirm at most ${CONFIRM_MAX} in one call, so a whole batch can be put back with one undo — send them in groups of ${CONFIRM_MAX}.`,
+      ],
+    };
+  }
+  const problems: string[] = [];
+  const items: ConfirmItem[] = [];
+  const seen = new Set<string>();
+  raw.forEach((item, i) => {
+    const n = i + 1;
+    const label = labelOf("Item", i);
+    let id: unknown = item;
+    let cat: unknown = undefined;
+    if (typeof item === "object" && item !== null && !Array.isArray(item)) {
+      const rec = item as Record<string, unknown>;
+      const { value, unknown, clashes } = renameBy(rec, CONFIRM_ITEM_SHAPE);
+      if (unknown.length || clashes.length) {
+        problems.push(itemSays(label, [...clashes, ...(unknown.length ? [unknownKeysSays(unknown, CONFIRM_ITEM_KEYS)] : [])], rec));
+        return;
+      }
+      id = value.transaction_id;
+      cat = value.category_id;
+    } else if (typeof item !== "string") {
+      problems.push(itemSays(label, [`It is ${kindOfValue(item)}, not a charge id or {transaction_id, category_id}.`], null));
+      return;
+    }
+    if (typeof id !== "string" || !UUID.test(id)) {
+      problems.push(itemSays(label, ["It needs the charge's id, as the read door gives it."], null));
+      return;
+    }
+    if (seen.has(id)) {
+      problems.push(itemSays(label, ["It names a charge that is already in the list."], null));
+      return;
+    }
+    seen.add(id);
+    let to = fallback;
+    if (cat !== undefined) {
+      if (typeof cat !== "string" || !CATEGORY_IDS.has(cat)) {
+        problems.push(itemSays(label, ["Its category is not one of the app's — finance.categories has the list."], null));
+        return;
+      }
+      to = cat;
+    }
+    items.push({ n, id, to });
+  });
+  return problems.length ? { ok: false, problems } : { ok: true, value: items };
+}
+
+/** A merchant to confirm by, as far as the call alone can tell: its cleaned name and the
+ *  app's own key for it — or every problem with it and its category. */
+function readConfirmMerchant(raw: unknown, category: string | null, categorySent: boolean): Shaped<{ name: string; key: string }> {
+  const pad = problemPad();
+  // Said only when no category came at all — a category that came and was not one of
+  // the app's is already said, by categoryArg.
+  if (!categorySent) pad.no("With a merchant I need the category_id its charges belong in. finance.categories has the list.");
+  // learn_merchant's backstop, for the same reason: `other` is the absence of a
+  // category, and confirming a whole merchant there marks every flagged charge as
+  // answered "unfiled" and stops the app asking. One charge there is fine.
+  if (category === "other") {
+    pad.no("I will not confirm a whole merchant as `other` — that marks every flagged charge there as answered and unfiled. Put one charge there on its own, or send a list.");
+  }
+  const name = scrubCap(raw, 60);
+  // The app's own key, so the batch is the charges the labeller itself would call this
+  // merchant — not a search. "ACME MARKET" must not also catch a differently-named store
+  // that merely starts with the same word.
+  const key = name ? merchantKey(name) : "";
+  if (!name) pad.no("Tell me the merchant, as it reads on the charge.");
+  else if (!key) pad.no("There was nothing left of that merchant name once it was normalised.");
+  else if (isStatementNoiseKey(key)) {
+    pad.no(`${name} is how the bank labels a kind of charge, not a merchant, so it would catch charges to everyone paid that way. Send those charges as a list instead.`);
+  }
+  return pad.done(() => ({ name, key }));
+}
+
+type ConfirmAsk =
+  | { mode: "list"; items: ConfirmItem[] }
+  | { mode: "merchant"; name: string; key: string; category: string };
+
+/**
+ * confirm_charges' call, as far as it can be judged without the ledger — every problem
+ * at once, so a batch with three bad items is one round trip, and a refusal here spends
+ * none of the hour (handler.ts runs this as the tool's check, before the counter).
+ */
+function planConfirm(payload: Record<string, unknown>): Shaped<ConfirmAsk> {
+  const pad = problemPad();
+  const byList = payload.charges !== undefined;
+  const byMerchant = payload.merchant !== undefined;
+  if (byList && byMerchant) pad.no("Send either charges — a list of charge ids — or a merchant with a category_id, not both.");
+  if (!byList && !byMerchant) {
+    pad.no("Send charges — a list of charge ids — or a merchant and the category_id its flagged charges belong in.");
+  }
+  let category: string | null = null;
+  if (payload.category_id !== undefined) category = pad.take(categoryArg(payload.category_id)) ?? null;
+  let items: ConfirmItem[] = [];
+  let merchant: { name: string; key: string } = { name: "", key: "" };
+  if (byList && !byMerchant) {
+    const read = readConfirmItems(payload.charges, category);
+    if (read.ok) items = read.value;
+    else pad.all(read.problems);
+  }
+  if (byMerchant && !byList) {
+    const read = readConfirmMerchant(payload.merchant, category, payload.category_id !== undefined);
+    if (read.ok) merchant = read.value;
+    else pad.all(read.problems);
+  }
+  return pad.done((): ConfirmAsk => (byList ? { mode: "list", items } : { mode: "merchant", ...merchant, category: category! }));
+}
+
+async function planConfirmList(db: FinanceDb, items: ConfirmItem[]): Promise<ConfirmPlan | Refusal> {
+  const problems: string[] = [];
+  // ONE read for the batch, and nothing is written until every item has been checked
+  // against it — so a refusal below has changed nothing.
+  const byId = new Map((await db.readCharges(items.map((it) => it.id))).map((r) => [r.id, r]));
+  const rows: ConfirmPlan["rows"] = [];
+  let alreadyConfirmed = 0;
+  let missing = false;
+  for (const it of items) {
+    const r = byId.get(it.id);
+    if (!r) {
+      missing = true;
+      problems.push(`Item ${it.n}: there is no charge with that id. It may have been deleted since you read it.`);
+      continue;
+    }
+    const to = it.to ?? r.categoryId;
+    if (!to) {
+      problems.push(`Item ${it.n} has no category yet, so there is nothing to confirm — give it a category_id.`);
+      continue;
+    }
+    // categorize_charge's own refusal, for the same reason: one category on a split
+    // charge contradicts its slices. Keeping the category it has is fine.
+    if (r.splits && to !== r.categoryId) {
+      problems.push(`Item ${it.n} is split across categories, so its one category cannot change — leave its category out, or change a slice in the app.`);
+      continue;
+    }
+    if (to === r.categoryId && r.userCategorized && !r.needsReview) {
+      alreadyConfirmed += 1;
+      continue;
+    }
+    // After the already-confirmed check on purpose: a processing charge that needs no
+    // write costs the undo nothing. One that would be written is the one the bank will
+    // replace under a new id — see the header.
+    if (r.pending) {
+      problems.push(
+        `Item ${it.n} is still processing at the bank, which replaces it with a new charge when it posts, so this batch's undo could not find it again. Leave it out and confirm it once it posts.`,
+      );
+      continue;
+    }
+    rows.push({ row: r, to });
+  }
+  if (problems.length) return refuse(missing ? 404 : 409, problemsSay(problems));
+  return { rows, leftAlone: { already_confirmed: alreadyConfirmed } };
+}
+
+async function planConfirmMerchant(db: FinanceDb, name: string, key: string, category: string): Promise<ConfirmPlan | Refusal> {
+  const kind = DEFAULT_CATEGORIES.find((c) => c.id === category)?.type ?? "expense";
+  // A fuel-and-store merchant, by the categorizer's own closed list (see the header).
+  // The key is the merchant's whole name, so it decides for every charge it matches; a
+  // charge's own description is asked too, in case it names the store more fully.
+  const keyIsMulti = isMultiDepartment(key);
+
+  const leftAlone = {
+    chosen_by_hand: 0,
+    pays_a_bill: 0,
+    split: 0,
+    not_flagged: 0,
+    other_kind: 0,
+    pending: 0,
+    would_change_category: 0,
+  };
+  const rows: ConfirmPlan["rows"] = [];
+  for (const r of await db.chargeLabels()) {
+    // Both of the labeller's namespaces, the way learn_merchant counts them: the name's
+    // own key, and the key of the name with the bank's statement noise stripped — a
+    // charge with no clean name carries the bank's line AS its description, and its own
+    // key is the bank's prefix word rather than the merchant.
+    const stripped = stripStatementNoise(r.description);
+    const strippedKey = stripped ? merchantKey(stripped) : "";
+    if (merchantKey(r.description) !== key && strippedKey !== key) continue;
+    if (r.userCategorized) leftAlone.chosen_by_hand += 1;
+    else if (paysABill(r.appliesTo)) leftAlone.pays_a_bill += 1;
+    else if (r.splits) leftAlone.split += 1;
+    else if (!r.needsReview) leftAlone.not_flagged += 1;
+    // A refund at the merchant is money IN; filing it under a spending category would
+    // be a different answer from the one asked for.
+    else if (r.type !== kind) leftAlone.other_kind += 1;
+    // Counted only once it would otherwise have been confirmed, so the number means
+    // "waiting for the bank", not "processing" in general.
+    else if (r.pending) leftAlone.pending += 1;
+    else if (r.categoryId !== category && (keyIsMulti || isMultiDepartment(r.description))) {
+      leftAlone.would_change_category += 1;
+    } else rows.push({ row: r, to: category });
+  }
+  if (rows.length === 0) {
+    const looked = Object.values(leftAlone).reduce((s, n) => s + n, 0);
+    if (looked === 0) {
+      return refuse(
+        409,
+        `No charge I can see reads exactly ${name}. A merchant matches the whole name as it reads on the charge — check it with finance.search_transactions.`,
+      );
+    }
+    // The two reasons a FLAGGED charge was left alone, said by name — the generic
+    // sentence below would claim nothing there is flagged, which is false for both.
+    const why: string[] = [];
+    const w = leftAlone.would_change_category;
+    if (w > 0) {
+      why.push(
+        `${w === 1 ? "its flagged charge sits" : `its ${w} flagged charges sit`} in another category, and at a merchant with a fuel pump and a store each charge is its own pump-or-store answer — look at each and send the ones you are sure of as a list`,
+      );
+    }
+    const p = leftAlone.pending;
+    if (p > 0) {
+      why.push(`${p === 1 ? "one is" : `${p} are`} still processing at the bank — confirm ${p === 1 ? "it" : "them"} once ${p === 1 ? "it posts" : "they post"}`);
+    }
+    return refuse(
+      409,
+      why.length
+        ? `Nothing at ${name} can be confirmed in one go: ${why.join("; ")}.`
+        : `Nothing at ${name} is waiting to be confirmed: none of its ${looked} charge${looked === 1 ? " is" : "s are"} flagged for review and free to change.`,
+    );
+  }
+  if (rows.length > CONFIRM_MAX) {
+    return refuse(
+      400,
+      `${rows.length} flagged charges at ${name} is more than the ${CONFIRM_MAX} I confirm in one call. Send them as lists of up to ${CONFIRM_MAX} ids — finance.search_transactions with merchant and needs_review true finds them.`,
+    );
+  }
+  // WHY THESE KEEP ARRIVING FLAGGED, said where it will be read. FOUND 2026-10-10: a
+  // merchant that runs a fuel pump and a store under one name has every charge the bank
+  // did not tag, in the range one tank could cost, flagged on arrival — INCLUDING when a
+  // saved rule names the merchant, because a rule keyed by merchant cannot tell the pump
+  // from the aisles (classify() in categorize.ts says why that is deliberate). So
+  // confirming the backlog does not stop new ones, and the assistant should know that
+  // before it is asked why "that store is still asking".
+  //
+  // REWRITTEN the same day, in review. The first version ended "confirm them the same
+  // way when they come in" — an instruction to keep bulk-filing the very charges
+  // classify() refuses to answer in bulk. It now says each one is its own answer.
+  const w = leftAlone.would_change_category;
+  const note = keyIsMulti || w > 0
+    ? scrubCap(
+        `Each charge at ${name} is its own pump-or-store answer (the bank rarely says which), so I only confirmed ones already in ${category}.` +
+          (w > 0 ? ` ${w === 1 ? "One flagged charge" : `${w} flagged charges`} in another category ${w === 1 ? "was" : "were"} left alone: look at each and send them as a list.` : "") +
+          " New ones will keep arriving flagged even with a rule; that is deliberate.",
+        300,
+      )
+    : undefined;
+  return { rows, leftAlone, merchant: name, note };
+}
+
+/**
+ * Put back every row a batch has already written, newest first, each by its own
+ * compare-and-set. Returns how many could NOT be put back because something else had
+ * changed them in the meantime — on those, none of this door's writes is left either.
+ * Throws if the database does, and the caller lets that throw reach commit(), which
+ * then leaves the change `pending`: a put-back that failed cannot be proved either way.
+ */
+async function putBack(db: FinanceDb, landed: readonly SetColumnsStep[]): Promise<number> {
+  let changedSince = 0;
+  for (const s of [...landed].reverse()) {
+    if ((await db.setColumns(s.table, s.id, s.before, s.after)) === "moved") changedSince += 1;
+  }
+  return changedSince;
+}
+
+const confirmCharges: Tool = {
+  kind: "direct",
+  does:
+    "Confirm many charges at once, so they stop asking for review: a list of charge ids (each keeps its category, or takes the one given), or a merchant and a category for its flagged charges (at a fuel-and-store merchant, only those already in that category). Not charges still processing. One undo puts back every charge nobody has changed since.",
+  fields: ["charges", "merchant", "category_id"],
+  // The object form of an item, because that is the shape nobody could guess; a bare id
+  // works too and keeps the charge's category.
+  example: { charges: [{ transaction_id: EXAMPLE_ID, category_id: "groceries" }] },
+  lists: { charges: CONFIRM_ITEM_SHAPE },
+  check: (payload) => problemsOf(planConfirm(payload)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const ask = planConfirm(payload);
+    if (!ask.ok) return shapeRefused(ask.problems, payload);
+
+    const a = ask.value;
+    const plan = a.mode === "list" ? await planConfirmList(db, a.items) : await planConfirmMerchant(db, a.name, a.key, a.category);
+    if (isRefusal(plan)) return plan;
+    if (plan.rows.length === 0) {
+      return refuse(409, "Every one of those is already confirmed — chosen by hand and not flagged — so there was nothing to change.");
+    }
+
+    const steps: SetColumnsStep[] = plan.rows.map(({ row, to }) => ({
+      kind: "set_columns",
+      table: "transactions",
+      id: row.id,
+      before: { category_id: row.categoryId, user_categorized: row.userCategorized, needs_review: row.needsReview },
+      after: { category_id: to, user_categorized: true, needs_review: false },
+    }));
+
+    const n = plan.rows.length;
+    const moved = plan.rows.filter((x) => x.to !== x.row.categoryId).length;
+    const byCategory: Record<string, number> = {};
+    for (const x of plan.rows) byCategory[x.to] = (byCategory[x.to] ?? 0) + 1;
+    const cats = Object.entries(byCategory).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const s = n === 1 ? "" : "s";
+    const movedSays = moved === 0 ? "" : ` ${moved === n ? (n === 1 ? "It" : "All of them") : `${moved} of them`} moved category.`;
+    const summary = plan.merchant
+      ? `Confirmed ${n} flagged ${plan.merchant} charge${s} in ${cats[0][0]}.${movedSays} Each is marked as chosen by hand and no longer flagged for review.`
+      : `Confirmed ${n} charge${s}: ${cats.slice(0, 3).map(([c, k]) => `${k} in ${c}`).join(", ")}${cats.length > 3 ? ` and ${cats.length - 3} more categories` : ""}.${movedSays} Each is marked as chosen by hand and no longer flagged for review.`;
+
+    return commit(ctx, "finance.confirm_charges", {
+      steps,
+      summary,
+      note: plan.note,
+      result: {
+        confirmed: n,
+        moved_category: moved,
+        by_category: byCategory,
+        left_alone: plan.leftAlone,
+        ...(plan.merchant ? { merchant: plan.merchant } : {}),
+        ids: plan.rows.map((x) => x.row.id),
+      },
+      rowIds: plan.rows.map((x) => x.row.id),
+      async write() {
+        const landed: SetColumnsStep[] = [];
+        for (const step of steps) {
+          let hit: "ok" | "moved";
+          try {
+            hit = await db.setColumns(step.table, step.id, step.after, step.before);
+          } catch (e) {
+            // Put back what can be, then fail the way every write fails. If the put-back
+            // fails too, the original error is the one worth reporting.
+            try {
+              await putBack(db, landed);
+            } catch (backErr) {
+              console.error("muse-write: confirm_charges could not put a batch back", String((backErr as Error)?.message ?? backErr));
+            }
+            throw e;
+          }
+          if (hit === "moved") {
+            const changedSince = await putBack(db, landed);
+            return refuse(
+              409,
+              (landed.length === 0
+                ? "One of those charges changed while I was working, so I stopped and changed nothing."
+                : `One of those charges changed while I was working, so I put back the ${landed.length} I had already done and changed nothing.`) +
+                (changedSince > 0
+                  ? ` ${changedSince === 1 ? "One of them was" : `${changedSince} of them were`} changed again in the meantime, so ${changedSince === 1 ? "it keeps" : "they keep"} that newer change.`
+                  : "") +
+                " Read them again and ask me once more.",
+            );
+          }
+          landed.push(step);
+        }
+      },
+    });
+  },
+};
+
+// ── finance.dismiss_suggestion ───────────────────────────────────────────────
+//
+// ADDED 2026-10-10. Wave away one "worth a look" suggestion, for the whole household.
+//
+// Until now a dismissal lived only in the phone that tapped it ('hb-review-dismissed',
+// src/lib/doctorDismissals.ts — whose own header says a household table was always the
+// plan), finance.worth_a_look answered `dismissals_known: false`, and nothing on either
+// door could dismiss anything. With the Activity tab retired, every suggestion anybody
+// had decided about would have come back on every call, for ever.
+//
+// THE KEY IS THE ENGINE'S OWN, and that is what makes this one row and no logic. The
+// evidence is inside the key (`drift:<bill>:<amount in cents>` — spec §B.9), so a
+// dismissed suggestion comes back on its own the moment the facts change, with no
+// snooze and no expiry anywhere. finance.worth_a_look hands the key out; this stores it
+// exactly as handed, and worth_a_look leaves out anything stored.
+//
+// IT CANNOT CHECK THE KEY IS A LIVE SUGGESTION, and says so. Working out the current
+// suggestions needs the whole ledger and the review engine, which live on the read
+// door. So the shape is checked — one of the engine's kinds, or the hashed stand-in —
+// and the reply says what to do if worth_a_look still lists it. A key that matches
+// nothing hides nothing, which is the safe direction to be wrong in.
+//
+// THE UNDO is the delete of the row, the same insert-then-delete_row shape add_bill
+// uses. Household-wide on purpose, so either key can dismiss and the table's unique
+// index on `key` means a second dismissal of the same thing is "already done", whoever
+// did the first.
+const NO_DISMISSAL_TABLE_SAYS =
+  "I cannot dismiss suggestions yet: the database is missing the table that remembers them " +
+  "(schema_v43_review_dismissals.sql has not been run). Nothing was changed — say it is a judgement " +
+  "call they have already made, and it will keep appearing until that is set up.";
+
+/** What a suggestion is about, by the first part of its key — for the sentence. */
+const SUGGESTION_ABOUT: Record<string, string> = {
+  drift: "a bill whose amount looks out of date",
+  phantom: "a bill that may be finished",
+  unmodelled: "a repeat charge that is not in the bills",
+  missing: "a bill cycle with no payment",
+  duplicate: "something that may be in the ledger twice",
+  "income-landed": "income that may have been a one-off",
+  unlinked: "a charge that looks like an unlinked bill payment",
+  dangling: "a charge pointing at something deleted",
+  h: "one of the suggestions",
+};
+
+/** dismiss_suggestion's key, exactly as handed out — or the problem with it. A key the
+ *  cleaner would change, or one with a shape the engine never makes, would be stored as
+ *  a dismissal that matches nothing. */
+function planSuggestionKey(payload: Record<string, unknown>): Shaped<string> {
+  const pad = problemPad();
+  const key = typeof payload.key === "string" ? payload.key.trim() : "";
+  if (!key || key.length > SUGGESTION_KEY_MAX || !SUGGESTION_KEY.test(key) || scrubCap(key, SUGGESTION_KEY_MAX) !== key) {
+    pad.no(
+      "I need the suggestion's key exactly as finance.worth_a_look gave it — it starts with what kind of thing it is, like drift: or unlinked:, or with h:.",
+    );
+  }
+  return pad.done(() => key);
+}
+
+const dismissSuggestion: Tool = {
+  kind: "direct",
+  does:
+    "Wave away one \"worth a look\" suggestion for both of you, by the key finance.worth_a_look gave it. It stays away until what it noticed changes.",
+  fields: ["key"],
+  // A drift key on the placeholder bill: the shape worth_a_look hands out, matching no
+  // suggestion — and a key that matches nothing hides nothing.
+  example: { key: `drift:${EXAMPLE_ID}:2500` },
+  check: (payload) => problemsOf(planSuggestionKey(payload)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const plan = planSuggestionKey(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const key = plan.value;
+
+    let existing: Awaited<ReturnType<FinanceDb["readDismissal"]>>;
+    try {
+      existing = await db.readDismissal(key);
+    } catch (e) {
+      if (isMissingTable(e, "review_dismissals")) return refuse(503, NO_DISMISSAL_TABLE_SAYS);
+      throw e;
+    }
+    if (existing) {
+      const who = existing.person === "gino" || existing.person === "xinyan" ? existing.person : null;
+      return refuse(
+        409,
+        who && who !== ctx.person
+          ? `That one is already dismissed — ${DISPLAY[who]} did it — so there was nothing to change.`
+          : "That one is already dismissed, so there was nothing to change.",
+      );
+    }
+
+    let id: string;
+    try {
+      id = await db.insertRow("review_dismissals", { key, person: ctx.person });
+    } catch (e) {
+      if (isMissingTable(e, "review_dismissals")) return refuse(503, NO_DISMISSAL_TABLE_SAYS);
+      // The table's unique index answered: the other phone dismissed it in the instant
+      // between the read above and this insert. Postgres refused the statement, so
+      // nothing landed and nothing needs putting back.
+      if (e instanceof StatementRefused && e.code === "23505") {
+        return refuse(409, "That one was dismissed a moment ago, so there was nothing to change.");
+      }
+      throw e;
+    }
+
+    const about = SUGGESTION_ABOUT[key.slice(0, key.indexOf(":"))] ?? "one of the suggestions";
+    return commit(ctx, "finance.dismiss_suggestion", {
+      steps: [{ kind: "delete_row", table: "review_dismissals", id, after: { key } }],
+      summary: `Dismissed the suggestion about ${about}, for both of you. It will not be listed again unless what it noticed changes.`,
+      // About what comes next, so it is said and not stored — see commit()'s `note`.
+      note: "If finance.worth_a_look still lists it, the key did not match — send it again exactly as it came.",
+      result: { id, key },
+      rowIds: [id],
+      // The insert above IS the change; delete_row is its inverse. Nothing else to do.
+      write: () => Promise.resolve(),
+    });
+  },
+};
+
 // ── system.undo ──────────────────────────────────────────────────────────────
 //
 // The other half of the bargain. Phase 2's argument for dropping the approval queue
@@ -2270,20 +4010,29 @@ const promoteToBill: Tool = {
 // A BARE "undo that" WITH NO TOKEN takes the newest change that can still be put
 // back. That is the request he will actually make, so it is the one the tool is built
 // for; the token exists for "undo the one before that".
+/** system.undo's token, when one was sent — null means "the last change". */
+function planUndo(payload: Record<string, unknown>): Shaped<string | null> {
+  const pad = problemPad();
+  let token: string | null = null;
+  if (payload.token !== undefined) {
+    const t = scrubCap(payload.token, 32);
+    if (!/^u-[0-9a-hjkmnp-tv-z]{8}$/.test(t)) pad.no("An undo token looks like u-4k7m9qt2. Ask system.changes for the list.");
+    else token = t;
+  }
+  return pad.done(() => token);
+}
+
 const systemUndo: Tool = {
   kind: "direct",
   does: "Put back a change I made. With no token, the last one.",
   fields: ["token"],
+  example: { token: "u-4k7m9qt2" },
+  check: (payload) => problemsOf(planUndo(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
-    let token: string | null = null;
-    if (payload.token !== undefined) {
-      const t = scrubCap(payload.token, 32);
-      if (!/^u-[0-9a-hjkmnp-tv-z]{8}$/.test(t)) {
-        return refuse(400, "An undo token looks like u-4k7m9qt2. Ask system.changes for the list.");
-      }
-      token = t;
-    }
+    const plan = planUndo(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const token = plan.value;
 
     const record = token ? await db.findChange(ctx.person, token) : await db.latestUndoable(ctx.person);
     if (!record) {
@@ -2329,12 +4078,44 @@ const systemUndo: Tool = {
       },
     };
 
-    const outcome = await applyUndo(steps, applier);
-    if (!outcome.ok) {
-      // The change stays `undoable`. Part of it may have been put back, and the
-      // sentence says how much — so asking again after fixing the row in the app
-      // finishes the job rather than being refused as already done.
-      return refuse(409, outcome.say);
+    // A BATCH GOES BACK ROW BY ROW. FOUND 2026-10-10 in review: finance.confirm_charges
+    // writes up to fifty separate charges as one change, and applyUndo stops at the first
+    // row that moved — so one charge re-filed on the phone left the other forty-nine
+    // confirmed, and every retry stopped again on the rows it had already put back.
+    // ROW_BY_ROW_TOOLS in undo.ts says why only a named tool gets this. Each row is
+    // still its own compare-and-set: one somebody changed since keeps that change.
+    let rowsPutBack: number;
+    let rowsChangedSince = 0;
+    if (ROW_BY_ROW_TOOLS.has(record.tool)) {
+      let each: { putBack: number; changedSince: number };
+      try {
+        each = await applyUndoRowByRow(steps, applier);
+      } catch (e) {
+        if (e instanceof UndoRefused) return refuse(409, e.say);
+        throw e;
+      }
+      if (each.putBack === 0) {
+        // Nothing went back, so nothing is called put back: the change stays `undoable`,
+        // exactly as a one-row undo that found its row moved does. No pointer at the app
+        // here — the screens are being retired, and the read door can show every row.
+        return refuse(
+          409,
+          each.changedSince === 1
+            ? "That row could not go back: it has been changed since — by a person, or by the bank replacing it — so it keeps what it holds now. Nothing was changed."
+            : `None of those ${each.changedSince} rows could go back: each one has been changed since — by a person, or by the bank replacing it — so each keeps what it holds now. Nothing was changed.`,
+        );
+      }
+      rowsPutBack = each.putBack;
+      rowsChangedSince = each.changedSince;
+    } else {
+      const outcome = await applyUndo(steps, applier);
+      if (!outcome.ok) {
+        // The change stays `undoable`. Part of it may have been put back, and the
+        // sentence says how much — so asking again after fixing the row in the app
+        // finishes the job rather than being refused as already done.
+        return refuse(409, outcome.say);
+      }
+      rowsPutBack = outcome.steps;
     }
 
     // The undo is itself a change, and it gets its own row so the log reads as a history
@@ -2347,8 +4128,17 @@ const systemUndo: Tool = {
     // which is the one state system.undo will not act on. There is deliberately no redo:
     // a redo is a new write with its own before-state, and asking for the change again is
     // the honest way to get one.
+    //
+    // A BATCH THAT WENT BACK IN PART IS STILL `undone`. Every row of it either went back
+    // or no longer held this door's write — somebody changed it since, or the bank
+    // replaced it — so nothing of the change is left for a retry to put back, and leaving
+    // it `undoable` would only send the next "undo that" back to the same rows. The undo
+    // row's own summary carries the count, so system.changes says how much went back.
     const mine = mintToken((into) => crypto.getRandomValues(into));
-    const said = `Put back: ${record.summary}`;
+    const said =
+      rowsChangedSince > 0
+        ? `Put back ${rowsPutBack} of ${rowsPutBack + rowsChangedSince}: ${record.summary}`
+        : `Put back: ${record.summary}`;
     await db.recordChange({
       token: mine,
       person: ctx.person,
@@ -2362,11 +4152,22 @@ const systemUndo: Tool = {
     });
     await db.setChangeState(mine, "undone", { undoneAt: ctx.at.toISOString() });
 
+    const leftSays =
+      rowsChangedSince === 0
+        ? ""
+        : rowsChangedSince === 1
+          ? " One had been changed since — by a person, or by the bank replacing it — so it keeps what it holds now."
+          : ` ${rowsChangedSince} had been changed since — by a person, or by the bank replacing them — so each keeps what it holds now.`;
     return {
       ok: true,
-      result: { undone: record.token, tool: record.tool, rows_put_back: outcome.steps },
+      result: {
+        undone: record.token,
+        tool: record.tool,
+        rows_put_back: rowsPutBack,
+        ...(ROW_BY_ROW_TOOLS.has(record.tool) ? { rows_changed_since: rowsChangedSince } : {}),
+      },
       rowIds: [],
-      say: `${said} ${outcome.steps === 1 ? "One row" : `${outcome.steps} rows`} went back the way they were. I cannot undo an undo — ask me for the change again if you want it after all.`,
+      say: `${said} ${rowsPutBack === 1 ? "One row" : `${rowsPutBack} rows`} went back the way they were.${leftSays} I cannot undo an undo — ask me for the change again if you want it after all.`,
     };
   },
 };
@@ -2402,6 +4203,7 @@ const refreshBank: Tool = {
   kind: "direct",
   does: "Ask the bank for anything new. It is not instant — the scheduled job carries it out.",
   fields: [],
+  example: {},
   async run(_payload, ctx) {
     const db = ctx.db as FinanceDb;
 
@@ -2481,6 +4283,7 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.set_bill_due_day": setBillDueDay,
   "finance.turn_bill_off": turnBillOff,
   "finance.set_bill_window": setBillWindow,
+  "finance.edit_bill": editBill,
   "finance.add_bill": addBill,
   "finance.learn_merchant": learnMerchant,
   "finance.forget_merchant": forgetMerchant,
@@ -2488,6 +4291,11 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.add_debt": addDebt,
   "finance.link_debt_to_card": linkDebtToCard,
   "finance.unlink_debt_card": unlinkDebtCard,
+  "finance.edit_debt": editDebt,
+  // 2026-10-10: the review lists, so Muse can clear them once the screens are gone —
+  // many flagged charges in one call, and a "worth a look" item waved away for both.
+  "finance.confirm_charges": confirmCharges,
+  "finance.dismiss_suggestion": dismissSuggestion,
   "system.undo": systemUndo,
 };
 

@@ -31,15 +31,22 @@ import { nowAZ } from "../supabase/functions/_shared/muse/az";
 import { callerOf, MIN_SECRET_LENGTH, presentedSecret } from "../supabase/functions/_shared/muse/auth";
 import { NAME_MAX, money, scrub } from "../supabase/functions/_shared/muse/scrub";
 import { LedgerUnreadable, readAll, type Db, type DbRow } from "../supabase/functions/_shared/muse/paging";
-import { redactArgs, type AuditRow } from "../supabase/functions/_shared/muse/audit";
+import { createAuditSink, redactArgs, type AuditRow } from "../supabase/functions/_shared/muse/audit";
 import { ABSENT, TOOLS } from "../supabase/functions/_shared/muse/tools";
 // The write door, for the two cross-checks that span both: API.md documents both doors,
 // so a field name printed in it may belong to either — and a name on this door must not
 // be a name on that one.
 import { TOOLS as WRITE_TOOLS, TOOL_NAMES as WRITE_TOOL_NAMES } from "../supabase/functions/muse-write/tools";
 import { UNIVERSAL_FIELDS as WRITE_UNIVERSAL_FIELDS } from "../supabase/functions/muse-write/handler";
+import { READ_DOOR_NAMES } from "../supabase/functions/muse-write/shapes";
 import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
-import { redactSuggestions } from "../supabase/functions/_shared/muse/worthALook";
+import {
+  isDismissed,
+  redactSuggestions,
+  SUGGESTION_KEY,
+  suggestionKey,
+} from "../supabase/functions/_shared/muse/worthALook";
+import { unusualCharges } from "../src/lib/unusual";
 import {
   toAccount,
   toAppData,
@@ -201,6 +208,10 @@ const TABLES = (): Record<string, DbRow[]> => ({
   savings_goals: [],
   paid_bills: [],
   merchant_rules: [],
+  // The household's "worth a look" dismissals (schema_v43). Present and empty: the
+  // table exists and nothing has been waved away. The tests that need a missing table
+  // say so with the `missingTable` option below.
+  review_dismissals: [],
   body_weights: [
     { id: "w1", person: "gino", date: "2026-09-24", weight: "199.2" },
     { id: "w2", person: "gino", date: "2026-09-28", weight: "198.6" },
@@ -362,6 +373,16 @@ interface FakeOpts {
   limitFails?: boolean;
   /** Calls already made this hour, before this one. */
   usedAlready?: number;
+  /**
+   * This table does not exist — a migration written and not yet run. Faked the way
+   * the real stack fails, which is two different ways: the COUNT is a HEAD request,
+   * which gets an empty 404 that supabase-js reports as success with no count, so the
+   * adapter answers zero; a PAGE is a GET, which carries PostgREST's own sentence.
+   * A fake that failed the count too would let a door that trusted readAll alone pass.
+   */
+  missingTable?: string;
+  /** Every page of this table fails with this message (the count still answers). */
+  failPage?: { table: string; message: string };
 }
 
 function fakeDb(tables: Record<string, DbRow[]>, opts: FakeOpts = {}): Db {
@@ -375,9 +396,14 @@ function fakeDb(tables: Record<string, DbRow[]>, opts: FakeOpts = {}): Db {
       return {
         count: async () => {
           if (opts.failCount === table) throw new Error("count exploded");
+          if (opts.missingTable === table) return 0;
           return rows().length;
         },
         page: async (from, to) => {
+          if (opts.missingTable === table) {
+            throw new Error(`Could not find the table 'public.${table}' in the schema cache`);
+          }
+          if (opts.failPage?.table === table) throw new Error(opts.failPage.message);
           const slice = rows().slice(from, to + 1);
           return opts.shortPage === table ? slice.slice(0, Math.max(0, slice.length - 1)) : slice;
         },
@@ -459,6 +485,8 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   { tool: "system.changes", body: {} },
   { tool: "system.heartbeat", body: {} },
   { tool: "finance.run_rate", body: {} },
+  // The unusual-purchase list, moved out of the Activity screen on 2026-10-10.
+  { tool: "finance.unusual", body: {} },
   // ── phase 2: health and workout parity ──────────────────────────────────────
   // Every one of these answers about a row rather than a summary, which phase 1
   // deliberately refused to do. He asked for it: "Muse has to have every
@@ -642,6 +670,27 @@ describe("Rule 1 — every number comes from the app's own function", () => {
     expect(body).not.toHaveProperty("debt_free_date");
   });
 
+  it("finance.debts says which debts are closed, and a database without closed_at reads them all open", async () => {
+    // ADDED 2026-10-10 with finance.edit_debt, which closes a paid-off debt without
+    // deleting it. A closed debt read out here as though it were still running would undo
+    // the point of closing it. The fixture's own rows carry no closed_at key at all —
+    // exactly a database where schema_v44 has not been run.
+    const open = await jsonOf(await ask("finance.debts"));
+    expect((open.debts as { closed: boolean }[]).every((d) => d.closed === false)).toBe(true);
+
+    const tables = TABLES();
+    tables.debts.push({
+      id: "d-done", name: "Old loan", balance: "0.00", original_balance: "300.00",
+      color: "#ef4444", created_at: "2026-01-01T00:00:00Z", closed_at: "2026-09-20T00:00:00Z",
+    });
+    const body = await jsonOf(await ask("finance.debts", {}, GINO_SECRET, {}, tables));
+    const byName = new Map((body.debts as { name: string; closed: boolean }[]).map((d) => [d.name, d.closed]));
+    expect(byName.get("Old loan")).toBe(true);
+    expect(byName.get("Visa")).toBe(false);
+    // Only a debt at zero can be closed, so the total is what it was.
+    expect(body.total).toBe(open.total);
+  });
+
   // ── the three money questions ───────────────────────────────────────────────
   //
   // Each was ABSENT until src/lib/headline.ts held its assembly, and each is checked
@@ -657,6 +706,9 @@ describe("Rule 1 — every number comes from the app's own function", () => {
       living: money(head.math.fixedNonDebt),
       budgeted_variable: money(head.math.variable),
       before_subtractions: money(head.math.firepower),
+      // Null here: this fixture's paycheck row carries no owner or category, so no row
+      // is recognisably Gino's pay floor. tests/aheadAndFloor.test.ts covers the row that is.
+      gino_pay_floor_per_check: null,
     });
     expect(body.taken_out).toEqual({
       overspent_this_month: money(head.overspendThisMonth),
@@ -670,8 +722,11 @@ describe("Rule 1 — every number comes from the app's own function", () => {
     expect(money(head.math.firepower - head.overspendThisMonth - head.outsideBudgetCash)).toBe(
       body.available,
     );
-    // And it must never read as spendable cash — the household's floor is not in it.
-    expect(String(body.note)).toMatch(/cash floor/i);
+    // And it must never read as spendable cash. The floor IS in it — it is the planned
+    // paycheck the income is built from — and the note has to say so the right way round
+    // (FOUND 2026-10-10: it used to say "this door does not know it").
+    expect(String(body.note)).toMatch(/pay floor/i);
+    expect(String(body.note)).not.toMatch(/does not know it/i);
     expect(String(body.note)).toMatch(/whole month/i);
   });
 
@@ -1010,6 +1065,84 @@ describe("Rule 4 — every string out is scrubbed", () => {
   });
 });
 
+// ── finance.unusual (2026-10-10) ──────────────────────────────────────────────
+//
+// The unusual-purchase list lived inside the Activity screen, which is being retired,
+// while the write door had finance.dismiss_unusual and nothing that could list what it
+// dismisses from. The rule moved to src/lib/unusual.ts unchanged; this checks the door
+// against that function called directly (Rule 1), not against a literal.
+describe("finance.unusual", () => {
+  /** September, Arizona's month at AT: one dining charge far above its category, one
+   *  pets charge that would be unusual and was already dismissed, and the rows the
+   *  rule must ignore. Every amount is made up. */
+  const withOddOnes = () => {
+    const t = TABLES();
+    t.transactions.push(
+      txn({ id: "u1", amount: "10.00", category_id: "dining", date: "2026-09-03" }),
+      txn({ id: "u2", amount: "12.00", category_id: "dining", date: "2026-09-05" }),
+      txn({ id: "u3", amount: "11.00", category_id: "dining", date: "2026-09-07" }),
+      txn({ id: "p1", amount: "5.00", category_id: "pets", date: "2026-09-02" }),
+      txn({ id: "p2", amount: "6.00", category_id: "pets", date: "2026-09-04" }),
+      txn({ id: "p3", amount: "7.00", category_id: "pets", date: "2026-09-06" }),
+      txn({ id: "p4", amount: "90.00", category_id: "pets", date: "2026-09-08", anomaly_ack: true }),
+      // Still processing: excluded until it posts, whatever its size.
+      txn({ id: "q1", amount: "500.00", category_id: "dining", date: "2026-09-09", status: "pending" }),
+      // Last month: a different month's list.
+      txn({ id: "a1", amount: "400.00", category_id: "dining", date: "2026-08-20" }),
+    );
+    return t;
+  };
+
+  const appTxns = (t: Record<string, DbRow[]>) =>
+    toAppData({
+      transactions: t.transactions,
+      debts: t.debts,
+      goals: [],
+      accounts: t.accounts,
+      recurring: t.recurring,
+      paidBills: [],
+      merchantRules: [],
+    }).transactions;
+
+  it("lists what the app's own rule lists, for this month in Arizona", async () => {
+    const t = withOddOnes();
+    const body = await jsonOf(await ask("finance.unusual", {}, GINO_SECRET, {}, t));
+    const expected = unusualCharges(appTxns(t), "2026-09");
+    expect(body.month).toBe("2026-09");
+    expect(body.found).toBe(expected.length);
+    const charges = body.charges as { id: string; amount: number; times_the_average: number; category_average: number }[];
+    expect(charges.map((c) => c.id)).toEqual(expected.map((u) => u.tx.id));
+    expect(charges.map((c) => c.id)).toEqual(["d1"]);
+    expect(charges[0].amount).toBe(61.4);
+    expect(charges[0].category_average).toBe(money(expected[0].mean));
+    expect(charges[0].times_the_average).toBe(Math.round(expected[0].ratio * 10) / 10);
+    // The dismissed one is counted, not listed.
+    expect(body.already_dismissed).toBe(1);
+    expect(String(body.note)).toContain("finance.dismiss_unusual");
+  });
+
+  it("answers about the month it is asked for", async () => {
+    const t = withOddOnes();
+    const body = await jsonOf(await ask("finance.unusual", { month: "2026-08" }, GINO_SECRET, {}, t));
+    expect(body.month).toBe("2026-08");
+    // One August charge in its category is not enough to have a "usual".
+    expect(body.found).toBe(unusualCharges(appTxns(t), "2026-08").length);
+    expect(body.found).toBe(0);
+  });
+
+  it("refuses a month that is not one", async () => {
+    const res = await ask("finance.unusual", { month: "2026-13" });
+    expect(res.status).toBe(400);
+  });
+
+  it("says the merchant cleaned, never with a link or an injection line in it", async () => {
+    const text = await (await ask("finance.unusual", {}, GINO_SECRET, {}, withOddOnes())).text();
+    expect(text).not.toContain("http");
+    expect(text).not.toContain("ignore previous instructions");
+    expect(text).not.toContain("\\" + "n");
+  });
+});
+
 // ── worth_a_look: the redaction the plan demands ──────────────────────────────
 describe("finance.worth_a_look", () => {
   it("emits the rule, the money, the cycle and the charges it stands on", async () => {
@@ -1027,10 +1160,14 @@ describe("finance.worth_a_look", () => {
     const body = JSON.parse(text) as Record<string, unknown>;
     const suggestions = body.suggestions as Record<string, unknown>[];
     expect(suggestions.length).toBeGreaterThan(0);
-    const ALLOWED = ["rule", "kind", "sentence", "amount", "month", "bill", "count", "charges"];
+    // `key` joined this list on 2026-10-10 — it is what finance.dismiss_suggestion
+    // takes, and every part of it already leaves through `charges` and `bill`. It is
+    // checked further down to be the engine's key or its fixed-shape stand-in, and the
+    // URL / newline / injection asserts below cover it like every other string.
+    const ALLOWED = ["rule", "kind", "sentence", "key", "amount", "month", "bill", "count", "charges"];
     for (const s of suggestions) {
-      // `detail`, `title`, `evidence`, `fix` and `key` are the engine's and none of
-      // them may travel.
+      // `detail`, `title`, `evidence` and `fix` are the engine's and none of them may
+      // travel.
       for (const k of Object.keys(s)) expect(ALLOWED, `worth_a_look leaked ${k}`).toContain(k);
       if (s.month) expect(String(s.month)).toMatch(/^\d{4}-\d{2}$/);
       for (const c of (s.charges ?? []) as Record<string, unknown>[]) {
@@ -1075,9 +1212,103 @@ describe("finance.worth_a_look", () => {
     expect(dup.charges![0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("says out loud that it does not know what was dismissed on a phone", async () => {
+  // ── dismissals (2026-10-10) ────────────────────────────────────────────────
+  //
+  // THIS TEST USED TO ASSERT `dismissals_known: false` ON EVERY CALL. Dismissals lived
+  // only in each phone's own storage, the door had no phone, and nothing on either
+  // door could wave a suggestion away — so everything anybody had decided about came
+  // back every time. There is a household table now (schema_v43), written by the write
+  // door's finance.dismiss_suggestion, and this reads it.
+
+  /** The fixture's suggestions, straight off the engine, for the tests below. */
+  const engineSuggestions = () => {
+    const t = TABLES();
+    const data = toAppData({
+      transactions: t.transactions,
+      debts: t.debts,
+      goals: [],
+      accounts: t.accounts,
+      recurring: t.recurring,
+      paidBills: [],
+      merchantRules: [],
+    });
+    return reviewLedger(data, nowAZ(AT), new Set());
+  };
+
+  it("knows what was dismissed when the table is there, and says so", async () => {
     const body = await jsonOf(await ask("finance.worth_a_look"));
+    expect(body.dismissals_known).toBe(true);
+    expect(String(body.note)).toContain("finance.dismiss_suggestion");
+  });
+
+  it("hands out every suggestion's key, and it is the engine's own when it can be said", async () => {
+    const body = await jsonOf(await ask("finance.worth_a_look"));
+    const shown = body.suggestions as { rule: string; key?: string }[];
+    const engine = engineSuggestions();
+    expect(shown.length).toBe(engine.length);
+    for (const s of shown) {
+      expect(s.key, `${s.rule} came back with no key`).toBeTruthy();
+      expect(s.key!).toMatch(SUGGESTION_KEY);
+    }
+    // The fixture's keys are ids and amounts — all sayable — so they are the engine's
+    // own, character for character.
+    expect(shown.map((s) => s.key).sort()).toEqual(engine.map((s) => s.key).sort());
+  });
+
+  it("leaves out a suggestion somebody dismissed, and only that one", async () => {
+    const engine = engineSuggestions();
+    const gone = engine[0].key;
+    const tables = TABLES();
+    tables.review_dismissals = [{ id: "rd1", key: gone, person: "xinyan", at: "2026-09-30T00:00:00Z" }];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, {}, tables));
+    const keys = (body.suggestions as { key?: string }[]).map((s) => s.key);
+    expect(keys).not.toContain(gone);
+    expect(keys.length).toBe(engine.length - 1);
+    expect(body.total).toBe(engine.length - 1);
+  });
+
+  it("a dismissal of a key that no longer exists hides nothing", async () => {
+    // Keys carry their evidence, so an old dismissal goes stale on its own when the
+    // facts change. It must not hide anything else.
+    const tables = TABLES();
+    tables.review_dismissals = [{ id: "rd1", key: "drift:r1:1404", person: "gino" }];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, {}, tables));
+    expect((body.suggestions as unknown[]).length).toBe(engineSuggestions().length);
+  });
+
+  it("before the migration is run, says it does not know — never that nothing was dismissed", async () => {
+    // The trap this guards: the table's COUNT comes back zero when the table is not
+    // there (a HEAD request's empty 404), so a door that trusted readAll alone would
+    // answer `dismissals_known: true` with nothing dismissed.
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, { missingTable: "review_dismissals" }));
     expect(body.dismissals_known).toBe(false);
+    expect(String(body.note)).toContain("has not been set up");
+    expect((body.suggestions as unknown[]).length).toBe(engineSuggestions().length);
+  });
+
+  it("fails closed when the dismissals cannot be read for any other reason", async () => {
+    const res = await ask("finance.worth_a_look", {}, GINO_SECRET, {
+      failPage: { table: "review_dismissals", message: "permission denied for table review_dismissals" },
+    });
+    expect(res.status).toBe(503);
+    const body = await jsonOf(res);
+    expect(body.error).toBe("ledger_unreadable");
+    expect(body.table).toBe("review_dismissals");
+    expect(body).not.toHaveProperty("suggestions");
+  });
+
+  it("hands out a stand-in, not the key, when the cleaner would change the key", () => {
+    // A merchant key with something link-shaped in it would be cleaned on the way out,
+    // and a cleaned key stored as a dismissal would match nothing. So it goes out as a
+    // fixed shape that says nothing about the charge — and the same one every time.
+    const unsafe = `unmodelled:SHOP ${CANARY_URL}:1299`;
+    const said = suggestionKey(unsafe);
+    expect(said).toMatch(/^h:[0-9a-f]{16}$/);
+    expect(suggestionKey(unsafe)).toBe(said);
+    expect(suggestionKey(`unmodelled:SHOP2 ${CANARY_URL}:1299`)).not.toBe(said);
+    expect(isDismissed(unsafe, new Set([said]))).toBe(true);
+    // A key that is safe to say goes out as itself.
+    expect(suggestionKey("drift:r1:2700")).toBe("drift:r1:2700");
   });
 
   const withBillName = (name: string) => {
@@ -1255,6 +1486,21 @@ describe("what exists and what never will", () => {
     const res = await ask("finance.audit", { months: 3 });
     expect(res.status).toBe(400);
     expect(String((await jsonOf(res)).says)).toContain("does not take months");
+  });
+
+  it("names every argument it does not take, and says the ones it does", async () => {
+    // FOUND 2026-10-10: finance.search_transactions was refused for `text`, then `q`
+    // with `days_back`, then `account_id` three times, each refusal saying only what it
+    // does not take. One reply now carries the whole answer.
+    const res = await ask("finance.search_transactions", { q: "coffee", days_back: 7 });
+    expect(res.status).toBe(400);
+    const says = String((await jsonOf(res)).says);
+    expect(says).toContain("finance.search_transactions does not take q, days_back.");
+    const takes = TOOLS.find((t) => t.name === "finance.search_transactions")!.args!.map((a) => a.name);
+    expect(says).toContain(`It takes ${takes.join(", ")}.`);
+    // A tool that takes nothing says so, rather than "It takes ."
+    const none = await ask("finance.audit", { months: 3 });
+    expect(String((await jsonOf(none)).says)).toContain("It takes nothing");
   });
 
   it("refuses a window that is not a real date, or that runs backwards", async () => {
@@ -1563,6 +1809,34 @@ describe("one row per call", () => {
   it("records an unreadable ledger as an error", async () => {
     await ask("finance.audit", {}, GINO_SECRET, { shortPage: "transactions" });
     expect(audited[0]).toMatchObject({ outcome: "error", tool: "finance.audit" });
+  });
+
+  it("stores why a read was refused in the note, and nothing in the note of an answer", async () => {
+    // FOUND 2026-10-10: all 25 failed reads in the log had an empty note.
+    await ask("finance.search_transactions", { q: "coffee" });
+    expect(audited[0].outcome).toBe("denied");
+    expect(audited[0].note).toMatch(/^bad_request: finance\.search_transactions does not take q\. It takes /);
+    audited.length = 0;
+    await ask("finance.no_such_thing");
+    expect(audited[0].note).toMatch(/^unknown_tool: There is no finance\.no_such_thing/);
+    audited.length = 0;
+    await ask("finance.audit", {}, GINO_SECRET, { shortPage: "transactions" });
+    expect(audited[0].note).toMatch(/^ledger_unreadable: /);
+    audited.length = 0;
+    await ask("finance.position");
+    expect(audited[0].outcome).toBe("ok");
+    expect(audited[0].note).toBeUndefined();
+  });
+
+  it("writes the note into the muse_audit row only when there is one", async () => {
+    const rows: Record<string, unknown>[] = [];
+    const sink = createAuditSink({ insert: async (_t, row) => void rows.push(row) });
+    const base = { person: "gino" as const, door: "read" as const, tool: "finance.audit", args: {}, ms: 1, bytes: 2 };
+    await sink.record({ ...base, outcome: "denied", note: "bad_request: finance.audit does not take months." });
+    await sink.record({ ...base, outcome: "ok" });
+    expect(rows[0].note).toBe("bad_request: finance.audit does not take months.");
+    // An answer writes exactly the row it always has — no note column at all.
+    expect("note" in rows[1]).toBe(false);
   });
 
   it("logs no dollar amounts, and scrubs an argument somebody typed", () => {
@@ -1977,7 +2251,20 @@ describe("API.md's field names exist", () => {
     for (const k of [
       "queued", "expires_at", "summary", "applied", "can_be_applied_yet",
       "replaced", "meals_on_day", "canceled", "changed", "meal",
+      // finance.edit_bill's reply (2026-10-10): how many saved rules and paid marks a
+      // rename carried with it. Driven in tests/museFinance.test.ts.
+      "rules_carried", "paid_marks_carried",
+      // What a refusal about the SHAPE of a write carries (2026-10-10), driven in
+      // tests/museShapes.test.ts.
+      "problems", "received", "example",
+      // finance.confirm_charges' left_alone count at a fuel-and-store merchant
+      // (2026-10-10), driven in tests/museFinance.test.ts.
+      "would_change_category",
     ]) keys.add(k);
+    // The other names the write door accepts for its own fields — the read door's
+    // words — off the table the door renames with, so API.md can name them and a
+    // synonym the door stops taking stops being documentable here.
+    for (const k of Object.keys(READ_DOOR_NAMES)) keys.add(k);
 
     // Backticked tokens that are shaped like a field name. Tool names carry a dot,
     // error codes and headers are listed out, and anything with a space in it is

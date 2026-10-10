@@ -123,6 +123,11 @@ export interface Debt {
   trackPattern?: string; // e.g. "AFFIRM", "REMITLY" (case-insensitive substring)
   trackedBaseline?: number; // the balance when auto-tracking began
   trackedSince?: string; // ISO date; only payments on/after this count
+  // When the debt was CLOSED — finished and kept, never deleted
+  // (supabase/schema_v44_debt_closed.sql, set by the write door's finance.edit_debt).
+  // Absent while it is open, and on a database where that file has not been run.
+  // Only a debt at a zero balance can be closed, so nothing the plan adds up moves.
+  closedAt?: string;
   createdAt: string;
 }
 

@@ -48,6 +48,11 @@ export const UNDO_TABLES = [
   "debts",
   "paid_bills",
   "merchant_rules",
+  // Added 2026-10-10 for finance.dismiss_suggestion: a "worth a look" item waved away
+  // is one row here (supabase/schema_v43_review_dismissals.sql), and its undo is the
+  // delete of that row — the same insert-then-delete_row shape add_bill and add_debt
+  // use, so no new step kind was needed.
+  "review_dismissals",
 ] as const;
 
 export type UndoTable = (typeof UNDO_TABLES)[number];
@@ -89,11 +94,46 @@ export const UNDO_COLUMNS: Record<UndoTable, readonly string[]> = {
   // the 14th in July, August and September, and nothing could move it. Reversible like the
   // rest — the undo writes the old array back, and the tool only ever touches a row
   // with one day, so the before-state is never a split it would have to reassemble.
-  recurring: ["amount", "known_amount", "variable", "active", "starts_on", "ends_on", "account_id", "due_days"],
+  //
+  // `name` and `category_id`, added 2026-10-10 for finance.edit_bill. FOUND that day in a
+  // scan of the door's own calls: nobody — not the app, not the door — could rename a bill
+  // or change its category, so bills sat filed under `other` while a category that fits
+  // them existed, and one still carried the bank's all-caps name.
+  // A rename is reversible like the rest, but it is the one write here that has to move
+  // OTHER rows with it — a saved merchant rule and a paid mark both store the bill by its
+  // name — so the tool writes those in the same change, and the two columns below are
+  // what lets their undo put them back too.
+  recurring: [
+    "amount",
+    "known_amount",
+    "variable",
+    "active",
+    "starts_on",
+    "ends_on",
+    "account_id",
+    "due_days",
+    "name",
+    "category_id",
+  ],
   accounts: ["balance"],
-  debts: ["provider_account_id", "balance"],
-  paid_bills: ["paid"],
+  // `name`, `min_payment`, `apr` and `closed_at`, added 2026-10-10 for finance.edit_debt.
+  // The debt tools could add a debt and point it at a card, and nothing could change one:
+  // the card's minimum moves after every statement, finance.debts reads the stored one out
+  // loud, and the stored one could only be corrected with raw SQL. `closed_at` is the
+  // close-without-deleting flag from supabase/schema_v44_debt_closed.sql; the tool refuses
+  // with a sentence on a database where that file has not been run, so the allowlist can
+  // name the column before the column exists without any write ever reaching it.
+  debts: ["provider_account_id", "balance", "name", "min_payment", "apr", "closed_at"],
+  // `bill_key`, added 2026-10-10 with the rename above: an override row is keyed
+  // "<label>@<day>", and the label is the bill's name for every row written that way.
+  paid_bills: ["paid", "bill_key"],
   merchant_rules: ["kind", "category_id", "bill_name"],
+  // `key` and nothing else. No tool UPDATES a dismissal — dismissing inserts one and
+  // undoing deletes it — but a delete_row step must name a column it expects to find
+  // before it removes anything (that is what keeps a delete from ever being blind), and
+  // this allowlist is what that column is checked against. The key is the one column
+  // that says which dismissal the row is.
+  review_dismissals: ["key"],
 };
 
 /** A JSON value, as it sits in a column or in the steps document. */
@@ -374,11 +414,23 @@ export function checkSteps(steps: unknown): UndoStep[] {
   return steps.map(checkStep);
 }
 
-/** The most rows one write is allowed to touch. Three is today's maximum
- *  (promoting a charge to a bill: the new bill, the charge, the merchant rule), so
- *  this is loose enough not to be in the way and tight enough that a runaway list
- *  is refused rather than run. */
-export const MAX_STEPS = 8;
+/** The most rows one write is allowed to touch.
+ *
+ *  It was 8 until 2026-10-10, when three rows (promoting a charge to a bill: the new
+ *  bill, the charge, the merchant rule) was the largest write in the door. Then
+ *  finance.confirm_charges arrived: a backlog of charges sat flagged for review, most of
+ *  them at a few merchants and already in the right category, and clearing them one
+ *  call at a time ran into the cap of 60 writes an hour. Confirming a batch is one change
+ *  with one undo token, and its steps are one compare-and-set per charge, so the batch
+ *  can be no bigger than this.
+ *
+ *  50 covered the largest single merchant's backlog that day in one call, and is still
+ *  small enough that a runaway list is refused rather than run — confirm_charges
+ *  refuses anything over it in words, before it writes a row. finance.edit_bill is the
+ *  other write whose row count depends on the data — a rename carries every saved rule
+ *  and paid mark that names the bill — and it too refuses, before writing anything, a
+ *  rename that would need more than this, rather than raising the cap for it. */
+export const MAX_STEPS = 50;
 
 // ── the seam the write door implements ───────────────────────────────────────
 
@@ -492,6 +544,85 @@ export async function applyUndo(steps: UndoStep[], apply: UndoApplier): Promise<
     done++;
   }
   return { ok: true, steps: done };
+}
+
+// ── a batch, undone row by row ───────────────────────────────────────────────
+
+/**
+ * The tools whose changes are a BATCH OF SEPARATE ROWS, which system.undo puts back
+ * one row at a time instead of stopping at the first that moved.
+ *
+ * FOUND 2026-10-10 in review of finance.confirm_charges. applyUndo above is right for
+ * a SEQUENCE: promoting a charge to a bill inserts the bill and then points the charge
+ * at it, so if the charge has moved the bill must stay, and stopping is the only safe
+ * answer. A batch is not a sequence. Fifty confirmed charges are fifty separate
+ * answers, and one of them being re-filed on the phone says nothing about the other
+ * forty-nine. Run through applyUndo, though, it froze them all for good: the undo
+ * stopped at the re-filed row, the change stayed `undoable`, and every retry began
+ * again from the last step — where the rows it HAD put back now held their old values,
+ * read as "moved", and stopped it there. With MAX_STEPS at 8 and three real steps that
+ * was rare; with fifty separate rows it is the likely case.
+ *
+ * WHY A LIST OF TOOL NAMES and not "any change whose steps are all set_columns on
+ * different rows". The shape cannot tell a batch from a sequence that happens to be
+ * all updates — settle_reimbursable's two rows are one answer about a charge and the
+ * deposit that repays it, and putting one back without the other is a state nobody
+ * asked for. Only the tool knows its rows are independent, so the tool says so by
+ * being on this list. A tool name is stored in every muse_undo row it writes, so a
+ * name here is permanent in the same way a handler name is: renaming the tool would
+ * send its old tokens back through applyUndo.
+ */
+export const ROW_BY_ROW_TOOLS: ReadonlySet<string> = new Set(["finance.confirm_charges"]);
+
+/** How a row-by-row undo went: rows put back, and rows that no longer held what the
+ *  door wrote and so were left holding what they hold now. */
+export interface RowByRowOutcome {
+  putBack: number;
+  changedSince: number;
+}
+
+/**
+ * Put back every row of a batch that still holds what the door wrote, skip each one
+ * that does not, and count both.
+ *
+ * Every step is still its own compare-and-set, so a row somebody has changed since —
+ * re-filed on the phone, deleted, replaced by the bank — keeps that newer state; the
+ * only thing that changes from applyUndo is that it does not stop the rows after it.
+ * The order is still newest first, out of habit rather than need.
+ *
+ * It refuses, before writing anything, any change that is not a batch of separate
+ * rows: a step of another kind, or one row named twice (the second step would be
+ * checked against what the first had just put back). That is a step this door did not
+ * write for a batch tool, and the honest answer is a sentence, not a guess.
+ *
+ * A database failure part-way throws, as applyUndo's does, and the change stays
+ * `undoable`. A retry then finds the rows already put back holding their old values
+ * and counts them as changed since — a wrong COUNT, never a wrong write, because the
+ * compare-and-set still refuses each of them.
+ */
+export async function applyUndoRowByRow(
+  steps: UndoStep[],
+  apply: Pick<UndoApplier, "setColumns">,
+): Promise<RowByRowOutcome> {
+  const seen = new Set<string>();
+  for (const s of steps) {
+    if (s.kind !== "set_columns") {
+      throw new UndoRefused("That undo is not a batch of separate rows, so I will not put it back one row at a time.");
+    }
+    const at = `${s.table}:${s.id}`;
+    if (seen.has(at)) {
+      throw new UndoRefused("That undo names one row twice, so I will not put it back one row at a time.");
+    }
+    seen.add(at);
+  }
+  let putBack = 0;
+  let changedSince = 0;
+  for (const s of [...steps].reverse()) {
+    if (s.kind !== "set_columns") continue; // unreachable: checked above, and says so to the compiler
+    if ((await apply.setColumns(s.table, s.id, s.before, s.after)) === "ok") putBack += 1;
+    else changedSince += 1;
+  }
+  return { putBack, changedSince };
 }
 
 /** How far an undo got, in one clause. Split out of `stopped` because a handler step

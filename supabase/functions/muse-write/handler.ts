@@ -16,9 +16,19 @@
 //      after a slow reply — and without a key, "log 198.4" twice is two rows.
 //   4  The body, the tool name, and the fields that tool accepts. An unknown
 //      field is refused by name rather than ignored, because a silently ignored
-//      field is a write that did not do what the caller thinks it did.
+//      field is a write that did not do what the caller thinks it did. The read
+//      door's spelling of a field (`protein_g` for `p`, `weight_lb` for `weight`) is
+//      accepted and renamed first — see shapes.ts.
 //   5  Was this key used before? A repeat replays the first answer and writes
 //      nothing.
+//   5b THE SHAPE: first, is this call the tool's own EXAMPLE, sent as it stands? Its
+//      values are made up, so that is refused. Then the tool's own `check`, which looks
+//      inside every list and at every field's type and range, and needs no database.
+//      Every problem comes back in one reply, with the keys that were sent and an
+//      example of a call that works. Here, and not later, so a malformed call does not
+//      spend a slot of the hourly budget; and after 5, so a genuine retry of a call
+//      that already landed still replays rather than being re-judged against a
+//      calendar that may have turned over since.
 //   6  The rate limit, counted in the locked-down muse_calls table.
 //   7  Did the HOUSEHOLD already do this? The key in step 5 is per caller; this one
 //      asks whether the same write, with the same numbers, came through either
@@ -60,8 +70,9 @@ import { scrubName } from "../_shared/muse/scrub.ts";
 // TOOL_BY_NAME, not TOOLS: routing goes through the Map. `REGISTRY[name]` answered for
 // every key on Object.prototype, so "constructor", "__proto__" and "toString" each found
 // an inherited value and got past the "no such tool" check.
-import { DISPLAY, TOOL_BY_NAME, TOOL_NAMES } from "./tools.ts";
+import { DISPLAY, TOOL_BY_NAME, TOOL_NAMES, type Tool } from "./tools.ts";
 import { mintToken, undoSummary } from "../_shared/muse/undo.ts";
+import { canonicalArgs, renameAliases, sayKey, shapeSays } from "./shapes.ts";
 
 /** Writes per person per Arizona hour. Meta publishes no rate limits for
  *  connectors, so this is ours.
@@ -93,10 +104,12 @@ export const DUPLICATE_WINDOW_MIN = 10;
 /**
  * Fields the DOOR handles, on every tool, rather than any one tool declaring them.
  *
- * There is exactly one, and it is the way past the duplicate guard above. It lives
- * here and not in a tool's `fields` list because a guard a tool could forget to
- * opt into is not a guard — the same reason `person` is refused in one place for
- * every tool rather than checked in seven.
+ * There is exactly one, and it is the way past the duplicate guard above — and, since
+ * review on 2026-10-10, past the example guard (see EXAMPLE_SENT): both refuse a call
+ * that may be perfectly real, and both need a way for a caller that means it to say
+ * so. It lives here and not in a tool's `fields` list because a guard a tool could
+ * forget to opt into is not a guard — the same reason `person` is refused in one
+ * place for every tool rather than checked in seven.
  *
  * It is stripped before the tool sees it, and it is NOT part of the payload
  * fingerprint: it does not change what gets written, only whether the door is
@@ -195,6 +208,63 @@ const deny = (status: number, message: string, extra: Record<string, unknown> = 
   status,
   body: { ok: false, message, ...extra },
 });
+
+/** The tool's own shape check, or nothing for a tool that has none. Handed the
+ *  request's clock and nothing else — see ShapeCtx in kit.ts. */
+function shapeProblems(def: Tool, args: Record<string, unknown>, clock: Deps["clock"]): string[] {
+  return def.check ? def.check(args, { az: clock.az, at: clock.at }) : [];
+}
+
+/**
+ * Is this call the tool's own example, exactly as the description prints it?
+ *
+ * FOUND IN REVIEW 2026-10-10. Every shape refusal hands the example back, and most
+ * examples carry no id — so one sent as it stands is a real write: the example's weight
+ * as today's weigh-in, its macro target over the real one, its reminder on a lock
+ * screen. A probe found fifteen tools that answered 200 to their own example. An
+ * assistant stuck in a retry loop sending back the last thing it was given is exactly
+ * the caller who would do it.
+ *
+ * Compared on the door's own spelling at every level (canonicalArgs), with key order
+ * not mattering — so the example re-sent under the read door's words is caught too. A
+ * tool that takes nothing has `{}` for an example, and `{}` is also the one real call
+ * it has, so an empty example is never matched.
+ */
+function isTheExample(def: Tool, canon: Record<string, unknown>): boolean {
+  if (Object.keys(def.example).length === 0) return false;
+  return JSON.stringify(canonical(canon)) === JSON.stringify(canonical(def.example));
+}
+
+/** The refusal for a call that is its tool's example. The way past is said, and
+ *  conditioned on a person: an example can coincide with a real request ("delete the
+ *  weigh-in on that day"), and a guard with no way through would turn that request
+ *  away for ever. */
+export const EXAMPLE_SENT =
+  "That is the example call from this door's description, exactly as printed. Its values are made up, " +
+  "so I wrote nothing. Send the real values instead. If the person really did ask for exactly these, " +
+  "send it again with do_it_anyway: true.";
+
+/**
+ * A refusal about the SHAPE of a call: every problem, the keys that were sent, and one
+ * call that works.
+ *
+ * `problems` and `received` are there as well as the sentence so an assistant can fix
+ * a list item by item without parsing prose; `example` is the tool's own, the same one
+ * the description prints, so the cure arrives with the diagnosis even for an assistant
+ * that read the description weeks ago and never again. Every string in the problems
+ * was built from scrubbed pieces (shapes.ts), and the example is a constant in code.
+ */
+function shapeRefusal(def: Tool, problems: string[], received: string[]): Reply {
+  return deny(400, shapeSays(problems, received, true), { problems, received, example: def.example });
+}
+
+/** The audit note for a refusal: what kind it was, then the problems, capped. Key
+ *  names and item labels only — the problems never quote a value, an amount or a
+ *  memory's words, because the audit log must not hold them. */
+function noteOf(head: string, problems: string[]): string {
+  const text = problems.length ? `${head}: ${problems.join(" ")}` : head;
+  return text.length > 400 ? `${text.slice(0, 399)}…` : text;
+}
 
 /** Fields whose presence is not a typo but an attempt at something the door does
  *  not allow, so each gets its own sentence. */
@@ -312,27 +382,50 @@ async function afterAuth(
     await db.logCall({ person, tool, args: {}, outcome: "denied", note: "args was not an object", ms: ms() });
     return deny(400, "args is an object of fields.");
   }
-  const args = rawArgs as Record<string, unknown>;
+  const sent = rawArgs as Record<string, unknown>;
   // Membership is tested against the RAW keys — cleaning first would let "weight "
   // read as "weight" and then find nothing under it.
-  const rawKeys = Object.keys(args);
-  const shown = (keys: string[]) => keys.map((k) => scrubName(k, 24) || "?").sort();
+  const rawKeys = Object.keys(sent);
+  const shown = (keys: string[]) => keys.map(sayKey).sort();
   // The audit log records what was SENT, universal fields included — "he overrode the
   // duplicate guard" is exactly the kind of thing the log is for.
   const fields = shown(rawKeys);
-  const extra = rawKeys.filter(
-    (f) => !def.fields.includes(f) && !(UNIVERSAL_FIELDS as readonly string[]).includes(f),
-  );
+
+  // ── the read door's words, renamed before anything is judged ───────────────
+  //
+  // FOUND 2026-10-10. The read door says `protein_g`, `weight_lb` and `duration_min`;
+  // this door wanted `p`, `weight` and `minutes`, and refused its sibling's own words.
+  // A synonym only stands in for a field this tool really takes (renameAliases), and
+  // the universal fields are passed through untouched. Everything after this line —
+  // the unknown-field check, the shape check and the tool itself — sees the door's own
+  // spelling at the TOP level. Inside a list the tool's own parser renames (shapes.ts),
+  // and the fingerprint below is taken over canonicalArgs, which renames at every
+  // level — so `weight_lb: 198.4` and `weight: 198.4`, and a meal item's `calories` and
+  // `kcal`, are the SAME request to the duplicate guard, which is what they are.
+  const named = renameAliases(sent, [...def.fields, ...UNIVERSAL_FIELDS]);
+  const args = named.value;
+  const extra = named.unknown;
   if (extra.length) {
     const loaded = extra.find((f) => LOADED_FIELDS[f]);
-    const note = loaded ? `refused field ${loaded}` : `unknown fields: ${shown(extra).join(", ")}`;
-    await db.logCall({ person, tool, args: { fields }, outcome: "denied", note, ms: ms() });
-    return deny(
-      400,
-      loaded
-        ? LOADED_FIELDS[loaded]
-        : `${tool} does not take ${shown(extra).join(", ")}. It takes ${def.fields.join(", ")}.`,
-    );
+    if (loaded) {
+      await db.logCall({ person, tool, args: { fields }, outcome: "denied", note: `refused field ${loaded}`, ms: ms() });
+      return deny(400, LOADED_FIELDS[loaded]);
+    }
+    // EVERY problem in one reply, not just this one. The unknown field is said first
+    // and in the sentence it has always had, and whatever the tool's own shape check
+    // finds in what WAS recognised comes after it — so a meal sent flat at the top
+    // level hears both "it does not take protein_g" and "I need at least one food" in
+    // the same answer, instead of one round trip each.
+    const problems = [
+      `${tool} does not take ${shown(extra).join(", ")}. It takes ${def.fields.join(", ")}.`,
+      ...named.clashes,
+      ...shapeProblems(def, args, clock),
+    ];
+    await db.logCall({
+      person, tool, args: { fields }, outcome: "denied",
+      note: noteOf(`unknown fields: ${shown(extra).join(", ")}`, problems.slice(1)), ms: ms(),
+    });
+    return shapeRefusal(def, problems, fields);
   }
 
   // ── the door's own field, taken out before the tool sees anything ──────────
@@ -362,12 +455,45 @@ async function afterAuth(
     );
   }
 
-  const print = await fingerprint(tool, toolArgs);
+  // THE FINGERPRINT IS TAKEN OVER THE DOOR'S OWN WORDS, AT EVERY LEVEL. FOUND IN REVIEW
+  // 2026-10-10: it used to be taken over toolArgs, which are only renamed at the top, so
+  // a meal sent with `calories`/`protein_g` and then with `kcal`/`p` was two different
+  // requests to both the idempotency check and the duplicate guard — and was logged
+  // twice. A call with no alias in it is unchanged by canonicalArgs, so every
+  // fingerprint already in muse_audit still matches its own retry.
+  const canon = canonicalArgs(toolArgs, def.lists);
+  const print = await fingerprint(tool, canon);
   const auditArgs = { fields, fingerprint: print };
 
   // ── has this key been here before? ──────────────────────────────────────────
   const replay = await replayFor(db, person, tool, idemKey, print);
   if (replay) return replay;
+
+  // ── the shape, BEFORE anything is counted ──────────────────────────────────
+  //
+  // FOUND 2026-10-10. The counter below used to be bumped before the tool looked at
+  // its own arguments, so a refusal for a missing `name` inside an exercise spent a
+  // slot of the 60-an-hour budget exactly like a write that landed. In the worst hour
+  // the log showed, the refusals of one back-fill outnumbered the writes that landed,
+  // and a long enough back-fill at a few tries per day would have locked that person
+  // out of writing for the rest of the hour, for nothing that ever reached the
+  // database.
+  //
+  // The cap exists to stop a runaway loop that CHANGES things, so it now counts the
+  // calls that get that far. A loop of malformed calls is still visible — every one
+  // writes an audit row — it just cannot spend anybody's hour.
+  //
+  // The example guard goes first: an example passes its own shape check by design, so
+  // it would sail through the next step and reach the database as a real write.
+  if (!override && isTheExample(def, canon)) {
+    await db.logCall({ person, tool, args: auditArgs, outcome: "denied", note: "sent the example as it stands", ms: ms() });
+    return deny(400, EXAMPLE_SENT, { received: fields });
+  }
+  const problems = [...named.clashes, ...shapeProblems(def, toolArgs, clock)];
+  if (problems.length) {
+    await db.logCall({ person, tool, args: auditArgs, outcome: "denied", note: noteOf("shape", problems), ms: ms() });
+    return shapeRefusal(def, problems, fields);
+  }
 
   // ── the rate limit ─────────────────────────────────────────────────────────
   const hour = `write:${azDateISO(clock.az)}T${String(clock.az.getHours()).padStart(2, "0")}`;
@@ -434,7 +560,12 @@ async function afterAuth(
       // that tool's first write, so there is nothing to be idempotent about.
       await db.releaseCall(person, tool, idemKey);
       await db.logCall({ person, tool, args: auditArgs, outcome: "denied", note: outcome.say, ms: ms() });
-      return deny(outcome.status, outcome.say);
+      // A 400 from inside a tool is a value it could not use — a weight that is not
+      // pounds, an amount that is a string. Since 2026-10-10 it carries the keys that
+      // were sent, the same `received` a shape refusal carries, so a refusal always says
+      // what it was looking at. Beside the sentence, not in it: the sentence is the
+      // tool's own and is said as it stands.
+      return deny(outcome.status, outcome.say, outcome.status === 400 ? { received: fields } : {});
     }
 
     // THE UNDO RECORD GOES IN muse_undo, under a minted token, like every other change.

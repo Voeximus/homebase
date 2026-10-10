@@ -84,6 +84,12 @@ export interface CatalogueEntry {
   /** Declared types, where the door declares them. The read door does; the write
    *  door's `fields` are names only, and this is empty for those. */
   args: readonly CatalogueArg[];
+  /**
+   * One call that works, for a write tool — see `example` on the write door's Tool in
+   * muse-write/kit.ts. Absent on every read entry: a read tool's arguments are typed
+   * one by one in `args`, and none of them is a list.
+   */
+  example?: Readonly<Record<string, unknown>>;
 }
 
 /** The shape of a read-door tool, structurally — not an import, so this file stays
@@ -99,6 +105,7 @@ export interface WriteToolShape {
   kind: "direct" | "queued";
   does: string;
   fields: readonly string[];
+  example?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -134,6 +141,7 @@ export function writeEntries(registry: ReadonlyMap<string, WriteToolShape>): Cat
     fields: t.fields,
     landing: t.kind,
     args: [],
+    example: t.example,
   }));
 }
 
@@ -156,6 +164,12 @@ export function writeEntries(registry: ReadonlyMap<string, WriteToolShape>): Cat
  *     this list" by exact string, so `learn_Merchant` in a registry is a field that
  *     can never be sent.
  *
+ * And, since 2026-10-10, a write tool with no example, or with one that names a field
+ * the tool does not take. The example is printed into the description an assistant
+ * copies from, so an example that drifted from its tool would teach the exact wrong
+ * guess it exists to prevent — and a write tool without one is how "Each exercise
+ * needs a name." kept being refused, the same way, call after call.
+ *
  * It THROWS rather than returning errors, and that is the point: both doors call it
  * at module load, so a door with a malformed entry does not start.
  */
@@ -175,6 +189,15 @@ export function catalogueOf(...groups: readonly CatalogueEntry[][]): readonly Ca
       if (!FIELD.test(f)) throw new Error(`muse catalogue: ${e.name} declares a field called ${f}`);
       if (fields.has(f)) throw new Error(`muse catalogue: ${e.name} declares ${f} twice`);
       fields.add(f);
+    }
+    if (e.door === "write") {
+      const ex = e.example;
+      if (!ex || typeof ex !== "object" || Array.isArray(ex)) {
+        throw new Error(`muse catalogue: ${e.name} has no example call`);
+      }
+      for (const k of Object.keys(ex)) {
+        if (!fields.has(k)) throw new Error(`muse catalogue: ${e.name}'s example sends ${k}, which it does not take`);
+      }
     }
   }
   return all;
@@ -210,12 +233,18 @@ export const numberWord = (n: number): string => (n >= 0 && n < WORDS.length ? W
 export function toolLines(entries: readonly CatalogueEntry[]): string[] {
   return entries.map((e) => {
     const fields = e.fields.length ? ` Fields: ${e.fields.join(", ")}.` : " Takes nothing.";
+    // The example goes right after the field names, as compact JSON, so the inside of
+    // every list is on the same line as the tool it belongs to. Added 2026-10-10: the
+    // field names alone never said what an exercise, a meal item or a set looks like,
+    // and the assistant guessed. Not printed for a tool that takes nothing — `{}` says
+    // no more than "Takes nothing." already does.
+    const example = e.example && e.fields.length ? ` Example: ${JSON.stringify(e.example)}` : "";
     const lands = e.landing === "queued"
       ? " This one only writes the request down. The app has no screen for these yet, so it will NOT be applied and it clears itself after 24 hours. Say that plainly, and say the app is where the change actually gets made."
       : e.landing === "direct"
         ? " This one takes effect right away."
         : "";
-    return `- ${e.name}: ${e.summary}${fields}${lands}`;
+    return `- ${e.name}: ${e.summary}${fields}${example}${lands}`;
   });
 }
 

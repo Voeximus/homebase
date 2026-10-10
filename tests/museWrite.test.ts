@@ -1805,8 +1805,10 @@ describe("the household does not do the same write twice by accident", () => {
     // does not happen twice. It cannot tell WHICH refusal did it: for cancel and
     // update the tool itself would have refused anyway, so a guard that had been
     // skipped for those two would pass it unnoticed. The guard's sentence is the only
-    // one that offers do_it_anyway, so naming that sentence is what proves the guard
-    // ran — on every tool, including the two added after it was written.
+    // one that offers do_it_anyway on a call like these, so naming that sentence is what
+    // proves the guard ran — on every tool, including the two added after it was written.
+    // (Since 2026-10-10 the example guard offers it too, but only for a call that is a
+    // tool's own example, and the first call here landed, so none of these is one.)
     //
     // And the third call proves the flag is honoured everywhere. What happens after
     // the guard steps aside is the tool's own business: cancel still refuses, because

@@ -110,6 +110,13 @@ const AT = new Date(`${(SNAP?.takenAt || "2026-09-26T00:00:00Z").slice(0, 10)}T0
 function snapshotDb(tables: Record<string, DbRow[]>, shortPage?: string): Db {
   return {
     select(q: DbQuery) {
+      // review_dismissals (schema_v43) is written and not yet run on the live database,
+      // so a snapshot does not carry it. Answer a page of it the way PostgREST answers a
+      // table that is not there, so the read door's probe sees what it would see live.
+      if (q.table === "review_dismissals" && !(q.table in tables)) {
+        const missing = () => Promise.reject(new Error("read review_dismissals: Could not find the table 'public.review_dismissals' in the schema cache"));
+        return { count: () => Promise.resolve(0), page: missing };
+      }
       const rows = () =>
         (tables[q.table] ?? [])
           .filter((r) => Object.entries(q.eq ?? {}).every(([k, v]) => String(r[k]) === v))
@@ -198,6 +205,9 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     { tool: "system.changes", body: {} },
     { tool: "system.heartbeat", body: {} },
     { tool: "finance.run_rate", body: {} },
+    // 2026-10-10: the month's unusual purchases, with the ids finance.dismiss_unusual
+    // takes. It says a cleaned merchant name, so the descriptor check below covers it.
+    { tool: "finance.unusual", body: {} },
   ];
 }
 
@@ -506,14 +516,17 @@ describeSnapshot("the read door against the real ledger", () => {
   it("says worth a look without a merchant, a charge date or an engine field", async () => {
     const body = JSON.parse(await (await ask("finance.worth_a_look")).text()) as Record<string, unknown>;
     const suggestions = (body.suggestions ?? []) as Record<string, unknown>[];
-    const allowed = new Set(["rule", "kind", "sentence", "amount", "month", "bill", "count"]);
+    // `key` since 2026-10-10: what finance.dismiss_suggestion takes back.
+    const allowed = new Set(["rule", "kind", "sentence", "amount", "month", "bill", "count", "key"]);
     for (const s of suggestions) {
       for (const k of Object.keys(s)) expect(allowed, `worth_a_look sent ${k}`).toContain(k);
     }
     // A bill CYCLE is "2026-09". A charge DATE is "2026-09-18". The second one is
     // what W5a and W7 are made of, and they come back as a count instead.
     expect(JSON.stringify(body)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(body.dismissals_known).toBe(false);
+    // Known only where the household table exists — and a snapshot carries it only once
+    // schema_v43 has been run.
+    expect(body.dismissals_known).toBe("review_dismissals" in SNAP!.tables);
   });
 
   // ── Rule 5, at the page boundary the real table sits on ─────────────────────

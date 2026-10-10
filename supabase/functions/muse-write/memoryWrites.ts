@@ -42,6 +42,8 @@
 // this folder for `new Date(`.
 
 import type { Tool, ToolOutcome } from "./tools.ts";
+// A value from kit.ts, which imports nothing back out of this file, so no cycle.
+import { shapeRefused } from "./kit.ts";
 import type { MemoryRecord } from "./memoryDb.ts";
 import {
   LIVE_MAX,
@@ -146,6 +148,23 @@ function bad<T>(c: Checked<T>): c is ToolOutcome {
   return "ok" in c;
 }
 
+/** remember's four fields, every problem with them. No sentence quotes the value:
+ *  refusals are stored in the audit log, and that log holds no memory's words. */
+function rememberProblems(payload: Record<string, unknown>): string[] {
+  const says: string[] = [];
+  for (const c of [keyOf(payload), kindOf(payload), valueOf(payload), tagsOf(payload)] as Checked<unknown>[]) {
+    if (bad(c) && !c.ok) says.push(c.say);
+  }
+  return says;
+}
+
+/** forget's and restore's whole shape — the key — as a check handler.ts runs before
+ *  anything is counted. Added in review 2026-10-10, with every other flat tool's. */
+function keyCheck(payload: Record<string, unknown>): string[] {
+  const key = keyOf(payload);
+  return bad(key) && !key.ok ? [key.say] : [];
+}
+
 /** The before-state, in the shape the row stores it. */
 function beforeOf(row: MemoryRecord, atISO: string) {
   return { value: row.value, kind: row.kind, tags: row.tags, at: atISO };
@@ -199,7 +218,28 @@ const remember: Tool = {
   kind: "direct",
   does: "Remember a standing thing about how the household works — a rule, a preference, a routine, a decision already made. Never a figure the app can compute.",
   fields: ["key", "kind", "value", "tags"],
+  // Made up, and a preference rather than a figure — the one kind of thing this store
+  // is for. A number in `value` is refused (valueOf), so an example with one in it
+  // would teach the exact mistake the store exists to keep out.
+  //
+  // And marked as a sample, in the key and the words both: a call that is exactly the
+  // example is refused (handler.ts), and an assistant that has just read "explain money
+  // in plain words" in this description could well write those very words back for a
+  // person who asked for that.
+  example: { key: "sample-preference", kind: "preference", value: "Sample preference: keep answers short.", tags: ["style"] },
+  // All four fields' checks, every one of them run, so a call with a bad key AND a bad
+  // kind hears both at once — FOUND 2026-10-10, the same one-problem-per-reply pattern
+  // that cost a workout back-fill three rounds. None of them reads the database, so
+  // handler.ts runs this before anything is counted. No sentence here quotes the value:
+  // refusals are stored in the audit log, and that log holds no memory's words.
+  check: rememberProblems,
   async run(payload, ctx) {
+    // The same four checks the door ran first, so a tool driven without the handler
+    // refuses with every problem too, not the first one.
+    const said = rememberProblems(payload);
+    if (said.length) return shapeRefused(said, payload);
+    // None of these can refuse after the line above; they are here for their values,
+    // and so the types narrow.
     const key = keyOf(payload);
     if (bad(key)) return key;
     const kind = kindOf(payload);
@@ -288,6 +328,11 @@ const forget: Tool = {
   kind: "direct",
   does: "Stop using one remembered thing. It is kept, so it can be brought back.",
   fields: ["key"],
+  // NOT remember's example key. An assistant that copied remember's example could well
+  // have saved a real memory under that key — and a call that is exactly this tool's
+  // example is refused (handler.ts), so forgetting it would then be refused too.
+  example: { key: "example-key" },
+  check: keyCheck,
   async run(payload, ctx) {
     const key = keyOf(payload);
     if (bad(key)) return key;
@@ -334,6 +379,9 @@ const restore: Tool = {
   kind: "direct",
   does: "Undo the last change to one remembered thing — bring back a forgotten one, or put back the wording it had before.",
   fields: ["key"],
+  // A placeholder key, for the reason given on memory.forget's.
+  example: { key: "example-key" },
+  check: keyCheck,
   async run(payload, ctx) {
     const key = keyOf(payload);
     if (bad(key)) return key;

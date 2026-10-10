@@ -93,6 +93,10 @@ const MODULES = [
   "src/lib/runRate.ts",
   // Whether a bill that reads "overdue" is actually paid and still clearing.
   "src/lib/pendingCover.ts",
+  // The unusual-purchase rule, moved out of the Activity screen on 2026-10-10 so
+  // finance.unusual and the screen answer from one function. The write door had
+  // dismiss_unusual and nothing that could list what it dismisses from.
+  "src/lib/unusual.ts",
 ];
 
 /** Deno needs the file extension, and this folder is FLAT, so every relative

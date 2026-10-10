@@ -91,6 +91,21 @@ export interface WorkoutRow {
   updatedAt: string;
 }
 
+/**
+ * A session named, not read: enough to say which one it is — the date, the name, the id,
+ * and whether it is finished — and nothing inside it.
+ *
+ * Added 2026-10-10 for the session tools, which can now take the DAY a session was on
+ * instead of its id, and which list a person's real sessions when an id is not one of
+ * theirs. Neither needs the exercises, so neither reads them.
+ */
+export interface SessionHead {
+  id: string;
+  date: string;
+  name: string;
+  done: boolean;
+}
+
 export interface RoutineRow {
   id: string;
   person: Person;
@@ -387,6 +402,22 @@ export interface Db extends FinanceDb, MemoryDb {
    * two half-logged sessions on one day for him to find later.
    */
   findOpenSession(person: Person, date: string): Promise<WorkoutRow | null>;
+  /**
+   * This person's sessions on one date, oldest first, at most `limit` of them.
+   *
+   * For a session named by its day rather than its id: "delete Monday's workout" is how
+   * a person says it, and it means one thing only when there was one session that day.
+   * The caller asks for one more than it will list, so "more than that" is a fact it
+   * read rather than a guess — a bounded read, like listRoutines.
+   */
+  sessionsOn(person: Person, date: string, limit: number): Promise<SessionHead[]>;
+  /**
+   * This person's most recent sessions, newest first, at most `limit` — so a refusal
+   * for an id that is not theirs can name the ones that are. FOUND 2026-10-10 in the
+   * audit log: an assistant sent one invented id twice, re-reading the list in between,
+   * and the refusal named nothing it could have copied instead.
+   */
+  recentSessions(person: Person, limit: number): Promise<SessionHead[]>;
   /** "conflict" means that id is already taken. The door generates ids, so the
    *  only way to see this is an undo re-inserting a row that came back. */
   insertWorkout(r: WorkoutRow): Promise<"ok" | "conflict">;
@@ -396,11 +427,15 @@ export interface Db extends FinanceDb, MemoryDb {
    * src/store/HealthStore.tsx: "a session row is one document, so a blind upsert
    * drops any set the other device added". Two phones are in this app at once and
    * one of them may be mid-set while the door writes.
+   *
+   * `date` since 2026-10-10, for health.edit_session: moving a session to the day it
+   * really happened is one of the corrections nothing could make without deleting the
+   * session and logging it again under a new id.
    */
   updateWorkoutIfUnchanged(
     id: string,
     seenUpdatedAt: string,
-    patch: { name?: string; notes?: string; exercises?: unknown[]; done?: boolean; atISO: string },
+    patch: { name?: string; notes?: string; date?: string; exercises?: unknown[]; done?: boolean; atISO: string },
   ): Promise<"ok" | "stale">;
   deleteWorkout(id: string): Promise<boolean>;
 

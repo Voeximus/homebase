@@ -23,6 +23,7 @@ import type {
   Person,
   RoutineRow,
   SavedMealRow,
+  SessionHead,
   WorkoutRow,
 } from "../../supabase/functions/muse-write/db.ts";
 
@@ -213,6 +214,24 @@ export class HealthRows extends FinanceFake {
     const row = this.workouts.find((w) => w.person === person && w.date === date && !w.done);
     return Promise.resolve(row ? { ...row, exercises: clone(row.exercises) } : null);
   }
+  /** Insertion order stands in for `created_at`, which the real reads order by. */
+  sessionsOn(person: Person, date: string, limit: number): Promise<SessionHead[]> {
+    return Promise.resolve(
+      this.workouts
+        .filter((w) => w.person === person && w.date === date)
+        .slice(0, limit)
+        .map((w) => ({ id: w.id, date: w.date, name: w.name, done: w.done })),
+    );
+  }
+  recentSessions(person: Person, limit: number): Promise<SessionHead[]> {
+    const mine = this.workouts
+      .map((w, i) => ({ w, i }))
+      .filter(({ w }) => w.person === person)
+      .sort((a, b) => b.w.date.localeCompare(a.w.date) || b.i - a.i);
+    return Promise.resolve(
+      mine.slice(0, limit).map(({ w }) => ({ id: w.id, date: w.date, name: w.name, done: w.done })),
+    );
+  }
   insertWorkout(r: WorkoutRow): Promise<"ok" | "conflict"> {
     if (this.workouts.some((w) => w.id === r.id)) return Promise.resolve("conflict");
     this.workouts.push({ ...r, exercises: clone(r.exercises), updatedAt: this.nextStamp() });
@@ -221,13 +240,14 @@ export class HealthRows extends FinanceFake {
   updateWorkoutIfUnchanged(
     id: string,
     seenUpdatedAt: string,
-    patch: { name?: string; notes?: string; exercises?: unknown[]; done?: boolean; atISO: string },
+    patch: { name?: string; notes?: string; date?: string; exercises?: unknown[]; done?: boolean; atISO: string },
   ): Promise<"ok" | "stale"> {
     const row = this.workouts.find((w) => w.id === id);
     if (!row) return Promise.resolve("stale");
     if (row.updatedAt !== seenUpdatedAt) return Promise.resolve("stale");
     if (patch.name !== undefined) row.name = patch.name;
     if (patch.notes !== undefined) row.notes = patch.notes;
+    if (patch.date !== undefined) row.date = patch.date;
     if (patch.exercises !== undefined) row.exercises = clone(patch.exercises);
     if (patch.done !== undefined) row.done = patch.done;
     row.updatedAt = this.nextStamp();
@@ -294,6 +314,8 @@ export type HealthHalf = Pick<
   | "updateMealDayIfUnchanged"
   | "readWorkout"
   | "findOpenSession"
+  | "sessionsOn"
+  | "recentSessions"
   | "insertWorkout"
   | "updateWorkoutIfUnchanged"
   | "deleteWorkout"

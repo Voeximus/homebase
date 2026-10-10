@@ -41,6 +41,7 @@ import type {
   RoutineRow,
   SavedMealRow,
   ReminderInsert,
+  SessionHead,
   WorkoutRow,
 } from "./db.ts";
 import { financeDb } from "./dbFinanceSupabase.ts";
@@ -108,6 +109,10 @@ function toWorkoutRow(r: Record<string, unknown>): WorkoutRow {
     done: !!r.done,
     updatedAt: str(r.updated_at),
   };
+}
+
+function toSessionHead(r: Record<string, unknown>): SessionHead {
+  return { id: str(r.id), date: str(r.date), name: str(r.name), done: !!r.done };
 }
 
 function toRoutineRow(r: Record<string, unknown>): RoutineRow {
@@ -585,6 +590,33 @@ export function supabaseDb(admin: SupabaseClient): Db {
       return row ? toWorkoutRow(row) : null;
     },
 
+    async sessionsOn(person, date, limit) {
+      // Four columns and no exercises: naming a session needs nothing inside it.
+      const { data, error } = await admin
+        .from("workouts")
+        .select("id, date, name, done")
+        .eq("person", person)
+        .eq("date", date)
+        .order("created_at", { ascending: true })
+        .limit(limit);
+      must(error, "read workouts on a day");
+      return (data ?? []).map(toSessionHead);
+    },
+
+    async recentSessions(person, limit) {
+      // Newest first by the day it was on, then by when it was logged, so two sessions on
+      // one day come back in a stable order.
+      const { data, error } = await admin
+        .from("workouts")
+        .select("id, date, name, done")
+        .eq("person", person)
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      must(error, "read recent workouts");
+      return (data ?? []).map(toSessionHead);
+    },
+
     async insertWorkout(r: WorkoutRow) {
       const { error } = await admin.from("workouts").insert({
         id: r.id,
@@ -609,6 +641,7 @@ export function supabaseDb(admin: SupabaseClient): Db {
       const fields: Record<string, unknown> = { updated_at: patch.atISO };
       if (patch.name !== undefined) fields.name = patch.name;
       if (patch.notes !== undefined) fields.notes = patch.notes;
+      if (patch.date !== undefined) fields.date = patch.date;
       if (patch.exercises !== undefined) fields.exercises = patch.exercises;
       if (patch.done !== undefined) fields.done = patch.done;
       const { data, error } = await admin

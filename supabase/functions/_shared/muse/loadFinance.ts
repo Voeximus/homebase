@@ -21,7 +21,7 @@
 // once.
 
 import type { Db } from "./paging.ts";
-import { readAll } from "./paging.ts";
+import { isMissingTable, LedgerUnreadable, readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
 import { checkSteps, type UndoRecord, type UndoState, type UndoStep } from "./undo.ts";
 
@@ -123,6 +123,16 @@ export interface FinanceExtras {
    * promise it cannot keep.
    */
   changes(person: Person): Promise<UndoRecord[]>;
+  /**
+   * Every "worth a look" key somebody has waved away, household-wide — or `known:
+   * false` on a database where supabase/schema_v43_review_dismissals.sql has not been
+   * run, so the tool can say it does not know rather than claim nothing was dismissed.
+   *
+   * Household-wide on purpose, not per person: the spec (§B.9) puts dismissals in one
+   * table so a dismissal on one phone holds on both, and a suggestion is about the
+   * household's ledger, not one person's view of it.
+   */
+  reviewDismissals(): Promise<{ known: boolean; keys: ReadonlySet<string> }>;
 }
 
 /** Memoise one promise per key, so a repeated read is the same read. */
@@ -209,11 +219,40 @@ export function createFinanceExtras(db: Db): FinanceExtras {
 
   const changeCache = new Map<Person, Promise<UndoRecord[]>>();
 
+  /** The dismissed keys. Added 2026-10-10 with finance.dismiss_suggestion.
+   *
+   *  THE PROBE FIRST, AND WHY IT IS NOT READING TWICE FOR NOTHING. On a database where
+   *  schema_v43 has not been run, readAll alone would answer "nothing dismissed" — its
+   *  count is a HEAD request, a HEAD gets an empty 404 for a table that is not there,
+   *  and supabase-js reports that as success with no count, which the read adapter
+   *  turns into zero rows (see isMissingTable in paging.ts). That would be the door
+   *  saying `dismissals_known: true` about a table that does not exist. One GET of one
+   *  row comes back with PostgREST's own sentence instead, and that sentence — and only
+   *  that one — means "not set up yet". Any other failure of the probe is a table that
+   *  cannot be read, and it fails closed like every other read here. */
+  const reviewDismissals = once(async () => {
+    const table = "review_dismissals";
+    try {
+      await db.select({ table, orderBy: "id" }).page(0, 0);
+    } catch (e) {
+      if (isMissingTable(e, table)) return { known: false, keys: new Set<string>() as ReadonlySet<string> };
+      throw new LedgerUnreadable(table, `probe failed (${String((e as Error)?.message ?? e)})`);
+    }
+    const rows = await readAll(db, { table, orderBy: "id" });
+    const keys = new Set<string>();
+    for (const r of rows) {
+      const k = str(r.key);
+      if (k) keys.add(k);
+    }
+    return { known: true, keys: keys as ReadonlySet<string> };
+  });
+
   return {
     pendingCharges,
     bankConnections,
     jobRuns,
     pushTargets,
+    reviewDismissals,
     changes(person) {
       const hit = changeCache.get(person);
       if (hit) return hit;

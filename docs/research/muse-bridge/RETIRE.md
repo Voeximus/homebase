@@ -450,6 +450,13 @@ promises and the current code does not do.
    `mergeDismissed()` is already written and waiting for it — the file calls it
    "spec piece 3". Then `finance.worth_a_look` can stop saying
    `dismissals_known: false`.
+   **2026-10-10: the door half is built.** `supabase/schema_v43_review_dismissals.sql`
+   is written (not yet run), `finance.dismiss_suggestion` writes it with an undo, and
+   `finance.worth_a_look` hands out each suggestion's key, leaves dismissed ones out
+   and says `dismissals_known: true` once the table exists. The app half —
+   `mergeDismissed()` reading the table — is not done. The same day added
+   `finance.confirm_charges` (the needs-review backlog in batches) and
+   `finance.unusual` (the anomaly queue, off the rule moved into `src/lib/unusual.ts`).
 4. **New findings get pushed unasked.** The daily push carries any new "worth a
    look" finding. `PLAN.md` §6 is right that this is cheap — a suggestion's key
    already changes when its evidence changes, so "new since yesterday" is a set

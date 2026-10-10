@@ -86,6 +86,10 @@ export function toDebt(r: DbRow): Debt {
     trackPattern: opt(r.track_pattern),
     trackedBaseline: optNum(r.tracked_baseline),
     trackedSince: opt(r.tracked_since),
+    // From schema_v44_debt_closed.sql. The read is `select *`, so on a database where that
+    // file has not been run the key is simply absent and this reads "open" — which is the
+    // truth there, since nothing can have closed a debt without the column.
+    closedAt: opt(r.closed_at),
     createdAt: str(r.created_at),
   };
 }

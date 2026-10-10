@@ -24,11 +24,14 @@ import type {
   ChangeInsert,
   ChargeRow,
   DebtRow,
+  DismissalRow,
   FinanceDb,
+  LabelRow,
   MoneyEvent,
   PaidOverrideRow,
   RuleRow,
 } from "../supabase/functions/muse-write/dbFinance";
+import { StatementRefused } from "../supabase/functions/muse-write/dbFinance";
 import type { Person } from "../supabase/functions/muse-write/db";
 import {
   checkSteps,
@@ -70,7 +73,14 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
   debts: ["name", "balance", "original_balance", "apr", "min_payment", "color"],
   paid_bills: ["month", "bill_key", "paid"],
   merchant_rules: ["pattern", "kind", "category_id", "bill_name"],
+  review_dismissals: ["key", "person"],
 };
+
+/** PostgREST 12's own words for a table that is not there, so the tools' "not set up
+ *  yet" branch is tested against the sentence the real database sends — a prettier
+ *  fake message would let that branch pass on something Postgres never says. */
+export const NO_DISMISSAL_TABLE =
+  "Could not find the table 'public.review_dismissals' in the schema cache";
 
 export class FinanceFake implements FinanceDb {
   /** The ledger, keyed the way Postgres keys it. Tests read and seed these directly. */
@@ -81,7 +91,14 @@ export class FinanceFake implements FinanceDb {
     debts: [],
     paid_bills: [],
     merchant_rules: [],
+    review_dismissals: [],
   };
+  /** Set to be a database where schema_v43_review_dismissals.sql has not been run:
+   *  every read and insert of review_dismissals fails the way PostgREST fails. */
+  noDismissalTable = false;
+  /** How many times confirm_charges' list read ran, so a test can see one read was
+   *  made for the whole batch rather than one per charge. */
+  chargeBatchReads = 0;
   changes: Row[] = [];
   /** Every call the door made to one of the three shaped writes, so a test can assert
    *  the door did ONE write rather than three. */
@@ -184,6 +201,7 @@ export class FinanceFake implements FinanceDb {
       accountId: (r.account_id as string | null) ?? null,
       cadence: String(r.cadence ?? "monthly"),
       anchorDate: (r.anchor_date as string | null) ?? null,
+      owner: (r.owner as string | null) ?? null,
     };
     return Promise.resolve(row);
   }
@@ -210,8 +228,48 @@ export class FinanceFake implements FinanceDb {
       balance: Number(r.balance ?? 0),
       providerAccountId: (r.provider_account_id as string | null) ?? null,
       trackPattern: (r.track_pattern as string | null) ?? null,
+      apr: r.apr == null ? null : Number(r.apr),
+      minPayment: r.min_payment == null ? null : Number(r.min_payment),
     };
     return Promise.resolve(row);
+  }
+
+  /** Set to make readDebtClosedAt fail the way PostgREST does on a database where
+   *  schema_v44_debt_closed.sql has not been run, so the tool's sentence for that is
+   *  driven by the real failure shape rather than assumed. */
+  noClosedColumn = false;
+
+  readDebtClosedAt(id: string): Promise<string | null> {
+    if (this.noClosedColumn) {
+      // PostgREST's own wording, because the tool branches on the column NAME in it.
+      return Promise.reject(new Error("read when a debt was closed: column debts.closed_at does not exist"));
+    }
+    const r = this.find("debts", id);
+    return Promise.resolve(r ? ((r.closed_at as string | null) ?? null) : null);
+  }
+
+  allDebtNames(): Promise<{ id: string; name: string }[]> {
+    return Promise.resolve(this.tables.debts.map((r) => ({ id: String(r.id), name: String(r.name ?? "") })));
+  }
+
+  billRules(): Promise<RuleRow[]> {
+    return Promise.resolve(
+      this.tables.merchant_rules
+        .filter((r) => r.bill_name != null)
+        .map((r) => ({
+          id: String(r.id),
+          pattern: String(r.pattern),
+          kind: String(r.kind ?? ""),
+          categoryId: (r.category_id as string | null) ?? null,
+          billName: (r.bill_name as string | null) ?? null,
+        })),
+    );
+  }
+
+  paidMarks(): Promise<{ id: string; month: string; billKey: string }[]> {
+    return Promise.resolve(
+      this.tables.paid_bills.map((r) => ({ id: String(r.id), month: String(r.month), billKey: String(r.bill_key) })),
+    );
   }
 
   readMerchantRule(pattern: string): Promise<RuleRow | null> {
@@ -281,6 +339,54 @@ export class FinanceFake implements FinanceDb {
     );
   }
 
+  /** One charge as confirm_charges reads it. A snapshot, like readCharge's, so a test
+   *  that writes in the gap is changing the table and not the door's copy. */
+  private label(r: Row): LabelRow {
+    return {
+      id: String(r.id),
+      date: String(r.date),
+      amount: Number(r.amount),
+      type: r.type === "income" ? "income" : "expense",
+      categoryId: String(r.category_id ?? ""),
+      description: String(r.description ?? ""),
+      appliesTo: (r.applies_to ?? null) as UndoValue,
+      splits: (r.splits ?? null) as UndoValue,
+      needsReview: !!r.needs_review,
+      userCategorized: !!r.user_categorized,
+      pending: r.status === "pending",
+    };
+  }
+
+  /** Set to make chargeLabels fail the way the real paged read does when the ledger
+   *  moves under it — so "a ledger that cannot be read cleanly confirms nothing" is
+   *  tested against a real throw. */
+  chargeLabelsFail = false;
+
+  readCharges(ids: readonly string[]): Promise<LabelRow[]> {
+    this.chargeBatchReads += 1;
+    const want = new Set(ids);
+    const rows = this.tables.transactions.filter((r) => want.has(String(r.id))).map((r) => this.label(r));
+    // Fires after the snapshot, exactly like readCharge's hook, so a test can be the
+    // phone writing between the read and the compare-and-set.
+    for (const id of ids) this.onReadCharge?.(id);
+    return Promise.resolve(rows);
+  }
+
+  chargeLabels(): Promise<LabelRow[]> {
+    if (this.chargeLabelsFail) {
+      return Promise.reject(new Error("read charge labels: the ledger changed while it was read (836 rows, then 837)"));
+    }
+    const rows = this.tables.transactions.map((r) => this.label(r));
+    for (const r of rows) this.onReadCharge?.(r.id);
+    return Promise.resolve(rows);
+  }
+
+  readDismissal(key: string): Promise<DismissalRow | null> {
+    if (this.noDismissalTable) return Promise.reject(new Error(`read review_dismissals: ${NO_DISMISSAL_TABLE}`));
+    const r = this.tables.review_dismissals.find((x) => x.key === key);
+    return Promise.resolve(r ? { id: String(r.id), key: String(r.key), person: String(r.person) } : null);
+  }
+
   bankSyncTimes(): Promise<{ id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[]> {
     if (this.noRefreshColumn) {
       // PostgREST's own wording for an unknown column, because the tool branches on
@@ -323,6 +429,20 @@ export class FinanceFake implements FinanceDb {
   }
 
   insertRow(table: UndoTable, row: Record<string, UndoValue>): Promise<string> {
+    if (table === "review_dismissals" && this.noDismissalTable) {
+      return Promise.reject(new Error(`insert review_dismissals: ${NO_DISMISSAL_TABLE}`));
+    }
+    // The table's own unique index on `key`, answering the way Postgres does — so the
+    // race where the other phone dismissed the same thing between the door's read and
+    // its insert is tested against the table's answer, not a read made a moment before.
+    if (table === "review_dismissals" && this.tables.review_dismissals.some((r) => r.key === row.key)) {
+      return Promise.reject(
+        new StatementRefused(
+          'insert review_dismissals: duplicate key value violates unique constraint "review_dismissals_key_key"',
+          "23505",
+        ),
+      );
+    }
     this.fence(table, Object.keys(row), true);
     const id = this.newId();
     this.writes.push({ op: "insert", table, id });

@@ -36,6 +36,14 @@
 //   · billsBeforeNextPayday — "still due before payday"  (BillsSheet.tsx)
 //   · forecastPlan/runForecast — the forward projection  (the retired ForecastTab)
 //
+// AND TWO THAT NO SCREEN EVER HAD, added 2026-10-10 for the Muse read door, which is
+// becoming the only interface. They live here for the same reason the four do — the
+// door may not assemble its own inputs — and no screen calls them yet:
+//   · billEvidence — "is an unpaid bill really unpaid?", the one test finance.next_bills
+//                    and finance.bill_calendar both use
+//   · billsAhead   — each paying account against its own bills over a fixed look-ahead
+//                    that runs past the pay cycle, so a shortfall shows up in time
+//
 // NO CLOCK. `now` is always handed in. The edge runtime is UTC, and from 5 PM
 // Arizona onward a fired default answers about tomorrow: a different pay cycle, a
 // different set of charges. See supabase/functions/_shared/muse/az.ts.
@@ -60,15 +68,19 @@ import {
   type PayCycle,
   type PlanMath,
 } from "./plan.ts";
-import { isoDate, monthKeyOf } from "./format.ts";
-import { totalBalance } from "./recurring.ts";
+import { addDaysISO, isoDate, monthKeyOf } from "./format.ts";
+import { isCreditAccount, totalBalance } from "./recurring.ts";
 import {
   dueBeforeNextPayday,
+  dueOn,
   monthCalendar,
+  monthlySchedule,
   type MonthCalBill,
   type MonthCalendar,
 } from "./schedule.ts";
 import { forecast, type ForecastMonth, type ForecastOpts } from "./forecast.ts";
+import { coverFor, type Cover, type PendingLike } from "./pendingCover.ts";
+import { reviewLedger } from "./ledgerReview.ts";
 
 /** One budget line, priced for THIS cycle. */
 export interface EnvelopeLine {
@@ -299,6 +311,383 @@ export function billsBeforeNextPayday(
   // cycle.start, not today — see the note above.
   const found = dueBeforeNextPayday(months, todayISO, cycle.end, cycle.start);
   return { month, cycle, daysLeft, ...found };
+}
+
+// ── is an unpaid bill really unpaid? ──────────────────────────────────────────
+//
+// "Unpaid" on the calendar means one narrow thing: no charge is LINKED to that bill
+// for that month. It does not mean the money is still in the account, and there are
+// two common ways for it to have left already:
+//
+//   · THE PAYMENT IS STILL CLEARING. Rent paid on the 1st is a real `transactions`
+//     row carrying `pending: true`, and the app's money maths leaves pending rows out
+//     on purpose (a payment in flight can reverse). On 2026-10-02 finance.next_bills
+//     reported rent "overdue" hours after it was paid, which is how somebody pays rent
+//     twice. coverFor() (pendingCover.ts) answers it.
+//   · THE PAYMENT HAS POSTED AND NOBODY LINKED IT. The pending cover vanishes the
+//     moment the bank posts, and rent posts two days after it is paid and stays
+//     unlinked until somebody links it. W7 in ledgerReview.ts already answers that
+//     case, and it is gated hard: the account arm's first version produced five
+//     suggestions, all five false, which is why it now demands 1% on the amount and
+//     3 days from the due day and DROPS a charge that fits two bills rather than
+//     picking. A third spelling of bill-to-charge matching would drift from both of
+//     the two that exist.
+//
+// MOVED HERE 2026-10-10 from the read door's finance.next_bills, word for word in
+// what it does. finance.bill_calendar was answering the same question without either
+// half — it said `paid: false` about a rent payment next_bills called paid and
+// clearing — and two tools giving two answers about one bill is the drift this file
+// exists to stop. Now both call this.
+//
+// NOTHING HERE MARKS A BILL PAID OR MOVES A FIGURE. It only names the evidence, so a
+// reply can say "paid, still clearing" beside the unchanged number.
+
+/** A posted charge that looks like a bill's own payment and that nothing tied to it. */
+export interface UnlinkedPayment {
+  id: string;
+  date: string;
+  amount: number;
+}
+
+/** What the ledger shows about one unpaid bill. Both null is the plain case. */
+export interface BillEvidence {
+  /** A payment in flight that fits this bill: same account, about the same amount,
+   *  near the due date. */
+  payingNow: Cover | null;
+  /** Money that has already gone out on this bill's own account, for this amount, in
+   *  this bill's cycle, that nothing has tied to the bill. Stronger evidence than a
+   *  pending charge and still not proof — W7's own "CAN BE WRONG": a genuine second
+   *  purchase at the same merchant for the same amount. */
+  maybeAlreadyPaid: UnlinkedPayment | null;
+}
+
+/** The slice of a bill the test needs: which row, what it costs, and the date it is due. */
+export interface BillOnADate {
+  recurringId?: string;
+  name: string;
+  amount: number;
+  /** "YYYY-MM-DD" — the resolved due date, never a bare day number. */
+  due: string;
+}
+
+/**
+ * The "is it really unpaid?" test, bound to one ledger and one `now`.
+ *
+ * Built once per request and handed to every caller, because W7 walks the whole
+ * ledger and a second walk is a second chance for the two to disagree.
+ */
+export function billEvidence(data: AppData, now: Date): (bill: BillOnADate) => BillEvidence {
+  const unlinkedHits = new Map<string, UnlinkedPayment>();
+  for (const sug of reviewLedger(data, now, new Set<string>())) {
+    if (sug.rule !== "W7") continue;
+    const rid = sug.evidence.recurringId;
+    const mk = sug.evidence.monthKey;
+    const txId = sug.evidence.txnIds[0];
+    const tx = txId ? data.transactions.find((t) => t.id === txId) : undefined;
+    if (rid && mk && tx) unlinkedHits.set(`${rid}|${mk}`, { id: tx.id, date: tx.date, amount: tx.amount });
+  }
+  // Signed the way pendingCover expects, which is the way a bank reports it: negative
+  // is money going out. Transaction.amount is always positive and carries its direction
+  // in `type`, so the sign is put back here rather than inside the matcher, where it
+  // would be one more thing to get wrong.
+  const pendingNow: PendingLike[] = data.transactions
+    .filter((t) => t.pending)
+    .map((t) => ({
+      date: t.date,
+      amount: t.type === "expense" ? -t.amount : t.amount,
+      description: t.description,
+      accountId: t.accountId ?? null,
+    }));
+  return (b) => {
+    const rec = b.recurringId ? data.recurring.find((r) => r.id === b.recurringId) : undefined;
+    return {
+      payingNow: coverFor(
+        { name: b.name, amount: b.amount, due: b.due, accountId: rec?.accountId ?? null },
+        pendingNow,
+      ),
+      maybeAlreadyPaid: b.recurringId ? (unlinkedHits.get(`${b.recurringId}|${b.due.slice(0, 7)}`) ?? null) : null,
+    };
+  };
+}
+
+// ── each paying account against its own bills, looking ahead ──────────────────
+//
+// FOUND 2026-10-10. The joint account held a few dollars, and rent — paid FROM that
+// account, and far bigger than what was in it — was due on Nov 1. The money existed in
+// the household; it was in the wrong account, and nothing could say so in time:
+//
+//   · finance.next_bills had a per-account view, but it stopped at the end of the pay
+//     cycle (Oct 14), so rent on the 1st did not appear in it until about Oct 30 —
+//     the evening before it drew, when there is nothing left to do but overdraw.
+//   · it handed over `balance` and `still_to_come` and left the subtraction to the
+//     assistant, which its own instructions forbid.
+//   · finance.forecast starts from every account added together, so its low point
+//     can look fine while one account goes negative.
+//
+// So this answers the per-account question over a FIXED look-ahead that ignores the
+// pay cycle: from the start of the current cycle (so a bill already past its date and
+// still unpaid is in, exactly as next_bills keeps it) through AHEAD_DAYS from today —
+// and always through the next rent, wherever that falls, because rent is the bill that
+// has emptied this account before. The shortfall is worked out HERE, so nothing
+// downstream ever subtracts.
+//
+// INCOMING MONEY IS NOT ASSUMED TO LAND ANYWHERE. A paycheck row may name the account
+// it lands in (recurring.account_id — the same column accountFlow() reads as inflow
+// for a direction-'in' row). Only then is its PLANNED amount counted for that account,
+// and only on dates after today, because pay that has already landed is in the balance.
+// Pay whose row names no account is totalled separately and counted for nobody: a
+// figure that silently assumed the paycheck lands in the joint account would turn
+// "short" into "fine" on a guess. On 2026-10-10 no paycheck row names an account.
+//
+// Planned transfers between their own accounts are not counted either, for the same
+// reason: no row says which account they come out of and land in.
+//
+// A BILL ALREADY ON ITS WAY OUT IS NOT COUNTED TWICE. `balance` is the bank's
+// AVAILABLE figure, and the bank has already taken a pending payment out of it — the
+// exact double count that once overstated the joint account's gap by a whole bill
+// (tests/nextBillsClearing.test.ts). A posted charge is out of the balance too. So a
+// bill whose payment is clearing, or has posted unlinked (billEvidence above), is
+// listed and flagged and left out of `stillToCome`.
+
+/** How far ahead of today the per-account look-ahead runs, in days. Three weeks:
+ *  longer than any pay cycle (16 days at most), so a bill just past the next payday
+ *  is in view before that payday's money is already spoken for. */
+export const AHEAD_DAYS = 21;
+
+/** The category the app files rent under (seed.ts), which is how "the next rent" is
+ *  found without naming any row. */
+export const RENT_CATEGORY = "housing";
+
+export interface AheadBill extends BillOnADate {
+  overdue: boolean;
+  /** The amount is a rolling average of real payments, not a contracted figure. */
+  variable: boolean;
+  evidence: BillEvidence;
+  /** True when the evidence says the money has already left — so it is in `alreadyOut`,
+   *  not `stillToCome`. */
+  alreadyOut: boolean;
+}
+
+export interface AccountAhead {
+  /** The paying account's id, or null for bills nobody has placed on an account. */
+  accountId: string | null;
+  /** The account's AVAILABLE balance now. Null for the unplaced bucket and for a card,
+   *  whose balance is what is owed rather than what is held. */
+  balance: number | null;
+  isCard: boolean;
+  bills: AheadBill[];
+  /** Every unpaid bill in the window, at its full amount. */
+  due: number;
+  /** The part of `due` whose payment is clearing or has posted unlinked. */
+  alreadyOut: number;
+  /** `due` less `alreadyOut` — what this account still has to find. */
+  stillToCome: number;
+  /** Planned pay counted for this account: only rows that name it, only after today. */
+  payCounted: number;
+  /** How far below zero the account goes at its worst moment in the window, walking
+   *  the bills and the counted pay in date order. 0 when it never goes below zero.
+   *  Null where it cannot be said (no account, or a card). */
+  shortBy: number | null;
+  /** The day of that worst moment, or null when it never goes below zero. */
+  shortOn: string | null;
+}
+
+export interface BillsAhead {
+  /** First day of the window: the start of the current pay cycle. */
+  from: string;
+  /** Last day of the window, inclusive. */
+  through: string;
+  today: string;
+  days: number;
+  /** Why the window ends where it does. */
+  throughIs: "days" | "rent";
+  /** The next rent due on or after today, paid or not, or null when there is none. */
+  rentOn: string | null;
+  /** Planned pay inside the window (after today) whose row names no account. */
+  payNotPlaced: number;
+  payNotPlacedCount: number;
+  accounts: AccountAhead[];
+}
+
+/**
+ * Each paying account against its own bills, from the start of this pay cycle through
+ * `days` from today — or the next rent, if that is later.
+ *
+ * `evidenceFor` is billEvidence(data, now), passed in rather than rebuilt so a caller
+ * that already holds it (finance.next_bills) does not walk the ledger twice.
+ */
+export function billsAhead(
+  data: AppData,
+  now: Date,
+  evidenceFor: (bill: BillOnADate) => BillEvidence,
+  days: number = AHEAD_DAYS,
+): BillsAhead {
+  const getMonth = monthGetter(data, now);
+  const today = isoDate(now);
+  const cycle = payCycleFor(now);
+  const from = cycle.start;
+  // A calendar date `days` on from today — counted from `now`, never from a clock.
+  const plus = addDaysISO(today, days);
+
+  // Every month the window can touch: the one the cycle opened in (a cycle opening on
+  // the 31st starts in the month before) through two months past this one, which holds
+  // `days` ahead and the next rent with room to spare.
+  const [fy, fm] = from.split("-").map(Number);
+  const months: MonthCalendar[] = [];
+  const lastMonth = now.getFullYear() * 12 + now.getMonth() + 2;
+  for (let i = fy * 12 + (fm - 1); i <= lastMonth; i++) months.push(getMonth(Math.floor(i / 12), i % 12));
+
+  // THE NEXT RENT: the BIGGEST bill filed under housing, at its next date on or after
+  // today, paid or not. Paid still counts as "the next rent" — it simply contributes
+  // nothing below, which is the true answer when it has been paid early.
+  //
+  // FOUND 2026-10-10, IN REVIEW: this first took the EARLIEST housing bill due on or
+  // after today. Housing is a category, not a row, so any smaller row filed there — a
+  // renters-insurance premium, a parking or HOA fee — that came due before the rent
+  // became "the next rent". The window then stayed at AHEAD_DAYS and the real rent
+  // fell outside it: with a few dollars in the joint account, rent on the 1st and a
+  // small housing fee on the 20th, the joint account read short by the fee alone, and
+  // rent — the one bill this window exists to keep in view — was not in it at all.
+  //
+  // Why the biggest, and not simply the LATEST housing date (which would also keep
+  // every housing row in view): a housing row that comes round less often than monthly
+  // — a quarterly fee — can have its next date two months out, and stretching to it
+  // would lay two months of bills against today's balance with no unplaced pay counted
+  // against them, inflating every short_by. The rent is the biggest housing bill; that
+  // is what makes it the one bill worth stretching the window for. Rows are told apart
+  // by their recurring id (by name for an entry with none), sized by the biggest amount
+  // any of their entries carries in the months scanned, and a tie goes to the later
+  // date, so both stay in view.
+  const housing = new Map<string, { size: number; next: string | null }>();
+  for (const m of months) {
+    for (const b of m.bills) {
+      if (b.catId !== RENT_CATEGORY) continue;
+      const key = b.recurringId ?? `name:${b.name}`;
+      const row = housing.get(key) ?? { size: 0, next: null };
+      row.size = Math.max(row.size, b.amount);
+      const on = dueOn(m, b);
+      if (on >= today && (row.next === null || on < row.next)) row.next = on;
+      housing.set(key, row);
+    }
+  }
+  let rentOn: string | null = null;
+  let rentSize = -1;
+  for (const row of housing.values()) {
+    if (row.next === null) continue;
+    if (row.size > rentSize || (row.size === rentSize && rentOn !== null && row.next > rentOn)) {
+      rentSize = row.size;
+      rentOn = row.next;
+    }
+  }
+  const through = rentOn && rentOn > plus ? rentOn : plus;
+
+  const found = dueBeforeNextPayday(months, today, through, from);
+  const accountOf = (rid?: string): string | null =>
+    (rid ? data.recurring.find((r) => r.id === rid)?.accountId : undefined) ?? null;
+
+  type Bucket = { bills: AheadBill[]; pay: { on: string; amount: number }[] };
+  const buckets = new Map<string | null, Bucket>();
+  const bucket = (id: string | null): Bucket => {
+    let b = buckets.get(id);
+    if (!b) buckets.set(id, (b = { bills: [], pay: [] }));
+    return b;
+  };
+  // Every account some live bill is paid from gets a row even with nothing due in the
+  // window, so "nothing due here" is said rather than left to be inferred from absence.
+  for (const r of data.recurring) {
+    if (r.active && r.direction === "out" && r.accountId) bucket(r.accountId);
+  }
+
+  for (const b of found.bills) {
+    const evidence = evidenceFor({ recurringId: b.recurringId, name: b.name, amount: b.amount, due: b.due });
+    bucket(accountOf(b.recurringId)).bills.push({
+      recurringId: b.recurringId,
+      name: b.name,
+      amount: b.amount,
+      due: b.due,
+      overdue: b.overdue,
+      variable: b.variable,
+      evidence,
+      alreadyOut: !!(evidence.payingNow || evidence.maybeAlreadyPaid),
+    });
+  }
+
+  // Planned pay, from the same schedule the calendar and the forecast use.
+  let payNotPlaced = 0;
+  let payNotPlacedCount = 0;
+  for (const m of months) {
+    for (const e of monthlySchedule(data.recurring, m.monthKey, data.transactions, data.debts).entries) {
+      if (e.direction !== "in") continue;
+      const on = dueOn(m, { day: Math.min(Math.max(e.day, 1), m.daysInMonth) });
+      if (on <= today || on > through) continue;
+      const acct = accountOf(e.recurringId);
+      if (acct) bucket(acct).pay.push({ on, amount: e.amount });
+      else {
+        payNotPlaced += e.amount;
+        payNotPlacedCount += 1;
+      }
+    }
+  }
+
+  const byId = new Map(data.accounts.map((a) => [a.id, a]));
+  const accounts: AccountAhead[] = [...buckets.entries()].map(([id, bk]) => {
+    const acct = id ? byId.get(id) : undefined;
+    const isCard = !!acct && isCreditAccount(acct);
+    const due = bk.bills.reduce((s, b) => s + b.amount, 0);
+    const alreadyOut = bk.bills.reduce((s, b) => (b.alreadyOut ? s + b.amount : s), 0);
+    const payCounted = bk.pay.reduce((s, p) => s + p.amount, 0);
+    let shortBy: number | null = null;
+    let shortOn: string | null = null;
+    if (acct && !isCard) {
+      // THE WALK. A bill already overdue is owed now, so it lands today. On a day with
+      // both a bill and a paycheck the bill goes first: whether pay lands before the
+      // bill draws on the same day is not something the data says, and assuming it does
+      // is the optimistic guess.
+      const events = [
+        ...bk.bills.filter((b) => !b.alreadyOut).map((b) => ({ on: b.due < today ? today : b.due, amount: -b.amount })),
+        ...bk.pay.map((p) => ({ on: p.on, amount: p.amount })),
+      ].sort((a, b) => (a.on < b.on ? -1 : a.on > b.on ? 1 : a.amount - b.amount));
+      let run = acct.balance;
+      let low = acct.balance;
+      let lowOn: string | null = null;
+      for (const e of events) {
+        run += e.amount;
+        if (run < low) {
+          low = run;
+          lowOn = e.on;
+        }
+      }
+      shortBy = low < 0 ? -low : 0;
+      shortOn = low < 0 ? (lowOn ?? today) : null;
+    }
+    return {
+      accountId: id,
+      balance: acct && !isCard ? acct.balance : null,
+      isCard,
+      bills: bk.bills,
+      due,
+      alreadyOut,
+      stillToCome: due - alreadyOut,
+      payCounted,
+      shortBy,
+      shortOn,
+    };
+  });
+  // The app's own account order, with the unplaced bucket last.
+  const order = (id: string | null) => (id ? (byId.get(id)?.sortOrder ?? 1e9) : 2e9);
+  accounts.sort((a, b) => order(a.accountId) - order(b.accountId) || String(a.accountId).localeCompare(String(b.accountId)));
+
+  return {
+    from,
+    through,
+    today,
+    days,
+    throughIs: through === plus ? "days" : "rent",
+    rentOn,
+    payNotPlaced,
+    payNotPlacedCount,
+    accounts,
+  };
 }
 
 // ── the forward projection ────────────────────────────────────────────────────

@@ -186,8 +186,11 @@ at the moment it is spoken** — a figure baked into a reminder is a figure that
 stale silently, and a stale number said with confidence is the whole failure this bridge
 was built to avoid.
 
-M3 is a judgement call, not an instruction: the card is at 26.49% and the $1,400 floor
-per check is deliberate and does not get lowered to make room for anything.
+M3 is a judgement call, not an instruction: the card is at 26.49%. Gino's paycheck
+figure is his pay floor — a planned paycheck amount he set low on purpose, so a bonus
+or a bigger check is money above it, upside, and the floor is never raised to match
+it. It is not a cash reserve to protect from the bonus; it is the income the plan
+counts on (`gino_pay_floor_per_check` in `finance.firepower` and `finance.forecast`).
 
 ---
 

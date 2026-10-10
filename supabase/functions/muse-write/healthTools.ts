@@ -46,20 +46,28 @@
 import type { Json } from "../_shared/muse/args.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 import { scrubCap } from "../_shared/muse/scrub.ts";
-import type { FoodRow, MacroRow, MealDayRow, RoutineRow, WorkoutRow } from "./db.ts";
+import type { FoodRow, MacroRow, MealDayRow, RoutineRow, SessionHead, WorkoutRow } from "./db.ts";
 import {
   DISPLAY,
+  EXAMPLE_ID,
   ROW_ID,
   dateFor,
   isObject,
   money,
+  problemPad,
+  problemsOf,
   refuse,
+  shaped,
+  shapeRefused,
   type Ctx,
   type Refusal,
+  type ShapeCtx,
+  type Shaped,
   type Success,
   type Tool,
   type ToolOutcome,
 } from "./kit.ts";
+import { itemSays, kindOfValue, labelOf, renameBy, unknownKeysSays, type ListShape } from "./shapes.ts";
 import type { UndoHandler, UndoRecord, UndoRegistry } from "./undoContract.ts";
 import {
   gramsOf,
@@ -73,8 +81,8 @@ import {
 } from "../_shared/muse/lib/mealLog.ts";
 import { SEED_FOODS, unitFor, type Food, type FoodRole } from "../_shared/muse/lib/nutrition.ts";
 import { BUNDLED_FOODS } from "../_shared/muse/lib/foodData.ts";
-import { BUNDLED_EXERCISES } from "../_shared/muse/lib/exerciseData.ts";
-import { findExercise } from "../_shared/muse/lib/trainingMath.ts";
+import { BUNDLED_EXERCISES, type Exercise } from "../_shared/muse/lib/exerciseData.ts";
+import { findExercise, normName } from "../_shared/muse/lib/trainingMath.ts";
 import {
   SEED_ROUTINES,
   type ExerciseEntry,
@@ -114,7 +122,7 @@ const BACK_SESSION = 60;
  * already in the database — a wrong date there finds nothing and says so. What is
  * still refused is the future, because Arizona's today is not the runtime's.
  */
-function existingDate(payload: Record<string, unknown>, ctx: Ctx, field = "date"): { date: string } | Refusal {
+function existingDate(payload: Record<string, unknown>, ctx: ShapeCtx, field = "date"): { date: string } | Refusal {
   const today = azDateISO(ctx.az);
   const v = payload[field];
   if (v === undefined) return { date: today };
@@ -181,6 +189,29 @@ function macro(v: unknown, max = 10_000): number | null {
 }
 
 const newId = () => crypto.randomUUID();
+
+// Shaped, shaped, problemsOf, shapeRefused and problemPad — the every-problem answer of
+// a shape check — live in kit.ts since review on 2026-10-10, when every flat tool in all
+// four catalogues got a check of its own and all four needed them.
+
+/** The date of a row that already exists, as a shape answer — the whole check of a
+ *  tool that only names a day. */
+function planExistingDate(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ date: string }> {
+  const pad = problemPad();
+  const when = pad.take(existingDate(payload, ctx));
+  return pad.done(() => when!);
+}
+
+/** One id the read door handed out, as a shape answer. */
+function planIds(payload: Record<string, unknown>, ...fields: string[]): Shaped<string[]> {
+  const pad = problemPad();
+  const ids = fields.map((f) => pad.take(readId(payload, f)));
+  return pad.done(() => ids.map((x) => x!.id));
+}
+
+/** "kcal", "kcal and p", "kcal, p and f". */
+const listAnd = (xs: readonly string[]): string =>
+  xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 
 // ── the meal-day document ────────────────────────────────────────────────────
 
@@ -250,6 +281,8 @@ const mealsOf = (day: MealDayRow | null): Meal[] => (day ? (day.meals as Meal[])
 interface SessionPatch {
   name?: string;
   notes?: string;
+  /** Since 2026-10-10, for health.edit_session: the day a session is filed under. */
+  date?: string;
   exercises?: unknown[];
   done?: boolean;
 }
@@ -298,6 +331,137 @@ function toSession(row: WorkoutRow): Workout {
   };
 }
 
+// ── which session a call means ───────────────────────────────────────────────
+//
+// ADDED 2026-10-10. FOUND in the door's own audit log: an assistant sent
+// health.delete_session with a 36-character id that had never existed — matched against
+// every session id that person has ever had, current or deleted, it was none of them —
+// read health.workouts three times, and sent the SAME invented id again half a minute
+// later. The refusal both times was "There is no session of yours with that id", which
+// named nothing it could have copied instead. It found the real one on its own, later.
+//
+// So every tool that names an existing session goes through here, and two things change:
+//   · a session can be named by the DAY it was on, `session_date`, when that person had
+//     exactly one session that day — which is how a person says it ("delete Monday's
+//     workout") and leaves no 36-character string to mis-copy. Two that day is refused
+//     with both listed, never resolved by picking one;
+//   · an id that is not theirs is refused with their most recent sessions — date, name
+//     and id — so the next try copies a real one.
+// The list is the CALLER'S OWN sessions only, and an id that is the other person's gets
+// the same sentence as one that does not exist: whose session an id is stays something
+// this door does not say.
+
+/** How many sessions a refusal lists. Enough to cover a week of them; the read door's
+ *  health.workouts has the rest. */
+const SESSION_LIST = 5;
+
+/** One session, as a refusal names it: the day, the name, and the id to copy. */
+function sessionLine(s: SessionHead): string {
+  return `${s.date} ${scrubCap(s.name, 40) || "(no name)"}${s.done ? "" : " (not finished)"}, id ${s.id}`;
+}
+
+/** The caller's most recent sessions, as the end of a refusal. One more is read than is
+ *  listed, so "and older ones" is a fact rather than a guess. */
+async function recentSessionsSaid(ctx: Ctx): Promise<string> {
+  const recent = await ctx.db.recentSessions(ctx.person, SESSION_LIST + 1);
+  if (recent.length === 0) return " You have no sessions logged at all.";
+  const more = recent.length > SESSION_LIST ? "; older ones are in health.workouts" : "";
+  return ` Your most recent: ${recent.slice(0, SESSION_LIST).map(sessionLine).join("; ")}${more}.`;
+}
+
+/** What a session tool says when the call names no session at all. */
+const WHICH_SESSION =
+  "Tell me which session: its session_id from health.workouts, or session_date (YYYY-MM-DD) when it was your only session that day.";
+
+/**
+ * Which session a call names, as far as the payload and the Arizona calendar alone can
+ * say — every problem with it, for a session tool's shape check.
+ *
+ * A session_id in the read door's shape, a session_date as YYYY-MM-DD that has already
+ * happened, or both; at least one. The same three questions whichSession asks first,
+ * asked here so they come back WITH every other problem in the call and before the
+ * hourly counter is bumped. Whether the id or the day finds a session is a database
+ * question, so it stays in whichSession, which each tool's run() calls after its checks.
+ */
+function sessionRefProblems(payload: Record<string, unknown>, ctx: ShapeCtx): string[] {
+  const pad = problemPad();
+  const byId = payload.session_id !== undefined;
+  const byDay = payload.session_date !== undefined;
+  if (!byId && !byDay) pad.no(WHICH_SESSION);
+  if (byId) pad.take(readId(payload, "session_id"));
+  if (byDay) pad.take(existingDate(payload, ctx, "session_date"));
+  return problemsOf(pad.done(() => null));
+}
+
+/** A tool whose only field to check is the session it names. */
+function planSessionRef(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<null> {
+  return shaped(sessionRefProblems(payload, ctx), () => null);
+}
+
+/**
+ * The session this call means — by `session_id`, or by `session_date` when that was the
+ * caller's only session that day — or the refusal to give instead.
+ *
+ * Both may be sent; then they have to agree, because an id from one day and a date from
+ * another means one of them is wrong and the door cannot tell which. The date is an
+ * existing row's date, so it has no back-window (existingDate) — only the future is
+ * refused.
+ */
+async function whichSession(payload: Record<string, unknown>, ctx: Ctx): Promise<{ id: string } | Refusal> {
+  const byId = payload.session_id !== undefined;
+  const byDay = payload.session_date !== undefined;
+  if (!byId && !byDay) return refuse(400, WHICH_SESSION);
+  let day: string | null = null;
+  if (byDay) {
+    const d = existingDate(payload, ctx, "session_date");
+    if (isRefusal(d)) return d;
+    day = d.date;
+  }
+  if (byId) {
+    const sid = readId(payload, "session_id");
+    if (isRefusal(sid)) return sid;
+    const row = await ctx.db.readWorkout(sid.id);
+    if (!row || row.person !== ctx.person) {
+      return refuse(404, `There is no session of yours with that id.${await recentSessionsSaid(ctx)}`);
+    }
+    if (day !== null && row.date !== day) {
+      return refuse(409, `That session is on ${row.date}, not ${day}. Send the one you are sure of, or both when they agree.`);
+    }
+    return { id: row.id };
+  }
+  const onDay = await ctx.db.sessionsOn(ctx.person, day!, SESSION_LIST + 1);
+  if (onDay.length === 1) return { id: onDay[0].id };
+  if (onDay.length === 0) return refuse(404, `You have no session on ${day}.${await recentSessionsSaid(ctx)}`);
+  const howMany = onDay.length > SESSION_LIST ? `more than ${SESSION_LIST}` : String(onDay.length);
+  return refuse(
+    409,
+    `You have ${howMany} sessions on ${day}, so the day alone does not say which. Send the session_id of the one you mean: ${onDay
+      .slice(0, SESSION_LIST)
+      .map(sessionLine)
+      .join("; ")}.`,
+  );
+}
+
+/**
+ * Two json values, equal AS DOCUMENTS: key order does not count.
+ *
+ * Needed by the one undo here that compares content rather than counting sets
+ * (session.restore-edit). A jsonb column hands an object's keys back in its own order,
+ * not the order they were written in, so a string comparison of what the door wrote
+ * against what it reads back would call an untouched session "changed since".
+ */
+function sameDoc(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => sameDoc(v, b[i]));
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao).filter((k) => ao[k] !== undefined).sort();
+  const bk = Object.keys(bo).filter((k) => bo[k] !== undefined).sort();
+  return ak.length === bk.length && ak.every((k, i) => k === bk[i] && sameDoc(ao[k], bo[k]));
+}
+
 // ── sets logged after the fact ───────────────────────────────────────────────
 
 /**
@@ -324,19 +488,57 @@ function loggedSet(x: { reps: number; weight: number; warmup?: boolean }): SetEn
   return s;
 }
 
-/** `{ reps, weight, warmup? }` out of whatever the caller sent. */
-function readSet(raw: unknown): { reps: number; weight: number; warmup: boolean } | Refusal {
-  if (!isObject(raw)) return refuse(400, "Each set is an object with reps and a weight.");
-  const reps = count(raw.reps, 0, 1000);
-  if (reps === null) return refuse(400, "Each set needs reps as a whole number.");
+/** What one set takes. `weight_lb` — the read door's word — is accepted for `weight`
+ *  (shapes.ts), so a set read off health.workout can be sent back as it came. */
+const SET_KEYS = ["reps", "weight", "warmup"] as const;
+const SET_SHAPE: ListShape = { takes: SET_KEYS };
+
+/**
+ * `{ reps, weight, warmup? }` out of whatever the caller sent — or every problem with it.
+ *
+ * FOUND 2026-10-10: A KEY THIS DID NOT KNOW WAS IGNORED, and a missing weight is zero.
+ * Together that turned `{ reps: 8, weight_lb: 30 }` — the read door's own spelling —
+ * into a BODYWEIGHT set: `weight_lb` was dropped without a word, the weight defaulted
+ * to 0, and the reply said "logged". Nothing had gone wrong yet in the real log (it was
+ * checked), but nothing would have said so when it did. Now the read door's word is
+ * accepted, and any other key is refused by name, the way the top level of every call
+ * already was.
+ *
+ * A set with no weight key AT ALL is still a bodyweight set: that is a real thing to
+ * say ("8 pull-ups") and workoutVolume counts its reps instead of its tonnage.
+ */
+function readSet(raw: unknown): Shaped<{ reps: number; weight: number; warmup: boolean }> {
+  if (!isObject(raw)) return { ok: false, problems: [`It is ${kindOfValue(raw)}, not an object like {"reps": 8, "weight": 135}.`] };
+  const { value, unknown, clashes } = renameBy(raw, SET_SHAPE);
+  const problems = [...clashes];
+  if (unknown.length) problems.push(unknownKeysSays(unknown, SET_KEYS));
+  const reps = count(value.reps, 0, 1000);
+  if (reps === null) problems.push(value.reps === undefined ? "It has no reps." : "reps has to be a whole number.");
   // Zero is allowed and means bodyweight — workoutVolume counts a bodyweight set's
   // reps instead of its tonnage, so there is nothing to invent here.
-  const weight = macro(raw.weight === undefined ? 0 : raw.weight, 2000);
-  if (weight === null) return refuse(400, "A set's weight is a number of pounds, or zero for bodyweight.");
-  if (raw.warmup !== undefined && typeof raw.warmup !== "boolean") {
-    return refuse(400, "warmup is either true or false.");
+  const weight = macro(value.weight === undefined ? 0 : value.weight, 2000);
+  if (weight === null) problems.push("weight is a number of pounds, or zero for bodyweight.");
+  if (value.warmup !== undefined && typeof value.warmup !== "boolean") problems.push("warmup is either true or false.");
+  return shaped(problems, () => ({ reps: reps as number, weight: weight as number, warmup: value.warmup === true }));
+}
+
+/**
+ * A whole list of sets, each one checked, every problem kept — or the sets, built the
+ * history editor's way (loggedSet). `max` is how many one call may carry.
+ */
+function readSets(raw: unknown, max: number): Shaped<SetEntry[]> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, problems: [`sets has to be a list, like [{"reps": 8, "weight": 135}] — it was ${kindOfValue(raw)}.`] };
   }
-  return { reps, weight, warmup: raw.warmup === true };
+  if (raw.length > max) return { ok: false, problems: [`That is more than ${max} sets at once.`] };
+  const problems: string[] = [];
+  const sets: SetEntry[] = [];
+  raw.forEach((one, i) => {
+    const s = readSet(one);
+    if (s.ok) sets.push(loggedSet(s.value));
+    else problems.push(itemSays(labelOf("Set", i), s.problems, isObject(one) ? one : null));
+  });
+  return shaped(problems, () => sets);
 }
 
 // ── the food library, as the app assembles it ────────────────────────────────
@@ -373,86 +575,193 @@ async function foodById(ctx: Ctx, id: string): Promise<Food | null> {
   return row ? toFood(row) : null;
 }
 
-/** One logged portion out of what the caller sent — either a library food and an
- *  amount, or something not in the library and what it contained. */
-async function readItem(ctx: Ctx, raw: unknown): Promise<LoggedItem | Refusal> {
-  if (!isObject(raw)) return refuse(400, "Each food is an object. Give it a food_id and an amount, or a name and its macros.");
+/** What one food in a meal takes. The read door's `calories`, `protein_g`, `carbs_g`
+ *  and `fat_g` are accepted for the last four macro names (shapes.ts) — FOUND
+ *  2026-10-10, after an assistant sent exactly the read door's words and was refused,
+ *  more than once, for "needs p as a number of zero or more". */
+const FOOD_KEYS = ["food_id", "qty", "grams", "name", "kcal", "p", "c", "f", "role"] as const;
+const FOOD_SHAPE: ListShape = { takes: FOOD_KEYS };
+const MACRO_KEYS = ["kcal", "p", "c", "f"] as const;
 
-  if (raw.food_id !== undefined) {
-    if (raw.kcal !== undefined || raw.p !== undefined || raw.c !== undefined || raw.f !== undefined) {
+/**
+ * One food, checked and understood but not yet looked up — the half of reading a
+ * portion that needs no database, so it can run before anything is counted.
+ *
+ *   library  a food_id and an amount; the food itself is found later (foodsFrom)
+ *   totals   anything else: a name and what it contained, with a weight or without
+ */
+type FoodPlan =
+  | { from: "library"; label: string; id: string; qty: number | null; grams: number | null }
+  | {
+    from: "totals";
+    totals: { name: string; role: FoodRole | undefined; kcal: number; p: number; c: number; f: number };
+    grams: number | null;
+  };
+
+/** One food out of what the caller sent — every problem with it in one sentence that
+ *  names it, or the plan for it. */
+function planFood(raw: unknown, i: number): { ok: true; plan: FoodPlan } | { ok: false; problem: string } {
+  if (!isObject(raw)) {
+    return {
+      ok: false,
+      problem: itemSays(
+        labelOf("Food", i),
+        [`It is ${kindOfValue(raw)}, not an object. Give it a food_id and an amount, or a name and its macros.`],
+        null,
+      ),
+    };
+  }
+  const { value, unknown, clashes } = renameBy(raw, FOOD_SHAPE);
+  const problems = [...clashes];
+  if (unknown.length) problems.push(unknownKeysSays(unknown, FOOD_KEYS));
+  const name = cleanText(value.name, NAME_CAP);
+  const label = labelOf("Food", i, name ? scrubCap(name, 40) : undefined);
+  const fail = () => ({ ok: false as const, problem: itemSays(label, problems, raw) });
+
+  if (value.food_id !== undefined) {
+    if (MACRO_KEYS.some((k) => value[k] !== undefined)) {
       // Both at once is ambiguous rather than generous: the library food already
       // carries its macros, and a caller that sent both has two answers for what
       // this portion contained and no way to say which it meant.
-      return refuse(400, "Give a food_id and an amount, or a name and its macros — not both.");
+      problems.push("Give a food_id and an amount, or a name and its macros — not both.");
     }
-    const id = readId(raw, "food_id");
-    if (isRefusal(id)) return id;
-    const food = await foodById(ctx, id.id);
-    if (!food) return refuse(404, "There is no food with that id. Search for it first and use the id you get back.");
-    const amount = readAmount(raw, food);
-    if (isRefusal(amount)) return amount;
+    const id = readId(value, "food_id");
+    if (isRefusal(id)) problems.push(id.say);
+    // How much of it: a count of its natural unit, or grams. Which unit a food is
+    // counted in needs the food, so that half is decided in foodsFrom; the numbers
+    // themselves are checked here.
+    let qty: number | null = null;
+    let grams: number | null = null;
+    if (value.qty !== undefined) {
+      qty = macro(value.qty, 100);
+      if (qty === null || qty <= 0) problems.push("qty is a number above zero.");
+    } else {
+      grams = macro(value.grams, 5000);
+      if (grams === null || grams <= 0) problems.push("It needs grams, or qty if the food is counted by the each.");
+    }
+    if (problems.length || isRefusal(id)) return fail();
+    return { ok: true, plan: { from: "library", label, id: id.id, qty, grams } };
+  }
+
+  if (!name) {
+    problems.push(value.name === undefined ? "Each food needs a name, or a food_id from the library." : "Its name is empty once cleaned.");
+  }
+  // EVERY missing macro in one sentence, not one per round trip.
+  const macros: Record<string, number> = {};
+  const missing: string[] = [];
+  for (const k of MACRO_KEYS) {
+    const v = macro(value[k]);
+    if (v === null) missing.push(k);
+    else macros[k] = v;
+  }
+  if (missing.length) {
+    problems.push(`It needs ${listAnd(missing)} as ${missing.length === 1 ? "a number" : "numbers"} of zero or more.`);
+  }
+  if (value.role !== undefined && !isRole(value.role)) problems.push("role is protein, carb, veg, fat or other.");
+  // WITH a weight it is a weighed portion; without one it is a serving — see
+  // foodsFrom for why both go through a function in mealLog.
+  let grams: number | null = null;
+  if (value.grams !== undefined) {
+    grams = macro(value.grams, 5000);
+    if (grams === null || grams <= 0) problems.push("grams is its weight as a number above zero, or leave the weight out.");
+  }
+  if (problems.length) return fail();
+  return {
+    ok: true,
+    plan: {
+      from: "totals",
+      totals: {
+        name,
+        role: value.role as FoodRole | undefined,
+        kcal: macros.kcal,
+        p: macros.p,
+        c: macros.c,
+        f: macros.f,
+      },
+      grams,
+    },
+  };
+}
+
+/** A whole meal's foods, each checked — every problem across every food, or the plans.
+ *  `whenEmpty` is the tool's own sentence for a meal with nothing in it. */
+function planFoods(raw: unknown, whenEmpty: string): Shaped<FoodPlan[]> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const what = raw === undefined || Array.isArray(raw) ? "" : ` items has to be a list — it was ${kindOfValue(raw)}.`;
+    return { ok: false, problems: [`${whenEmpty}${what}`] };
+  }
+  if (raw.length > MAX_ITEMS) {
+    return { ok: false, problems: [`That is more than ${MAX_ITEMS} foods in one meal. Split it into two.`] };
+  }
+  const problems: string[] = [];
+  const plans: FoodPlan[] = [];
+  raw.forEach((one, i) => {
+    const p = planFood(one, i);
+    if (p.ok) plans.push(p.plan);
+    else problems.push(p.problem);
+  });
+  return shaped(problems, () => plans);
+}
+
+/**
+ * The portions themselves, once the shape is known to be right. This is the half that
+ * needs the database — a food_id outside the code tables is a row — and it still keeps
+ * going past a problem, so two foods with bad ids are both named in one reply.
+ */
+async function foodsFrom(ctx: Ctx, plans: FoodPlan[]): Promise<LoggedItem[] | Refusal> {
+  const items: LoggedItem[] = [];
+  const problems: string[] = [];
+  let allMissing = true;
+  for (const plan of plans) {
+    if (plan.from === "totals") {
+      // itemFromServing stores a portion nobody weighed as one 100 g serving whose
+      // per-100g values are its totals, so the macros come back exactly and the amount
+      // reads "1 serving" instead of a weight nobody measured. Somebody saying "a
+      // chicken breast, about 330 calories" knows the macros and not the grams, and
+      // that is the normal case from a chat. Both are the app's own functions.
+      items.push(
+        plan.grams === null
+          ? itemFromServing(plan.totals, newId())
+          : itemFromTotals({ ...plan.totals, grams: plan.grams }, newId()),
+      );
+      continue;
+    }
+    const food = await foodById(ctx, plan.id);
+    if (!food) {
+      problems.push(`${plan.label}: There is no food with that id. Search for it first and use the id you get back.`);
+      continue;
+    }
+    const amount = amountFor(plan, food);
+    if (typeof amount === "string") {
+      allMissing = false;
+      problems.push(`${plan.label}: ${amount}`);
+      continue;
+    }
     // itemFromFood snapshots the food's per-100g values onto the portion, which is
     // why the log stays correct after that library food is edited. The app's own
     // function, so the door computes nothing.
-    return itemFromFood(food, amount, newId());
+    items.push(itemFromFood(food, amount, newId()));
   }
-
-  const name = cleanText(raw.name, NAME_CAP);
-  if (!name) return refuse(400, "Each food needs a name, or a food_id from the library.");
-  const macros: Record<string, number> = {};
-  for (const k of ["kcal", "p", "c", "f"] as const) {
-    const v = macro(raw[k]);
-    if (v === null) return refuse(400, `${name} needs ${k} as a number of zero or more.`);
-    macros[k] = v;
-  }
-  if (raw.role !== undefined && !isRole(raw.role)) {
-    return refuse(400, "role is protein, carb, veg, fat or other.");
-  }
-  const totals = {
-    name,
-    role: raw.role as FoodRole | undefined,
-    kcal: macros.kcal,
-    p: macros.p,
-    c: macros.c,
-    f: macros.f,
-  };
-  // WITH a weight it is a weighed portion; without one it is a serving. Both go
-  // through a function in mealLog rather than being assembled here, and the
-  // difference matters: the log stores per-100g values scaled by grams, so a
-  // portion with no weight has to be stored as something. itemFromServing stores it
-  // as one 100 g serving whose per-100g values are its totals, so the macros come
-  // back exactly and the amount reads "1 serving" instead of a weight nobody
-  // measured. Somebody saying "a chicken breast, about 330 calories" knows the
-  // macros and not the grams, and that is the normal case from a chat.
-  if (raw.grams === undefined) return itemFromServing(totals, newId());
-  const grams = macro(raw.grams, 5000);
-  if (grams === null || grams <= 0) {
-    return refuse(400, `${name} needs its weight in grams as a number above zero, or leave the weight out.`);
-  }
-  return itemFromTotals({ ...totals, grams }, newId());
+  // 404 only when every problem is a food that is not there — that is "the row it
+  // named does not exist", which is what a 404 means on this door.
+  if (problems.length) return refuse(allMissing ? 404 : 400, problems.join(" "));
+  return items;
 }
 
 const ROLES: readonly string[] = ["protein", "carb", "veg", "fat", "other"];
 const isRole = (v: unknown): v is FoodRole => typeof v === "string" && ROLES.includes(v);
 
 /** How much of a food: grams, or a count of its natural unit. gramsOf() in
- *  mealLog turns the second into the first — the app's own rule, not ours. */
-function readAmount(raw: Record<string, unknown>, food: Food): Amount | Refusal {
-  if (raw.qty !== undefined) {
-    const qty = macro(raw.qty, 100);
-    if (qty === null || qty <= 0) return refuse(400, "qty is a number above zero.");
+ *  mealLog turns the second into the first — the app's own rule, not ours. A
+ *  sentence comes back when the food is not counted that way. */
+function amountFor(plan: { qty: number | null; grams: number | null }, food: Food): Amount | string {
+  if (plan.qty !== null) {
     const unit = unitFor(food);
-    if (!unit) {
-      return refuse(
-        400,
-        `${food.name} is not counted by the each, so I need grams instead.`,
-      );
-    }
-    return { grams: gramsOf({ grams: 0, qty, unit }), qty, unit };
+    if (!unit) return `${scrubCap(food.name, 40) || "That food"} is not counted by the each, so I need grams instead.`;
+    return { grams: gramsOf({ grams: 0, qty: plan.qty, unit }), qty: plan.qty, unit };
   }
-  const grams = macro(raw.grams, 5000);
-  if (grams === null || grams <= 0) return refuse(400, `${food.name} needs grams, or qty if it is counted by the each.`);
-  return { grams };
+  // planFood refuses a library food with neither, so grams is set whenever qty is not.
+  return { grams: plan.grams as number };
 }
 
 // ── the reply sentence for a day ─────────────────────────────────────────────
@@ -501,21 +810,32 @@ function mealSays(meal: Meal): string {
 
 // ── health.log_weight ────────────────────────────────────────────────────────
 
+/** log_weight's weight and date — both problems at once when both are wrong. */
+function planWeight(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ weight: number; date: string }> {
+  const pad = problemPad();
+  const weight = money(payload.weight);
+  if (weight === null) pad.no("I need the weight as a number, in pounds.");
+  // A plausible range, not a judgement about his body: the point is to catch a
+  // misheard number (19.84, 1984) before it lands in the trend line, where a
+  // single wild point bends the slope the app reports.
+  else if (weight < 50 || weight > 700) {
+    pad.no("That weight does not look like pounds. Say it as you read it off the scale.");
+  }
+  const when = pad.take(dateFor(payload, ctx, BACK_WEIGH_IN));
+  return pad.done(() => ({ weight: weight!, date: when!.date }));
+}
+
 const logWeight: Tool = {
   kind: "direct",
   does: "Record a weigh-in.",
   fields: ["weight", "date"],
+  example: { weight: 182.4 },
+  check: (payload, ctx) => problemsOf(planWeight(payload, ctx)),
   async run(payload, ctx) {
-    const weight = money(payload.weight);
-    if (weight === null) return refuse(400, "I need the weight as a number, in pounds.");
-    // A plausible range, not a judgement about his body: the point is to catch a
-    // misheard number (19.84, 1984) before it lands in the trend line, where a
-    // single wild point bends the slope the app reports.
-    if (weight < 50 || weight > 700) {
-      return refuse(400, "That weight does not look like pounds. Say it as you read it off the scale.");
-    }
-    const when = dateFor(payload, ctx, BACK_WEIGH_IN);
-    if (isRefusal(when)) return when;
+    const plan = planWeight(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { weight } = plan.value;
+    const when = { date: plan.value.date };
 
     const previous = await ctx.db.readWeight(ctx.person, when.date);
     // Stored exactly as it was said. No rounding: the door does no arithmetic,
@@ -575,9 +895,12 @@ const deleteWeight: Tool = {
   kind: "direct",
   does: "Take a weigh-in off a day.",
   fields: ["date"],
+  example: { date: "2026-09-01" },
+  check: (payload, ctx) => problemsOf(planExistingDate(payload, ctx)),
   async run(payload, ctx) {
-    const when = existingDate(payload, ctx);
-    if (isRefusal(when)) return when;
+    const plan = planExistingDate(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = plan.value;
     const previous = await ctx.db.readWeight(ctx.person, when.date);
     // Refused rather than reported as done, because "deleted" and "there was
     // nothing there" are different answers and an assistant must be able to say
@@ -600,17 +923,30 @@ const deleteWeight: Tool = {
 
 // ── health.log_saved_meal ────────────────────────────────────────────────────
 
+/** log_saved_meal's name and date — every problem with either. */
+function planSavedMealLog(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ name: string; date: string }> {
+  const pad = problemPad();
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  if (!name || name.length > 80) pad.no("Tell me the name of the saved meal, as it is spelled in the app.");
+  const when = pad.take(dateFor(payload, ctx, BACK_MEAL));
+  return pad.done(() => ({ name, date: when!.date }));
+}
+
 const logSavedMeal: Tool = {
   kind: "direct",
   does: "Log one of the household's saved meals by name.",
   fields: ["name", "date"],
+  // A placeholder name, not a natural one. This tool looks a row up BY this name, and
+  // handler.ts refuses any call that is exactly its tool's example — so a natural name
+  // here ("Usual breakfast", which the test household really has) would turn away the
+  // day somebody asked for the meal of that name. FOUND IN REVIEW 2026-10-10.
+  example: { name: "Sample saved meal" },
+  check: (payload, ctx) => problemsOf(planSavedMealLog(payload, ctx)),
   async run(payload, ctx) {
-    const name = typeof payload.name === "string" ? payload.name.trim() : "";
-    if (!name || name.length > 80) {
-      return refuse(400, "Tell me the name of the saved meal, as it is spelled in the app.");
-    }
-    const when = dateFor(payload, ctx, BACK_MEAL);
-    if (isRefusal(when)) return when;
+    const plan = planSavedMealLog(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { name } = plan.value;
+    const when = { date: plan.value.date };
 
     const matches = await ctx.db.findSavedMealsByName(name);
     if (matches.length === 0) {
@@ -640,26 +976,43 @@ const logSavedMeal: Tool = {
 // Phase 1 queued this one and nothing ever read the queue. It lands now, and what
 // makes that safe is that the undo removes exactly the meal it added.
 
+/** log_meal's date and foods, every problem with either. */
+function planMeal(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ date: string; plans: FoodPlan[] }> {
+  const problems: string[] = [];
+  const when = dateFor(payload, ctx, BACK_MEAL);
+  if (isRefusal(when)) problems.push(when.say);
+  const foods = planFoods(
+    payload.items,
+    "I need at least one food in items. Each one is either a food_id and an amount, or a name with its macros (and its weight in grams, if it was weighed).",
+  );
+  problems.push(...problemsOf(foods));
+  if (isRefusal(when) || !foods.ok) return { ok: false, problems };
+  return { ok: true, value: { date: when.date, plans: foods.value } };
+}
+
 const logMeal: Tool = {
   kind: "direct",
   does: "Log food into a day — library foods by id, or anything else by name with its weight and macros.",
   fields: ["date", "items", "name"],
+  // Both kinds of food in one meal: a library food by id and a count, and anything else
+  // by name with what it contained. `eggs` is one of the built-in foods in the code.
+  // The meal's name says "Sample" because a call that is exactly the example is refused
+  // (handler.ts) — see `example` in kit.ts.
+  example: {
+    name: "Sample breakfast",
+    items: [
+      { food_id: "eggs", qty: 2 },
+      { name: "Greek yogurt", grams: 170, kcal: 150, p: 15, c: 8, f: 4 },
+    ],
+  },
+  lists: { items: FOOD_SHAPE },
+  check: (payload, ctx) => problemsOf(planMeal(payload, ctx)),
   async run(payload, ctx) {
-    const when = dateFor(payload, ctx, BACK_MEAL);
-    if (isRefusal(when)) return when;
-    const raw = payload.items;
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return refuse(400, "I need at least one food. Each one is either a food_id and an amount, or a name with its weight and macros.");
-    }
-    if (raw.length > MAX_ITEMS) {
-      return refuse(400, `That is more than ${MAX_ITEMS} foods at once. Split it into two meals.`);
-    }
-    const items: LoggedItem[] = [];
-    for (const one of raw) {
-      const item = await readItem(ctx, one);
-      if (isRefusal(item)) return item;
-      items.push(item);
-    }
+    const plan = planMeal(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = { date: plan.value.date };
+    const items = await foodsFrom(ctx, plan.value.plans);
+    if (isRefusal(items)) return items;
     // An empty name is not a missing name. The app displays a meal by its position
     // when it has none ("Meal 1", "Meal 2"), which is what makes deletes renumber
     // — so storing a name we invented would break that.
@@ -728,15 +1081,25 @@ const undoDayRemoveMeal: UndoHandler = {
 
 // ── health.delete_meal ───────────────────────────────────────────────────────
 
+/** delete_meal's day and meal id — both problems at once. */
+function planMealDelete(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ date: string; id: string }> {
+  const pad = problemPad();
+  const when = pad.take(existingDate(payload, ctx));
+  const id = pad.take(readId(payload, "meal_id"));
+  return pad.done(() => ({ date: when!.date, id: id!.id }));
+}
+
 const deleteMeal: Tool = {
   kind: "direct",
   does: "Take one meal off a day.",
   fields: ["date", "meal_id"],
+  example: { meal_id: EXAMPLE_ID },
+  check: (payload, ctx) => problemsOf(planMealDelete(payload, ctx)),
   async run(payload, ctx) {
-    const when = existingDate(payload, ctx);
-    if (isRefusal(when)) return when;
-    const id = readId(payload, "meal_id");
-    if (isRefusal(id)) return id;
+    const plan = planMealDelete(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = { date: plan.value.date };
+    const id = { id: plan.value.id };
 
     // Captured from the winning attempt's read, not from an earlier one — see the
     // note in editDay. `at` is the position it sat in, so the undo puts it back
@@ -794,32 +1157,45 @@ const undoDayPutMealBack: UndoHandler = {
 
 // ── health.edit_meal ─────────────────────────────────────────────────────────
 
+/** edit_meal's date, meal and changes — every problem with any of them. */
+function planMealEdit(
+  payload: Record<string, unknown>,
+  ctx: ShapeCtx,
+): Shaped<{ date: string; id: string; plans: FoodPlan[] | null }> {
+  const problems: string[] = [];
+  const when = existingDate(payload, ctx);
+  if (isRefusal(when)) problems.push(when.say);
+  const id = readId(payload, "meal_id");
+  if (isRefusal(id)) problems.push(id.say);
+  const wantsItems = payload.items !== undefined;
+  if (payload.name === undefined && !wantsItems) problems.push("Tell me the new name, or the new list of foods, or both.");
+  const foods = wantsItems
+    ? planFoods(payload.items, "A meal has to have at least one food. To get rid of it, delete the meal.")
+    : null;
+  if (foods) problems.push(...problemsOf(foods));
+  if (problems.length || isRefusal(when) || isRefusal(id) || (foods && !foods.ok)) return { ok: false, problems };
+  return { ok: true, value: { date: when.date, id: id.id, plans: foods && foods.ok ? foods.value : null } };
+}
+
 const editMeal: Tool = {
   kind: "direct",
   does: "Rename a meal on a day, or replace what was in it.",
   fields: ["date", "meal_id", "name", "items"],
+  example: { meal_id: EXAMPLE_ID, items: [{ name: "White rice", grams: 200, kcal: 260, p: 5, c: 57, f: 0.6 }] },
+  lists: { items: FOOD_SHAPE },
+  check: (payload, ctx) => problemsOf(planMealEdit(payload, ctx)),
   async run(payload, ctx) {
-    const when = existingDate(payload, ctx);
-    if (isRefusal(when)) return when;
-    const id = readId(payload, "meal_id");
-    if (isRefusal(id)) return id;
+    const plan = planMealEdit(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = { date: plan.value.date };
+    const id = { id: plan.value.id };
     const wantsName = payload.name !== undefined;
-    const wantsItems = payload.items !== undefined;
-    if (!wantsName && !wantsItems) return refuse(400, "Tell me the new name, or the new list of foods, or both.");
 
     let items: LoggedItem[] | null = null;
-    if (wantsItems) {
-      const raw = payload.items;
-      if (!Array.isArray(raw) || raw.length === 0) {
-        return refuse(400, "A meal has to have at least one food. To get rid of it, delete the meal.");
-      }
-      if (raw.length > MAX_ITEMS) return refuse(400, `That is more than ${MAX_ITEMS} foods in one meal.`);
-      items = [];
-      for (const one of raw) {
-        const item = await readItem(ctx, one);
-        if (isRefusal(item)) return item;
-        items.push(item);
-      }
+    if (plan.value.plans) {
+      const built = await foodsFrom(ctx, plan.value.plans);
+      if (isRefusal(built)) return built;
+      items = built;
     }
     const name = wantsName ? cleanText(payload.name, NAME_CAP) : null;
 
@@ -886,21 +1262,31 @@ const undoDayRestoreMeal: UndoHandler = {
 
 const MARKS: readonly string[] = ["estimated", "skipped", "clear"];
 
+/** mark_day's day, mark and note — every problem with them. */
+function planMark(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ date: string; mark: string }> {
+  const pad = problemPad();
+  const when = pad.take(existingDate(payload, ctx));
+  const mark = typeof payload.mark === "string" ? payload.mark : "";
+  if (!MARKS.includes(mark)) pad.no('mark is "estimated" for followed roughly, "skipped" for off plan, or "clear".');
+  if (mark === "clear" && payload.note !== undefined) {
+    pad.no("Clearing the mark clears the note with it, so leave the note out.");
+  }
+  return pad.done(() => ({ date: when!.date, mark }));
+}
+
 const markDay: Tool = {
   kind: "direct",
   does: "Mark a day as followed-roughly or off-plan, with a note, or clear the mark.",
   fields: ["date", "mark", "note"],
+  // "Sample" in the note for the reason on log_meal's example.
+  example: { mark: "estimated", note: "Sample note: ate out, roughly on plan" },
+  check: (payload, ctx) => problemsOf(planMark(payload, ctx)),
   async run(payload, ctx) {
-    const when = existingDate(payload, ctx);
-    if (isRefusal(when)) return when;
-    const mark = typeof payload.mark === "string" ? payload.mark : "";
-    if (!MARKS.includes(mark)) {
-      return refuse(400, 'mark is "estimated" for followed roughly, "skipped" for off plan, or "clear".');
-    }
+    const plan = planMark(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = { date: plan.value.date };
+    const { mark } = plan.value;
     const note = payload.note === undefined ? null : cleanText(payload.note, NOTE_CAP);
-    if (mark === "clear" && payload.note !== undefined) {
-      return refuse(400, "Clearing the mark clears the note with it, so leave the note out.");
-    }
     const status = mark === "clear" ? null : mark;
 
     const landed = await editDay(ctx, when.date, (day) => ({
@@ -957,18 +1343,50 @@ const undoDayMark: UndoHandler = {
 
 // ── health.save_meal ─────────────────────────────────────────────────────────
 
+/** save_meal's name and source — every problem with them. The meal off a day is read
+ *  later; this only decides which of the two ways the call is asking for. */
+function planSavedMeal(
+  payload: Record<string, unknown>,
+  ctx: ShapeCtx,
+): Shaped<{ name: string; fromDay: { date: string; id: string } | null; plans: FoodPlan[] | null }> {
+  const problems: string[] = [];
+  const name = cleanText(payload.name, NAME_CAP);
+  if (!name) problems.push("A saved meal needs a name, so it can be logged by name later.");
+  const fromDay = payload.meal_id !== undefined;
+  const fromItems = payload.items !== undefined;
+  if (fromDay === fromItems) problems.push("Give me a meal_id off a day, or a list of foods — one or the other.");
+  let day: { date: string; id: string } | null = null;
+  if (fromDay && !fromItems) {
+    const when = existingDate(payload, ctx);
+    if (isRefusal(when)) problems.push(when.say);
+    const id = readId(payload, "meal_id");
+    if (isRefusal(id)) problems.push(id.say);
+    if (!isRefusal(when) && !isRefusal(id)) day = { date: when.date, id: id.id };
+  }
+  let plans: FoodPlan[] | null = null;
+  if (fromItems && !fromDay) {
+    const foods = planFoods(payload.items, "A saved meal needs at least one food.");
+    if (foods.ok) plans = foods.value;
+    else problems.push(...foods.problems);
+  }
+  return shaped(problems, () => ({ name, fromDay: day, plans }));
+}
+
 const saveMeal: Tool = {
   kind: "direct",
   does: "Save a meal for re-use later — one already logged on a day, or a list of foods.",
   fields: ["name", "date", "meal_id", "items"],
+  // The top-level name is a placeholder on purpose: a call that is exactly the example
+  // is refused (handler.ts), and the inside of the list is natural enough that somebody
+  // might really send it. A "Sample" name is what keeps the two apart. The shapes INSIDE
+  // the list are the part worth copying, and those stay realistic.
+  example: { name: "Sample shake", items: [{ name: "Protein shake", kcal: 160, p: 30, c: 6, f: 2 }] },
+  lists: { items: FOOD_SHAPE },
+  check: (payload, ctx) => problemsOf(planSavedMeal(payload, ctx)),
   async run(payload, ctx) {
-    const name = cleanText(payload.name, NAME_CAP);
-    if (!name) return refuse(400, "A saved meal needs a name, so it can be logged by name later.");
-    const fromDay = payload.meal_id !== undefined;
-    const fromItems = payload.items !== undefined;
-    if (fromDay === fromItems) {
-      return refuse(400, "Give me a meal_id off a day, or a list of foods — one or the other.");
-    }
+    const plan = planSavedMeal(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const name = plan.value.name;
     // A duplicate name is refused, and this is a guard the door adds rather than
     // one it inherits: health.log_saved_meal looks a meal up BY NAME and refuses
     // when two share one, so a second "Usual breakfast" makes both unloggable from
@@ -979,25 +1397,16 @@ const saveMeal: Tool = {
     }
 
     let items: LoggedItem[];
+    const fromDay = plan.value.fromDay;
     if (fromDay) {
-      const when = existingDate(payload, ctx);
-      if (isRefusal(when)) return when;
-      const id = readId(payload, "meal_id");
-      if (isRefusal(id)) return id;
-      const day = await ctx.db.readMealDay(ctx.person, when.date);
-      const hit = mealsOf(day).find((m) => m.id === id.id);
-      if (!hit) return refuse(404, `There is no meal with that id on ${when.date}.`);
+      const day = await ctx.db.readMealDay(ctx.person, fromDay.date);
+      const hit = mealsOf(day).find((m) => m.id === fromDay.id);
+      if (!hit) return refuse(404, `There is no meal with that id on ${fromDay.date}.`);
       items = hit.items;
     } else {
-      const raw = payload.items;
-      if (!Array.isArray(raw) || raw.length === 0) return refuse(400, "A saved meal needs at least one food.");
-      if (raw.length > MAX_ITEMS) return refuse(400, `That is more than ${MAX_ITEMS} foods in one meal.`);
-      items = [];
-      for (const one of raw) {
-        const item = await readItem(ctx, one);
-        if (isRefusal(item)) return item;
-        items.push(item);
-      }
+      const built = await foodsFrom(ctx, plan.value.plans ?? []);
+      if (isRefusal(built)) return built;
+      items = built;
     }
 
     const id = await ctx.db.insertSavedMeal({ name, items });
@@ -1029,37 +1438,51 @@ const undoSavedMealDelete: UndoHandler = {
 
 // ── health.update_saved_meal / health.delete_saved_meal ──────────────────────
 
+/** update_saved_meal's id and changes — every problem with them. */
+function planSavedMealEdit(payload: Record<string, unknown>): Shaped<{ id: string; plans: FoodPlan[] | null }> {
+  const problems: string[] = [];
+  const id = readId(payload, "id");
+  if (isRefusal(id)) problems.push(id.say);
+  const wantsName = payload.name !== undefined;
+  const wantsItems = payload.items !== undefined;
+  if (!wantsName && !wantsItems) problems.push("Tell me the new name, or the new list of foods, or both.");
+  if (wantsName && !cleanText(payload.name, NAME_CAP)) problems.push("A saved meal needs a name.");
+  let plans: FoodPlan[] | null = null;
+  if (wantsItems) {
+    const foods = planFoods(payload.items, "A saved meal needs at least one food.");
+    if (foods.ok) plans = foods.value;
+    else problems.push(...foods.problems);
+  }
+  if (problems.length || isRefusal(id)) return { ok: false, problems };
+  return { ok: true, value: { id: id.id, plans } };
+}
+
 const updateSavedMeal: Tool = {
   kind: "direct",
   does: "Rename a saved meal, or change what is in it.",
   fields: ["id", "name", "items"],
+  example: { id: EXAMPLE_ID, name: "Weekday breakfast" },
+  lists: { items: FOOD_SHAPE },
+  check: (payload) => problemsOf(planSavedMealEdit(payload)),
   async run(payload, ctx) {
-    const id = readId(payload, "id");
-    if (isRefusal(id)) return id;
+    const plan = planSavedMealEdit(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const id = { id: plan.value.id };
     const wantsName = payload.name !== undefined;
-    const wantsItems = payload.items !== undefined;
-    if (!wantsName && !wantsItems) return refuse(400, "Tell me the new name, or the new list of foods, or both.");
     const before = await ctx.db.readSavedMeal(id.id);
     if (!before) return refuse(404, "There is no saved meal with that id.");
 
     let name: string | undefined;
     if (wantsName) {
       name = cleanText(payload.name, NAME_CAP);
-      if (!name) return refuse(400, "A saved meal needs a name.");
       const clash = (await ctx.db.findSavedMealsByName(name)).filter((m) => m.id !== id.id);
       if (clash.length > 0) return refuse(409, `Another saved meal is already called ${scrubCap(name, 40)}.`);
     }
     let items: LoggedItem[] | undefined;
-    if (wantsItems) {
-      const raw = payload.items;
-      if (!Array.isArray(raw) || raw.length === 0) return refuse(400, "A saved meal needs at least one food.");
-      if (raw.length > MAX_ITEMS) return refuse(400, `That is more than ${MAX_ITEMS} foods in one meal.`);
-      items = [];
-      for (const one of raw) {
-        const item = await readItem(ctx, one);
-        if (isRefusal(item)) return item;
-        items.push(item);
-      }
+    if (plan.value.plans) {
+      const built = await foodsFrom(ctx, plan.value.plans);
+      if (isRefusal(built)) return built;
+      items = built;
     }
     const landed = await ctx.db.updateSavedMeal(id.id, { name, items });
     if (!landed) return refuse(404, "There is no saved meal with that id.");
@@ -1086,9 +1509,12 @@ const deleteSavedMeal: Tool = {
   kind: "direct",
   does: "Delete a saved meal.",
   fields: ["id"],
+  example: { id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, "id")),
   async run(payload, ctx) {
-    const id = readId(payload, "id");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, "id");
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const id = { id: plan.value[0] };
     const before = await ctx.db.readSavedMeal(id.id);
     if (!before) return refuse(404, "There is no saved meal with that id.");
     await ctx.db.deleteSavedMeal(id.id);
@@ -1141,27 +1567,41 @@ const undoSavedMealInsert: UndoHandler = {
 
 // ── health.add_food / health.delete_food ─────────────────────────────────────
 
+/** add_food's name, role, four macros and serving — EVERY missing macro named, not
+ *  the first one, so a food sent with two of the four hears about the other two. */
+function planFoodRow(payload: Record<string, unknown>): Shaped<{
+  name: string;
+  nums: Record<string, number>;
+  serving: number | null;
+}> {
+  const pad = problemPad();
+  const name = cleanText(payload.name, NAME_CAP);
+  if (!name) pad.no("A food needs a name.");
+  if (payload.role !== undefined && !isRole(payload.role)) pad.no("role is protein, carb, veg, fat or other.");
+  const nums: Record<string, number> = {};
+  for (const k of ["kcal", "p", "c", "f"] as const) {
+    const v = macro(payload[k], 1000);
+    if (v === null) pad.no(`${name || "It"} needs ${k} per 100 g as a number of zero or more.`);
+    else nums[k] = v;
+  }
+  let serving: number | null = null;
+  if (payload.serving !== undefined) {
+    serving = macro(payload.serving, 5000);
+    if (serving === null || serving <= 0) pad.no("serving is the usual portion in grams, above zero.");
+  }
+  return pad.done(() => ({ name, nums, serving }));
+}
+
 const addFood: Tool = {
   kind: "direct",
   does: "Add a food to the household's library, with its macros per 100 g.",
   fields: ["name", "role", "kcal", "p", "c", "f", "serving", "note", "barcode"],
+  example: { name: "Example protein bar", role: "protein", kcal: 380, p: 30, c: 40, f: 10, serving: 60 },
+  check: (payload) => problemsOf(planFoodRow(payload)),
   async run(payload, ctx) {
-    const name = cleanText(payload.name, NAME_CAP);
-    if (!name) return refuse(400, "A food needs a name.");
-    if (payload.role !== undefined && !isRole(payload.role)) {
-      return refuse(400, "role is protein, carb, veg, fat or other.");
-    }
-    const nums: Record<string, number> = {};
-    for (const k of ["kcal", "p", "c", "f"] as const) {
-      const v = macro(payload[k], 1000);
-      if (v === null) return refuse(400, `${name} needs ${k} per 100 g as a number of zero or more.`);
-      nums[k] = v;
-    }
-    let serving: number | null = null;
-    if (payload.serving !== undefined) {
-      serving = macro(payload.serving, 5000);
-      if (serving === null || serving <= 0) return refuse(400, "serving is the usual portion in grams, above zero.");
-    }
+    const plan = planFoodRow(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { name, nums, serving } = plan.value;
     const barcode = payload.barcode === undefined ? null : cleanText(payload.barcode, 32).replace(/\D/g, "") || null;
     // Refused, not silently allowed, and the reason is a real trap: mealLog's
     // buildLibrary dedupes the searchable library by lower-cased name with the
@@ -1202,9 +1642,12 @@ const deleteFood: Tool = {
   kind: "direct",
   does: "Take a food out of the household's library.",
   fields: ["id"],
+  example: { id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planIds(payload, "id")),
   async run(payload, ctx) {
-    const id = readId(payload, "id");
-    if (isRefusal(id)) return id;
+    const plan = planIds(payload, "id");
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const id = { id: plan.value[0] };
     const before = await ctx.db.readFood(id.id);
     if (!before) {
       // A seed or bundled food is code, not a row, and cannot be deleted from
@@ -1265,24 +1708,36 @@ const undoFoodInsert: UndoHandler = {
 
 // ── health.set_macro_target ──────────────────────────────────────────────────
 
+/** set_macro_target's four numbers — every one that is missing or wrong, at once. */
+function planMacroTarget(payload: Record<string, unknown>): Shaped<MacroRow> {
+  const pad = problemPad();
+  const nums: Record<string, number> = {};
+  for (const k of ["kcal", "p", "c", "f"] as const) {
+    const v = macro(payload[k], k === "kcal" ? 10_000 : 1000);
+    if (v === null) pad.no(`The target needs ${k} as a number of zero or more.`);
+    else nums[k] = v;
+  }
+  if (nums.kcal !== undefined && nums.kcal < 800) {
+    // Not a judgement, a misheard-number guard, same as the weigh-in range: a
+    // target this low would make every day read as over budget and the streak
+    // would quietly stop counting.
+    pad.no("That calorie target is below 800, which reads like a misheard number. Say it again if it is right.");
+  }
+  return pad.done(() => ({ kcal: nums.kcal, p: nums.p, c: nums.c, f: nums.f }));
+}
+
 const setMacroTarget: Tool = {
   kind: "direct",
   does: "Set the daily macro target.",
   fields: ["kcal", "p", "c", "f"],
+  // Deliberately not round numbers. A call that is exactly the example is refused, and
+  // 2400 / 160 / 250 / 70 is a target a person might really say.
+  example: { kcal: 2350, p: 165, c: 245, f: 72 },
+  check: (payload) => problemsOf(planMacroTarget(payload)),
   async run(payload, ctx) {
-    const nums: Record<string, number> = {};
-    for (const k of ["kcal", "p", "c", "f"] as const) {
-      const v = macro(payload[k], k === "kcal" ? 10_000 : 1000);
-      if (v === null) return refuse(400, `The target needs ${k} as a number of zero or more.`);
-      nums[k] = v;
-    }
-    if (nums.kcal < 800) {
-      // Not a judgement, a misheard-number guard, same as the weigh-in range: a
-      // target this low would make every day read as over budget and the streak
-      // would quietly stop counting.
-      return refuse(400, "That calorie target is below 800, which reads like a misheard number. Say it again if it is right.");
-    }
-    const target: MacroRow = { kcal: nums.kcal, p: nums.p, c: nums.c, f: nums.f };
+    const plan = planMacroTarget(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const target: MacroRow = plan.value;
     const before = await ctx.db.readMacroTarget(ctx.person);
     await ctx.db.upsertMacroTarget(ctx.person, target, ctx.at.toISOString());
     return {
@@ -1354,57 +1809,190 @@ const MUSCLES: readonly string[] = ["chest", "back", "legs", "shoulders", "arms"
 function resolveExercise(
   name: string,
   muscle: unknown,
+  subject = scrubCap(name, 40),
 ): { exerciseId: string; name: string; muscle: string; custom: boolean } | Refusal {
   const lib = findExercise(BUNDLED_EXERCISES, name);
-  if (lib) return { exerciseId: lib.id, name: lib.name, muscle: lib.muscle, custom: false };
+  if (lib) {
+    // THE NAME AS IT WAS SAID, LINKED. FOUND 2026-10-10: a lift logged under its Chinese
+    // name was saved as a custom exercise, because the library only knew English names —
+    // 深蹲 was "not in the library" although the squat is. The library now carries the
+    // standard Chinese gym names as aliases (scripts/exercisedata/overrides.json), so 深蹲
+    // FINDS its library entry. What it is then CALLED is kept as it was said: a name in
+    // another script than the library's is a language, not a spelling to correct, and
+    // the history it joins is already written that way. The library id is what links
+    // it, exactly as start_session keeps a routine's own name beside the id it resolved
+    // to. A Latin name still becomes the library's spelling, so "tricep pushdowns" is
+    // stored as "Triceps pushdown", the way it always has been.
+    const own = OTHER_SCRIPT.test(name) ? name : lib.name;
+    return { exerciseId: lib.id, name: own, muscle: lib.muscle, custom: false };
+  }
   if (typeof muscle !== "string" || !MUSCLES.includes(muscle)) {
+    // "Did you mean", from the library itself. FOUND 2026-10-10: this sentence used to
+    // offer "give a muscle" or "search the library", and the assistant picked the muscle
+    // every time it was offered — it never called health.exercises — so lifts the
+    // library knows were stored as custom ones, each counted toward one muscle. Naming
+    // the closest library entries makes the right answer the easy one.
+    const near = closestExercises(name);
+    const offer = near.length
+      ? ` The closest names in it are ${near.map((e) => `${e.name} (${e.muscle})`).join(", ")} — send one of those as the name,`
+      : " Search health.exercises for the name it is under,";
     return refuse(
       400,
-      `${scrubCap(name, 40)} is not in the exercise library. Log it anyway by saying which muscle it works — one of ${MUSCLES.join(", ")} — or search the library for the name it is under.`,
+      `${subject} is not in the exercise library.${offer} or keep this name and say which muscle it works — one of ${MUSCLES.join(", ")}.`,
     );
   }
   return { exerciseId: "", name, muscle, custom: true };
 }
 
-/** `{ name, muscle?, sets: [...] }` out of whatever the caller sent. */
-function readEntry(raw: unknown): { entry: ExerciseEntry; custom: boolean } | Refusal {
-  if (!isObject(raw)) return refuse(400, "Each exercise is an object with a name and its sets.");
-  const name = cleanText(raw.name, NAME_CAP);
-  if (!name) return refuse(400, "Each exercise needs a name.");
-  const ex = resolveExercise(name, raw.muscle);
-  if (isRefusal(ex)) return ex;
-  const rawSets = raw.sets;
-  const sets: SetEntry[] = [];
-  if (rawSets !== undefined) {
-    if (!Array.isArray(rawSets)) return refuse(400, `${scrubCap(name, 40)} needs its sets as a list.`);
-    if (rawSets.length > MAX_SETS) return refuse(400, `That is more than ${MAX_SETS} sets on one exercise.`);
-    for (const one of rawSets) {
-      const s = readSet(one);
-      if (isRefusal(s)) return s;
-      sets.push(loggedSet(s));
+/** A name with a character outside the Latin scripts (and the punctuation and symbols
+ *  around them) — Chinese, the other script the library carries aliases in. See
+ *  resolveExercise. */
+const OTHER_SCRIPT = /[^\u0020-\u024F\u1E00-\u1EFF\u2000-\u206F]/;
+
+/** How many "did you mean" names a refusal offers, and how alike a name has to be to
+ *  be offered at all. Below the floor it is noise: "Zercher thing" is not "Lat pulldown"
+ *  just because both have an "er" in them. */
+const NEAR_MAX = 3;
+const NEAR_FLOOR = 0.35;
+
+/** A name's two-character pieces, counted, with the spaces taken out — so "goblet
+ *  squats" and "gobletsquat" agree, and a Chinese name (which has no spaces) works the
+ *  same way an English one does. */
+function pairsOf(s: string): Map<string, number> {
+  const t = normName(s).replace(/\s+/g, "");
+  const out = new Map<string, number>();
+  for (let i = 0; i < t.length - 1; i++) {
+    const p = t.slice(i, i + 2);
+    out.set(p, (out.get(p) ?? 0) + 1);
+  }
+  return out;
+}
+
+/** How alike two names are, from 0 to 1: the share of two-character pieces they have
+ *  in common (the Sørensen–Dice score). A ranking, not a measurement — it decides which
+ *  three names a refusal suggests, and nothing is ever stored from it. */
+function likeness(a: Map<string, number>, b: Map<string, number>): number {
+  let shared = 0;
+  let total = 0;
+  for (const n of a.values()) total += n;
+  for (const n of b.values()) total += n;
+  if (total === 0) return 0;
+  for (const [p, n] of a) shared += Math.min(n, b.get(p) ?? 0);
+  return (2 * shared) / total;
+}
+
+/**
+ * The library entries most like a name the library does not know, best first — by
+ * their own name or any alias, the Chinese ones included. Hidden entries (near-duplicates
+ * folded into another) are never offered, because the one to log is the one they were
+ * folded into.
+ */
+export function closestExercises(name: string): Exercise[] {
+  const want = pairsOf(name);
+  if (want.size === 0) return [];
+  const best = new Map<string, { ex: Exercise; score: number }>();
+  for (const ex of BUNDLED_EXERCISES) {
+    if (ex.hidden) continue;
+    for (const label of [ex.name, ...(ex.aliases ?? [])]) {
+      const score = likeness(want, pairsOf(label));
+      if (score > (best.get(ex.id)?.score ?? 0)) best.set(ex.id, { ex, score });
     }
   }
+  return [...best.values()]
+    .filter((b) => b.score >= NEAR_FLOOR)
+    .sort((a, b) => b.score - a.score || a.ex.name.localeCompare(b.ex.name))
+    .slice(0, NEAR_MAX)
+    .map((b) => b.ex);
+}
+
+/**
+ * What one exercise in a logged workout takes. `exercise` is a second word for `name`
+ * here and only here — it is what health.log_sets calls the same thing, and FOUND
+ * 2026-10-10 it is the word assistants reached for: "Each exercise needs a name." was
+ * refused for it again and again, from more than one phone. `duration_min` and
+ * `duration` are the read door's words for `minutes`, and the reason one back-fill had
+ * a THIRD round of refusals: the minutes were there all along, under a key this ignored.
+ */
+const ENTRY_KEYS = ["name", "muscle", "sets", "minutes"] as const;
+const ENTRY_ALIASES: Readonly<Record<string, string>> = Object.freeze({ exercise: "name" });
+const ENTRY_SHAPE: ListShape = { takes: ENTRY_KEYS, extra: ENTRY_ALIASES, lists: { sets: SET_SHAPE } };
+
+/** `{ name, muscle?, sets?, minutes? }` out of whatever the caller sent — every problem
+ *  with it in one sentence that names it, or the entry. `i` counts from zero. */
+function readEntry(raw: unknown, i: number): { ok: true; entry: ExerciseEntry; custom: boolean } | { ok: false; problem: string } {
+  if (!isObject(raw)) {
+    return {
+      ok: false,
+      problem: itemSays(
+        labelOf("Exercise", i),
+        [`It is ${kindOfValue(raw)}, not an object like {"name": "Goblet squat", "sets": [{"reps": 10, "weight": 35}]}.`],
+        null,
+      ),
+    };
+  }
+  const { value, unknown, clashes } = renameBy(raw, ENTRY_SHAPE);
+  const problems = [...clashes];
+  if (unknown.length) {
+    // The likeliest wrong guess gets its own pointer: reps and weight belong to a SET.
+    const setish = unknown.some((k) => k === "reps" || k === "weight" || k === "weight_lb");
+    problems.push(unknownKeysSays(unknown, ENTRY_KEYS) + (setish ? " Reps and weight go inside sets, one object per set." : ""));
+  }
+  const name = cleanText(value.name, NAME_CAP);
+  if (!name) {
+    problems.push(value.name === undefined ? "It has no name — send the exercise's name as name." : "Its name is empty once cleaned.");
+  }
+  const ex = name ? resolveExercise(name, value.muscle, "It") : null;
+  if (ex && isRefusal(ex)) problems.push(ex.say);
+
+  let sets: SetEntry[] = [];
+  if (value.sets !== undefined) {
+    const read = readSets(value.sets, MAX_SETS);
+    if (read.ok) sets = read.value;
+    else problems.push(...read.problems);
+  }
   let duration: number | null = null;
-  if (raw.minutes !== undefined) {
-    duration = macro(raw.minutes, 600);
-    if (duration === null || duration <= 0) return refuse(400, "minutes is a number above zero.");
+  if (value.minutes !== undefined) {
+    duration = macro(value.minutes, 600);
+    if (duration === null || duration <= 0) problems.push("minutes is a number above zero.");
   }
-  if (sets.length === 0 && duration === null) {
-    return refuse(400, `${scrubCap(name, 40)} needs either its sets or how many minutes it took.`);
+  if (value.sets === undefined && value.minutes === undefined) {
+    problems.push("It needs its sets, or how many minutes it took.");
+  } else if (Array.isArray(value.sets) && value.sets.length === 0 && value.minutes === undefined) {
+    problems.push("Its sets list is empty — give the sets, or how many minutes it took.");
   }
+
+  const label = labelOf("Exercise", i, name ? scrubCap(name, 40) : undefined);
+  if (problems.length || !ex || isRefusal(ex)) return { ok: false, problem: itemSays(label, problems, raw) };
   const entry = newEntry(ex, sets);
-  return { entry: duration === null ? entry : { ...entry, duration }, custom: ex.custom };
+  return { ok: true, entry: duration === null ? entry : { ...entry, duration }, custom: ex.custom };
 }
 
 // ── health.start_session ─────────────────────────────────────────────────────
+
+/** start_session's date and routine name — the routine itself is looked up later. */
+function planSessionStart(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ date: string; routine: string | null }> {
+  const pad = problemPad();
+  const when = pad.take(dateFor(payload, ctx, BACK_SESSION));
+  let routine: string | null = null;
+  if (payload.routine !== undefined) {
+    routine = cleanText(payload.routine, NAME_CAP);
+    if (!routine) pad.no("Tell me the routine by name, as the app lists it.");
+  }
+  return pad.done(() => ({ date: when!.date, routine }));
+}
 
 const startSession: Tool = {
   kind: "direct",
   does: "Start a session for today — empty, or laid out from one of the routines.",
   fields: ["date", "name", "routine"],
+  // A placeholder name, for the same reason as log_saved_meal's: a call that is exactly
+  // the example is refused, and "Evening lift" is a session somebody might really start.
+  example: { name: "Sample session" },
+  check: (payload, ctx) => problemsOf(planSessionStart(payload, ctx)),
   async run(payload, ctx) {
-    const when = dateFor(payload, ctx, BACK_SESSION);
-    if (isRefusal(when)) return when;
+    const plan = planSessionStart(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = { date: plan.value.date };
     // The app shows at most one running session and cannot start a second, so this
     // refuses rather than leaving two half-logged sessions on one day to find later.
     const open = await ctx.db.findOpenSession(ctx.person, when.date);
@@ -1417,10 +2005,8 @@ const startSession: Tool = {
 
     let exercises: ExerciseEntry[] = [];
     let name = cleanText(payload.name, NAME_CAP);
-    if (payload.routine !== undefined) {
-      const wanted = cleanText(payload.routine, NAME_CAP);
-      if (!wanted) return refuse(400, "Tell me the routine by name, as the app lists it.");
-      const routine = await routineByName(ctx, wanted);
+    if (plan.value.routine !== null) {
+      const routine = await routineByName(ctx, plan.value.routine);
       if (isRefusal(routine)) return routine;
       // The routine's exercises, each with its planned number of EMPTY sets — the
       // same thing "Start from routine" does on the screen. Empty means no reps and
@@ -1543,37 +2129,51 @@ const undoSessionDelete: UndoHandler = {
 
 // ── health.log_sets ──────────────────────────────────────────────────────────
 
+/** log_sets' session, lift, sets and minutes — every problem with any of them. Which
+ *  session the id or the day finds is whichSession's, in run(), after this. */
+function planLogSets(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{
+  ex: { exerciseId: string; name: string; muscle: string; custom: boolean };
+  sets: SetEntry[];
+  minutes: number | null;
+}> {
+  const problems: string[] = sessionRefProblems(payload, ctx);
+  const name = cleanText(payload.exercise, NAME_CAP);
+  if (!name) problems.push("Tell me which lift, by name, as exercise.");
+  const ex = name ? resolveExercise(name, payload.muscle) : null;
+  if (ex && isRefusal(ex)) problems.push(ex.say);
+  let sets: SetEntry[] = [];
+  if (payload.sets !== undefined) {
+    if (Array.isArray(payload.sets) && payload.sets.length === 0) problems.push("Give me the sets as a list with at least one set in it.");
+    const read = readSets(payload.sets, MAX_SETS);
+    if (read.ok) sets = read.value;
+    else problems.push(...read.problems);
+  }
+  let minutes: number | null = null;
+  if (payload.minutes !== undefined) {
+    minutes = macro(payload.minutes, 600);
+    if (minutes === null || minutes <= 0) problems.push("minutes is a number above zero.");
+  }
+  if (payload.sets === undefined && payload.minutes === undefined) {
+    problems.push("Give me either the sets or how many minutes it took.");
+  }
+  if (problems.length || !ex || isRefusal(ex)) return { ok: false, problems };
+  return { ok: true, value: { ex, sets, minutes } };
+}
+
 const logSets: Tool = {
   kind: "direct",
-  does: "Add sets to an exercise in a session — creating the exercise if it is not in it yet.",
-  fields: ["session_id", "exercise", "muscle", "sets", "minutes"],
+  does: "Add sets to an exercise in a session — creating the exercise if it is not in it yet. Name the session by session_id, or by session_date when it was your only one that day.",
+  fields: ["session_id", "session_date", "exercise", "muscle", "sets", "minutes"],
+  example: { session_id: EXAMPLE_ID, exercise: "Goblet squat", sets: [{ reps: 10, weight: 35 }, { reps: 8, weight: 35 }] },
+  lists: { sets: SET_SHAPE },
+  check: (payload, ctx) => problemsOf(planLogSets(payload, ctx)),
   async run(payload, ctx) {
-    const sid = readId(payload, "session_id");
+    const plan = planLogSets(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { ex, sets, minutes } = plan.value;
+    // Which session, AFTER every shape check, so a malformed call costs no read.
+    const sid = await whichSession(payload, ctx);
     if (isRefusal(sid)) return sid;
-    const name = cleanText(payload.exercise, NAME_CAP);
-    if (!name) return refuse(400, "Tell me which lift, by name.");
-    const ex = resolveExercise(name, payload.muscle);
-    if (isRefusal(ex)) return ex;
-
-    const rawSets = payload.sets;
-    const sets: SetEntry[] = [];
-    if (rawSets !== undefined) {
-      if (!Array.isArray(rawSets) || rawSets.length === 0) return refuse(400, "Give me the sets as a list.");
-      if (rawSets.length > MAX_SETS) return refuse(400, `That is more than ${MAX_SETS} sets at once.`);
-      for (const one of rawSets) {
-        const s = readSet(one);
-        if (isRefusal(s)) return s;
-        sets.push(loggedSet(s));
-      }
-    }
-    let minutes: number | null = null;
-    if (payload.minutes !== undefined) {
-      minutes = macro(payload.minutes, 600);
-      if (minutes === null || minutes <= 0) return refuse(400, "minutes is a number above zero.");
-    }
-    if (sets.length === 0 && minutes === null) {
-      return refuse(400, "Give me either the sets or how many minutes it took.");
-    }
 
     // The ids are generated ONCE, before the loop, for the same reason the meal id
     // is: a retry must not append the same sets twice, and the undo has to name
@@ -1714,31 +2314,48 @@ const undoSessionRemoveSets: UndoHandler = {
 
 // ── health.edit_set / health.delete_set ──────────────────────────────────────
 
+/** edit_set's session, set id and changes — every problem with any of them. */
+function planSetEdit(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{
+  setId: string;
+  patch: { reps?: number; weight?: number; warmup?: boolean };
+}> {
+  const pad = problemPad();
+  pad.all(sessionRefProblems(payload, ctx));
+  const setId = pad.take(readId(payload, "set_id"));
+  const patch: { reps?: number; weight?: number; warmup?: boolean } = {};
+  if (payload.reps !== undefined) {
+    const n = count(payload.reps, 0, 1000);
+    if (n === null) pad.no("reps is a whole number.");
+    else patch.reps = n;
+  }
+  if (payload.weight !== undefined) {
+    const n = macro(payload.weight, 2000);
+    if (n === null) pad.no("weight is a number of pounds, or zero for bodyweight.");
+    else patch.weight = n;
+  }
+  if (payload.warmup !== undefined) {
+    if (typeof payload.warmup !== "boolean") pad.no("warmup is either true or false.");
+    else patch.warmup = payload.warmup;
+  }
+  if (payload.reps === undefined && payload.weight === undefined && payload.warmup === undefined) {
+    pad.no("Tell me the new reps, the new weight, or whether it was a warm-up.");
+  }
+  return pad.done(() => ({ setId: setId!.id, patch }));
+}
+
 const editSetTool: Tool = {
   kind: "direct",
-  does: "Change one set's reps or weight, or mark it a warm-up.",
-  fields: ["session_id", "set_id", "reps", "weight", "warmup"],
+  does: "Change one set's reps or weight, or mark it a warm-up. Name the session by session_id, or by session_date when it was your only one that day.",
+  fields: ["session_id", "session_date", "set_id", "reps", "weight", "warmup"],
+  example: { session_id: EXAMPLE_ID, set_id: EXAMPLE_ID, reps: 9 },
+  check: (payload, ctx) => problemsOf(planSetEdit(payload, ctx)),
   async run(payload, ctx) {
-    const sid = readId(payload, "session_id");
+    const plan = planSetEdit(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const setId = { id: plan.value.setId };
+    const { patch } = plan.value;
+    const sid = await whichSession(payload, ctx);
     if (isRefusal(sid)) return sid;
-    const setId = readId(payload, "set_id");
-    if (isRefusal(setId)) return setId;
-    const patch: { reps?: number; weight?: number; warmup?: boolean } = {};
-    if (payload.reps !== undefined) {
-      const n = count(payload.reps, 0, 1000);
-      if (n === null) return refuse(400, "reps is a whole number.");
-      patch.reps = n;
-    }
-    if (payload.weight !== undefined) {
-      const n = macro(payload.weight, 2000);
-      if (n === null) return refuse(400, "weight is a number of pounds, or zero for bodyweight.");
-      patch.weight = n;
-    }
-    if (payload.warmup !== undefined) {
-      if (typeof payload.warmup !== "boolean") return refuse(400, "warmup is either true or false.");
-      patch.warmup = payload.warmup;
-    }
-    if (Object.keys(patch).length === 0) return refuse(400, "Tell me the new reps, the new weight, or whether it was a warm-up.");
 
     const landed = await editSession(ctx, sid.id, (_row, session) => {
       for (const entry of session.exercises) {
@@ -1785,15 +2402,26 @@ const editSetTool: Tool = {
   },
 };
 
+/** delete_set's session and set id — every problem with either. */
+function planSetRef(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<string> {
+  const pad = problemPad();
+  pad.all(sessionRefProblems(payload, ctx));
+  const setId = pad.take(readId(payload, "set_id"));
+  return pad.done(() => setId!.id);
+}
+
 const deleteSet: Tool = {
   kind: "direct",
-  does: "Take one set off a session.",
-  fields: ["session_id", "set_id"],
+  does: "Take one set off a session. Name the session by session_id, or by session_date when it was your only one that day.",
+  fields: ["session_id", "session_date", "set_id"],
+  example: { session_id: EXAMPLE_ID, set_id: EXAMPLE_ID },
+  check: (payload, ctx) => problemsOf(planSetRef(payload, ctx)),
   async run(payload, ctx) {
-    const sid = readId(payload, "session_id");
+    const plan = planSetRef(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const setId = { id: plan.value };
+    const sid = await whichSession(payload, ctx);
     if (isRefusal(sid)) return sid;
-    const setId = readId(payload, "set_id");
-    if (isRefusal(setId)) return setId;
 
     const landed = await editSession(ctx, sid.id, (_row, session) => {
       for (const entry of session.exercises) {
@@ -1865,13 +2493,17 @@ const undoSessionRestoreSet: UndoHandler = {
 
 const finishSession: Tool = {
   kind: "direct",
-  does: "Finish a session, and name it or add a note while you are there.",
-  fields: ["session_id", "name", "notes"],
+  does: "Finish a session, and name it or add a note while you are there. Name the session by session_id, or by session_date when it was your only one that day.",
+  fields: ["session_id", "session_date", "name", "notes"],
+  example: { session_id: EXAMPLE_ID, notes: "Felt strong" },
+  check: (payload, ctx) => problemsOf(planSessionRef(payload, ctx)),
   async run(payload, ctx) {
-    const sid = readId(payload, "session_id");
-    if (isRefusal(sid)) return sid;
+    const plan = planSessionRef(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
     const name = payload.name === undefined ? null : cleanText(payload.name, NAME_CAP);
     const notes = payload.notes === undefined ? null : cleanText(payload.notes, NOTE_CAP);
+    const sid = await whichSession(payload, ctx);
+    if (isRefusal(sid)) return sid;
 
     const landed = await editSession(ctx, sid.id, (row, session) => {
       if (row.done) return refuse(409, "That session is already finished.");
@@ -1982,26 +2614,66 @@ const undoSessionUnfinish: UndoHandler = {
 // writes against three rate-limit slots, and two of them could land without the
 // third.
 
+/**
+ * log_workout's date and exercises — EVERY problem with every exercise, in one answer.
+ *
+ * This is the parser a real back-fill needed: several workouts sent at once, each
+ * refused again and again for a different reason each time, because the old loop
+ * returned at the first bad exercise and the first bad field in it. Now each exercise
+ * is read to the end and each one's problems are said together, under its number and
+ * its name, with the keys it carried — so the second try can be the last.
+ */
+function planWorkout(
+  payload: Record<string, unknown>,
+  ctx: ShapeCtx,
+): Shaped<{ date: string; exercises: ExerciseEntry[]; custom: string[] }> {
+  const problems: string[] = [];
+  const when = dateFor(payload, ctx, BACK_SESSION);
+  if (isRefusal(when)) problems.push(when.say);
+  const raw = payload.exercises;
+  const exercises: ExerciseEntry[] = [];
+  const custom: string[] = [];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const what = raw === undefined || Array.isArray(raw) ? "" : ` exercises has to be a list — it was ${kindOfValue(raw)}.`;
+    problems.push(`I need at least one exercise in exercises, each with its name and its sets or how many minutes it took.${what}`);
+  } else if (raw.length > MAX_ENTRIES) {
+    problems.push(`That is more than ${MAX_ENTRIES} exercises in one session.`);
+  } else {
+    raw.forEach((one, i) => {
+      const read = readEntry(one, i);
+      if (!read.ok) {
+        problems.push(read.problem);
+        return;
+      }
+      exercises.push(read.entry);
+      if (read.custom) custom.push(read.entry.name);
+    });
+  }
+  if (problems.length || isRefusal(when)) return { ok: false, problems };
+  return { ok: true, value: { date: when.date, exercises, custom } };
+}
+
 const logWorkout: Tool = {
   kind: "direct",
   does: "Log a whole session that is already done, in one go.",
   fields: ["date", "name", "notes", "exercises"],
+  // A lift with its sets and a cardio entry with its minutes, because those are the two
+  // shapes an exercise can take — and the second is the one nobody could guess. The
+  // session's name says "Sample" for the reason on log_meal's example.
+  example: {
+    name: "Sample legs day",
+    exercises: [
+      { name: "Goblet squat", sets: [{ reps: 10, weight: 35 }, { reps: 10, weight: 35 }] },
+      { name: "Walking", minutes: 30 },
+    ],
+  },
+  lists: { exercises: ENTRY_SHAPE },
+  check: (payload, ctx) => problemsOf(planWorkout(payload, ctx)),
   async run(payload, ctx) {
-    const when = dateFor(payload, ctx, BACK_SESSION);
-    if (isRefusal(when)) return when;
-    const raw = payload.exercises;
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return refuse(400, "I need at least one exercise, each with its sets or how long it took.");
-    }
-    if (raw.length > MAX_ENTRIES) return refuse(400, `That is more than ${MAX_ENTRIES} exercises in one session.`);
-    const exercises: ExerciseEntry[] = [];
-    const custom: string[] = [];
-    for (const one of raw) {
-      const read = readEntry(one);
-      if (isRefusal(read)) return read;
-      exercises.push(read.entry);
-      if (read.custom) custom.push(read.entry.name);
-    }
+    const plan = planWorkout(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const when = { date: plan.value.date };
+    const { exercises, custom } = plan.value;
     const name = cleanText(payload.name, NAME_CAP);
     const notes = cleanText(payload.notes, NOTE_CAP);
 
@@ -2068,11 +2740,17 @@ const logWorkout: Tool = {
 
 const deleteSession: Tool = {
   kind: "direct",
-  does: "Delete a whole session.",
-  fields: ["session_id"],
+  does: "Delete a whole session. Name it by session_id, or by session_date when it was your only one that day. To fix part of a finished session, use health.edit_session instead.",
+  fields: ["session_id", "session_date"],
+  example: { session_id: EXAMPLE_ID },
+  check: (payload, ctx) => problemsOf(planSessionRef(payload, ctx)),
   async run(payload, ctx) {
-    const sid = readId(payload, "session_id");
+    const plan = planSessionRef(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const sid = await whichSession(payload, ctx);
     if (isRefusal(sid)) return sid;
+    // Read again for the whole row: whichSession names a session, and the undo below has
+    // to carry everything in it. Gone in between is the same answer it always was.
     const row = await ctx.db.readWorkout(sid.id);
     if (!row || row.person !== ctx.person) {
       return refuse(404, "There is no session of yours with that id.");
@@ -2145,20 +2823,367 @@ const undoSessionInsert: UndoHandler = {
   },
 };
 
+// ── health.edit_session ──────────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. A FINISHED SESSION COULD BE DELETED AND NOTHING ELSE. FOUND in the
+// audit log: within about a minute, one assistant alternated health.delete_session and
+// health.log_workout over a run of back-dated sessions. Each held duration-only exercises,
+// and the fix wanted was a different set of exercises with different minutes. edit_set
+// and delete_set work one SET at a time, and a duration-only exercise has no set — so
+// nothing could remove, replace or re-time a whole exercise, and the only route was delete
+// and re-log: two writes per session, a new id for each, and the old ids dead in anything
+// that held them.
+// The app's own history editor (EditWorkoutSheet in src/views/WorkoutSection.tsx) does
+// all of this in one save; this is that, from a chat, plus the date, which the screen
+// shows and cannot change.
+//
+// THE EXERCISE LIST IS REPLACED WHOLE, in health.log_workout's own shape — name, muscle
+// for a lift the library does not know, sets or minutes — through the same readEntry and
+// the same finishWorkout. One shape for "a finished session's exercises" across the two
+// tools, so an assistant that can log one can correct one; and one call for a case like
+// that rather than a remove followed by three adds. The new exercises get new ids, exactly as
+// a logged session's do.
+//
+// FINISHED SESSIONS ONLY. A running one is the live logger's, on a phone that may be
+// mid-set, and log_sets / edit_set / finish_session already edit it the way the logger
+// does. A finished one is history, which is what this corrects.
+//
+// THE UNDO COMPARES CONTENT, AND NEVER RESTORES A SNAPSHOT BLIND. It puts back only the
+// fields this call changed, and only if each still holds EXACTLY what this call wrote
+// (compared as documents — see sameDoc). Anything the phone changed in one of those
+// fields since is the newer, deliberate answer, so the undo refuses rather than overwrite
+// it; a field this call did not touch is never written at all. That is the
+// compare-and-set every finance undo makes, on a document. It is also why this undo is
+// not marked fragile: it cannot overwrite anything, only decline.
+
+/** The fields health.edit_session writes, and so the only ones its undo will put back.
+ *  Checked again on the way back IN — a before-state is read out of a table, and a door
+ *  whose undo wrote whatever field that table named would have a write surface equal to
+ *  the table's contents. */
+const EDITABLE: readonly (keyof SessionPatch)[] = ["name", "notes", "date", "exercises"];
+
+/** The handler's name, as stored in muse_undo. A NAME IN A DATABASE ROW — renaming it
+ *  orphans every token already handed out, so a rename is a migration. */
+const SESSION_RESTORE_EDIT = "session.restore-edit";
+
+/**
+ * edit_session's session, its corrections, and every exercise in a new list read to the
+ * end — every problem with any of them, in one answer. Which session the id or the day
+ * finds is whichSession's, in run(), after this; whether the session is finished, and
+ * whether the new list has anything logged in it once the app's Finish has run, are
+ * decided against the row inside editSession.
+ */
+function planEditSession(
+  payload: Record<string, unknown>,
+  ctx: ShapeCtx,
+): Shaped<{ name?: string; notes?: string; date?: string; exercises?: ExerciseEntry[]; custom: string[] }> {
+  const problems: string[] = sessionRefProblems(payload, ctx);
+  if (
+    payload.name === undefined &&
+    payload.notes === undefined &&
+    payload.date === undefined &&
+    payload.exercises === undefined
+  ) {
+    problems.push("Tell me what to correct: name, notes, date, or exercises (the whole list the session should end up with).");
+  }
+  const name = payload.name === undefined ? undefined : cleanText(payload.name, NAME_CAP);
+  const notes = payload.notes === undefined ? undefined : cleanText(payload.notes, NOTE_CAP);
+  let date: string | undefined;
+  if (payload.date !== undefined) {
+    // A session MOVED to a day is filed under it like a new one, so the same back-window
+    // as health.log_workout, and Arizona's today rather than the runtime's.
+    const when = dateFor(payload, ctx, BACK_SESSION);
+    if (isRefusal(when)) problems.push(when.say);
+    else date = when.date;
+  }
+  let exercises: ExerciseEntry[] | undefined;
+  const custom: string[] = [];
+  if (payload.exercises !== undefined) {
+    const raw = payload.exercises;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      const what = Array.isArray(raw) ? "" : ` It was ${kindOfValue(raw)}.`;
+      problems.push(
+        `exercises is the whole list the session should end up with: at least one, each with its sets or how many minutes it took — the shape health.log_workout takes. To throw the whole session away, use health.delete_session.${what}`,
+      );
+    } else if (raw.length > MAX_ENTRIES) {
+      problems.push(`That is more than ${MAX_ENTRIES} exercises in one session.`);
+    } else {
+      exercises = [];
+      raw.forEach((one, i) => {
+        const read = readEntry(one, i);
+        if (!read.ok) {
+          problems.push(read.problem);
+          return;
+        }
+        exercises!.push(read.entry);
+        if (read.custom) custom.push(read.entry.name);
+      });
+    }
+  }
+  return shaped(problems, () => ({ name, notes, date, exercises, custom }));
+}
+
+const editSessionTool: Tool = {
+  kind: "direct",
+  does: "Correct a finished session: its name, notes or date, or its whole exercise list — send every exercise it should end up with, in health.log_workout's shape. Name the session by session_id, or by session_date when it was your only one that day.",
+  fields: ["session_id", "session_date", "name", "notes", "date", "exercises"],
+  // The whole new list, in log_workout's two shapes — a lift with its sets and a cardio
+  // entry with its minutes — because replacing the list is the correction nothing else
+  // could make.
+  example: {
+    session_id: EXAMPLE_ID,
+    exercises: [
+      { name: "Goblet squat", sets: [{ reps: 10, weight: 35 }] },
+      { name: "Walking", minutes: 25 },
+    ],
+  },
+  lists: { exercises: ENTRY_SHAPE },
+  check: (payload, ctx) => problemsOf(planEditSession(payload, ctx)),
+  async run(payload, ctx) {
+    // Every shape first, so a malformed call costs no read.
+    const plan = planEditSession(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { name, notes, date, exercises, custom } = plan.value;
+    const sid = await whichSession(payload, ctx);
+    if (isRefusal(sid)) return sid;
+
+    const landed = await editSession(ctx, sid.id, (row, session) => {
+      if (!row.done) {
+        return refuse(
+          409,
+          "That session is still running. Log into it with health.log_sets, or finish it with health.finish_session — this corrects one that is over.",
+        );
+      }
+      const patch: SessionPatch = {};
+      const was: Record<string, Json> = {};
+      const now: Record<string, Json> = {};
+      if (name !== undefined && name !== row.name) {
+        patch.name = name;
+        was.name = row.name;
+        now.name = name;
+      }
+      if (notes !== undefined && notes !== row.notes) {
+        patch.notes = notes;
+        was.notes = row.notes;
+        now.notes = notes;
+      }
+      if (date !== undefined && date !== row.date) {
+        patch.date = date;
+        was.date = row.date;
+        now.date = date;
+      }
+      let counts: { done: number; warmups: number } | null = null;
+      if (exercises !== undefined) {
+        // The app's own Finish, as log_workout runs it: empty sets dropped, and a list
+        // with nothing logged in it refused rather than saved as an empty workout.
+        const finished = finishWorkout({ ...session, exercises });
+        if (finished.nothingLogged) {
+          return refuse(
+            400,
+            "None of those exercises has any reps or minutes in it, so the session would be empty. To throw it away, use health.delete_session.",
+          );
+        }
+        patch.exercises = finished.workout.exercises;
+        was.exercises = row.exercises as Json;
+        now.exercises = finished.workout.exercises as unknown as Json;
+        counts = sessionCounts(finished.workout);
+      }
+      if (Object.keys(patch).length === 0) {
+        return refuse(409, "That session already reads that way. Nothing to change.");
+      }
+      return { ok: true as const, patch, got: { was, now, counts, onDate: row.date } };
+    });
+    if (isRefusal(landed)) return landed;
+    const { was, now, counts, onDate } = landed.got;
+
+    const parts: string[] = [];
+    if (now.name !== undefined) parts.push(now.name ? `named it ${scrubCap(now.name, 40)}` : "cleared its name");
+    if (now.notes !== undefined) parts.push(now.notes ? "changed its notes" : "cleared its notes");
+    if (now.date !== undefined) parts.push(`moved it to ${String(now.date)}`);
+    if (counts) {
+      const n = (now.exercises as unknown[]).length;
+      parts.push(
+        `replaced its exercises with ${n} ${n === 1 ? "exercise" : "exercises"}, ${counts.done} working ${counts.done === 1 ? "set" : "sets"}`,
+      );
+    }
+    const changed = Object.keys(now);
+    return {
+      ok: true,
+      result: {
+        session_id: sid.id,
+        date: now.date ?? onDate,
+        was_date: onDate,
+        changed,
+        ...(counts ? { exercises: (now.exercises as unknown[]).length, hard_sets: counts.done, warmups: counts.warmups } : {}),
+      },
+      rowIds: [sid.id],
+      say:
+        `Corrected the session on ${onDate}: ${parts.join("; ")}. It keeps its id.` +
+        (custom.length
+          ? ` ${custom.map((c) => scrubCap(c, 40)).join(", ")} ${custom.length === 1 ? "is" : "are"} not in the exercise library, so ${custom.length === 1 ? "it counts" : "they count"} toward the muscle you named.`
+          : ""),
+      undo: {
+        kind: SESSION_RESTORE_EDIT,
+        // Only the fields that changed, both ways: what to put back, and what has to
+        // still be there for putting it back to be safe.
+        before: { id: sid.id, was, now },
+        says: "put that session back the way it was before this correction",
+      },
+    };
+  },
+};
+
+/** Is each field this undo would put back the KIND of value that column holds? A date
+ *  that is not a date, or an exercise list that is not a list, would be a write the
+ *  session table refuses halfway — or worse, one it accepts. */
+function wasReadable(was: Record<string, unknown>, fields: readonly string[]): boolean {
+  return fields.every((f) =>
+    f === "date" ? isDateISO(was.date) : f === "exercises" ? Array.isArray(was.exercises) : typeof was[f] === "string",
+  );
+}
+
+const undoSessionRestoreEdit: UndoHandler = {
+  does: "Put a corrected session back the way it was, unless it has been changed again since.",
+  async apply(before, ctx) {
+    // Checked rather than cast: a before-state is read back out of a table, and null or a
+    // bare string there is a refusal with a sentence, never a TypeError and a 500.
+    const b: { id?: unknown; was?: unknown; now?: unknown } = isObject(before) ? readBefore(before) : {};
+    const fields = isObject(b.now) ? Object.keys(b.now) : [];
+    if (
+      typeof b.id !== "string" ||
+      !ROW_ID.test(b.id) ||
+      !isObject(b.was) ||
+      !isObject(b.now) ||
+      fields.length === 0 ||
+      !fields.every((f) => (EDITABLE as readonly string[]).includes(f) && f in (b.was as object)) ||
+      !wasReadable(b.was as Record<string, unknown>, fields)
+    ) {
+      return refuse(409, "I wrote that correction down in a shape I cannot read back, so I changed nothing. Correct the session again if the old version was right.");
+    }
+    const was = b.was as Record<string, unknown>;
+    const now = b.now as Record<string, unknown>;
+    const id = b.id;
+    const landed = await editSession(ctx, id, (row) => {
+      const current: Record<string, unknown> = { name: row.name, notes: row.notes, date: row.date, exercises: row.exercises };
+      if (fields.some((f) => !sameDoc(current[f], now[f]))) {
+        return refuse(
+          409,
+          "That session has been changed again since I corrected it, so I left it as it is now rather than overwrite that. Correct it again if the old version was the right one.",
+        );
+      }
+      const patch: SessionPatch = {};
+      // Shapes already checked by wasReadable above, so these are reads, not guesses.
+      if ("name" in now) patch.name = was.name as string;
+      if ("notes" in now) patch.notes = was.notes as string;
+      if ("date" in now) patch.date = was.date as string;
+      if ("exercises" in now) patch.exercises = was.exercises as unknown[];
+      return { ok: true as const, patch, got: patch.date ?? row.date };
+    });
+    if (isRefusal(landed)) return landed;
+    return {
+      ok: true,
+      result: { session_id: id, date: landed.got, put_back: fields },
+      rowIds: [id],
+      say: `Put the session on ${landed.got} back the way it was before the correction.`,
+    };
+  },
+};
+
 // ── health.save_routine / health.delete_routine ──────────────────────────────
+
+/** What one exercise in a routine takes: the plan for it, not a record of it — how
+ *  many sets, and the target reps as he would write them ("8-12"). `exercise` is a
+ *  second word for `name` here too, for the same reason as in a logged workout. */
+const ROUTINE_KEYS = ["name", "muscle", "sets", "reps"] as const;
+const ROUTINE_SHAPE: ListShape = { takes: ROUTINE_KEYS, extra: ENTRY_ALIASES };
+
+/** One routine exercise, every problem with it, or the exercise. */
+function readRoutineExercise(raw: unknown, i: number): { ok: true; ex: RoutineExercise } | { ok: false; problem: string } {
+  if (!isObject(raw)) {
+    return {
+      ok: false,
+      problem: itemSays(labelOf("Exercise", i), [`It is ${kindOfValue(raw)}, not an object like {"name": "Goblet squat", "sets": 3, "reps": "8-12"}.`], null),
+    };
+  }
+  const { value, unknown, clashes } = renameBy(raw, ROUTINE_SHAPE);
+  const problems = [...clashes];
+  if (unknown.length) problems.push(unknownKeysSays(unknown, ROUTINE_KEYS));
+  const exName = cleanText(value.name, NAME_CAP);
+  if (!exName) problems.push(value.name === undefined ? "It has no name — send the exercise's name as name." : "Its name is empty once cleaned.");
+  const ex = exName ? resolveExercise(exName, value.muscle, "It") : null;
+  if (ex && isRefusal(ex)) problems.push(ex.say);
+  const sets = count(value.sets, 1, MAX_SETS);
+  if (sets === null) problems.push(`sets is how many sets it has, a whole number from 1 to ${MAX_SETS}.`);
+  // The target reps are TEXT ("8-12", "AMRAP"). A bare number is the same thing said
+  // plainly, so it is kept as its text — FOUND 2026-10-10: `reps: 10` used to go
+  // through the text cleaner, come out empty, and be dropped without a word, which is
+  // the silently-ignored-field failure this whole change is about.
+  let reps = "";
+  if (typeof value.reps === "number" && Number.isInteger(value.reps) && value.reps > 0 && value.reps <= 1000) {
+    reps = String(value.reps);
+  } else if (value.reps !== undefined) {
+    reps = cleanText(value.reps, 16);
+    if (!reps) problems.push('reps is the target as text, like "8-12" or "10".');
+  }
+  const label = labelOf("Exercise", i, exName ? scrubCap(exName, 40) : undefined);
+  if (problems.length || !ex || isRefusal(ex) || sets === null) return { ok: false, problem: itemSays(label, problems, raw) };
+  return { ok: true, ex: { name: ex.name, muscle: ex.muscle, sets, reps } };
+}
+
+/** save_routine's name and source — every problem with them, every exercise read to
+ *  the end. The session it may be saved from is read later; this only checks its id. */
+function planRoutine(payload: Record<string, unknown>): Shaped<{ name: string; sid: string | null; exercises: RoutineExercise[] }> {
+  const problems: string[] = [];
+  const name = cleanText(payload.name, NAME_CAP);
+  if (!name) problems.push("A routine needs a name.");
+  const fromSession = payload.session_id !== undefined;
+  const fromList = payload.exercises !== undefined;
+  if (fromSession === fromList) {
+    problems.push("Give me a session_id to save as a routine, or a list of exercises — one or the other.");
+  }
+  let sid: string | null = null;
+  if (fromSession && !fromList) {
+    const id = readId(payload, "session_id");
+    if (isRefusal(id)) problems.push(id.say);
+    else sid = id.id;
+  }
+  const exercises: RoutineExercise[] = [];
+  if (fromList && !fromSession) {
+    const raw = payload.exercises;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      const what = Array.isArray(raw) ? "" : ` exercises has to be a list — it was ${kindOfValue(raw)}.`;
+      problems.push(`A routine needs at least one exercise.${what}`);
+    } else if (raw.length > MAX_ENTRIES) {
+      problems.push(`That is more than ${MAX_ENTRIES} exercises in one routine.`);
+    } else {
+      raw.forEach((one, i) => {
+        const read = readRoutineExercise(one, i);
+        if (read.ok) exercises.push(read.ex);
+        else problems.push(read.problem);
+      });
+    }
+  }
+  return shaped(problems, () => ({ name, sid, exercises }));
+}
 
 const saveRoutine: Tool = {
   kind: "direct",
   does: "Save a routine — from a session that was logged, or from a list of exercises.",
   fields: ["name", "session_id", "exercises", "meta"],
+  // "Sample" in the name for the reason on log_meal's example.
+  example: {
+    name: "Sample routine",
+    exercises: [
+      { name: "Goblet squat", sets: 3, reps: "8-12" },
+      { name: "Lat pulldown", sets: 3, reps: "10" },
+    ],
+  },
+  lists: { exercises: ROUTINE_SHAPE },
+  check: (payload) => problemsOf(planRoutine(payload)),
   async run(payload, ctx) {
-    const name = cleanText(payload.name, NAME_CAP);
-    if (!name) return refuse(400, "A routine needs a name.");
-    const fromSession = payload.session_id !== undefined;
-    const fromList = payload.exercises !== undefined;
-    if (fromSession === fromList) {
-      return refuse(400, "Give me a session_id to save as a routine, or a list of exercises — one or the other.");
-    }
+    const plan = planRoutine(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const { name } = plan.value;
     // Both the seeds and his own saved ones, because starting a routine looks the
     // name up across both and a duplicate would make one of them unreachable.
     const clash = await routineByName(ctx, name);
@@ -2167,10 +3192,8 @@ const saveRoutine: Tool = {
     }
 
     let exercises: RoutineExercise[];
-    if (fromSession) {
-      const sid = readId(payload, "session_id");
-      if (isRefusal(sid)) return sid;
-      const row = await ctx.db.readWorkout(sid.id);
+    if (plan.value.sid !== null) {
+      const row = await ctx.db.readWorkout(plan.value.sid);
       if (!row || row.person !== ctx.person) return refuse(404, "There is no session of yours with that id.");
       const session = toSession(row);
       if (session.exercises.length === 0) return refuse(400, "That session has no exercises in it.");
@@ -2183,20 +3206,7 @@ const saveRoutine: Tool = {
         reps: "",
       }));
     } else {
-      const raw = payload.exercises;
-      if (!Array.isArray(raw) || raw.length === 0) return refuse(400, "A routine needs at least one exercise.");
-      if (raw.length > MAX_ENTRIES) return refuse(400, `That is more than ${MAX_ENTRIES} exercises in one routine.`);
-      exercises = [];
-      for (const one of raw) {
-        if (!isObject(one)) return refuse(400, "Each exercise is an object with a name and how many sets.");
-        const exName = cleanText(one.name, NAME_CAP);
-        if (!exName) return refuse(400, "Each exercise needs a name.");
-        const ex = resolveExercise(exName, one.muscle);
-        if (isRefusal(ex)) return ex;
-        const sets = count(one.sets, 1, MAX_SETS);
-        if (sets === null) return refuse(400, `${scrubCap(exName, 40)} needs how many sets, from 1 to ${MAX_SETS}.`);
-        exercises.push({ name: ex.name, muscle: ex.muscle, sets, reps: cleanText(one.reps, 16) });
-      }
+      exercises = plan.value.exercises;
     }
 
     const row: RoutineRow = {
@@ -2226,6 +3236,15 @@ const saveRoutine: Tool = {
  * "not found" — the app cannot delete one either, and telling him it does not exist
  * when he can see it on his screen is the worse sentence.
  */
+/** Which saved routine a call means, as far as that can be told without the database:
+ *  an id in the right shape, or else a name. savedRoutineFrom does the looking. */
+function planRoutineRef(payload: Record<string, unknown>): Shaped<null> {
+  const pad = problemPad();
+  if (payload.id !== undefined) pad.take(readId(payload, "id"));
+  else if (!cleanText(payload.name, NAME_CAP)) pad.no("Tell me which routine, by id or by name.");
+  return pad.done(() => null);
+}
+
 async function savedRoutineFrom(
   payload: Record<string, unknown>,
   ctx: Ctx,
@@ -2255,7 +3274,11 @@ const deleteRoutine: Tool = {
   kind: "direct",
   does: "Delete one of your saved routines.",
   fields: ["id", "name"],
+  example: { id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planRoutineRef(payload)),
   async run(payload, ctx) {
+    const plan = planRoutineRef(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
     const found = await savedRoutineFrom(payload, ctx);
     if (isRefusal(found)) return found;
     const row = found;
@@ -2341,6 +3364,7 @@ export const HEALTH_TOOLS: Record<string, Tool> = {
   "health.delete_set": deleteSet,
   "health.finish_session": finishSession,
   "health.log_workout": logWorkout,
+  "health.edit_session": editSessionTool,
   "health.delete_session": deleteSession,
   "health.save_routine": saveRoutine,
   "health.delete_routine": deleteRoutine,
@@ -2373,6 +3397,7 @@ export const HEALTH_UNDO: UndoRegistry = {
   "session.remove-sets": undoSessionRemoveSets,
   "session.restore-set": undoSessionRestoreSet,
   "session.unfinish": undoSessionUnfinish,
+  [SESSION_RESTORE_EDIT]: undoSessionRestoreEdit,
   "routine.delete": undoRoutineDelete,
   "routine.insert": undoRoutineInsert,
 };

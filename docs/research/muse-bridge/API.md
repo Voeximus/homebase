@@ -123,6 +123,34 @@ Content-Type: application/json
 If you cannot set `Authorization`, send the same token as `X-Muse-Token`. Send one
 or the other, never both.
 
+**Every write tool shows you one call that works.** Each tool's line in the write
+door's own description (`GET …/muse-write/openapi.json`) carries `Example:` and a
+complete call — including what goes INSIDE a list: an exercise's `name` and its `sets`
+or `minutes`, a meal item's `kcal`, `p`, `c` and `f`, a split's `slices`. Copy its
+shape. Every value in an example is made up, and `00000000-0000-4000-8000-000000000000`
+is a placeholder id that matches nothing: get the real id from this door, and never send
+an example as it stands. A call that IS a tool's example, exactly as printed (under
+either door's names, in any key order), is refused with a 400 and nothing is written —
+most examples carry no id, so sent as they stand they would be real writes. If the
+person really did ask for exactly those values, send it again with `do_it_anyway: true`.
+
+**This door's words work on the write door.** You read `protein_g`, `duration_min` and
+`weight_lb` here; you may send them back as they are. `calories`, `protein_g`, `carbs_g`
+and `fat_g` stand for `kcal`, `p`, `c` and `f`; `duration_min` or `duration` for
+`minutes`; `weight_lb` for `weight`; and inside a logged workout's exercises (or a
+routine's), `exercise` for `name`. Send one name per field, never both. Any other key
+the write door does not know — at the top level or inside a list item — is refused by
+name, never quietly dropped. (Until 2026-10-10 a set sent as `{"reps": 8, "weight_lb":
+30}` was saved as a bodyweight set: the unknown key was ignored and the weight became
+zero.)
+
+**Exercise names in Chinese are understood.** The exercise library answers to the
+common Chinese names for common lifts (深蹲 is Barbell back squat, 高位下拉 is Lat pulldown), so a
+lift said in Chinese is logged as the library's lift — linked to it for every progress
+figure — and keeps the name it was said in. A name the library does not know is refused
+with the closest names it does know; send one of those, or keep the name and give the
+`muscle` it works.
+
 **The two keys are different on purpose.** The read key cannot write and the write
 key cannot read. If you are asked to change something and you only hold the read
 key, say plainly that you can only read.
@@ -299,9 +327,16 @@ envelope and the bank balance are different questions and people mix them up.
 **Takes nothing.** `{}`
 
 **The trap first: this is not money you can spend.** It is what a whole month leaves
-free to throw at the debt, after income, bills and the budgeted variable envelope. The
-household holds a deliberate floor under their cash that **this door does not know**,
-so never put this figure beside `finance.position` and answer "you can spend X".
+free to throw at the debt, after income, bills and the budgeted variable envelope, so
+never put this figure beside `finance.position` and answer "you can spend X".
+
+**The income in it is planned, and it is built on Gino's pay floor.** `plan.income` is
+not measured from the bank: it is the paycheck rows on the bill list. Gino's row is his
+**pay floor** — a planned paycheck amount he set low on purpose, so anything a real
+check brings above it is upside, and it is never raised. The reply carries the figure as
+`plan.gino_pay_floor_per_check`, read off that row. It is not a cash reserve under the
+balance and it is not slack; it is the income the plan counts on. Never suggest raising
+it — the write door refuses unless he confirms it himself, on his own key.
 
 **A whole month, not a pay cycle.** `finance.budget_status` is the pay-cycle question.
 Reporting this one as a cycle figure doubles it.
@@ -346,6 +381,29 @@ really is due on the 1st — and this is a pay-cycle window cut across them. If 
 asks "what are this month's bills", say that this answers a narrower question and the
 app has the month.
 
+**Per account, two views.** `by_account` splits this cycle's bills by the account each
+one comes out of, beside that account's `balance` — compare `balance` against
+`still_to_come`, never against `due`. But it stops at the cycle end, so it cannot see a
+bill just past the next payday.
+
+**`look_ahead` is the one for "can this account pay what is coming".** It runs from the
+start of this pay cycle (so a bill already past its date and still unpaid is in)
+through **21 days from today, and always through the next rent** even when that is
+later — `from`, `through`, `ends_at` and `next_rent_on` say exactly where. Each row of
+`look_ahead.by_account` has the account's `balance`, the bills in the window, `due`,
+`already_out` (bills whose payment is clearing or has already posted, so they are out
+of the balance and not counted again), `still_to_come`, and **`short_by`: how far that
+account goes below zero at its worst moment in the window**, with `short_on` the day it
+happens. It is worked out by the door, so you never subtract anything. `0` means it
+never goes below zero.
+
+**Incoming pay is not assumed to land in any account.** Planned pay is counted for an
+account (`pay_counted`) only when its paycheck row says that account is where it lands.
+`pay_not_placed` is planned pay inside the window that no row places, and it is counted
+for nobody — so say a paycheck may well cover the gap, but the data does not say which
+account it lands in. Planned pay is the planned amount (for Gino, his floor), not the
+real check. Transfers between their own accounts are not counted.
+
 ### `finance.forecast` — how low does the balance get, and when?
 
 **Takes one optional number.** `{"months": 3}` — how many months, counting this one.
@@ -358,12 +416,27 @@ that is already promised three days later. `low` is `{day, balance}`: the lowest
 balance actually gets inside that month, and the day it happens. `lowest` is the single
 worst moment across the whole run.
 
-**Half of this is measured and half is assumed, and the reply says which.** Bills and
-income come from the bank. The spending figure does not — it is `assumed`, holding
-`spending_per_cycle` (the household's own median of past complete cycles),
-`median_of_past_cycles`, `complete_cycles_measured`, `to_the_card_per_month` and
-`opening_cash`. **State the spending assumption before you read any surplus or low
-point out.** A projection presented as a measurement is the thing rule 3 exists for.
+**Only one figure in this is measured, and the reply says which.** `opening_cash` is
+the bank's available total across the cash accounts today. Everything else is planned
+or assumed:
+
+- **Income is planned** — the paycheck rows on the bill list, not deposits from the
+  bank. Gino's row is his pay floor (`assumed.gino_pay_floor_per_check`), a planned
+  paycheck amount he set low on purpose, so real income usually runs higher and the
+  extra is upside. That is why `finance.run_rate`'s measured `earned` is higher than the
+  income here. Never suggest raising the floor.
+- **Bills are the scheduled amounts**, and a variable bill is the average of its real
+  payments.
+- **Spending is an assumption** — `assumed.spending_per_cycle` (the household's own
+  median of past complete cycles), with `median_of_past_cycles`,
+  `complete_cycles_measured` and `to_the_card_per_month` beside it.
+
+**State the assumptions before you read any surplus or low point out.** A projection
+presented as a measurement is the thing rule 3 exists for.
+
+**It is one household pool.** The run starts from every cash account added together, so
+its low point can look fine while one account goes below zero. For whether a particular
+account can pay what is coming, read `finance.next_bills` `look_ahead`.
 
 **The first month is a fraction of a month.** It carries `partial: true` and counts
 from today forward — bills already paid and paychecks already banked are out of it.
@@ -422,6 +495,10 @@ called "Credit card (…4728)" arrives with those digits in it — nothing strip
 Say the name as given if you must, but **do not read the digits out and do not repeat
 them anywhere**: treat them as part of a card number. Prefer "the card" to the name.
 
+**`closed`** is true for a debt that was paid off and closed with `finance.edit_debt`.
+It stays on the list at a zero balance with its history; say it is finished rather than
+listing it beside the debts still being paid.
+
 ### `finance.worth_a_look` — what looks off, as a judgement call?
 
 **Takes nothing.** `{}`
@@ -430,25 +507,28 @@ The household's own review rules, run over the whole ledger. These are not error
 the way a failed self-check is an error — they are things a person should look at
 and decide about.
 
-**What comes back:** `total`, how many the rules raised; `suggestions`, the ones
-safe to say, each with a ready-made `sentence`; and `left_out`, how many were held
-back because they could not be said without naming a charge or a merchant. A
-suggestion may also carry `rule`, `kind`, a whole-dollar `amount`, a `month`, a
-`bill` id and a `count`.
+**What comes back:** `total`, how many the rules raised; `suggestions`, each with a
+ready-made `sentence` and a `key`; and `left_out`, how many did not fit in one reply.
+A suggestion may also carry `rule`, `kind`, a whole-dollar `amount`, a `month`, a
+`bill` id, and `charges` — the charges it is standing on, so it can be acted on.
 
-**Say the sentence as it stands, and say the number that was left out.** "Three
-things worth a look, and two more that need the app to see" is the honest shape of
-this answer. Never guess at what was held back.
+**Say the sentence as it stands, and say the number that was left out.** Never guess
+at what was held back.
 
-**`dismissals_known` is always `false`, and it matters.** Waving a suggestion away
-is remembered on the phone that did it, in that phone's own storage. The door has
-no phone, so this list includes things one of them has already decided about. Say
-so — "this includes anything you have already dismissed" — or you will hand back
+**To wave one away, send its `key` to `finance.dismiss_suggestion`** on the write
+door — exactly as it came, character for character. That dismisses it for both of
+them, and it stays away until what it noticed changes (the evidence is inside the
+key, so a bill whose amount moves again comes back on its own). The reply carries an
+undo token like every other write. Say what you are dismissing before you do it: a
+dismissal hides a warning about their money.
+
+**`dismissals_known` says whether the door can see dismissals at all.** When it is
+`true`, anything either of them dismissed through you is already left out. A
+dismissal tapped on a phone before you could dismiss things lives only on that phone,
+so one of those can still appear — the `note` says so. When it is `false`, the table
+that remembers dismissals has not been set up yet and this list includes everything:
+say "this includes anything you have already dismissed", or you will hand back
 something they settled last week as if it were new.
-
-**Not in it:** the charge, the merchant, the day. Two of the rules cannot be
-explained without naming a charge, and those come back as a count and "open the
-app".
 
 ### `health.macros_today` — what is left to eat today?
 
@@ -647,14 +727,36 @@ payments.
 `live_today` is a separate fact from `active`: a bill paused until November is active
 and dormant at the same time.
 
+`account` is `{id, owner, name}` — the account a bill comes **out of**, or the account an
+income lands **in** — and `null` when nobody has said. Say the owner: two of the
+accounts carry the same bank product name.
+
+A row with `direction: "in"` is **planned** income, not what arrived. Gino's paycheck row
+is his pay floor: a planned amount he set low on purpose, so anything a real check brings
+above it is upside, and it is never raised. The write door refuses to raise an incoming
+row, turn it off or end its window unless the call carries `confirm: true` — send that
+only when the person it belongs to has told you to in this conversation. On Gino's floor
+row, `confirm` counts only on Gino's own key: from Xinyan's key those three changes come
+back 403 with or without it, and resending will not help. Lowering it is allowed from
+either key.
+
 ### `finance.bill_calendar`
 
 **Takes a month**, or nothing for this month. `{"month": "2026-09"}`
 
-**What comes back:** the month's bills on their DUE days, marked paid or not.
-`paid_on` is when the payment actually landed, which can be in an earlier month.
+**What comes back:** the month's bills on their DUE days, marked paid or not, each with
+the `account` it comes out of (`{id, owner, name}`, as in `finance.bills`). `paid_on` is
+when the payment actually landed, which can be in an earlier month.
 `amount_is_an_estimate` means the figure is a rolling average, so do not say it as a
 price.
+
+**`paid: false` means no charge is linked to the bill for that month — not that the
+money has not left.** Before calling a bill unpaid, read the two fields beside it, which
+are the same test `finance.next_bills` uses: `paying_now` (a payment still clearing —
+it has been paid) and `maybe_already_paid` (money already gone from that bill's own
+account that nothing tied to the bill; it carries the charge id, so offer
+`finance.link_charge_to_bill` rather than telling anyone to pay again). Both are `null`
+on a paid row.
 
 ### `finance.paid_bills`
 
@@ -735,6 +837,29 @@ the rule that excluded it.** That last part is the point: a number that shows it
 inputs can be wrong out loud. Its first live run reported rent as a one-off, because
 the bank writes a fresh reference into every descriptor; that was visible in seconds
 rather than believed for weeks.
+
+### `finance.unusual` — anything far bigger than its category usually runs?
+
+**Takes a month**, or nothing for this month. `{"month": "2026-09"}`
+
+The app's own unusual-purchase rule — the one the Activity screen counted, now in one
+place the screen and this door both use. `rule` states it in a sentence: a charge this
+month that is money out, attached to nothing and already posted, over a small floor,
+in a category with a few such charges, and more than two and a half times that
+category's average for the month.
+
+**What comes back:** `found`, how many are open; `already_dismissed`, how many more
+there were that somebody has already waved away; and `charges` — each with its id,
+date, amount, the merchant's cleaned name, its category, the category's average, how
+many times that average it is, and how many charges the average was taken over.
+
+**It is a judgement call, not an error.** Say the charge and why it stands out — "the
+$180 at the hardware store is about four times what home spending usually runs this
+month" — and let them decide. To wave one away, send its id to
+`finance.dismiss_unusual` on the write door; it comes back with an undo token.
+
+**It is the household's list.** The app's screen could be narrowed to one person's
+accounts; this answers for both, like `finance.position` does.
 
 ### `system.heartbeat`
 
@@ -1095,7 +1220,7 @@ ways, so a code added to one and not the other fails the build.
 
 | `error` | HTTP | What it means | What you do |
 |---|---|---|---|
-| `bad_request` | 400 | A date, a field, the body or the tool name was not understood. Nothing was read. | Fix it and call once more. If it fails again, say what you sent. |
+| `bad_request` | 400 | A date, a field, the body or the tool name was not understood. Nothing was read. An argument the tool does not take is named — every one of them — with the list of arguments it does take. | Fix it and call once more. If it fails again, say what you sent. |
 | `unauthorized` | 401 | No key, the wrong key, or a key for a door this is not. Nothing was read. | Stop. Say the key was not recognised. **Never** try another key, another header, or another path. |
 | `unknown_tool` | 404 | There is no such tool here. It is not switched off — it does not exist. | Say the door cannot do that. Do not try a similar-looking path. |
 | `use_post` | 405 | You used something other than POST. Only `GET /openapi.json` is not a POST. | Send the same call as a POST. |
@@ -1106,10 +1231,26 @@ ways, so a code added to one and not the other fails the build.
 
 On the **write door** the sentence is in `message` and there is no code — the status
 carries it. 400 means something about the request was wrong. 401 means no usable
-key. 404 means no such tool, or the row it named does not exist. 409 means that
-idempotency key was already used, or something changed underneath while the door was
-working. 429 means a cap. 503 means the ledger could not be read or written cleanly,
+key. 403 means this key may not make that change at all — today that is only Gino's
+pay floor, which only his key can raise, turn off or end — and nothing was written.
+404 means no such tool, or the row it named does not exist. 409 means that
+idempotency key was already used, something changed underneath while the door was
+working, or the change needs `confirm: true` (the message says which). 429 means a cap. 503 means the ledger could not be read or written cleanly,
 and **nothing changed**.
+
+**A 400 about the shape of a write names every problem at once.** The shape is
+anything that can be told from the call alone — what is inside a list, a field's type
+or range, a date out of bounds, an id that is not shaped like one — on every tool, flat
+ones included. Each list item is named by its number and its name, with every problem
+it has and the keys it actually carried — "Exercise 2 (Goblet squat): Set 1: reps has
+to be a whole number. It had name, sets." — and the reply carries `problems` (the same
+sentences as a list), `received` (the top-level keys you sent) and `example` (one call
+to that tool that works; its values are made up, so never send it as it stands). Fix
+all of them, then send it once. A call refused for its shape changed nothing, gives its
+key back, and does not count against the hourly write cap. A 400 the door had to read
+the ledger to decide — slices that do not add up to the charge, a built-in food that
+cannot be deleted — does count, and carries `received` as well, beside the tool's own
+sentence.
 
 A refusal is never a reason to guess. The right answer to "I could not read the
 ledger cleanly" is silence about the number, not a best effort.
@@ -1157,15 +1298,21 @@ holds back the card-clear month it actually computes. An invented payoff date is
 single most tempting wrong number in this whole system: a balance and a rate are all it
 takes to make one up, and you have both.
 
-**And the one worth naming on its own: "what can I spend?"** The household holds a
-deliberate floor under the cash — a paycheque amount that is not to be dipped into —
-and **this door does not know it**. Nothing here subtracts it, so `finance.position` is
-the bank's number and not a spendable one, `finance.budget_status` is one envelope and
-not the whole picture, and `finance.firepower` is money earmarked for the debt rather
-than money free to spend — it is the figure most likely to be mistaken for an answer
-here. Do not put any of them together and answer "you can spend X": say the figures you
-were given, say the floor is in none of them, and say the app is where that question is
-answered.
+**And the one worth naming on its own: "what can I spend?"** No single figure here
+answers it. `finance.position` is the bank's number and not a spendable one — bills are
+still to come out of it, and from particular accounts (`finance.next_bills`
+`look_ahead`). `finance.budget_status` is one envelope and not the whole picture.
+`finance.firepower` is money earmarked for the debt rather than money free to spend — it
+is the figure most likely to be mistaken for an answer here. Do not put any of them
+together and answer "you can spend X": say the figures you were given and what each one
+is.
+
+**Gino's pay floor is not a cash reserve, and the door does know it.** This page used to
+call it "a deliberate floor under the cash … that this door does not know", and that was
+wrong twice. The floor is his **planned paycheck amount** — set low on purpose, so
+anything a real check brings above it is upside, and never raised. It is one row of the
+bill list (`finance.bills`), the plan's income is built on it, and `finance.firepower`
+and `finance.forecast` both report it as `gino_pay_floor_per_check`.
 
 **What changed in Phase 2, so you do not hold an old rule.** Individual charges and
 search used to be forbidden here, in these words: "returning individual ledger rows
@@ -1266,6 +1413,148 @@ link-shaped taken out of it. It refuses for the same reasons cancel does.
 The reply's `changed` lists what actually moved. Read that back rather than
 repeating what was asked for — they are not always the same thing.
 
+## Correcting what is already there
+
+Until 2026-10-10 some things could be added and never changed: a bill's name and
+category, a debt's minimum payment, rate and name, and anything about a finished
+workout except deleting it. The tools below are the corrections. Like every write,
+each one lands straight away, hands back an undo token, and refuses rather than
+overwrite a row that changed after it was read.
+
+#### `finance.edit_bill` — rename a bill, or file it under another category
+
+**Takes `bill_id`, and `name`, `category_id` or both.** The bill id comes from
+`finance.bills`; the category from `finance.categories` — a bill going out takes a
+spending category, an income takes an income one, and `other` is refused because it
+is the absence of a category.
+
+**A rename carries what names the bill with it.** A saved merchant rule that pays the
+bill stores it by name, and so can a paid mark; both are rewritten in the same change,
+and one undo puts all of them back. The reply's `rules_carried` and
+`paid_marks_carried` say how many.
+
+**It refuses a rename the app's own code would trip over**, and the refusal says which:
+a name another bill already reads as (capitals and punctuation do not count); a rename
+that would make one of the app's built-in bank rules stop finding the bill — or start
+finding it instead of another; a bill the calendar prices by its exact name for the
+months before July 2026; and a rename into or out of the forecast's "Card payment"
+line. A name that reads the same once capitals, spaces and punctuation are ignored is
+always safe. If the bill has no due day of its own and the app's old table knew it by
+the old name, that day is written onto the bill in the same change, and the reply says
+so.
+
+**It does not change a cadence or a due day.** A due day is `finance.set_bill_due_day`.
+A cadence cannot be changed safely from here: quarterly, yearly and true two-weekly
+bills are placed on the calendar from an anchor date no tool writes.
+
+#### `finance.edit_debt` — change a minimum, a rate or a name, or close a finished debt
+
+**Takes `debt_id`, and at least one of `name`, `min_payment`, `apr`, `closed`.**
+`min_payment` and `apr` take `null` to clear them — unknown, which is not zero.
+`closed` is `true` to close a debt or `false` to re-open one.
+
+**Say what it moves.** Only the debt list reads the minimum; what the plan sets aside
+for a card each month is the amount on the bill that pays it, which is
+`finance.set_bill_amount`. The rate is what the payoff plan charges interest at.
+
+**Closing is a flag, never a delete.** The debt stays, with its history, and
+`finance.debts` marks it `closed`. It refuses to close a debt that still shows money
+owed, or one that still follows a card (unlink it first with
+`finance.unlink_debt_card`). Until the database has the column for it
+(`schema_v44_debt_closed.sql`), closing and re-opening are refused with a sentence
+saying so — the name, the minimum and the rate still change.
+
+**A closed debt stays closed until somebody re-opens it.** `finance.link_debt_to_card`
+refuses a closed debt, because linking copies the card's balance onto it on the spot and
+a debt marked finished would then owe money. If a paid-off card is in use again, re-open
+the debt (`closed: false`) and then link it.
+
+It refuses to rename a debt into or out of the payoff plan's fixed order, because that
+order is kept by exact name.
+
+#### `health.edit_session` — correct a finished workout without deleting it
+
+**Takes the session, and at least one of `name`, `notes`, `date`, `exercises`.**
+`exercises` replaces the whole list: send every exercise the session should end up
+with, in exactly the shape `health.log_workout` takes — a name, a muscle for a lift
+the library does not know, and its sets or its minutes. Read the session with
+`health.workout` first. `date` moves it, up to 60 days back.
+
+The session keeps its id. **Do not delete a finished session and log it again to fix
+it** — that is two writes, a new id, and the old id dead in anything that held it. A
+session still running is refused: log into it, or finish it, instead.
+
+**Naming a session, on every session tool.** `health.log_sets`, `health.edit_set`,
+`health.delete_set`, `health.finish_session`, `health.edit_session` and
+`health.delete_session` take `session_id` — or `session_date` (YYYY-MM-DD) when it was
+the only session that day. Two sessions that day is refused with both listed. An id
+that is not theirs is refused with their most recent sessions — date, name and id — so
+copy one of those; never retry an id that was just refused.
+
+## Clearing the review lists
+
+The app had three lists that asked a person to look at something: charges it could
+not label confidently, "worth a look" suggestions, and unusual purchases. The screens
+that showed them are being retired, so all three are cleared from here. Each one is
+read on this door and answered on the write door, and every answer is one write with
+one undo token.
+
+**Charges flagged for review.** `finance.search_transactions` with `needs_review`
+true finds them. Answer one with `finance.categorize_charge`, or many at once with
+`finance.confirm_charges` below.
+
+**Some will keep arriving flagged, on purpose.** A merchant that runs a fuel pump and
+a store under one name has most of its charges flagged when they come in, even with a
+merchant rule saved, because the bank's line rarely says which counter it was and a
+rule keyed by merchant cannot tell them apart. Each of those charges is its own
+pump-or-store answer — the household's own labels split about evenly — so answer them
+one by one, or as a list after looking at each; never file the whole merchant into one
+category. Do not tell anybody the rule is broken.
+
+**"Worth a look".** `finance.worth_a_look` hands each suggestion out with a `key`;
+`finance.dismiss_suggestion` takes it back. **Unusual purchases.** `finance.unusual`
+lists them with their ids; `finance.dismiss_unusual` takes one.
+
+#### `finance.confirm_charges` — say yes to many charges at once
+
+**Takes `charges`, or `merchant` with `category_id` — never both.**
+
+- `charges` is a list of up to fifty charge ids. Each item is the id itself (the
+  charge keeps its category) or `{"transaction_id": "…", "category_id": "groceries"}`.
+  A top-level `category_id` is the category for every item that does not name its own.
+- `merchant` with `category_id` confirms every charge at that merchant that is still
+  flagged for review, in that category. It matches the whole merchant name the way the
+  app's own labeller does, so copy it from a charge rather than shortening it. **At a
+  fuel-and-store merchant it confirms only the flagged charges already in that
+  category** and leaves the rest alone, counted as `would_change_category`: each of
+  those is a separate pump-or-store answer, so look at each and send the ones you are
+  sure of as a list.
+
+Each charge confirmed is marked as chosen by hand and stops asking — exactly what
+`finance.categorize_charge` does to one charge. Merchant mode never touches a charge
+that is not flagged, one chosen by hand, one paying a bill, one that is split, or one
+still processing at the bank: the reply counts those as left alone. A list naming a
+charge still processing is refused by item number — the bank replaces a processing
+charge with a new one when it posts, so confirm it after that. Over fifty is refused,
+and the refusal says how to send them in groups. If any charge changed while the batch
+was being written, nothing is kept — the reply says so; read them again and ask once
+more.
+
+**Undoing a batch puts back every charge nobody has changed since.** A charge that has
+been re-filed, deleted or replaced by the bank since keeps what it holds now, and the
+reply says how many went back and how many did not. Read both numbers back. If none of
+them could go back, nothing is changed and the reply says so.
+
+**Say what you are confirming before you send it** — the merchant, the category and
+how many — and read the reply's count back rather than the number you asked for.
+
+#### `finance.dismiss_suggestion` — wave one "worth a look" item away
+
+**Takes `key`**, exactly as `finance.worth_a_look` gave it. It dismisses that
+suggestion for both of them until what it noticed changes. If the list still shows
+it afterwards, the key did not match: send it again exactly as it came. Before the
+database is set up for this, it refuses in a sentence that says so — pass that on.
+
 ## One write per thing, across two people
 
 Both of them have their own key, and their assistants do not know about each other.
@@ -1280,8 +1569,10 @@ conversation: it means the thing is done, and by whom.
 If they really do want it twice — a second weigh-in, two separate charges that
 happen to be the same amount — send the identical call again with
 `do_it_anyway: true`. Every tool on the write door accepts that field, it changes
-nothing about what gets written, and it is recorded. **Do not reach for it by
-reflex.** Ask first, unless they have already said "yes, again".
+nothing about what gets written, and it is recorded. It is also the way past the one
+other refusal that can turn away a real request: a call that is exactly a tool's
+printed example. **Do not reach for it by reflex.** Ask first, unless they have
+already said "yes, again".
 
 ## Two habits that matter more than the rest
 

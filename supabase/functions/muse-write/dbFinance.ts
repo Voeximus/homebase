@@ -77,6 +77,38 @@ export interface ChargeRow {
   person: string | null;
 }
 
+/**
+ * A charge as finance.confirm_charges reads it: what it is filed under, the two flags
+ * confirming changes, and the four things that decide whether a bulk confirm may touch
+ * it at all (attached to a bill, split, chosen by hand, money in or out).
+ *
+ * NARROWER THAN ChargeRow ON PURPOSE. confirm_charges reads up to the whole ledger in
+ * merchant mode, and a row that carried `created_at`, `person` and the provider for
+ * every charge would be reading columns no decision here looks at. `description` is
+ * here because the merchant key is derived from it with the app's own merchantKey();
+ * `raw_description`, as everywhere on this door, is not.
+ */
+export interface LabelRow {
+  id: string;
+  date: string;
+  amount: number;
+  type: "income" | "expense";
+  categoryId: string;
+  description: string;
+  appliesTo: UndoValue;
+  splits: UndoValue;
+  needsReview: boolean;
+  userCategorized: boolean;
+  pending: boolean;
+}
+
+/** One "worth a look" suggestion somebody waved away, as review_dismissals stores it. */
+export interface DismissalRow {
+  id: string;
+  key: string;
+  person: string;
+}
+
 export interface BillRow {
   id: string;
   name: string;
@@ -99,6 +131,10 @@ export interface BillRow {
    *  the anchor (schedule.ts biweeklyDays), and its due_days are never read. */
   cadence: string;
   anchorDate: string | null;
+  /** Whose row it is, as the app wrote it ("Gino", "Xinyan", "Shared"). Read since
+   *  2026-10-10 so the write door can recognise Gino's pay floor by what the row IS —
+   *  his, incoming, filed as salary — rather than by a name a rename could change. */
+  owner: string | null;
 }
 
 /** Just enough of a bill to run the three guards that compare names. */
@@ -134,6 +170,11 @@ export interface DebtRow {
   balance: number;
   providerAccountId: string | null;
   trackPattern: string | null;
+  /** Read for finance.edit_debt (2026-10-10), whose compare-and-set and undo are about
+   *  these two columns. Null when the debt has none — some debts carry
+   *  neither — which is a different state from zero, and the undo has to put back null. */
+  apr: number | null;
+  minPayment: number | null;
 }
 
 export interface RuleRow {
@@ -147,6 +188,20 @@ export interface RuleRow {
 export interface PaidOverrideRow {
   id: string;
   paid: boolean;
+}
+
+/** A paid mark with its key, for the one tool that has to find marks by the bill they
+ *  name: finance.edit_bill's rename. `billKey` is "<label>@<day>" (schema_v3.sql). */
+export interface PaidMarkRow {
+  id: string;
+  month: string;
+  billKey: string;
+}
+
+/** Just enough of a debt to refuse a second one with the same name. */
+export interface DebtNameRow {
+  id: string;
+  name: string;
 }
 
 /** A money event, in the shape the app's own RPC takes. The door assembles no part
@@ -224,6 +279,12 @@ export function provesRolledBack(code: unknown): code is string {
   return true;
 }
 
+// Whether an error is PostgREST saying a table is not there at all. It lives beside the
+// read door's paging, because both doors need the same answer about the same table —
+// review_dismissals, whose migration is written and not yet run — and two spellings of
+// "is this the missing-table error" would be two chances to call an outage a setup step.
+export { isMissingTable } from "../_shared/muse/paging.ts";
+
 export interface FinanceDb {
   // ── reads ─────────────────────────────────────────────────────────────────
   readCharge(id: string): Promise<ChargeRow | null>;
@@ -244,6 +305,47 @@ export interface FinanceDb {
   countDebtPayments(debtId: string): Promise<number>;
 
   /**
+   * Every merchant rule that names a bill (`bill_name` set), for finance.edit_bill.
+   *
+   * WHY A RENAME HAS TO READ THEM. A bill rule stores the bill it pays by NAME, and the
+   * importer finds the bill again with matchRecurringName — so renaming a bill without
+   * rewriting its rules leaves every one of them naming a bill that no longer exists, and
+   * the charges they used to settle fall into needs_review. Capped and counted, like
+   * allBillNames: a truncated list would let a rename orphan a rule it never saw.
+   */
+  billRules(): Promise<RuleRow[]>;
+
+  /**
+   * Every paid mark, PAGED, for the same rename: a mark is keyed "<label>@<day>" and the
+   * label is the bill's name for every mark written that way. The table gains a row per
+   * bill per month and has no ceiling, so this pages in a stable order and throws rather
+   * than answer from part of it — the same shape as chargeNames. The match on the label
+   * is done in code, exactly: a bill name passed into a SQL pattern would turn `%` and
+   * `_` into wildcards.
+   */
+  paidMarks(): Promise<PaidMarkRow[]>;
+
+  /** Every debt's id and name, capped and counted, for finance.edit_debt's refusal of a
+   *  second debt with the same name. */
+  allDebtNames(): Promise<DebtNameRow[]>;
+
+  /**
+   * When this debt was closed, or null while it is open (or not there).
+   *
+   * Its own read, not a column on readDebt, ON PURPOSE: `closed_at` arrives with
+   * supabase/schema_v44_debt_closed.sql, and on a database where that file has not been
+   * run, asking for it by name makes PostgREST answer 42703 (undefined column). Put on
+   * readDebt, that would take finance.link_debt_to_card and unlink_debt_card down with it.
+   * Here it is asked for by two callers, and both go through toolsFinance's readClosedAt,
+   * which tells that one failure apart from every other: edit_debt (closing or
+   * re-opening) turns it into a sentence — the shape finance.refresh_bank uses for
+   * schema_v39's column — and link_debt_to_card (which refuses a closed debt, added
+   * 2026-10-10) reads it as "open", since nothing can have closed a debt on a database
+   * that cannot record it.
+   */
+  readDebtClosedAt(id: string): Promise<string | null>;
+
+  /**
    * The cleaned name — `description`, NEVER `raw_description` — of every charge in the
    * ledger (money out), for the one question finance.learn_merchant asks of it: does
    * any charge actually carry the key this rule is about to be saved under?
@@ -259,6 +361,45 @@ export interface FinanceDb {
    * charges it simply did not read.
    */
   chargeNames(): Promise<string[]>;
+
+  /**
+   * These charges, by id, in one read — for finance.confirm_charges' list mode.
+   *
+   * One select with an `in` filter rather than a readCharge per id: a batch is up to
+   * MAX_STEPS charges, and fifty round trips before the first write is fifty chances
+   * for the phone to write in the gap. The list is bounded by the ids asked for (at
+   * most MAX_STEPS, far under PostgREST's 1,000-row cap), and a row that comes back
+   * for an id nobody asked for, or twice, makes this THROW rather than answer — so a
+   * truncated or confused read cannot be mistaken for "that charge does not exist".
+   * An id with no row is simply absent from the result; the tool says which.
+   */
+  readCharges(ids: readonly string[]): Promise<LabelRow[]>;
+
+  /**
+   * Every charge in the ledger, narrowly — for finance.confirm_charges' merchant mode.
+   *
+   * THE WHOLE LEDGER, for the same reason chargeNames reads it: the merchant key is the
+   * app's own derivation from the name (merchantKey in categorize.ts), so the only way to
+   * know which charges carry a key is to derive it from every name and look. A filter in
+   * the database cannot do that derivation.
+   *
+   * Paged in a stable total order and counted on every page, exactly like chargeNames,
+   * and it THROWS rather than returning part of the ledger: a short read here would
+   * confirm some of a merchant's flagged charges and leave the rest, and the reply would
+   * call that all of them. Nothing has been written when this runs, so a throw means
+   * nothing changed.
+   */
+  chargeLabels(): Promise<LabelRow[]>;
+
+  /**
+   * The dismissal saved under this key, or null.
+   *
+   * THROWS on a database where supabase/schema_v43_review_dismissals.sql has not been
+   * run, with PostgREST's own words for a missing table in the message — the tool turns
+   * exactly that into "the database is not set up for this yet" and lets anything else
+   * through as a real failure.
+   */
+  readDismissal(key: string): Promise<DismissalRow | null>;
 
   /**
    * Every bank connection's two time columns, and NOTHING else.

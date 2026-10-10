@@ -153,6 +153,18 @@ describe("the served OpenAPI documents describe exactly what exists", () => {
     }
   });
 
+  it("every write tool carries an example of its own fields, and the read tools carry none", () => {
+    // Added 2026-10-10 with the examples themselves. catalogueOf already refuses to start
+    // a door that breaks this; the assertion is here too because this file is the one
+    // place both registries are read side by side.
+    for (const e of WRITE_CATALOGUE) {
+      expect(e.example, `${e.name} has no example`).toBeTruthy();
+      for (const k of Object.keys(e.example ?? {})) expect(e.fields, `${e.name}'s example sends ${k}`).toContain(k);
+      if (e.fields.length) expect(writeText, e.name).toContain(`Example: ${JSON.stringify(e.example)}`);
+    }
+    for (const e of READ_CATALOGUE) expect(e.example, e.name).toBeUndefined();
+  });
+
   it("the write door's count is counted, not typed", () => {
     // The sentence that was wrong for a week. It has to hold for the number that
     // exists NOW, which is the only way a merge that adds a tool cannot leave it stale.

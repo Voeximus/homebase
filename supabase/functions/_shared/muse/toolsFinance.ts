@@ -66,10 +66,13 @@ import {
 import { isoDate, monthKeyOf } from "./lib/format.ts";
 import { inAnyLine, plannedMonthly } from "./lib/plan.ts";
 import { isCreditAccount, liveOn } from "./lib/recurring.ts";
-import { monthCalendar } from "./lib/schedule.ts";
+import { dueOn, monthCalendar } from "./lib/schedule.ts";
+import { billEvidence } from "./lib/headline.ts";
+import { PAY_FLOOR_RULE } from "./payFloor.ts";
+import { UNUSUAL_MIN_AMOUNT, UNUSUAL_MIN_IN_CATEGORY, UNUSUAL_RATIO, unusualCharges } from "./lib/unusual.ts";
 import { DEFAULT_CATEGORIES } from "./lib/seed.ts";
 import { billKey, merchantKey } from "./lib/categorize.ts";
-import type { Transaction } from "./lib/types.ts";
+import type { Account, Transaction } from "./lib/types.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
 import { sayChange } from "./undo.ts";
 import type { Json, Tool } from "./tools.ts";
@@ -104,6 +107,11 @@ export const SAYS_DESCRIPTION: ReadonlySet<string> = new Set([
   // out — "35 rows, $5,777 excluded" cannot be checked by anybody who cannot see
   // which rows. Scrubbed through sayRow like every other outbound string.
   "finance.run_rate",
+  // Added 2026-10-10. Its whole content is "this charge is unusual", and a list of ids
+  // and amounts with no merchant is a list nobody can recognise — the app's own
+  // Activity sheet showed the merchant for the same reason. The cleaned name only, the
+  // one finance.transaction already says; never `raw_description`.
+  "finance.unusual",
 ]);
 
 /** The most rows one search will return. A chat cannot use more than this, and a
@@ -389,10 +397,34 @@ const financeAccounts: Tool = {
   },
 };
 
+/**
+ * The account a bill is paid from (or an income lands in), as the door says it.
+ *
+ * ADDED 2026-10-10. Every live bill has had its paying account set since 2026-10-09,
+ * and finance.next_bills reads it — but finance.bills and finance.bill_calendar left
+ * it out, so the two lists the assistant is pointed at for "can we afford this" could
+ * not say which account a bill comes out of. The money is one household pool; an
+ * overdraft is per account.
+ *
+ * `owner` is load-bearing, not decoration: two of the accounts carry the same bank
+ * product name, so a name alone does not say which account is meant. No last4, for
+ * the reason finance.accounts gives.
+ */
+function sayAccount(id: string | null | undefined, byId: Map<string, Account>): { [k: string]: Json } | null {
+  if (!id) return null;
+  const a = byId.get(id);
+  if (!a) return { id, owner: null, name: "an account I cannot find" };
+  return {
+    id,
+    owner: scrubOr(a.owner, "the household", LABEL_MAX),
+    name: scrubOr(a.name, "an account"),
+  };
+}
+
 // ── finance.bills ─────────────────────────────────────────────────────────────
 const financeBills: Tool = {
   name: "finance.bills",
-  summary: "Every recurring row in full — cadence, due days, window, and what the plan prices it at.",
+  summary: "Every recurring row in full — cadence, due days, window, the account it comes out of, and what the plan prices it at.",
   args: [
     {
       name: "include_off",
@@ -406,16 +438,21 @@ const financeBills: Tool = {
     const data = await load.appData();
     const today = isoDate(now);
     const rows = data.recurring.filter((r) => includeOff || r.active);
+    const accountById = new Map(data.accounts.map((a) => [a.id, a]));
     return {
       note:
         "planned_monthly is what the PLAN prices this row at per month — for a variable bill that is " +
         "the amount you told it, else the rolling average of real payments. It is the same function the " +
-        "calendar and the forecast price it with.",
+        "calendar and the forecast price it with. account is the account a bill comes OUT of, or the " +
+        "account an income lands IN; null means nobody has said. A row with direction in is PLANNED " +
+        "income, not what arrived. " +
+        PAY_FLOOR_RULE,
       bills: rows.slice(0, LIST_MAX).map((r) => ({
         id: r.id,
         name: scrubOr(r.name, "a bill"),
         amount: money(r.amount),
         direction: r.direction,
+        account: sayAccount(r.accountId, accountById),
         cadence: r.cadence,
         category_id: r.categoryId ? scrubName(r.categoryId, NAME_MAX) || null : null,
         owner: r.owner ? scrubOr(r.owner, "the household", LABEL_MAX) : null,
@@ -446,7 +483,7 @@ const financeBills: Tool = {
 // the month defaults to `now`'s month, never the runtime's.
 const financeBillCalendar: Tool = {
   name: "finance.bill_calendar",
-  summary: "One month's bills as the calendar shows them — due day, amount, and whether it is paid.",
+  summary: "One month's bills as the calendar shows them — due day, amount, the paying account, and whether it is paid.",
   args: [
     { name: "month", type: "string", required: false, description: "Which month, YYYY-MM. Default this month." },
   ],
@@ -457,26 +494,62 @@ const financeBillCalendar: Tool = {
     const data = await load.appData();
     const cal = monthCalendar(data.recurring, data.transactions, now, year, month - 1, data.debts);
     const unpaid = cal.bills.filter((b) => !b.paid);
+    const accountById = new Map(data.accounts.map((a) => [a.id, a]));
+    // ── THE SAME "IS IT REALLY UNPAID?" TEST finance.next_bills USES ─────────────
+    // FOUND 2026-10-10: this tool said `paid: false` about rent whose payment had
+    // posted unlinked — the payment finance.next_bills reported as already gone — and
+    // it had no word at all for a payment still clearing. Both tools read the same
+    // calendar, so `paid` agrees; what was missing was the evidence beside it. It now
+    // comes from headline.ts billEvidence(), the one function both tools call, so the
+    // two cannot disagree about one bill again.
+    const evidenceFor = billEvidence(data, now);
+    const rec = (id?: string) => (id ? data.recurring.find((r) => r.id === id) : undefined);
     return {
       month: cal.monthKey,
       label: scrubOr(cal.monthLabel, cal.monthKey),
       is_this_month: cal.isCurrentMonth,
       unpaid_count: unpaid.length,
-      bills: cal.bills.slice(0, LIST_MAX).map((b) => ({
-        bill_id: b.recurringId ?? null,
-        name: scrubOr(b.name, "a bill"),
-        category_id: scrubName(b.catId, NAME_MAX) || null,
-        due_day: b.day,
-        due_label: scrubOr(b.dateLabel, `day ${b.day}`, LABEL_MAX),
-        amount: money(b.amount),
-        paid: b.paid,
-        paid_on: b.paidDate ? scrubOr(b.paidDate, "an earlier day", LABEL_MAX) : null,
-        // An estimate, not a price. Said per row because a chat has no italics.
-        amount_is_an_estimate: b.variable,
-      })),
+      bills: cal.bills.slice(0, LIST_MAX).map((b) => {
+        const ev = b.paid
+          ? null
+          : evidenceFor({ recurringId: b.recurringId, name: b.name, amount: b.amount, due: dueOn(cal, b) });
+        return {
+          bill_id: b.recurringId ?? null,
+          name: scrubOr(b.name, "a bill"),
+          category_id: scrubName(b.catId, NAME_MAX) || null,
+          due_day: b.day,
+          due_label: scrubOr(b.dateLabel, `day ${b.day}`, LABEL_MAX),
+          amount: money(b.amount),
+          // The account this bill comes out of — see sayAccount.
+          account: sayAccount(rec(b.recurringId)?.accountId, accountById),
+          paid: b.paid,
+          paid_on: b.paidDate ? scrubOr(b.paidDate, "an earlier day", LABEL_MAX) : null,
+          // Spelled exactly as finance.next_bills spells them, so one vocabulary covers
+          // both replies. Null on a paid row: there is nothing left to explain.
+          paying_now: ev?.payingNow
+            ? { amount: money(ev.payingNow.amount), on: ev.payingNow.date, why: ev.payingNow.why }
+            : null,
+          maybe_already_paid: ev?.maybeAlreadyPaid
+            ? {
+                charge: ev.maybeAlreadyPaid.id,
+                amount: money(ev.maybeAlreadyPaid.amount),
+                on: ev.maybeAlreadyPaid.date,
+                why: "a charge on this bill's own account, for this amount, in this cycle, that nothing has tied to the bill",
+              }
+            : null,
+          // An estimate, not a price. Said per row because a chat has no italics.
+          amount_is_an_estimate: b.variable,
+        };
+      }),
       note:
         "A bill sits on its DUE day whether it is paid or not; paid_on is when the payment actually landed, " +
-        "which can be in an earlier month.",
+        "which can be in an earlier month. PAID: FALSE MEANS NO CHARGE IS LINKED TO THE BILL FOR THIS MONTH, " +
+        "not that the money has not left. Before calling a bill unpaid, read paying_now (a payment still " +
+        "clearing — it HAS been paid) and maybe_already_paid (money already gone on that bill's own account " +
+        "that nothing tied to the bill; it carries the charge id, so offer finance.link_charge_to_bill rather " +
+        "than telling anyone to pay again). This is the same test finance.next_bills uses. account is the " +
+        "account the bill comes out of; for whether that account can cover it, read finance.next_bills " +
+        "look_ahead.",
     };
   },
 };
@@ -797,6 +870,69 @@ const financeRunRate: Tool = {
   },
 };
 
+// ── finance.unusual ───────────────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. The app's "unusual purchases" list — a charge far bigger than its
+// category usually runs this month — was worked out inside the Activity screen, which
+// is being retired, and the write door has had finance.dismiss_unusual all along with
+// nothing that could list what it dismisses from. The scan of real door calls that day
+// found it had been called zero times. A dismiss with nothing to point at is a dead end.
+//
+// RULE 1 AND RULE 3, BOTH. Nothing is worked out here. The rule moved out of the screen
+// into src/lib/unusual.ts first — unchanged, and the screen calls it too — and this tool
+// reports what that function returns. The one difference from the screen is the LENS:
+// the screen can be switched to "only my accounts", and this door answers for the
+// household, like finance.position and finance.budget_status do. The note says so.
+//
+// THE MONTH defaults to `now`'s month (Rule 2: never the runtime's), and may be asked
+// for, because "was anything odd last month" is a fair question and the rule is
+// defined per month.
+const UNUSUAL_MAX = 50;
+
+const financeUnusual: Tool = {
+  name: "finance.unusual",
+  summary: "The month's unusual purchases — charges far bigger than their category usually runs — with the id finance.dismiss_unusual takes.",
+  args: [
+    { name: "month", type: "string", required: false, description: "Which month, YYYY-MM. Default this month." },
+  ],
+  async run({ load, now, args }) {
+    const asked = optionalMonthArg(args, "month");
+    const month = asked ?? monthKeyOf(now);
+    const { transactions } = await load.appData();
+    // Dismissed ones are asked for too, only so the reply can say how many there were:
+    // "nothing unusual" and "nothing unusual that you have not already waved away" are
+    // different answers.
+    const all = unusualCharges(transactions, month, { includeDismissed: true });
+    const open = all.filter((u) => !u.dismissed);
+    return {
+      month,
+      found: open.length,
+      already_dismissed: all.length - open.length,
+      more: open.length > UNUSUAL_MAX,
+      rule:
+        `A charge in the month that is money out, attached to nothing and already posted, over $${UNUSUAL_MIN_AMOUNT}, ` +
+        `in a category with at least ${UNUSUAL_MIN_IN_CATEGORY} such charges, and more than ${UNUSUAL_RATIO} times ` +
+        "that category's average for the month.",
+      note:
+        "This is the household's list — both people's accounts — where the app's screen could be narrowed to one person's. " +
+        "It is a judgement call, not an error: say the charge and why it stands out, and let them decide. " +
+        "To wave one away, send its id to finance.dismiss_unusual on the write door; it comes back with an undo token. " +
+        "A charge still processing is left out until it posts.",
+      charges: open.slice(0, UNUSUAL_MAX).map((u) => ({
+        id: u.tx.id,
+        date: u.tx.date,
+        amount: money(u.tx.amount),
+        merchant: scrubOr(u.tx.description, "(a name I cannot say safely)"),
+        category_id: scrubName(u.tx.categoryId, NAME_MAX) || "(no category id I can say)",
+        category_average: money(u.mean),
+        // One decimal, for saying out loud — "about four times" is what a person hears.
+        times_the_average: Math.round(u.ratio * 10) / 10,
+        charges_in_category: u.inCategory,
+      })),
+    };
+  },
+};
+
 export const FINANCE_TOOLS: readonly Tool[] = [
   financeCategories,
   financeTransaction,
@@ -811,4 +947,5 @@ export const FINANCE_TOOLS: readonly Tool[] = [
   systemChanges,
   systemHeartbeat,
   financeRunRate,
+  financeUnusual,
 ];

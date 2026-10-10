@@ -173,16 +173,34 @@ export function toolFromPath(pathname: string): string {
   return parts.slice(i + 1).join("/");
 }
 
+/**
+ * Refuse an argument the tool does not take — EVERY one of them, and say what it does
+ * take.
+ *
+ * FOUND 2026-10-10, in a scan of the door's own audit log. Every one of the read door's
+ * 23 refusals was a guessed tool or a guessed argument, and the sentence only ever said
+ * "<tool> does not take <x>." — so finance.search_transactions was refused for `text`,
+ * then for `q` with `days_back`, then for `account_id` three times in a row, then for
+ * `since` with `limit`, each guess spending a round trip to learn one more thing the
+ * tool does not take. The write door has always added "It takes …" to the same
+ * sentence; the read door now does too, and names every unknown argument at once.
+ */
 function checkArgs(tool: { name: string; args?: { name: string }[] }, args: Record<string, unknown>): void {
-  const allowed = new Set((tool.args ?? []).map((a) => a.name));
+  const takes = (tool.args ?? []).map((a) => a.name);
+  const allowed = new Set(takes);
+  const unknown: string[] = [];
   for (const key of Object.keys(args)) {
     if (key === "person") {
       throw new BadArgs("This door works out who is asking from the key you used, so leave person out.");
     }
-    // scrubName, not the raw key: this sentence is repeated back to the assistant
-    // and stored in the audit log, and a field name is a string the caller chose.
-    if (!allowed.has(key)) throw new BadArgs(`${tool.name} does not take ${scrubName(key, 24) || "that"}.`);
+    if (!allowed.has(key)) unknown.push(key);
   }
+  if (!unknown.length) return;
+  // scrubName, not the raw key: this sentence is repeated back to the assistant
+  // and stored in the audit log, and a field name is a string the caller chose.
+  const said = unknown.map((k) => scrubName(k, 24) || "that").join(", ");
+  const it = takes.length ? `It takes ${takes.join(", ")}.` : "It takes nothing — send an empty body.";
+  throw new BadArgs(`${tool.name} does not take ${said}. ${it}`);
 }
 
 export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<Response> {
@@ -210,7 +228,12 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
   let toolName = scrubName(segment, 60) || "(none)";
   let args: Record<string, unknown> = {};
 
-  const finish = async (body: { [k: string]: Json }, status: number, outcome: Outcome): Promise<Response> => {
+  const finish = async (
+    body: { [k: string]: Json },
+    status: number,
+    outcome: Outcome,
+    detail?: string,
+  ): Promise<Response> => {
     const text = JSON.stringify(body);
     // NO PERSON, NO ROW. A call with no recognised key cannot be attributed, and
     // three things follow from that, all pointing the same way:
@@ -240,6 +263,12 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
         // Byte length, not character count: the reply carries names, and a name
         // with an accent in it is more bytes than letters.
         bytes: new TextEncoder().encode(text).length,
+        // WHY IT WAS REFUSED, in the row. FOUND 2026-10-10: all 25 of the read door's
+        // failed calls had an empty note, although the comment on checkArgs said its
+        // sentence was "stored in the audit log". It was not — the sink wrote no note at
+        // all — so the only way to learn why a read was refused was to reproduce it.
+        // Every refusal now stores its code and its sentence; a success stores none.
+        ...(outcome === "ok" ? {} : { note: noteFor(body, detail) }),
       });
     } catch (e) {
       // Loud, not silent, and the read still goes out — see the note in audit.ts.
@@ -482,7 +511,8 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
         "error",
       );
     }
-    console.error("muse-read failed", tool.name, String((e as Error)?.message ?? e));
+    const why = String((e as Error)?.message ?? e);
+    console.error("muse-read failed", tool.name, why);
     return finish(
       {
         error: "failed",
@@ -490,6 +520,10 @@ export async function handleMuseRead(req: Request, deps: HandlerDeps): Promise<R
       },
       500,
       "error",
+      // The reason goes in the audit row as well as the function log — the write door
+      // has always kept its errors there — so a failure can be read on the same screen
+      // as everything else the assistant asked. Never in the reply.
+      why,
     );
   }
 }
@@ -520,6 +554,19 @@ async function stampOf(load: Loader, instant: Date): Promise<Freshness> {
     console.error("muse-read: freshness unreadable", String((e as Error)?.message ?? e));
     return freshnessUnknown();
   }
+}
+
+/**
+ * The audit note for a refusal: its code and its sentence, plus the reason behind a
+ * failure. Every sentence on this door is built from scrubbed pieces (a tool or field
+ * name goes through scrubName first), and none quotes a figure — a refusal is said
+ * INSTEAD of a number. Capped, because a note is a line on a settings screen.
+ */
+function noteFor(body: { [k: string]: Json }, detail?: string): string {
+  const code = typeof body.error === "string" ? body.error : "refused";
+  const says = typeof body.says === "string" ? body.says : "";
+  const text = `${code}: ${says}${detail ? ` (${detail})` : ""}`;
+  return text.length > 300 ? `${text.slice(0, 299)}…` : text;
 }
 
 /** A flat body (`{"from":"…","to":"…"}`) treated as the arguments, once the

@@ -16,6 +16,20 @@ import { DUPLICATE_WINDOW_MIN, UNIVERSAL_FIELDS, WRITES_PER_HOUR } from "./handl
 import { numberWord, toolLines } from "../_shared/muse/catalogue.ts";
 import { REPEAT_LIMITS } from "../_shared/muse/reminders.ts";
 import { GATED } from "./gated.ts";
+import { READ_DOOR_NAMES } from "./shapes.ts";
+import { EXAMPLE_ID } from "./kit.ts";
+
+/**
+ * "calories for kcal, protein_g for p, …" — off the table handler.ts renames with, so
+ * the description can never promise a synonym the door does not take, or miss one it
+ * does. Grouped by the word they stand for, because `duration_min` and `duration` are
+ * two names for one field and reading them as two fields is the mistake to avoid.
+ */
+function synonymsSaid(): string {
+  const by = new Map<string, string[]>();
+  for (const [alias, field] of Object.entries(READ_DOOR_NAMES)) by.set(field, [...(by.get(field) ?? []), alias]);
+  return [...by].map(([field, aliases]) => `${aliases.join(" or ")} for ${field}`).join(", ");
+}
 
 /**
  * @param baseUrl this door's own public address, e.g.
@@ -59,6 +73,17 @@ export function openapi(baseUrl: string): Record<string, unknown> {
         `The ${numberWord(CATALOGUE.length)} things an assistant may change in Homebase.`,
         "",
         ...lines,
+        "",
+        // FOUND 2026-10-10: close to half the failed calls in the log were a guessed field
+        // name or a guessed list shape. These three paragraphs are the other half of the
+        // examples printed on each line above, and every name in them is generated, not
+        // typed.
+        `EVERY TOOL ABOVE THAT TAKES FIELDS SHOWS AN EXAMPLE of one call that works. Copy its SHAPE — above all what goes inside a list (exercises, items, sets, slices). Every value in an example is made up: ${EXAMPLE_ID} is a placeholder id that matches nothing, so get the real id from the read door, and never send an example as it stands. A call that IS a tool's example, exactly as printed, is refused and nothing is written; if the person really did ask for exactly those values, send it again with ${UNIVERSAL_FIELDS[0]}: true.`,
+        `The read door's names work here too: ${synonymsSaid()}; and inside a logged workout's exercises or a routine's, exercise for name. Send one name per field, never both.`,
+        // Said precisely since review on 2026-10-10, when every tool got a check: what is
+        // free is a refusal decided from the call alone, and what still counts is one the
+        // door had to read the ledger to decide.
+        "A refusal about the SHAPE of a call — anything that can be told from the call alone: a list item, a field's type or range, a date out of bounds, an id that is not shaped like one — lists every problem at once, each list item by its number and name with the keys it actually had, and carries `problems`, `received` and that tool's `example`. Fix all of them, then send it once. A call refused that way changed nothing and does not count against the hourly cap. A refusal the door had to read the ledger to decide — the row does not exist, the slices do not add up to the charge — does count.",
         "",
         "EVERY CHANGE CAN BE PUT BACK. A tool that changes something records what it replaced and returns an `undo` token in its result, and the sentence it says carries the token too. Call system.undo with that token — or with no token at all, for the last change — and it goes back the way it was. system.changes on the READ door lists what has been changed, with each one's token and whether it can still be undone.",
         "",
@@ -127,7 +152,7 @@ export function openapi(baseUrl: string): Record<string, unknown> {
                     tool: { type: "string", enum: names },
                     args: {
                       type: "object",
-                      description: `The fields that tool takes, and no others — plus ${UNIVERSAL_FIELDS[0]}, which every tool accepts and which only turns off the duplicate check.`,
+                      description: `The fields that tool takes, and no others — plus ${UNIVERSAL_FIELDS[0]}, which every tool accepts and which only turns off the duplicate check and the refusal of a call that is exactly a tool's example. Each tool's line in the description above shows an example.`,
                     },
                   },
                 },
@@ -178,7 +203,10 @@ export function openapi(baseUrl: string): Record<string, unknown> {
                 },
               },
             },
-            "400": { description: "Something about the request was wrong. The message says what." },
+            "400": {
+              description:
+                "Something about the request was wrong. The message says what — every problem at once when it is the shape of the call, with `problems`, `received` and `example` beside it. Nothing was written.",
+            },
             "401": { description: "No usable secret." },
             "404": { description: "No such tool, or the row it named does not exist." },
             "409": {

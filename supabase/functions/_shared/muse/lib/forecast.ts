@@ -228,7 +228,11 @@ export function forecast(
 function isCardRow(recurring: Recurring[], recurringId: string, debtId: string): boolean {
   return recurring.some((r) => r.id === recurringId && r.linkedDebtId === debtId);
 }
-function isCardName(name: string): boolean {
+/** Is this bill line the card payment the forecast walks the card down by? By NAME,
+ *  which is why it is exported (2026-10-10): the write door's finance.edit_bill refuses
+ *  a rename that would move a bill into or out of this, because the forecast would then
+ *  stop paying the card down, or start paying it with the wrong bill. */
+export function isCardName(name: string): boolean {
   return /^card payment/i.test(name);
 }
 

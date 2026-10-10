@@ -62,7 +62,6 @@
 //     without a sentence beside it;
 //   · sentenceFor / groupSentence in worthALook.ts.
 
-import { coverFor } from "./lib/pendingCover.ts";
 import {
   selfAudit,
   danglingLinks,
@@ -80,6 +79,9 @@ import {
   transfersBetween,
 } from "./lib/plan.ts";
 import {
+  AHEAD_DAYS,
+  billEvidence,
+  billsAhead,
   billsBeforeNextPayday,
   envelopeStatus,
   firepowerStatus,
@@ -88,6 +90,9 @@ import {
   monthGetter,
   runForecast,
 } from "./lib/headline.ts";
+// Gino's pay floor: the one test for which row carries it, read off the live data so
+// no amount is ever written into this public repository.
+import { payFloorOf } from "./payFloor.ts";
 import { cashAccounts, totalBalance, totalPendingHold } from "./lib/recurring.ts";
 import { isoDate } from "./lib/format.ts";
 import { reviewLedger } from "./lib/ledgerReview.ts";
@@ -104,7 +109,7 @@ import { catalogueOf, readEntries } from "./catalogue.ts";
 import { BadArgs, dateArg, intArg, lastDayOf, textArg, type Json, type Tool } from "./args.ts";
 import { FINANCE_TOOLS } from "./toolsFinance.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
-import { redactSuggestions } from "./worthALook.ts";
+import { isDismissed, redactSuggestions } from "./worthALook.ts";
 import { HEALTH_ABSENT, HEALTH_READS } from "./healthRead.ts";
 // The memory store's three read tools. Their own file, so nothing about how a memory
 // works lives in here and nothing about finance or health lives in there.
@@ -415,6 +420,11 @@ const financeDebts: Tool = {
         original_balance: money(d.originalBalance),
         apr: d.apr == null ? null : money(d.apr),
         min_payment: d.minPayment == null ? null : money(d.minPayment),
+        // Since 2026-10-10: finance.edit_debt can close a paid-off debt without deleting
+        // it, and a closed debt read out here as though it were still running would undo
+        // the point of closing it. Only a debt at zero can be closed, so the total above
+        // is the same either way.
+        closed: !!d.closedAt,
       })),
       // In the reply, not only in API.md, because API.md calls a made-up payoff date
       // "the single most tempting wrong number in this whole system" and an
@@ -608,23 +618,42 @@ const financeSpendByCategory: Tool = {
 // ── finance.worth_a_look ──────────────────────────────────────────────────────
 const financeWorthALook: Tool = {
   name: "finance.worth_a_look",
-  summary: "What looks off but is a judgement call — the rule, the money, and the charges it is standing on so you can act on it.",
+  summary: "What looks off but is a judgement call — the rule, the money, the charges it is standing on so you can act on it, and the key that dismisses it.",
   async run({ load, now }) {
-    const data = await load.appData();
-    // No dismissals are passed. The app remembers dismissals per phone, in that
-    // phone's own storage, and a door has no phone — so this answers about the
-    // whole ledger and says so, rather than pretending to know what he waved away.
-    const suggestions = reviewLedger(data, now, new Set<string>());
+    const [data, dismissals] = await Promise.all([load.appData(), load.reviewDismissals()]);
+    // THE HOUSEHOLD'S DISMISSALS ARE PASSED NOW, since 2026-10-10. This used to hand the
+    // engine an empty set and answer `dismissals_known: false`, because dismissals lived
+    // only in each phone's own storage ('hb-review-dismissed', src/lib/doctorDismissals.ts)
+    // and a door has no phone. So everything anybody had already decided about came
+    // back on every call, and nothing on either door could wave one away. Now there is a
+    // household table (supabase/schema_v43_review_dismissals.sql) that
+    // finance.dismiss_suggestion writes, and this reads it.
+    //
+    // The engine drops the keys it made itself (its own `dismissedKeys`); isDismissed
+    // catches the hashed stand-ins this door hands out for keys the cleaner would have
+    // changed, which the engine never made and so cannot recognise.
+    //
+    // A dismissal made on a PHONE before this existed is still only on that phone, and
+    // the note says so. Until the migration is run the table is not there, `known` is
+    // false, and the reply says it does not know — never "nothing was dismissed".
+    const suggestions = reviewLedger(data, now, dismissals.keys).filter(
+      (s) => !isDismissed(s.key, dismissals.keys),
+    );
     const { suggestions: shown, total, left_out } = redactSuggestions(suggestions, data);
     return {
       total,
       left_out,
-      dismissals_known: false,
-      note: "This lists everything, including anything already dismissed on a phone. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill on the write door, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token.",
+      dismissals_known: dismissals.known,
+      note: dismissals.known
+        ? "Anything either of you dismissed through Muse is already left out; a dismissal tapped on a phone before Muse could dismiss things is only on that phone, so one of those may still appear. To wave one away, send its `key` to finance.dismiss_suggestion on the write door. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token."
+        : "This lists everything, including anything already dismissed: the table that remembers dismissals has not been set up yet, so say so. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill on the write door, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token.",
       // Built key by key rather than spread, so nothing can ride along on a field
       // added to the engine's own type later.
       suggestions: shown.map((s) => {
         const o: { [k: string]: Json } = { rule: s.rule, kind: s.kind, sentence: s.sentence };
+        // What finance.dismiss_suggestion takes. Already through the cleaner, or a
+        // fixed-shape stand-in — see suggestionKey in worthALook.ts.
+        if (s.key) o.key = s.key;
         if (s.amount != null) o.amount = s.amount;
         if (s.month) o.month = s.month;
         if (s.bill) o.bill = s.bill;
@@ -667,10 +696,21 @@ const financeFirepower: Tool = {
       // the two subtractions below are where that story is told.
       available: money(head.firepower),
       plan: {
+        // PLANNED, not measured: the paycheck rows on the bill list, priced at their
+        // stored amounts — and one of those rows is Gino's pay floor, below.
         income: money(head.math.income),
         living: money(head.math.fixedNonDebt),
         budgeted_variable: money(head.math.variable),
         before_subtractions: money(head.math.firepower),
+        // ── THE FLOOR IS IN HERE, AND THE NOTE USED TO SAY IT WAS NOT ──────────
+        // FOUND 2026-10-10: the note told the assistant "the household's cash floor
+        // is not in it and this door does not know it". Both halves were wrong. The
+        // floor is Gino's planned paycheck amount, and `income` above is built from
+        // that very row (planMath takes income from the live direction-'in' rows). So
+        // the figure is reported beside the income it is part of — off the row, at
+        // request time, never typed into this repository. Null when there is not
+        // exactly one row that carries it (payFloor.ts).
+        gino_pay_floor_per_check: money(payFloorOf(data.recurring)),
       },
       taken_out: {
         overspent_this_month: money(head.overspendThisMonth),
@@ -678,11 +718,12 @@ const financeFirepower: Tool = {
       },
       spent_this_month: money(head.spentThisMonth),
       monthly_budget: money(head.monthlyTarget),
-      // Two traps in one note, because an assistant may be holding nothing but the
-      // openapi description. The first is the horizon; the second is the one API.md
-      // calls out on its own, and this is the figure most likely to be mistaken for
-      // it: firepower LOOKS like spendable cash and is not.
-      note: "A whole month, not a pay cycle, and not money in the account — it is what is free to aim at the debt. The household's cash floor is not in it and this door does not know it, so never answer 'you can spend this'. Zero means nothing is available; the two figures under taken_out are why.",
+      // Three traps in one note, because an assistant may be holding nothing but the
+      // openapi description. The first is the horizon; the second is that firepower
+      // LOOKS like spendable cash and is not; the third is what the floor is — said
+      // the way PAY_FLOOR_RULE in payFloor.ts says it, because the old wording here
+      // described a cash reserve the door could not see, and the floor is neither.
+      note: "A whole month, not a pay cycle, and not money in an account — it is what is free to aim at the debt, so never answer 'you can spend this'. plan.income is PLANNED, not measured: it is the paycheck rows on the bill list. Gino's row is his pay floor, plan.gino_pay_floor_per_check — a planned paycheck amount he set low on purpose, so anything a real check brings above it is upside, not a mistake to correct. Never suggest raising it. Zero means nothing is available; the two figures under taken_out are why.",
     };
   },
 };
@@ -700,7 +741,7 @@ const financeFirepower: Tool = {
 // amount is what the CALENDAR expects, not what any charge was.
 const financeNextBills: Tool = {
   name: "finance.next_bills",
-  summary: "What is still due before the next paycheck, and how much of it is already overdue.",
+  summary: "What is still due before the next paycheck, how much is already overdue, and how short each paying account runs over the next three weeks and the next rent.",
   async run({ load, now }) {
     const data = await load.appData();
     // THE STILL-CLEARING CHARGES, read off the ledger this tool already loaded. This
@@ -712,57 +753,35 @@ const financeNextBills: Tool = {
     // now — fixed 2026-10-09 — but this tool has the whole ledger in hand already, and
     // a second read of the same rows is a second chance for them to disagree.)
     //
-    // Signed the way pendingCover expects, which is the way a bank reports it:
-    // negative is money going out. Transaction.amount is always positive and carries
-    // its direction in `type`, so the sign is put back here rather than inside the
-    // matcher, where it would be one more thing to get wrong.
     // ── AND THE CHARGE THAT HAS ALREADY POSTED ──────────────────────────────
     // `paying_now` below only sees a charge while it is PENDING, which is a window of
     // a day or three. The moment the bank posts it the cover vanishes and this tool
-    // goes back to the word "overdue" — the same wrong answer, just later. Rent posts
-    // two days after it is paid and stays unlinked until somebody links it.
+    // would go back to the word "overdue" — the same wrong answer, just later. So the
+    // posted case is answered by W7, the rule that already exists.
     //
-    // So the posted case is answered by the rule that already exists. W7 in
-    // ledgerReview.ts offers a charge that looks like a bill nobody linked, and it is
-    // already gated hard: the account arm's first version produced five suggestions,
-    // all five false (99 Ranch Market against Grok AI), which is why it now demands
-    // 1% on the amount and 3 days from the due day and DROPS a charge that fits two
-    // bills rather than picking. A third spelling of bill-to-charge matching in this
-    // file would drift from both of the two that exist.
-    const unlinkedHits = new Map<string, { id: string; date: string; amount: number }>();
-    for (const sug of reviewLedger(data, now, new Set<string>())) {
-      if (sug.rule !== "W7") continue;
-      const rid = sug.evidence.recurringId;
-      const mk = sug.evidence.monthKey;
-      const txId = sug.evidence.txnIds[0];
-      const tx = txId ? data.transactions.find((t) => t.id === txId) : undefined;
-      if (rid && mk && tx) unlinkedHits.set(`${rid}|${mk}`, { id: tx.id, date: tx.date, amount: tx.amount });
-    }
-
-    const pendingNow = data.transactions
-      .filter((t) => t.pending)
-      .map((t) => ({
-        date: t.date,
-        amount: t.type === "expense" ? -t.amount : t.amount,
-        description: t.description,
-        accountId: t.accountId ?? null,
-      }));
+    // BOTH HALVES MOVED TO src/lib/headline.ts ON 2026-10-10, as billEvidence(), with
+    // their whole story. finance.bill_calendar was answering the same question without
+    // either half, and two tools answering one question two ways is the drift Rule 3
+    // exists to stop. Built ONCE here and handed to everything below that needs it —
+    // the bill rows, by_account and look_ahead — because W7 walks the whole ledger.
+    const evidenceFor = billEvidence(data, now);
     const { cycle, daysLeft, bills, total, overdueTotal } = billsBeforeNextPayday(
       monthGetter(data, now),
       now,
     );
 
-    // ── ONE COVER PER BILL, WORKED OUT ONCE ───────────────────────────────────
+    // ── ONE ANSWER PER BILL, WORKED OUT ONCE ──────────────────────────────────
     // Hoisted out of the `bills.map` below because `by_account` needs the same answer,
-    // and a second call to coverFor down there would be a second place for it to drift.
-    // Parallel to `bills` by index: a bill's recurringId can be null, so it is not a key.
-    const covers = bills.map((b) => {
-      const rec = data.recurring.find((r) => r.id === b.recurringId);
-      return coverFor(
-        { name: b.name, amount: b.amount, due: b.due, accountId: rec?.accountId ?? null },
-        pendingNow,
-      );
-    });
+    // and a second call down there would be a second place for it to drift. Parallel to
+    // `bills` by index: a bill's recurringId can be null, so it is not a key.
+    const evidence = bills.map((b) =>
+      evidenceFor({ recurringId: b.recurringId, name: b.name, amount: b.amount, due: b.due }),
+    );
+    const covers = evidence.map((e) => e.payingNow);
+    // The per-account look-ahead past the cycle end (headline.ts billsAhead), from the
+    // same evidence. See look_ahead below.
+    const ahead = billsAhead(data, now, evidenceFor);
+    const accountById = new Map(data.accounts.map((a) => [a.id, a]));
 
     return {
       cycle: {
@@ -813,7 +832,7 @@ const financeNextBills: Tool = {
         // It carries the charge id, so the answer can offer to fix itself with
         // finance.link_charge_to_bill rather than only describing the problem.
         maybe_already_paid: (() => {
-          const hit = b.recurringId ? unlinkedHits.get(`${b.recurringId}|${b.due.slice(0, 7)}`) : undefined;
+          const hit = evidence[i].maybeAlreadyPaid;
           return hit
             ? {
                 charge: hit.id,
@@ -886,7 +905,62 @@ const financeNextBills: Tool = {
           count: r.count,
         }));
       })(),
-      note: "OVERDUE MEANS NO CHARGE IS LINKED TO THIS CYCLE. It does not mean the money has not left — those are different facts and this tool only knows the first. Before saying anything is overdue, read `paying_now` and `maybe_already_paid`: the first is a payment still clearing, the second is money that has already gone out and was never tied to the bill. `maybe_already_paid` carries the charge id, so offer finance.link_charge_to_bill rather than telling him to pay it again. A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later. And inside by_account, compare `balance` against `still_to_come`, NEVER against `due`: the bank has already taken what is clearing out of the balance, so due-minus-balance double-counts it and overstates the shortfall.",
+      // ── LOOKING PAST THE CYCLE, PER ACCOUNT, WITH THE SUBTRACTION DONE ─────────
+      // FOUND 2026-10-10. by_account above stops at the cycle end, and it leaves the
+      // shortfall for the reader to work out. On that day the joint account held a few
+      // dollars and rent — paid from it, and far bigger than what was in it — drew on
+      // Nov 1, outside the cycle, so this tool could not show it until the evening
+      // before. And the assistant reading by_account is told never to subtract.
+      //
+      // So `look_ahead` runs from the cycle start through AHEAD_DAYS from today, and
+      // always through the next rent, and carries `short_by` per paying account,
+      // worked out in headline.ts billsAhead() — the walk, the evidence, the reason pay
+      // is only counted where a row says it lands, all said there. Nothing here adds or
+      // subtracts; every figure is a field off what billsAhead returned.
+      look_ahead: {
+        from: ahead.from,
+        through: ahead.through,
+        days_from_today: AHEAD_DAYS,
+        // Why the window ends where it does, in words: AHEAD_DAYS out, or stretched to
+        // the next rent because that falls later.
+        ends_at: ahead.throughIs === "rent" ? "the next rent" : `${AHEAD_DAYS} days from today`,
+        next_rent_on: ahead.rentOn,
+        // Planned pay inside the window that no paycheck row says where it lands. It is
+        // counted for NO account, and named so nobody adds it to one.
+        pay_not_placed: money(ahead.payNotPlaced),
+        pay_not_placed_count: ahead.payNotPlacedCount,
+        by_account: ahead.accounts.map((a) => {
+          const acct = a.accountId ? accountById.get(a.accountId) : undefined;
+          return {
+            account: a.accountId,
+            owner: acct ? scrubOr(acct.owner, "someone") : a.accountId ? "an account I cannot find" : "nobody has said",
+            name: acct ? scrubOr(acct.name, "an account") : "no account set",
+            is_card: a.isCard,
+            balance: money(a.balance),
+            due: money(a.due),
+            already_out: money(a.alreadyOut),
+            still_to_come: money(a.stillToCome),
+            pay_counted: money(a.payCounted),
+            short_by: money(a.shortBy),
+            short_on: a.shortOn,
+            bills: a.bills.map((b) => ({
+              bill: b.recurringId ?? null,
+              name: scrubOr(b.name, "a bill"),
+              amount: money(b.amount),
+              due: b.due,
+              overdue: b.overdue,
+              estimate: b.variable,
+              // Why a bill is not in still_to_come: its payment is clearing, or a
+              // posted charge that looks like it was never tied to it. Null means it
+              // is still to come.
+              already_out: b.evidence.payingNow ? "clearing" : b.evidence.maybeAlreadyPaid ? "posted, not linked" : null,
+            })),
+          };
+        }),
+      },
+      note: "OVERDUE MEANS NO CHARGE IS LINKED TO THIS CYCLE. It does not mean the money has not left — those are different facts and this tool only knows the first. Before saying anything is overdue, read `paying_now` and `maybe_already_paid`: the first is a payment still clearing, the second is money that has already gone out and was never tied to the bill. `maybe_already_paid` carries the charge id, so offer finance.link_charge_to_bill rather than telling him to pay it again. A bill carrying `paying_now` HAS BEEN PAID and is still clearing — say that, never \"overdue\". The figure beside it is unchanged on purpose: a pending payment can reverse, so it is not counted until it posts. The window opens when the current pay cycle opened, not today, so an unpaid bill whose date has already passed is still in here — it still has to come out of the check already banked. An estimate is a rolling average of what the bill has really been costing. This is not the whole month's bills. READ by_account BEFORE SAYING A TOTAL: a household total of $0 was once true while the joint account was $1,023 short of the rent coming out of it two days later. And inside by_account, compare `balance` against `still_to_come`, NEVER against `due`: the bank has already taken what is clearing out of the balance, so due-minus-balance double-counts it and overstates the shortfall. BUT by_account stops at the cycle end. FOR WHETHER AN ACCOUNT CAN PAY WHAT IS COMING, READ look_ahead.by_account[].short_by: it is how far that account goes below zero at its worst moment between look_ahead.from and look_ahead.through — from the start of this pay cycle through " +
+        `${AHEAD_DAYS} days from today` +
+        ", and always through the next rent even when that is later — already worked out here, so never subtract anything yourself. 0 means it never goes below zero in that window; short_on is the day it is worst. A bill marked already_out is clearing or already posted, so it is out of the balance and not counted again. INCOMING PAY IS NOT ASSUMED TO LAND IN ANY ACCOUNT: it is counted for an account only when its paycheck row says that account is where it lands (pay_counted), and pay_not_placed is planned pay no row places, counted for nobody — so say that a paycheck may cover the gap but the data does not say which account it lands in. Planned pay is the planned amount, not the real check. Transfers between their own accounts are not counted.",
     };
   },
 };
@@ -910,8 +984,9 @@ const financeNextBills: Tool = {
 //
 // TWO OF THE FOUR ASSUMPTIONS WERE DIALS on a screen that no longer exists, so they
 // come back in the reply. A projection whose spending figure is an assumption sitting
-// beside bills measured from the bank has to say which half is which, or Rule 3 of
-// API.md ("say which half is measured") cannot be obeyed by anything reading it.
+// beside planned income and scheduled bills has to say which half is which, or Rule 3
+// of API.md ("say which half is measured") cannot be obeyed by anything reading it —
+// and the half that is measured is only the opening cash (see the note below).
 const financeForecast: Tool = {
   name: "finance.forecast",
   summary: "The balance run forward month by month: the low point in each, and the worst one.",
@@ -963,8 +1038,21 @@ const financeForecast: Tool = {
         complete_cycles_measured: plan.cycles.length,
         to_the_card_per_month: money(plan.opts.cardPay ?? null),
         opening_cash: money(plan.opts.openingCash ?? null),
+        // The paychecks in `income` are the PLANNED amounts off the bill list, and
+        // Gino's is his pay floor — reported here so "income is planned low on
+        // purpose" can be said with the figure, read off the row (payFloor.ts).
+        gino_pay_floor_per_check: money(payFloorOf(data.recurring)),
       },
-      note: "Bills and income are measured from the bank; the spending figure is an assumption, and it is in assumed — say which half is which. The low point is the number a monthly surplus cannot tell you, because rent on the 1st is paid out of the month before. The first month is only what is left of it. No payoff date, debt-free month or card-clear month is here: do not work one out.",
+      // ── WHICH HALF IS MEASURED, SAID THE RIGHT WAY ROUND ──────────────────────
+      // FOUND 2026-10-10: this said "Bills and income are measured from the bank". In
+      // the code, income is the planned paycheck amounts from the recurring rows
+      // (forecast.ts lays them down as paychecks) and bills are the scheduled amounts;
+      // only opening_cash comes from the bank. Gino's checks have run well above his
+      // planned figure — on purpose, it is a floor — so finance.run_rate's measured
+      // `earned` and this reply's income disagree, and nothing said why. And the run
+      // starts from every account added together, so it cannot see one account
+      // running short; finance.next_bills look_ahead is the tool that can.
+      note: "Only opening_cash is measured: it is the bank's available total across the cash accounts today. Income is PLANNED — the paycheck rows on the bill list — and Gino's row is his pay floor (assumed.gino_pay_floor_per_check), a planned paycheck amount he set low on purpose, so real income usually runs higher and anything above it is upside; never suggest raising it. Bills are the scheduled amounts, and an estimate is the average of a bill's real payments. The spending figure is an assumption, in assumed. Say which half is which. The low point is the number a monthly surplus cannot tell you, because rent on the 1st is paid out of the month before. It is one household pool, so it cannot see a single account running short — finance.next_bills look_ahead can. The first month is only what is left of it. No payoff date, debt-free month or card-clear month is here: do not work one out.",
     };
   },
 };

@@ -22,6 +22,22 @@ export const DUE_DAYS: Record<string, number[]> = {
   "Xinyan's 40% share": [1],
 };
 
+// What a bill cost per payment in the months up to STEP_DOWNS_UNTIL, keyed by the
+// recurring row's NAME, for the two bills that changed price at the start of July 2026:
+//  · Mom's support is $400/check through June, then $300/check from July.
+//  · Rent is the discounted $1,232.44 through June (move-in concession), then the
+//    full $1,715 from July.
+// A table rather than two `r.name === …` lines since 2026-10-10, so the write door's
+// finance.edit_bill can see which names the calendar reads exactly: renaming one of
+// these would quietly re-price every month before July 2026, so that tool refuses it.
+// The behaviour is the one the two lines had. A Map, so an own-property lookup is all
+// there is — no bill name can find something on Object.prototype.
+export const STEP_DOWNS: ReadonlyMap<string, number> = new Map([
+  ["Mom", 400],
+  ["Rent", 1232.44],
+]);
+export const STEP_DOWNS_UNTIL = "2026-06";
+
 // How many months apart a bill repeats, for the cadences that DON'T fire every
 // month. Monthly and sub-monthly cadences are absent: their due_days already
 // carry the whole schedule, so they fire in every month.
@@ -179,15 +195,13 @@ export function monthlySchedule(
     const days = bw ?? r.dueDays ?? DUE_DAYS[r.name];
     if (days && days.length) {
       // Known step-downs through June 2026 (the calendar shows the real older
-      // amount; the budget already runs on the going-forward figure):
-      //  · Mom's support is $400/check through June, then $300/check from July.
-      //  · Rent is the discounted $1,232.44 through June (move-in concession),
-      //    then the full $1,715 from July.
-      // A biweekly bill, like a biweekly paycheck, charges its full amount each time.
+      // amount; the budget already runs on the going-forward figure) — STEP_DOWNS
+      // below. A biweekly bill, like a biweekly paycheck, charges its full amount
+      // each time.
       let perPayment = bw || period ? r.amount : monthly / days.length;
-      if (monthKey && monthKey <= "2026-06") {
-        if (r.name === "Mom") perPayment = 400;
-        else if (r.name === "Rent") perPayment = 1232.44;
+      if (monthKey && monthKey <= STEP_DOWNS_UNTIL) {
+        const older = STEP_DOWNS.get(r.name);
+        if (older !== undefined) perPayment = older;
       }
       for (const d of days) {
         // perPayment is already divided by the FULL day count above, so dropping
@@ -405,6 +419,18 @@ export function monthCalendar(
   };
 }
 
+/** The calendar date a bill on a month's calendar is DUE, as "YYYY-MM-DD".
+ *
+ *  One spelling of it, used by dueBeforeNextPayday below and by the Muse read door's
+ *  bill calendar. `b.day` alone cannot say it — a day number is only a date once it
+ *  is put in its month, and a caller that rebuilt the string itself would be a second
+ *  spelling of this line in a place that is forbidden from doing its own assembly.
+ *  Added 2026-10-10, when finance.bill_calendar needed each bill's date to ask the
+ *  same "is it really unpaid?" question finance.next_bills asks. */
+export function dueOn(m: Pick<MonthCalendar, "year" | "month">, b: Pick<MonthCalBill, "day">): string {
+  return `${m.year}-${String(m.month + 1).padStart(2, "0")}-${String(b.day).padStart(2, "0")}`;
+}
+
 /** The unpaid bills still to come out of the CURRENT paycheck: due anywhere from
  *  `cycleStartISO` through `cycleEndISO` (the day before the next payday),
  *  inclusive, and not yet recorded paid.
@@ -435,7 +461,6 @@ export function dueBeforeNextPayday(
   total: number;
   overdueTotal: number;
 } {
-  const pad = (n: number) => String(n).padStart(2, "0");
   // Fall back to the old behaviour only if a caller has not been updated — never
   // silently widen to "all of history" if the start is missing.
   const from = cycleStartISO ?? todayISO;
@@ -444,7 +469,7 @@ export function dueBeforeNextPayday(
   for (const m of months) {
     for (const b of m.bills) {
       if (b.paid) continue;
-      const on = `${m.year}-${pad(m.month + 1)}-${pad(b.day)}`;
+      const on = dueOn(m, b);
       if (on < from || on > cycleEndISO) continue;
       // `b.id` is recurringId@day, which repeats across months — so the guard has
       // to key on the RESOLVED date, or overlapping calendars would collapse two

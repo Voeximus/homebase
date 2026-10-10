@@ -494,6 +494,22 @@ const BILL_ALIASES: { bill: string; not?: RegExp; aliases: string[] }[] = [
   { bill: "Card payment (…6813)", aliases: ["crd6813", "acct6813"] },
 ];
 
+/**
+ * Every bill NAME the built-in rules in this file hand back: BILL_RULES, BILL_ALIASES,
+ * and the three named inside classify() itself (the Zelle branch and the two Anthropic
+ * seat bands). The importer resolves each one to a recurring row with
+ * matchRecurringName, by name — so a bill renamed away from one of these is a bill the
+ * rule that pays it can no longer find, and its payments drop into needs_review.
+ *
+ * Exported 2026-10-10 for the write door's finance.edit_bill, which refuses exactly that
+ * rename. The three classify() names are spelled again here rather than lifted out of
+ * the function, so the categorizer's own logic is untouched; tests/museFinance.test.ts
+ * reads this file and fails if any bill name in it is missing from this list.
+ */
+export const BUILT_IN_BILL_NAMES: readonly string[] = [
+  ...new Set([...BILL_RULES.map((r) => r.bill), ...BILL_ALIASES.map((b) => b.bill), "Mom", "Claude Pro", "Claude Max"]),
+];
+
 // Gino's own category labels → the app's category + whether it's living spend.
 const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   Groceries: { kind: "variable", appCategory: "groceries" },

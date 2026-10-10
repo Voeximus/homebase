@@ -54,6 +54,20 @@ export function isoDate(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/**
+ * A "YYYY-MM-DD" calendar date moved by whole days, still a calendar date.
+ *
+ * Added 2026-10-10 for the per-account look-ahead in headline.ts, which needs "21
+ * days from today" and must not build a Date there (tests/headline.test.ts forbids it,
+ * so no clock can creep in). Built on isoDate above — the local spelling — so the
+ * answer is a calendar date with no time zone in it; the Date constructor rolls the
+ * month and year over by itself.
+ */
+export function addDaysISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return isoDate(new Date(y, m - 1, d + days));
+}
+
 /** This month's "YYYY-MM" key, LOCAL — carried the identical UTC bug. */
 export function currentMonthKey(): string {
   return monthKeyOf(new Date());

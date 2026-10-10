@@ -49,7 +49,20 @@ import {
 } from "../_shared/muse/reminders.ts";
 import { catalogueOf, namesOf, writeEntries } from "../_shared/muse/catalogue.ts";
 import { scrubCap } from "../_shared/muse/scrub.ts";
-import { DISPLAY, refuse, UUID, type Ctx, type Refusal, type Tool } from "./kit.ts";
+import {
+  DISPLAY,
+  EXAMPLE_ID,
+  problemPad,
+  problemsOf,
+  refuse,
+  shapeRefused,
+  UUID,
+  type Ctx,
+  type Refusal,
+  type Shaped,
+  type ShapeCtx,
+  type Tool,
+} from "./kit.ts";
 import { FINANCE_WRITE_TOOLS } from "./toolsFinance.ts";
 import { HEALTH_TOOLS } from "./healthTools.ts";
 // The memory store's three writes. Their own file, so nothing about how a memory works
@@ -97,8 +110,9 @@ export const REMIND_OPEN_MAX = 20;
 
 /** The moment a reminder is set for, checked. Shared by remind and update_reminder
  *  so "at least a minute out" and "no more than a year ahead" cannot end up meaning
- *  two different things on the two tools that set a time. */
-function dueFrom(at: unknown, ctx: Ctx): { due: Date } | Refusal {
+ *  two different things on the two tools that set a time. It needs the request's
+ *  instant and nothing else, so it runs in a shape check, before anything is counted. */
+function dueFrom(at: unknown, ctx: ShapeCtx): { due: Date } | Refusal {
   const due = parseInstant(at);
   if (!due) {
     return refuse(400, "I need the time as 2026-09-26T23:00 (Arizona) or with an offset on the end.");
@@ -135,13 +149,8 @@ async function reminderFor(
   ctx: Ctx,
   verb: string,
 ): Promise<{ row: ReminderRow } | Refusal> {
-  const id = typeof payload.reminder_id === "string" ? payload.reminder_id : "";
-  if (!UUID.test(id)) {
-    return refuse(
-      400,
-      "I need the reminder's id. schedule.list_reminders on the read door gives you one for each reminder that is still waiting.",
-    );
-  }
+  const id = reminderIdOf(payload);
+  if (typeof id !== "string") return id;
   const row = await ctx.db.readReminder(id);
   const NOT_YOURS = "There is no reminder with that id on your list.";
   if (!row) return refuse(404, NOT_YOURS);
@@ -154,6 +163,64 @@ async function reminderFor(
   return { row };
 }
 
+/** The reminder id a call names, in the right shape — before anything is read, so it
+ *  can sit in a shape check as well as in reminderFor. */
+function reminderIdOf(payload: Record<string, unknown>): string | Refusal {
+  const id = typeof payload.reminder_id === "string" ? payload.reminder_id : "";
+  if (!UUID.test(id)) {
+    return refuse(
+      400,
+      "I need the reminder's id. schedule.list_reminders on the read door gives you one for each reminder that is still waiting.",
+    );
+  }
+  return id;
+}
+
+/** remind's words, time and cadence — every problem with them, before anything is
+ *  counted. The two caps (open reminders, reminders today) need the database, so they
+ *  stay in run. */
+function planRemind(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{ message: string; trimmed: boolean; due: Date; repeats: Repeats }> {
+  const pad = problemPad();
+  const said = messageFor(payload.message);
+  if (!said.ok) pad.no(said.say);
+  const when = pad.take(dueFrom(payload.at, ctx));
+  const repeats = payload.repeats === undefined ? "once" : payload.repeats;
+  if (!isRepeats(repeats)) pad.no("Repeats can be once, daily or weekly.");
+  return pad.done(() => ({
+    message: said.ok ? said.message : "",
+    trimmed: said.ok ? said.trimmed : false,
+    due: when!.due,
+    repeats: repeats as Repeats,
+  }));
+}
+
+/** update_reminder's id and changes — every problem with any of them. */
+function planReminderEdit(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<{
+  id: string;
+  due: Date | null;
+  message: { message: string; trimmed: boolean } | null;
+  repeats: Repeats | null;
+}> {
+  const pad = problemPad();
+  const wantsTime = payload.at !== undefined;
+  const wantsText = payload.message !== undefined;
+  const wantsRepeats = payload.repeats !== undefined;
+  if (!wantsTime && !wantsText && !wantsRepeats) {
+    pad.no("Tell me what to change: a new time, new words, or how often it repeats.");
+  }
+  const id = pad.take(reminderIdOf(payload));
+  const when = wantsTime ? pad.take(dueFrom(payload.at, ctx)) : null;
+  const said = wantsText ? messageFor(payload.message) : null;
+  if (said && !said.ok) pad.no(said.say);
+  if (wantsRepeats && !isRepeats(payload.repeats)) pad.no("Repeats can be once, daily or weekly.");
+  return pad.done(() => ({
+    id: id!,
+    due: when ? when.due : null,
+    message: said && said.ok ? { message: said.message, trimmed: said.trimmed } : null,
+    repeats: wantsRepeats ? (payload.repeats as Repeats) : null,
+  }));
+}
+
 /** "…, daily." / "." — said the same way by all three reminder tools. */
 const cadenceSays = (repeats: string) => (repeats === "once" ? "." : `, ${repeats}.`);
 
@@ -161,18 +228,22 @@ const remind: Tool = {
   kind: "direct",
   does: "Put a reminder in Homebase's own list. Homebase's cron delivers it as a real push.",
   fields: ["message", "at", "repeats"],
+  // A date a long way out on purpose, so the example is still a valid time for months:
+  // `at` has to be at least a minute ahead and at most REMIND_MAX_DAYS. It was
+  // 2026-12-01 at first, which would have printed an example that is refused for being
+  // in the past from that December on; moved out as far as the cap allows from when it
+  // was written, so it holds until the late summer of 2027.
+  example: { message: "Take the recycling out", at: "2027-09-01T19:00", repeats: "weekly" },
+  check: (payload, ctx) => problemsOf(planRemind(payload, ctx)),
   async run(payload, ctx) {
     // One copy of the message rule, in _shared/muse/reminders.ts, because
     // update_reminder sets a message too — and the marker in particular has to go on
     // in both places or an edited reminder stops saying an assistant wrote it.
-    const said = messageFor(payload.message);
-    if (!said.ok) return refuse(400, said.say);
-
-    const when = dueFrom(payload.at, ctx);
-    if ("ok" in when) return when;
-
-    const repeats = payload.repeats === undefined ? "once" : payload.repeats;
-    if (!isRepeats(repeats)) return refuse(400, "Repeats can be once, daily or weekly.");
+    const plan = planRemind(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const said = { message: plan.value.message, trimmed: plan.value.trimmed };
+    const when = { due: plan.value.due };
+    const { repeats } = plan.value;
 
     // Two caps, because this is the one tool that reaches out of the system to a
     // lock screen. The daily one stops a runaway loop; the open one stops a slow
@@ -233,11 +304,22 @@ const remind: Tool = {
 // difference matters for the reminder that had already gone out — a delete would
 // have removed the evidence and answered "done"; this refuses and says when it went.
 
+/** cancel_reminder's whole shape: the id. */
+function planReminderId(payload: Record<string, unknown>): Shaped<string> {
+  const pad = problemPad();
+  const id = pad.take(reminderIdOf(payload));
+  return pad.done(() => id!);
+}
+
 const cancelReminder: Tool = {
   kind: "direct",
   does: "Cancel a reminder that has not gone off yet. A repeating one stops for good.",
   fields: ["reminder_id"],
+  example: { reminder_id: EXAMPLE_ID },
+  check: (payload) => problemsOf(planReminderId(payload)),
   async run(payload, ctx) {
+    const plan = planReminderId(payload);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
     const found = await reminderFor(payload, ctx, "cancel");
     if ("ok" in found) return found;
     const { row } = found;
@@ -292,13 +374,11 @@ const updateReminder: Tool = {
   kind: "direct",
   does: "Change a reminder's time, its words, or how often it repeats.",
   fields: ["reminder_id", "at", "message", "repeats"],
+  example: { reminder_id: EXAMPLE_ID, at: "2027-09-01T20:30" },
+  check: (payload, ctx) => problemsOf(planReminderEdit(payload, ctx)),
   async run(payload, ctx) {
-    const wantsTime = payload.at !== undefined;
-    const wantsText = payload.message !== undefined;
-    const wantsRepeats = payload.repeats !== undefined;
-    if (!wantsTime && !wantsText && !wantsRepeats) {
-      return refuse(400, "Tell me what to change: a new time, new words, or how often it repeats.");
-    }
+    const plan = planReminderEdit(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
 
     const found = await reminderFor(payload, ctx, "change");
     if ("ok" in found) return found;
@@ -311,28 +391,24 @@ const updateReminder: Tool = {
     let repeats = row.repeats;
     let trimmed = false;
 
-    if (wantsTime) {
-      const when = dueFrom(payload.at, ctx);
-      if ("ok" in when) return when;
-      due = when.due;
-      patch.dueAt = when.due.toISOString();
+    if (plan.value.due) {
+      due = plan.value.due;
+      patch.dueAt = plan.value.due.toISOString();
       changed.push("time");
     }
-    if (wantsText) {
-      const said = messageFor(payload.message);
-      if (!said.ok) return refuse(400, said.say);
-      // Through the same rule remind uses, so an edited reminder is capped, cleaned
-      // and still carries the marker. A message that quietly lost its marker would
-      // stop saying an assistant wrote it, on the one screen where that matters.
-      message = said.message;
-      patch.message = said.message;
-      trimmed = said.trimmed;
+    if (plan.value.message) {
+      // Through the same rule remind uses (messageFor, in planReminderEdit), so an
+      // edited reminder is capped, cleaned and still carries the marker. A message that
+      // quietly lost its marker would stop saying an assistant wrote it, on the one
+      // screen where that matters.
+      message = plan.value.message.message;
+      patch.message = plan.value.message.message;
+      trimmed = plan.value.message.trimmed;
       changed.push("words");
     }
-    if (wantsRepeats) {
-      if (!isRepeats(payload.repeats)) return refuse(400, "Repeats can be once, daily or weekly.");
-      repeats = payload.repeats;
-      patch.repeats = payload.repeats;
+    if (plan.value.repeats) {
+      repeats = plan.value.repeats;
+      patch.repeats = plan.value.repeats;
       changed.push("how often");
     }
 

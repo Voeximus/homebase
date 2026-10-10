@@ -21,6 +21,7 @@ import {
 } from "../../lib/plan";
 import { firepowerStatus } from "../../lib/headline";
 import { transferIds } from "../../lib/flow";
+import { unusualCharges } from "../../lib/unusual";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
 import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
@@ -262,31 +263,19 @@ export function buildFinanceVMs(
   // ── simple anomaly count: a free-form charge > 2.5× its category's monthly mean.
   //    From `visible` (lens-filtered) so the count matches what the list can show —
   //    otherwise a spouse's anomaly counts here but opens to an empty lens-filtered list.
-  const monthFree = visible.filter(
-    (t) => t.type === "expense" && t.date.slice(0, 7) === monthKey && !t.appliesTo && !t.pending,
-  );
-  const byCatAmts: Record<string, number[]> = {};
-  monthFree.forEach((t) => (byCatAmts[t.categoryId] ??= []).push(t.amount));
-  const anomalies = monthFree
-    .filter((t) => {
-      if (t.anomalyAck) return false; // user dismissed this flag → never resurface
-      const arr = byCatAmts[t.categoryId];
-      if (arr.length < 3 || t.amount <= 25) return false;
-      const mean = arr.reduce((s, a) => s + a, 0) / arr.length;
-      return t.amount > 2.5 * mean;
-    })
-    .map((t) => {
-      const arr = byCatAmts[t.categoryId];
-      const mean = arr.reduce((s, a) => s + a, 0) / arr.length;
-      return {
-        id: t.id,
-        merchant: t.description || catName(t.categoryId),
-        catId: t.categoryId,
-        catLabel: catName(t.categoryId),
-        amount: t.amount,
-        ratio: mean > 0 ? t.amount / mean : 0,
-      };
-    });
+  //
+  //    THE RULE ITSELF MOVED to src/lib/unusual.ts on 2026-10-10, unchanged, so the
+  //    read door's finance.unusual answers from the same function instead of a copy —
+  //    this screen is being retired, and the write door's dismiss_unusual had nothing
+  //    to point at. What stays here is only what this screen draws from it.
+  const anomalies = unusualCharges(visible, monthKey).map(({ tx: t, ratio }) => ({
+    id: t.id,
+    merchant: t.description || catName(t.categoryId),
+    catId: t.categoryId,
+    catLabel: catName(t.categoryId),
+    amount: t.amount,
+    ratio,
+  }));
   const anomalyIds = anomalies.map((a) => a.id);
   const anomalyCount = anomalies.length;
 

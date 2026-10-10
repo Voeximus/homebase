@@ -440,6 +440,16 @@ const EVERY_HEALTH_WRITE: Record<string, Call> = {
       exercises: [{ name: "Incline dumbbell press", sets: [{ reps: 8, weight: 70 }, { reps: 7, weight: 70 }] }],
     },
   },
+  // A finished session corrected in place: renamed, and its exercises replaced whole.
+  // Not fragile — its undo compares what it wrote and declines rather than overwrite.
+  "health.edit_session": {
+    args: {
+      session_id: "wk-1",
+      name: "Lower B",
+      exercises: [{ name: "Leg press", sets: [{ reps: 10, weight: 280 }] }, { name: "Walking", minutes: 20 }],
+    },
+    setup: () => void stockSession({ done: true }),
+  },
   "health.delete_session": {
     args: { session_id: "wk-1" },
     setup: () => void stockSession({ done: true }),
@@ -1340,3 +1350,240 @@ describe("the handler carries the undo token out, and the before-state stays in 
 //
 // What replaced it here is the end-to-end pair above: a weigh-in logged through the door
 // and put back through the door, and a refusal that carries the handler's own sentence.
+
+// ── correcting a finished session in place ───────────────────────────────────
+//
+// ADDED 2026-10-10. The audit log showed an assistant deleting and re-logging finished
+// sessions — two writes and a new id each — because nothing could change a whole exercise.
+// These drive the tool that replaces that round trip.
+
+describe("health.edit_session corrects a finished session without deleting it", () => {
+  /** Two duration-only exercises, the shape those back-dated sessions had. */
+  const twoTimed = (): ExerciseEntry[] => [
+    { id: "ex-c", exerciseId: "", name: "Cardio", muscle: "cardio", sets: [], duration: 30 },
+    { id: "ex-f", exerciseId: "", name: "Full body", muscle: "fullbody", sets: [], duration: 30 },
+  ];
+
+  it("replaces the exercises in one write, keeps the session's id, and the undo puts the old ones back", async () => {
+    stockSession({ done: true, date: YESTERDAY, exercises: twoTimed() });
+    const before = snapshot();
+    const out = await run("health.edit_session", {
+      session_id: "wk-1",
+      exercises: [
+        { name: "Cardio", muscle: "cardio", minutes: 30 },
+        { name: "Squat machine", muscle: "legs", minutes: 10 },
+        { name: "Row machine", muscle: "back", minutes: 10 },
+        { name: "Chest machine", muscle: "chest", minutes: 10 },
+      ],
+    });
+    expect(out.ok, said(out)).toBe(true);
+    expect(db.workouts).toHaveLength(1);
+    expect(db.workouts[0].id).toBe("wk-1");
+    expect((db.workouts[0].exercises as ExerciseEntry[]).map((e) => e.duration)).toEqual([30, 10, 10, 10]);
+    expect(said(out)).toContain("It keeps its id");
+    if (out.ok) expect(out.undo!.fragile).toBeUndefined();
+
+    const back = await undo(out);
+    expect(back.ok, said(back)).toBe(true);
+    expect(snapshot()).toBe(before);
+  });
+
+  it("moves a session to another day, and refuses the future and a day further back than a new one may be", async () => {
+    stockSession({ done: true });
+    const out = await run("health.edit_session", { session_id: "wk-1", date: YESTERDAY });
+    expect(out.ok, said(out)).toBe(true);
+    expect(db.workouts[0].date).toBe(YESTERDAY);
+    expect(said(out)).toContain(`moved it to ${YESTERDAY}`);
+    const back = await undo(out);
+    expect(back.ok, said(back)).toBe(true);
+    expect(db.workouts[0].date).toBe(TODAY);
+
+    const future = await run("health.edit_session", { session_id: "wk-1", date: "2026-09-27" });
+    expect(future.ok).toBe(false);
+    if (!future.ok) expect(future.say).toContain("has not happened yet in Arizona");
+    const ancient = await run("health.edit_session", { session_id: "wk-1", date: "2026-01-01" });
+    expect(ancient.ok).toBe(false);
+    expect(db.workouts[0].date).toBe(TODAY);
+  });
+
+  it("refuses a session that is still running — that one belongs to the live logger", async () => {
+    stockSession({ done: false });
+    const out = await run("health.edit_session", { session_id: "wk-1", name: "Lower B" });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(409);
+      expect(out.say).toContain("still running");
+    }
+    expect(db.workouts[0].name).toBe("Lower A");
+  });
+
+  it("an undo declines when the phone changed what it corrected since, and leaves the phone's version", async () => {
+    stockSession({ done: true });
+    const out = await run("health.edit_session", { session_id: "wk-1", name: "Lower B" });
+    expect(out.ok, said(out)).toBe(true);
+    // The phone renames it again in the history editor.
+    db.workouts[0].name = "Legs, heavy";
+    db.workouts[0].updatedAt = "v-phone";
+    const back = await undo(out);
+    expect(back.ok).toBe(false);
+    if (!back.ok) expect(back.say).toContain("changed again since");
+    expect(db.workouts[0].name).toBe("Legs, heavy");
+  });
+
+  it("an undo puts back only what it changed, so the phone's change to another field survives", async () => {
+    stockSession({ done: true });
+    const out = await run("health.edit_session", { session_id: "wk-1", name: "Lower B" });
+    expect(out.ok, said(out)).toBe(true);
+    db.workouts[0].notes = "knee felt fine";
+    db.workouts[0].updatedAt = "v-phone";
+    const back = await undo(out);
+    expect(back.ok, said(back)).toBe(true);
+    expect(db.workouts[0].name).toBe("Lower A");
+    expect(db.workouts[0].notes).toBe("knee felt fine");
+  });
+
+  it("an undo reads back a session whose keys came back in another order as unchanged", async () => {
+    // A jsonb column hands an object's keys back in its own order. That is not a change,
+    // and an undo that thought it was would refuse every time against the real database.
+    stockSession({ done: true });
+    const out = await run("health.edit_session", {
+      session_id: "wk-1",
+      exercises: [{ name: "Leg press", sets: [{ reps: 10, weight: 280 }] }],
+    });
+    expect(out.ok, said(out)).toBe(true);
+    const shuffle = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(shuffle)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.entries(v as Record<string, unknown>).reverse().map(([k, x]) => [k, shuffle(x)]))
+          : v;
+    db.workouts[0].exercises = shuffle(db.workouts[0].exercises) as unknown[];
+    const back = await undo(out);
+    expect(back.ok, said(back)).toBe(true);
+    expect((db.workouts[0].exercises as ExerciseEntry[])[0].id).toBe("ex-1");
+  });
+
+  it("refuses a correction that changes nothing, one that names nothing, and an exercise the library needs a muscle for", async () => {
+    stockSession({ done: true });
+    const same = await run("health.edit_session", { session_id: "wk-1", name: "Lower A" });
+    expect(same.ok).toBe(false);
+    if (!same.ok) expect(same.status).toBe(409);
+    const nothing = await run("health.edit_session", { session_id: "wk-1" });
+    expect(nothing.ok).toBe(false);
+    if (!nothing.ok) expect(nothing.status).toBe(400);
+    // A made-up lift: the library knows the common Chinese names since the shapes change
+    // (快走 is Walking now), so the name here is one no alias will ever match.
+    const unknown = await run("health.edit_session", { session_id: "wk-1", exercises: [{ name: "Zercher good morning thing", minutes: 30 }] });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.say).toContain("not in the exercise library");
+    expect(db.workouts[0].name).toBe("Lower A");
+  });
+
+  it("its undo refuses a before-state it cannot read, and writes nothing", async () => {
+    stockSession({ done: true });
+    const handler = HEALTH_UNDO["session.restore-edit"];
+    for (const before of [
+      null,
+      { id: "wk-1", was: {}, now: {} },
+      { id: "wk-1", was: { done: false }, now: { done: true } },
+      { id: "wk-1", was: { date: "yesterday" }, now: { date: TODAY } },
+      { id: "wk-1", was: { exercises: "none" }, now: { exercises: [] } },
+    ]) {
+      const out = await handler.apply(before as never, ctxFor());
+      expect(out.ok, JSON.stringify(before)).toBe(false);
+    }
+    expect(db.workouts[0].name).toBe("Lower A");
+    expect(db.workouts[0].updatedAt).toBe("v0");
+  });
+});
+
+// ── naming a session by its day, and refusals that list real ones ────────────
+//
+// FOUND 2026-10-10 in the audit log: an assistant sent one invented session id twice, re-reading the list
+// in between, and the refusal named nothing it could have copied instead.
+
+describe("a session can be named by its day, and a wrong id is answered with real ones", () => {
+  it("deletes the one session on a day by session_date", async () => {
+    stockSession({ done: true, date: YESTERDAY });
+    const out = await run("health.delete_session", { session_date: YESTERDAY });
+    expect(out.ok, said(out)).toBe(true);
+    expect(db.workouts).toHaveLength(0);
+  });
+
+  it("logs sets into, and corrects, the one session on a day by session_date", async () => {
+    stockSession({ done: true, date: YESTERDAY });
+    const logged = await run("health.log_sets", { session_date: YESTERDAY, exercise: "Leg press", sets: [{ reps: 6, weight: 320 }] });
+    expect(logged.ok, said(logged)).toBe(true);
+    const named = await run("health.edit_session", { session_date: YESTERDAY, name: "Lower B" });
+    expect(named.ok, said(named)).toBe(true);
+    expect(db.workouts[0].name).toBe("Lower B");
+  });
+
+  it("refuses a day with two sessions, and lists both with their ids, rather than picking one", async () => {
+    stockSession({ id: "wk-1", done: true, date: YESTERDAY });
+    stockSession({ id: "wk-2", done: true, date: YESTERDAY });
+    const out = await run("health.delete_session", { session_date: YESTERDAY });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(409);
+      expect(out.say).toContain("2 sessions on");
+      expect(out.say).toContain("id wk-1");
+      expect(out.say).toContain("id wk-2");
+    }
+    expect(db.workouts).toHaveLength(2);
+  });
+
+  it("refuses a day with no session, and lists the recent ones", async () => {
+    stockSession({ done: true, date: YESTERDAY });
+    const out = await run("health.finish_session", { session_date: TODAY });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(404);
+      expect(out.say).toContain(`no session on ${TODAY}`);
+      expect(out.say).toContain(`${YESTERDAY} Lower A, id wk-1`);
+    }
+  });
+
+  it("refuses an id that is not one of theirs with their own most recent sessions — date, name and id", async () => {
+    stockSession({ id: "wk-1", done: true, date: YESTERDAY });
+    stockSession({ id: "wk-2", done: false, date: TODAY });
+    const out = await run("health.delete_session", { session_id: "deadbeef-0000-4000-8000-000000000000" });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(404);
+      expect(out.say).toMatch(/no session of yours with that id/i);
+      // Newest first, and the unfinished one says so.
+      expect(out.say).toContain(`Your most recent: ${TODAY} Lower A (not finished), id wk-2; ${YESTERDAY} Lower A, id wk-1.`);
+    }
+    expect(db.workouts).toHaveLength(2);
+  });
+
+  it("lists only the caller's own sessions, so the other person's ids are never handed out", async () => {
+    stockSession({ id: "wk-1", done: true });
+    const out = await run("health.delete_session", { session_id: "wk-1" }, "xinyan");
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.say).toMatch(/no session of yours/i);
+      expect(out.say).toContain("You have no sessions logged at all");
+      expect(out.say).not.toContain("wk-1");
+    }
+  });
+
+  it("refuses an id and a date that disagree, rather than guessing which one was meant", async () => {
+    stockSession({ done: true, date: YESTERDAY });
+    const out = await run("health.delete_session", { session_id: "wk-1", session_date: TODAY });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.say).toContain(`That session is on ${YESTERDAY}, not ${TODAY}`);
+    expect(db.workouts).toHaveLength(1);
+  });
+
+  it("refuses a call that names no session at all, and says both ways to name one", async () => {
+    const out = await run("health.delete_session", {});
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(400);
+      expect(out.say).toContain("session_id");
+      expect(out.say).toContain("session_date");
+    }
+  });
+});
