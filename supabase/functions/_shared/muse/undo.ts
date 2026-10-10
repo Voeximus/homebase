@@ -53,6 +53,12 @@ export const UNDO_TABLES = [
   // delete of that row — the same insert-then-delete_row shape add_bill and add_debt
   // use, so no new step kind was needed.
   "review_dismissals",
+  // Added 2026-10-10 for finance.set_cycle_budget: a budget goal for one pay cycle is one
+  // row per line here (supabase/schema_v45_cycle_budgets.sql). Setting a line is undone by
+  // the data kinds — set_columns puts an old amount back, delete_row removes a new row —
+  // and clearing a cycle is undone by the one named inverse in muse-write/financeUndo.ts
+  // that can put a cleared goal row back.
+  "cycle_budgets",
 ] as const;
 
 export type UndoTable = (typeof UNDO_TABLES)[number];
@@ -134,6 +140,12 @@ export const UNDO_COLUMNS: Record<UndoTable, readonly string[]> = {
   // this allowlist is what that column is checked against. The key is the one column
   // that says which dismissal the row is.
   review_dismissals: ["key"],
+  // `amount` and `set_by`, the two columns finance.set_cycle_budget replaces when it
+  // changes a line that already has a goal — and the two a delete_row checks are still
+  // what the door wrote before it removes a goal row it added. `cycle_start` and `line`
+  // are what the row IS and are never updated, so they are not here: changing either
+  // would make it a different goal.
+  cycle_budgets: ["amount", "set_by"],
 };
 
 /** A JSON value, as it sits in a column or in the steps document. */

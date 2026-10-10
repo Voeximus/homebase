@@ -53,7 +53,10 @@ import { billKey, BUILT_IN_BILL_NAMES, learnedFor, matchRecurringName, merchantK
 // finance.edit_debt — read off the constants so no test types a household's names.
 import { DUE_DAYS, STEP_DOWNS } from "../src/lib/schedule.ts";
 import { isCardName } from "../src/lib/forecast.ts";
-import { ATTACK_ORDER } from "../src/lib/plan.ts";
+import { ATTACK_ORDER, LEAN_VARIABLE, perCycle, sumTargets } from "../src/lib/plan.ts";
+// A pay cycle's budget goal (2026-10-10): the shared rule the write door's reply totals with.
+import { cycleTargets } from "../src/lib/cycleBudget.ts";
+import type { CycleBudget } from "../src/types.ts";
 import { readFileSync } from "node:fs";
 import { toAppData } from "../supabase/functions/_shared/muse/rows.ts";
 import { NAME_MAX, scrub } from "../supabase/functions/_shared/muse/scrub.ts";
@@ -374,6 +377,10 @@ describe("every finance write is driven here", () => {
     // confirming it (keeping its category) is a real change; a dismissal is one row.
     "finance.confirm_charges": { charges: [CHARGE] },
     "finance.dismiss_suggestion": { key: `drift:${BILL}:2700` },
+    // 2026-10-10: a goal for the NEXT pay cycle (the test's Arizona date is the 26th, so
+    // the cycle in progress opened on the 15th and the next opens on the 30th). Made-up
+    // figures; two new rows, and the undo removes both.
+    "finance.set_cycle_budget": { cycle_start: "2026-09-30", lines: { groceries: 120, dining: 80 } },
     "system.undo": {},
     "finance.refresh_bank": {},
   };
@@ -3997,5 +4004,437 @@ describe("isMissingTable only means a missing table", () => {
     expect(
       isMissingTable(new Error("Could not find the table 'public.muse_memory' in the schema cache"), "review_dismissals"),
     ).toBe(false);
+  });
+});
+
+// ── finance.set_cycle_budget ─────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. A budget goal for ONE pay cycle, stored per line in
+// public.cycle_budgets and read back by the app's budget bars and finance.budget_status.
+// Every figure here is MADE UP; the repo is public.
+//
+// The instant is 7 PM on 26 Sep in Arizona, so the cycle in progress opened on the 15th,
+// and a goal may be set for the cycles starting 31 Aug (one back), 15 Sep, 30 Sep and
+// 15 Oct (two ahead).
+
+describe("finance.set_cycle_budget", () => {
+  const SEP15 = "2026-09-15";
+  const SEP30 = "2026-09-30";
+  const G1 = "abab1111-2222-3333-4444-555555555555";
+  const G2 = "abab2222-2222-3333-4444-555555555555";
+  const G3 = "abab3333-2222-3333-4444-555555555555";
+  const rowsOf = (db: Fake) => db.tables.cycle_budgets;
+  const asGoals = (db: Fake): CycleBudget[] =>
+    rowsOf(db).map((r) => ({
+      id: String(r.id),
+      cycleStart: String(r.cycle_start),
+      line: String(r.line),
+      amount: Number(r.amount),
+    }));
+  /** The goal table sorted by id, so a put-back row compares equal wherever it landed. */
+  const byIdRows = (db: Fake) => [...rowsOf(db)].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const seed = (db: Fake) => {
+    db.tables.cycle_budgets.push(
+      { id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" },
+      { id: G2, cycle_start: SEP30, line: "misc", amount: 15, set_by: null },
+    );
+  };
+
+  it("sets the cycle in progress when no cycle is named — one row per line, in the caller's name", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_cycle_budget", { lines: { gas: 33.5, groceries: 120 } });
+    expect(rowsOf(db).map((r) => [r.cycle_start, r.line, r.amount, r.set_by])).toEqual([
+      [SEP15, "groceries", 120, "gino"],
+      [SEP15, "gas", 33.5, "gino"],
+    ]);
+    expect(body.result.cycle_start).toBe(SEP15);
+    expect(body.result.cycle_end).toBe("2026-09-29");
+    // The plan's own labels, in the plan's own order, and both ways of naming the cycle.
+    expect(body.message).toContain("Groceries $120.00, Gas + convenience $33.50");
+    expect(body.message).toContain("(starting 2026-09-15)");
+    expect(body.message).toContain("The lines not named are unchanged.");
+    // The cycle total is the shared function's answer for the goal as it now stands.
+    const total = cycleTargets(SEP15, asGoals(db)).total;
+    expect(body.result.cycle_total).toBe(total);
+    expect(body.message).toContain(`$${total.toFixed(2)} in all`);
+  });
+
+  it("records who set it from the key, never from the body", async () => {
+    const db = new Fake();
+    await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { dining: 45 } }, XINYAN);
+    expect(rowsOf(db)[0]).toMatchObject({ line: "dining", set_by: "xinyan" });
+    const r = await no(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { pets: 5 }, set_by: "gino" });
+    expect(r.status).toBe(400);
+    expect(rowsOf(db)).toHaveLength(1);
+  });
+
+  it("changes a line that had a goal, adds one that had none, and the undo puts the previous goal back exactly", async () => {
+    const db = new Fake();
+    seed(db);
+    const before = JSON.stringify(db.tables);
+    const body = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 175, dining: 65 } });
+    const by = new Map(rowsOf(db).map((r) => [r.line, r]));
+    expect(by.get("groceries")).toMatchObject({ id: G1, amount: 175, set_by: "gino" });
+    expect(by.get("dining")).toMatchObject({ amount: 65, set_by: "gino" });
+    // The line not named keeps what it had.
+    expect(by.get("misc")).toMatchObject({ id: G2, amount: 15, set_by: null });
+    expect(body.result.lines).toEqual([
+      { key: "groceries", label: "Groceries", was: 200, now: 175 },
+      { key: "dining", label: "Dining out", was: null, now: 65 },
+    ]);
+
+    await ok(db, "system.undo", { token: undoToken(body) });
+    // Byte for byte: the old amount AND who set it are back, and the new row is gone.
+    expect(JSON.parse(JSON.stringify(db.tables))).toEqual(JSON.parse(before));
+  });
+
+  it("leaves a line already at that amount alone, and refuses a call that would change nothing", async () => {
+    const db = new Fake();
+    seed(db);
+    const same = await no(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 200 } });
+    expect(same.status).toBe(409);
+    expect(same.message).toContain("already the goal");
+    expect(db.writes).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+
+    const body = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 200, pets: 0 } });
+    expect(body.message).toContain("Groceries was already at that amount.");
+    expect(body.result.unchanged).toEqual(["groceries"]);
+    // Zero is a real goal ("nothing on this line this cycle"), stored as one.
+    expect(rowsOf(db).find((r) => r.line === "pets")).toMatchObject({ amount: 0 });
+    expect((db.changes[0].steps as unknown[]).length).toBe(1);
+  });
+
+  it("clears a cycle back to the standard budget, and the undo puts every row back under its own id", async () => {
+    const db = new Fake();
+    seed(db);
+    const before = JSON.stringify(db.tables);
+    const body = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, clear: true });
+    expect(rowsOf(db)).toEqual([]);
+    expect(body.message).toContain("back on the standard budget");
+    expect(body.result.cleared).toEqual([
+      { key: "groceries", label: "Groceries", was: 200 },
+      { key: "misc", label: "Misc / uncategorized", was: 15 },
+    ]);
+    expect(body.result.cycle_total).toBe(perCycle(sumTargets(LEAN_VARIABLE)));
+
+    await ok(db, "system.undo", { token: undoToken(body) });
+    // Every row back, under its own id, byte for byte. The undo runs newest first, so the
+    // rows return in the opposite order — which a table does not have; compared by id.
+    const byId = (t: Record<string, unknown[]>) => ({
+      ...t,
+      cycle_budgets: [...(t.cycle_budgets as { id: string }[])].sort((a, b) => a.id.localeCompare(b.id)),
+    });
+    expect(byId(JSON.parse(JSON.stringify(db.tables)))).toEqual(byId(JSON.parse(before)));
+
+    const nothing = new Fake();
+    const r = await no(nothing, "finance.set_cycle_budget", { cycle_start: SEP30, clear: true });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("already uses the standard budget");
+    expect(nothing.changes).toHaveLength(0);
+  });
+
+  // Renamed 2026-10-10 in review: it was "...and the others still come back", which held
+  // only because the line set again happened to be the first row. The undo runs newest
+  // first and STOPS at the line set again; the three-line test below has that line in
+  // the middle, and a retry.
+  it("a cleared line given a goal again since keeps the newer goal; the undo stops there and keeps what it put back", async () => {
+    const db = new Fake();
+    db.tables.cycle_budgets.push(
+      { id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" },
+      { id: G2, cycle_start: SEP30, line: "dining", amount: 70, set_by: "xinyan" },
+    );
+    const cleared = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, clear: true });
+    await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 99 } });
+
+    const r = await no(db, "system.undo", { token: undoToken(cleared) });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("Groceries goal has been set again");
+    expect(r.message).toContain("One part of it was already put back");
+    const by = new Map(rowsOf(db).map((x) => [x.line, x]));
+    expect(by.get("groceries")).toMatchObject({ amount: 99, set_by: "gino" });
+    expect(by.get("dining")).toMatchObject({ id: G2, amount: 70, set_by: "xinyan" });
+  });
+
+  it("undoing a clear stops at a middle line set again since, and asking again once that is undone finishes the job", async () => {
+    // FOUND 2026-10-10 in review. Three cleared lines; the middle one is given a goal
+    // again. The undo runs newest first: misc goes back, dining refuses (a newer goal),
+    // groceries waits. A retry used to refuse on misc for good ("already back"), so
+    // groceries and dining could never come back with that token.
+    const db = new Fake();
+    db.tables.cycle_budgets.push(
+      { id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" },
+      { id: G2, cycle_start: SEP30, line: "dining", amount: 70, set_by: "xinyan" },
+      { id: G3, cycle_start: SEP30, line: "misc", amount: 15, set_by: null },
+    );
+    const original = byIdRows(db).map((r) => ({ ...r }));
+    const cleared = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, clear: true });
+    const newer = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { dining: 99 } });
+    const newerId = String(rowsOf(db).find((r) => r.line === "dining")!.id);
+    const stateOf = (token: string) => db.changes.find((c) => c.token === token)!.state;
+
+    // First try: misc back, dining keeps the newer goal, groceries not tried.
+    const first = await no(db, "system.undo", { token: undoToken(cleared) });
+    expect(first.status).toBe(409);
+    expect(first.message).toContain("Dining out goal has been set again");
+    expect(first.message).toContain("undo that newer change first");
+    expect(first.message).toContain("One part of it was already put back");
+    const afterFirst = new Map(rowsOf(db).map((x) => [x.line, x]));
+    expect(afterFirst.get("misc")).toMatchObject({ id: G3, amount: 15, set_by: null });
+    expect(afterFirst.get("dining")).toMatchObject({ id: newerId, amount: 99, set_by: "gino" });
+    expect(afterFirst.has("groceries")).toBe(false);
+    expect(stateOf(undoToken(cleared))).toBe("undoable");
+
+    // Asking again with the newer goal still there: misc counts as done (not refused),
+    // and the undo stops at dining again. Nothing new is written.
+    const writes = db.writes.length;
+    const retry = await no(db, "system.undo", { token: undoToken(cleared) });
+    expect(retry.status).toBe(409);
+    expect(retry.message).toContain("Dining out goal has been set again");
+    expect(retry.message).not.toContain("already back");
+    expect(db.writes.length).toBe(writes);
+
+    // Undo the newer change, then the same token again: dining and groceries come back
+    // under their own ids, and the clear is done.
+    await ok(db, "system.undo", { token: undoToken(newer) });
+    const done = await ok(db, "system.undo", { token: undoToken(cleared) });
+    expect(done.result.rows_put_back).toBe(3);
+    expect(byIdRows(db)).toEqual(original);
+    expect(stateOf(undoToken(cleared))).toBe("undone");
+  });
+
+  it("the restore counts its own row as done when two tries land together, and refuses another phone's", async () => {
+    // The insert is what decides. A "taken" from it is either the other phone's goal (a
+    // conflict) or this very goal, put back by another try in the same instant (done).
+    const run = async (inTheGap: Record<string, unknown>) => {
+      const db = new Fake();
+      db.tables.cycle_budgets.push({ id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" });
+      const cleared = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, clear: true });
+      db.onReadCycleBudgets = () => {
+        db.onReadCycleBudgets = null;
+        db.tables.cycle_budgets.push(inTheGap);
+      };
+      const r = await handleWrite(post("system.undo", { token: undoToken(cleared) }, GINO), deps(db));
+      return { db, status: r.status, message: String(r.body.message) };
+    };
+
+    const same = await run({ id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" });
+    expect(same.status).toBe(200);
+    expect(rowsOf(same.db)).toEqual([{ id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" }]);
+
+    const other = await run({ id: G2, cycle_start: SEP30, line: "groceries", amount: 120, set_by: "gino" });
+    expect(other.status).toBe(409);
+    expect(other.message).toContain("while I was putting the old one back");
+    expect(rowsOf(other.db)).toEqual([{ id: G2, cycle_start: SEP30, line: "groceries", amount: 120, set_by: "gino" }]);
+  });
+
+  it("a set that changes an existing line puts back what it had written when another line moves in the gap", async () => {
+    // FOUND 2026-10-10 in review: only the insert-path race was tested. Here the other
+    // phone changes an EXISTING goal row between the read and the write: groceries (an
+    // update) lands, dining (an insert) lands, misc (an update) finds its row moved. So
+    // both are put back, misc keeps the other phone's figure, and the change is
+    // abandoned rather than handed out as undoable.
+    const db = new Fake();
+    seed(db);
+    db.onReadCycleBudgets = () => {
+      db.onReadCycleBudgets = null;
+      db.tables.cycle_budgets.find((r) => r.id === G2)!.amount = 18;
+    };
+    const r = await no(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 175, dining: 65, misc: 20 } });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("put back the 2 I had already set");
+    expect(byIdRows(db)).toEqual([
+      { id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" },
+      { id: G2, cycle_start: SEP30, line: "misc", amount: 18, set_by: null },
+    ]);
+    expect(db.changes[0].state).toBe("abandoned");
+  });
+
+  it("a set of two existing lines keeps nothing when the second moved in the gap", async () => {
+    const db = new Fake();
+    seed(db);
+    db.onReadCycleBudgets = () => {
+      db.onReadCycleBudgets = null;
+      Object.assign(db.tables.cycle_budgets.find((r) => r.id === G2)!, { amount: 30, set_by: "xinyan" });
+    };
+    const r = await no(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 175, misc: 20 } });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("put back the 1 I had already set");
+    expect(byIdRows(db)).toEqual([
+      { id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" },
+      { id: G2, cycle_start: SEP30, line: "misc", amount: 30, set_by: "xinyan" },
+    ]);
+    expect(db.changes[0].state).toBe("abandoned");
+  });
+
+  it("a clear keeps nothing when a goal line moves in the gap: the line it had removed comes back under its own id", async () => {
+    // Groceries is removed first; misc then finds its row changed by the other phone. The
+    // clear puts groceries back under G1, keeps the other phone's misc, and is abandoned.
+    const db = new Fake();
+    seed(db);
+    db.onReadCycleBudgets = () => {
+      db.onReadCycleBudgets = null;
+      db.tables.cycle_budgets.find((r) => r.id === G2)!.amount = 18;
+    };
+    const r = await no(db, "finance.set_cycle_budget", { cycle_start: SEP30, clear: true });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("put back the 1 I had already set");
+    expect(byIdRows(db)).toEqual([
+      { id: G1, cycle_start: SEP30, line: "groceries", amount: 200, set_by: "xinyan" },
+      { id: G2, cycle_start: SEP30, line: "misc", amount: 18, set_by: null },
+    ]);
+    expect(db.changes[0].state).toBe("abandoned");
+  });
+
+  it("an undo refuses rather than overwrite a goal line changed since", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 120 } });
+    rowsOf(db)[0].amount = 130; // the other phone, afterwards
+    const r = await no(db, "system.undo", { token: undoToken(body) });
+    expect(r.status).toBe(409);
+    expect(rowsOf(db)).toHaveLength(1);
+    expect(rowsOf(db)[0].amount).toBe(130);
+  });
+
+  it("keeps nothing from a call when the other phone sets the same line in the gap", async () => {
+    const db = new Fake();
+    db.onReadCycleBudgets = () => {
+      db.onReadCycleBudgets = null;
+      db.tables.cycle_budgets.push({ id: G2, cycle_start: SEP30, line: "dining", amount: 55, set_by: "xinyan" });
+    };
+    const r = await no(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines: { groceries: 120, dining: 65 } });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("put back the 1 I had already set");
+    // Only the other phone's goal is left — groceries went in first and came back out.
+    expect(rowsOf(db)).toEqual([{ id: G2, cycle_start: SEP30, line: "dining", amount: 55, set_by: "xinyan" }]);
+    expect(db.changes[0].state).toBe("abandoned");
+  });
+
+  it("refuses a malformed goal with every problem at once, and writes nothing", async () => {
+    const offered = "2026-08-31, 2026-09-15, 2026-09-30, 2026-10-15";
+    const cases: [Record<string, unknown>, string[]][] = [
+      [
+        { lines: { groceries: -5, food: 10, dining: "40" } },
+        ["groceries has to be dollars", "dining has to be dollars", "It does not take food", "groceries, gas, dining, household, pets, misc"],
+      ],
+      [{ cycle_start: "2026-09-16", lines: { groceries: 10 } }, ["not the first day of a pay cycle", offered]],
+      [{ cycle_start: "2026-08-15", lines: { groceries: 10 } }, ["more than 1 cycle back", offered]],
+      [{ cycle_start: "2026-10-31", lines: { groceries: 10 } }, ["more than 2 cycles ahead", offered]],
+      [{ cycle_start: "09/30/2026", lines: { groceries: 10 } }, ["as YYYY-MM-DD"]],
+      [{ lines: { groceries: 10 }, clear: true }, ["not both"]],
+      [{ clear: false }, ["clear only takes true", "I need lines"]],
+      [{ lines: {} }, ["lines is empty"]],
+      [{ lines: [1] }, ["has to be an object", "it was a list"]],
+      [{ lines: { groceries: 20000 } }, ["from 0 to 10000", "it was 20000"]],
+      [{}, ["I need lines"]],
+    ];
+    for (const [args, says] of cases) {
+      const db = new Fake();
+      const r = await no(db, "finance.set_cycle_budget", args);
+      expect(r.status, JSON.stringify(args)).toBe(400);
+      for (const s of says) expect(r.message, JSON.stringify(args)).toContain(s);
+      expect(db.writes, JSON.stringify(args)).toHaveLength(0);
+      expect(db.changes, JSON.stringify(args)).toHaveLength(0);
+      expect(rowsOf(db)).toEqual([]);
+    }
+  });
+
+  it("takes dollars to the cent before writing them, so its own undo still finds what it wrote", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_cycle_budget", { lines: { dining: 92.006 } });
+    expect(rowsOf(db)[0].amount).toBe(92.01);
+    await ok(db, "system.undo", { token: undoToken(body) });
+    expect(rowsOf(db)).toEqual([]);
+  });
+
+  it("says so in a sentence, and changes nothing, on a database without the goal table", async () => {
+    const db = new Fake();
+    db.noGoalTable = true;
+    const r = await no(db, "finance.set_cycle_budget", { lines: { groceries: 120 } });
+    expect(r.status).toBe(503);
+    expect(r.message).toContain("schema_v45_cycle_budgets.sql");
+    expect(r.message).toContain("Nothing was changed");
+    expect(db.writes).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("an outage while reading the goals is a 500, not \"the database is not set up\"", async () => {
+    const db = new Fake();
+    db.readCycleBudgets = () => Promise.reject(new Error("read cycle_budgets: TypeError: fetch failed"));
+    const r = await handleWrite(post("finance.set_cycle_budget", { lines: { groceries: 120 } }), deps(db));
+    expect(r.status).toBe(500);
+    expect(String(r.body.message)).not.toContain("schema_v45");
+  });
+
+  it("the restore handler refuses a before-state it cannot read, and writes nothing", async () => {
+    const db = new Fake();
+    const ctx = { db, person: "gino", at: AT, az: AT, appUrl: "", push: () => Promise.resolve() } as unknown as Ctx;
+    const good = { id: G1, cycle_start: SEP30, line: "groceries", amount: 120, set_by: "gino" };
+    for (const before of [
+      null,
+      "groceries",
+      { ...good, id: "not-an-id" },
+      { ...good, line: "vacation" },
+      { ...good, amount: -1 },
+      { ...good, amount: "120" },
+      { ...good, cycle_start: "soon" },
+      { ...good, set_by: "someone" },
+    ]) {
+      const out = await UNDO_REGISTRY["cycle-budget.insert"].apply(before as never, ctx);
+      expect(out.ok, JSON.stringify(before)).toBe(false);
+    }
+    expect(rowsOf(db)).toEqual([]);
+    expect(db.writes).toHaveLength(0);
+    // And the shape it does write comes back.
+    const out = await UNDO_REGISTRY["cycle-budget.insert"].apply(good as never, ctx);
+    expect(out.ok).toBe(true);
+    expect(rowsOf(db)).toEqual([good]);
+  });
+
+  it("sets all six lines in one call, and then says nothing about lines not named", async () => {
+    const db = new Fake();
+    const lines = { groceries: 101, gas: 22, dining: 33, household: 44, pets: 0, misc: 6 };
+    const body = await ok(db, "finance.set_cycle_budget", { cycle_start: SEP30, lines });
+    expect(rowsOf(db)).toHaveLength(6);
+    expect(body.message).not.toContain("not named");
+    expect(body.result.cycle_total).toBe(206);
+    expect(body.message).toContain("$206.00 in all");
+  });
+
+  describe("against the real client's shape", () => {
+    function client(reply: { data: unknown; error: { code?: string; message?: string } | null }) {
+      const chain: Record<string, unknown> = {};
+      for (const m of ["from", "select", "eq", "order", "insert", "single"]) chain[m] = () => chain;
+      chain.then = (okFn: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(reply).then(okFn, bad);
+      return chain as unknown as Parameters<typeof financeDb>[0];
+    }
+    const row = { id: G1, cycleStart: SEP30, line: "groceries", amount: 120, setBy: "gino" };
+
+    it("a goal already set for that line is \"taken\", and nothing is counted as written", async () => {
+      const taken = financeDb(
+        client({ data: null, error: { code: "23505", message: 'duplicate key value violates unique constraint "cycle_budgets_cycle_start_line_key"' } }),
+      );
+      expect(await taken.insertCycleBudget(row)).toBe("taken");
+      expect(taken.writesLanded()).toBe(0);
+      const fresh = financeDb(client({ data: { id: G1 }, error: null }));
+      expect(await fresh.insertCycleBudget(row)).toBe("ok");
+      expect(fresh.writesLanded()).toBe(1);
+    });
+
+    it("reads a cycle's rows with numeric amounts as numbers, and refuses more rows than there are lines", async () => {
+      const got = await financeDb(
+        client({ data: [{ id: G1, cycle_start: SEP30, line: "groceries", amount: "120.00", set_by: null }], error: null }),
+      ).readCycleBudgets(SEP30);
+      expect(got).toEqual([{ id: G1, cycleStart: SEP30, line: "groceries", amount: 120, setBy: null }]);
+      const seven = Array.from({ length: 7 }, (_, i) => ({ id: `g${i}`, cycle_start: SEP30, line: "groceries", amount: 1, set_by: null }));
+      await expect(financeDb(client({ data: seven, error: null })).readCycleBudgets(SEP30)).rejects.toThrow(
+        /more than there are budget lines/,
+      );
+    });
+
+    it("a generic insert into the goal table is refused by name", async () => {
+      const db = financeDb(client({ data: { id: G1 }, error: null }));
+      await expect(db.insertRow("cycle_budgets", { line: "groceries" })).rejects.toThrow(/not a column this door inserts/);
+    });
   });
 });

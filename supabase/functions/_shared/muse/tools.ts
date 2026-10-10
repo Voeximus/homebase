@@ -90,6 +90,10 @@ import {
   monthGetter,
   runForecast,
 } from "./lib/headline.ts";
+// A pay cycle's budget goal (2026-10-10): the goals set for the cycles AFTER this one,
+// and the words for where a target came from. The targets themselves come out of
+// envelopeStatus above, which calls the same file.
+import { goalsAhead, type TargetSource, type TargetsFrom } from "./lib/cycleBudget.ts";
 // Gino's pay floor: the one test for which row carries it, read off the live data so
 // no amount is ever written into this public repository.
 import { payFloorOf } from "./payFloor.ts";
@@ -352,19 +356,94 @@ const financePosition: Tool = {
 };
 
 // ── finance.budget_status ─────────────────────────────────────────────────────
+//
+// SINCE 2026-10-10 THE TARGETS CAN BE A GOAL. The household can set a budget goal for
+// one pay cycle (finance.set_cycle_budget on the write door, stored in
+// public.cycle_budgets), and when one is set for the cycle in progress the targets here
+// are that goal — per line, and the envelope total with them. Where a line has no goal it
+// keeps the standard budget's share. Which is which is decided ONCE, by cycleTargets() in
+// src/lib/cycleBudget.ts, inside the same envelopeStatus() call the screen makes, so the
+// target spoken in a chat is the target on both phones.
+//
+// AND THE REPLY SAYS WHICH IT IS, in words, per line and for the whole cycle. A goal
+// reported as "the budget" would be read as the plan, and a standard target reported as
+// "your goal" would invent a decision nobody made; the two differ by a lot, and in a chat
+// there is no screen beside the number to tell them apart.
+//
+// Before schema_v45 is run the goal table does not exist; the loader says so
+// (`known: false`) and this answers from the standard budget with a note saying why,
+// rather than failing a question it can answer.
+//
+// finance.firepower is deliberately NOT given the goals: every figure it reports is
+// monthly, built on the standard envelope, and a one-cycle goal is not a new monthly
+// plan (cycleBudget.ts says why the two are never mixed). No other read tool reports a
+// cycle target.
+
+/** What a cycle's targets are, in the words the reply says them. One table, so changing
+ *  what an assistant hears is finding a line rather than reading code. */
+const TARGETS_ARE: Record<TargetsFrom, string> = {
+  goal: "this cycle's goal",
+  standard: "the standard budget",
+  mixed: "this cycle's goal for some lines, the standard budget for the rest",
+};
+
+/** What one line's target is, in the same words. */
+const LINE_TARGET_IS: Record<TargetSource, string> = {
+  goal: "this cycle's goal",
+  standard: "the standard budget",
+};
+
+/** The note, built from what is true of this reply — never a sentence about a goal when
+ *  there is none, and never "nobody set one" when the table to hold one is missing. */
+function budgetNote(from: TargetsFrom, known: boolean, ahead: boolean): string {
+  const parts = ["This is a pay cycle, not a month."];
+  if (!known) {
+    parts.push(
+      "Every target is the standard budget — one cycle's share of a monthly figure, so never report it as a monthly budget. The table that holds a cycle's goal has not been set up yet, so no goal can be set or shown until it is.",
+    );
+  } else if (from === "goal") {
+    parts.push(
+      "Every target is the goal set for THIS cycle, in dollars for this cycle — never halve or double it, and do not call it the monthly budget.",
+    );
+  } else if (from === "mixed") {
+    parts.push(
+      "Lines whose target_is says this cycle's goal carry the goal set for this cycle, in dollars for this cycle; the others are the standard budget's share of a monthly figure. Say which is which.",
+    );
+  } else {
+    parts.push(
+      "Every target is the standard budget — one cycle's share of a monthly figure, so never report it as a monthly budget. No goal is set for this cycle; finance.set_cycle_budget on the write door sets one.",
+    );
+  }
+  if (ahead) {
+    parts.push("goals_ahead lists goals already set for cycles that have not started yet; each takes over on its first day.");
+  }
+  parts.push("A negative `left` means over by that much.");
+  return parts.join(" ");
+}
+
 const financeBudgetStatus: Tool = {
   name: "finance.budget_status",
-  summary: "What is left in the variable budget this pay cycle, in total and per line.",
+  summary:
+    "What is left in the variable budget this pay cycle, in total and per line — against this cycle's goal when one is set, and the standard budget when not.",
   async run({ load, now }) {
-    const data = await load.appData();
+    const [data, goals] = await Promise.all([load.appData(), load.cycleBudgets()]);
     // ONE call, not five. This tool used to hold its own copy of the sequence
     // buildVMs.ts runs — monthly envelope, this cycle's window, the cycle's
     // allowance, the cycle's graded spend, the per-category partition — and a copy
     // of a sequence drifts exactly the way a copy of a formula does, with the
     // arithmetic hidden in the ORDER of the calls. Rule 3: the assembly lives in
     // src/lib/headline.ts, which the screen calls too, so the number here is the
-    // number there. `now` is handed in rather than read.
-    const { cycle, target, spent, lines } = envelopeStatus(data.transactions, now);
+    // number there. `now` is handed in rather than read, and so are the goals.
+    const { cycle, target, spent, lines, targetsFrom } = envelopeStatus(
+      data.transactions,
+      now,
+      LEAN_VARIABLE,
+      goals.rows,
+    );
+    // Goals already set for the cycles after this one — usually the next paycheck's,
+    // agreed a few days before it lands. Worked out by the same shared function the
+    // targets above come from; nothing here adds anything up.
+    const ahead = goalsAhead(now, goals.rows);
     return {
       cycle: {
         start: cycle.start,
@@ -373,6 +452,12 @@ const financeBudgetStatus: Tool = {
         day: cycle.dayIndex,
         days: cycle.days,
       },
+      // Said in words, because "goal" and "standard" are the difference between a
+      // decision they made and a default nobody chose.
+      targets_are: TARGETS_ARE[targetsFrom],
+      // False only where schema_v45_cycle_budgets.sql has not been run: then nothing can
+      // have set a goal, and the note says so instead of "no goal is set".
+      goal_table_set_up: goals.known,
       envelope: { target: money(target), spent: money(spent), left: money(target - spent) },
       lines: lines.map((l) => ({
         key: l.key,
@@ -380,11 +465,26 @@ const financeBudgetStatus: Tool = {
         target: money(l.target),
         spent: money(l.spent),
         left: money(l.target - l.spent),
+        target_is: LINE_TARGET_IS[l.from],
+      })),
+      goals_ahead: ahead.map((c) => ({
+        start: c.start,
+        end: c.end,
+        label: scrubOr(c.label, `${c.start} to ${c.end}`),
+        targets_are: TARGETS_ARE[c.targets.from],
+        envelope_target: money(c.targets.total),
+        lines: c.targets.lines.map((l) => ({
+          key: l.key,
+          label: scrubOr(l.label, l.key),
+          target: money(l.target),
+          target_is: LINE_TARGET_IS[l.from],
+        })),
       })),
       // The trap, travelling in the reply itself rather than only in API.md — the
       // assistant may have been given the openapi description and nothing else.
-      // Reported as a monthly budget, every one of these figures is wrong by half.
-      note: "This is a pay cycle, not a month: each target is one cycle's share of a monthly figure. A negative `left` means over by that much.",
+      // Reported as a monthly budget, a standard target is wrong by half; a goal
+      // reported as the standard budget is a decision presented as a default.
+      note: budgetNote(targetsFrom, goals.known, ahead.length > 0),
     };
   },
 };

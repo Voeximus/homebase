@@ -208,3 +208,73 @@ describe("HealthStore — tables that grow with the calendar", () => {
     expect(app.value.weights).toHaveLength(1200);
   });
 });
+
+// ADDED 2026-10-10 with public.cycle_budgets: a budget goal for one pay cycle, set by
+// either assistant through the Muse write door. The store has to bring it to both phones
+// the same way it brings everything else — paged, and keeping what is on screen when a
+// read fails, because an empty list here silently means "back to the standard budget".
+describe("FinanceStore — budget goals for one pay cycle", () => {
+  const goalRow = (id: string, line: string, amount: string, set_by: string | null = "gino") => ({
+    id,
+    cycle_start: "2026-10-15",
+    line,
+    amount,
+    set_by,
+    at: "2026-10-10T20:00:00Z",
+  });
+
+  it("reads every goal row paged, in a total order, and maps it", async () => {
+    H.db.cycle_budgets = [goalRow("cb1", "groceries", "175.00"), goalRow("cb2", "dining", "37.25", null)];
+    const app = await mountFinance();
+    expect(app.value.data.cycleBudgets).toEqual([
+      { id: "cb1", cycleStart: "2026-10-15", line: "groceries", amount: 175, setBy: "gino", at: "2026-10-10T20:00:00Z" },
+      { id: "cb2", cycleStart: "2026-10-15", line: "dining", amount: 37.25, setBy: undefined, at: "2026-10-10T20:00:00Z" },
+    ]);
+    const asked = selectsOf("cycle_budgets");
+    expect(asked.length).toBeGreaterThan(0);
+    for (const r of asked) {
+      expect(r.range).toBeDefined();
+      expect(r.order).toEqual([["id", true]]);
+    }
+  });
+
+  it("a refetch that fails keeps the goals already on screen, and says so", async () => {
+    H.db.cycle_budgets = [goalRow("cb1", "groceries", "175.00")];
+    const app = await mountFinance();
+    expect(app.value.data.cycleBudgets).toHaveLength(1);
+
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    backToForeground();
+    await H.settle();
+    H.fail(H.one(H.on("cycle_budgets", "select")));
+    await answerAll();
+
+    expect(app.value.data.cycleBudgets).toHaveLength(1);
+    expect(warned.mock.calls.some((c) => String(c[0]).includes("keeping the budget goals already on screen"))).toBe(true);
+  });
+
+  it("a database without the table keeps the standard budget — no goals — and the rest of the app loads", async () => {
+    H.db.paid_bills = [{ id: "p1", month: "2026-10", bill_key: "Rent@1", paid: true }];
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = await H.mountStore(FinanceProvider, useStore);
+    unmount = app.unmount;
+    await H.settle();
+    // The goal table's first page fails the way a missing table does; everything else lands.
+    H.fail(H.one(H.on("cycle_budgets", "select")));
+    await answerAll();
+    expect(app.value.data.cycleBudgets).toEqual([]);
+    expect(app.value.data.paidBills).toHaveLength(1);
+  });
+
+  it("a goal set on the other phone arrives without a reload", async () => {
+    const app = await mountFinance();
+    expect(app.value.data.cycleBudgets).toEqual([]);
+    H.db.cycle_budgets = [goalRow("cb1", "groceries", "175.00")];
+    H.emit("cycle_budgets");
+    // The realtime refetch is debounced (REFETCH_DEBOUNCE_MS); let it fire, then answer.
+    await H.settle(() => new Promise((r) => setTimeout(r, 300)));
+    await answerAll();
+    expect(app.value.data.cycleBudgets).toHaveLength(1);
+    expect(app.value.data.cycleBudgets![0]).toMatchObject({ line: "groceries", amount: 175 });
+  });
+});

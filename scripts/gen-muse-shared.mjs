@@ -53,6 +53,12 @@ const MODULES = [
   "src/lib/household.ts",
   "src/lib/recurring.ts",
   "src/lib/plan.ts",
+  // A budget goal for one pay cycle (2026-10-10): what each line aims at this cycle,
+  // the goal where one is set and the standard budget's share where not. headline.ts
+  // builds the envelope from it, and the write door's finance.set_cycle_budget checks a
+  // cycle start and names the lines with it — so the read door, the write door and the
+  // screen all answer "what is this cycle's target" from this one file.
+  "src/lib/cycleBudget.ts",
   // Rule 3: the sequences a SCREEN assembles, in one place both the screen and the
   // door call. Without it the door held its own copy of the five steps behind the
   // budget envelope, which is a copy of the arithmetic with the arithmetic hidden

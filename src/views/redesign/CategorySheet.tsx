@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { catColor, catIcon } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
+import { barPct } from "./barPct";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,7 +35,9 @@ export function CategorySheet({
   if (!open || !vm) return null;
   const c = catColor(vm.catId);
   const Icon = catIcon(vm.catId);
-  const pct = vm.target > 0 ? Math.min(100, (vm.spent / vm.target) * 100) : 0;
+  // The same rule as the line's row on Insights (barPct), so the two bars for one line
+  // agree when a cycle's goal sets it to 0 and something was still spent.
+  const pct = barPct(vm.spent, vm.target);
   const over = vm.spent > vm.target;
   const near = !over && pct > 80;
   const barColor = over ? "#f0556e" : near ? "#e3b341" : c;

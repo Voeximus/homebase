@@ -48,13 +48,12 @@
 // Arizona onward a fired default answers about tomorrow: a different pay cycle, a
 // different set of charges. See supabase/functions/_shared/muse/az.ts.
 
-import type { AppData, Debt, Transaction } from "./types.ts";
+import type { AppData, CycleBudget, Debt, Transaction } from "./types.ts";
 import {
   LEAN_VARIABLE,
   OUTSIDE_BUDGET_CASH_CATS,
   lineSpent,
   payCycleFor,
-  perCycle,
   planMath,
   recentCycleSpend,
   spentByCategory,
@@ -81,6 +80,7 @@ import {
 import { forecast, type ForecastMonth, type ForecastOpts } from "./forecast.ts";
 import { coverFor, type Cover, type PendingLike } from "./pendingCover.ts";
 import { reviewLedger } from "./ledgerReview.ts";
+import { cycleTargets, type TargetSource, type TargetsFrom } from "./cycleBudget.ts";
 
 /** One budget line, priced for THIS cycle. */
 export interface EnvelopeLine {
@@ -89,19 +89,26 @@ export interface EnvelopeLine {
   label: string;
   /** The categories this line claims, so a caller can group charges the same way. */
   cats: string[];
-  /** This cycle's share of the line's monthly target. */
+  /** This cycle's target for the line: the cycle's goal when one is set for this line,
+   *  otherwise the standard budget's share of the line's monthly figure. */
   target: number;
   /** Spent against those categories inside the cycle window. */
   spent: number;
+  /** Where `target` came from — "goal" or "standard". Added 2026-10-10 with cycle
+   *  goals, so a reader can say which it is rather than present a goal as the plan. */
+  from: TargetSource;
 }
 
 export interface EnvelopeStatus {
-  /** The whole envelope's MONTHLY target — what the debt maths is measured against. */
+  /** The whole envelope's MONTHLY target — what the debt maths is measured against.
+   *  ALWAYS the standard budget, goal or no goal: a goal is for one cycle, and the debt
+   *  maths is monthly (see src/lib/cycleBudget.ts for why the two are never mixed). */
   monthlyTarget: number;
   /** The pay cycle `now` falls inside. The budget is graded per cycle, not per
    *  month, because that is the unit money arrives in. */
   cycle: PayCycle;
-  /** This cycle's allowance: the monthly envelope divided by the cycles in a month. */
+  /** This cycle's allowance: the sum of the lines' targets. With no goal that is the
+   *  monthly envelope divided by the cycles in a month, exactly as before. */
   target: number;
   /** Graded variable spend inside the cycle window. */
   spent: number;
@@ -109,23 +116,36 @@ export interface EnvelopeStatus {
    *  the same one the drill-in rows have to use or a bar stops explaining itself. */
   byCat: Record<string, number>;
   lines: EnvelopeLine[];
+  /** Where this cycle's targets came from as a whole: every line from a goal, none of
+   *  them ("standard"), or some ("mixed"). */
+  targetsFrom: TargetsFrom;
 }
 
 /**
  * The budget envelope as a screen shows it, for the pay cycle containing `now`.
  *
  * This is the sequence, and the order is the point: the monthly envelope, the cycle
- * `now` sits in, that cycle's allowance, that cycle's graded spend, and the
- * per-category partition the lines are read from.
+ * `now` sits in, that cycle's targets, that cycle's graded spend, and the per-category
+ * partition the lines are read from.
+ *
+ * `goals` ARRIVED 2026-10-10. The household can now set a budget goal for one pay cycle
+ * (public.cycle_budgets, written by the write door's finance.set_cycle_budget), and the
+ * targets for the cycle `now` is in come from cycleTargets() in src/lib/cycleBudget.ts —
+ * the goal where a line has one, the standard budget's share where it does not. It is
+ * passed in rather than read, like `now`, so the screen and both doors hand over the
+ * rows they loaded and this stays a pure function. Left out, it is no goals: every
+ * caller written before this day gets exactly the numbers it got before.
  */
 export function envelopeStatus(
   transactions: Transaction[],
   now: Date,
   lines: BudgetLine[] = LEAN_VARIABLE,
+  goals: readonly CycleBudget[] = [],
 ): EnvelopeStatus {
   const monthlyTarget = sumTargets(lines);
   const cycle = payCycleFor(now);
-  const target = perCycle(monthlyTarget);
+  const targets = cycleTargets(cycle.start, goals, lines);
+  const target = targets.total;
   const spent = variableSpentBetween(transactions, cycle.start, cycle.end);
   const byCat = spentByCategoryBetween(transactions, cycle.start, cycle.end);
   return {
@@ -134,13 +154,16 @@ export function envelopeStatus(
     target,
     spent,
     byCat,
-    lines: lines.map((l) => ({
+    // Index for index: cycleTargets returns one entry per line, in the order given.
+    lines: lines.map((l, i) => ({
       key: l.key,
       label: l.label,
       cats: l.cats,
-      target: perCycle(l.target),
+      target: targets.lines[i].target,
       spent: lineSpent(l, byCat),
+      from: targets.lines[i].from,
     })),
+    targetsFrom: targets.from,
   };
 }
 
@@ -209,7 +232,11 @@ export function firepowerStatus(
   now: Date,
   lines: BudgetLine[] = LEAN_VARIABLE,
 ): FirepowerStatus {
-  const envelope = envelopeStatus(data.transactions, now, lines);
+  // The household's cycle goals go in with the ledger (2026-10-10), so the envelope the
+  // screen's budget bars are drawn from — and the cycle's "over by" figure below — grade
+  // against this cycle's goal when one is set. Every MONTHLY figure in this function
+  // still reads `monthlyTarget`, the standard budget, on purpose: see cycleBudget.ts.
+  const envelope = envelopeStatus(data.transactions, now, lines, data.cycleBudgets ?? []);
   const monthlyTarget = envelope.monthlyTarget;
   const monthKey = monthKeyOf(now);
   // Transactions are passed so a VARIABLE bill is priced the way the calendar

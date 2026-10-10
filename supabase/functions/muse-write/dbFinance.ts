@@ -109,6 +109,24 @@ export interface DismissalRow {
   person: string;
 }
 
+/**
+ * One line's budget goal for one pay cycle, as public.cycle_budgets stores it
+ * (supabase/schema_v45_cycle_budgets.sql, 2026-10-10).
+ *
+ * Every column the write and its undo need and nothing else: `id` is what a
+ * compare-and-set and a delete aim at, `amount` and `setBy` are the two columns a change
+ * replaces (and so the two an undo checks are still there), and `cycleStart` and `line`
+ * are what the row IS — never updated, only carried so a cleared row can be put back
+ * exactly as it was. `setBy` is null for a row somebody wrote outside the door.
+ */
+export interface CycleBudgetRow {
+  id: string;
+  cycleStart: string;
+  line: string;
+  amount: number;
+  setBy: string | null;
+}
+
 export interface BillRow {
   id: string;
   name: string;
@@ -281,7 +299,7 @@ export function provesRolledBack(code: unknown): code is string {
 
 // Whether an error is PostgREST saying a table is not there at all. It lives beside the
 // read door's paging, because both doors need the same answer about the same table —
-// review_dismissals, whose migration is written and not yet run — and two spellings of
+// review_dismissals and cycle_budgets, whose migrations are written and not yet run — and two spellings of
 // "is this the missing-table error" would be two chances to call an outage a setup step.
 export { isMissingTable } from "../_shared/muse/paging.ts";
 
@@ -400,6 +418,37 @@ export interface FinanceDb {
    * through as a real failure.
    */
   readDismissal(key: string): Promise<DismissalRow | null>;
+
+  /**
+   * Every goal row for the pay cycle that opens on `cycleStart` — at most one per budget
+   * line, so at most six — for finance.set_cycle_budget.
+   *
+   * A GET, so on a database where supabase/schema_v45_cycle_budgets.sql has not been run
+   * it THROWS with PostgREST's own words for a missing table, which the tool turns into
+   * "the database is not set up for this yet"; anything else is a real failure. Bounded
+   * by the table's unique index on (cycle_start, line), and it throws rather than answer
+   * if more rows come back than there are lines — a read that saw two goals for one line
+   * cannot say which one the write is replacing.
+   */
+  readCycleBudgets(cycleStart: string): Promise<CycleBudgetRow[]>;
+
+  /**
+   * Put one goal row in under the id the door chose, and nothing else. "taken" means
+   * the table refused it because that cycle already has a goal for that line (or a row
+   * with that id) — so nothing was written.
+   *
+   * WHY IT IS ITS OWN VERB AND NOT insertRow, the same reasoning as restoreMerchantRule:
+   * it carries its own `id`. finance.set_cycle_budget picks the id BEFORE it writes, so
+   * the undo row in muse_undo can name the row it will remove before the row exists —
+   * which keeps the door's "write the undo first, then change anything" order for every
+   * line of a goal, including the new ones. And clearing a goal is undone by putting
+   * each cleared row back under the id it had. insertRow lets the database choose ids
+   * on purpose; this writes exactly one table and these five columns.
+   *
+   * "taken" is the table's unique index answering, not a read made a moment before — so
+   * the other phone setting the same line in the same instant is refused, not overwritten.
+   */
+  insertCycleBudget(row: CycleBudgetRow): Promise<"ok" | "taken">;
 
   /**
    * Every bank connection's two time columns, and NOTHING else.

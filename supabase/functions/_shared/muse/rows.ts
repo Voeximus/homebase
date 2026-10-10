@@ -26,6 +26,7 @@
 import type {
   Account,
   AppData,
+  CycleBudget,
   Debt,
   MerchantRule,
   PaidBill,
@@ -157,6 +158,28 @@ export function toMerchantRule(r: DbRow): MerchantRule {
     categoryId: opt(r.category_id),
     billName: opt(r.bill_name),
     createdAt: str(r.created_at),
+  };
+}
+
+/**
+ * One line's goal for one pay cycle (supabase/schema_v45_cycle_budgets.sql), added
+ * 2026-10-10. Transcription only, like every mapper here: `amount` is numeric and may
+ * arrive as a string. A row whose line or amount is not one the plan can use is NOT
+ * filtered here — cycleTargets() in src/lib/cycleBudget.ts leaves such a row out and
+ * keeps the standard budget for that line, so the rule lives once, beside the maths.
+ * `set_by` keeps only the two person keys the table's own check allows.
+ */
+export function toCycleBudget(r: DbRow): CycleBudget {
+  const who = r.set_by === "gino" || r.set_by === "xinyan" ? r.set_by : undefined;
+  return {
+    id: str(r.id),
+    cycleStart: str(r.cycle_start),
+    line: str(r.line),
+    // NaN, not 0, for a missing amount: 0 is a real goal ("nothing on this line"), and a
+    // value nobody wrote must not become one. cycleTargets drops a non-finite amount.
+    amount: r.amount == null ? Number.NaN : Number(r.amount),
+    setBy: who,
+    at: opt(r.at),
   };
 }
 

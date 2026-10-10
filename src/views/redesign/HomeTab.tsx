@@ -1,6 +1,7 @@
 import { ChevronRight, Flame, Wallet, Receipt } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
+import { barPct } from "./barPct";
 import type { HomeVM } from "./vm";
 
 const money = (n: number) =>
@@ -162,7 +163,8 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
               <div
                 className="h-full rounded-full"
                 style={{
-                  width: `${Math.min(100, (vm.budgetSpent / vm.budgetTarget) * 100)}%`,
+                  // barPct, not a bare division: a cycle's goal can set every line to 0.
+                  width: `${barPct(vm.budgetSpent, vm.budgetTarget)}%`,
                   background:
                     vm.budgetSpent <= vm.budgetTarget
                       ? "linear-gradient(90deg,#22c55e,#46d18a)"

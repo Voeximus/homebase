@@ -24,6 +24,8 @@ import type { Db } from "./paging.ts";
 import { isMissingTable, LedgerUnreadable, readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
 import { checkSteps, type UndoRecord, type UndoState, type UndoStep } from "./undo.ts";
+import type { CycleBudget } from "./lib/types.ts";
+import { toCycleBudget } from "./rows.ts";
 
 const STATES: readonly UndoState[] = ["pending", "undoable", "abandoned", "undone"];
 
@@ -133,6 +135,17 @@ export interface FinanceExtras {
    * household's ledger, not one person's view of it.
    */
   reviewDismissals(): Promise<{ known: boolean; keys: ReadonlySet<string> }>;
+  /**
+   * Every pay cycle's budget goal, household-wide — or `known: false` on a database where
+   * supabase/schema_v45_cycle_budgets.sql has not been run, so finance.budget_status can
+   * say "the standard budget, and the goal table is not set up yet" rather than claim
+   * nobody set a goal. Added 2026-10-10 with finance.set_cycle_budget.
+   *
+   * The whole table, not one cycle: it is at most six rows a cycle, and the read door
+   * wants the cycle in progress AND the ones a goal has already been set for ahead of
+   * it. Which rows count for which cycle is cycleTargets()'s decision, not the loader's.
+   */
+  cycleBudgets(): Promise<{ known: boolean; rows: CycleBudget[] }>;
 }
 
 /** Memoise one promise per key, so a repeated read is the same read. */
@@ -247,12 +260,35 @@ export function createFinanceExtras(db: Db): FinanceExtras {
     return { known: true, keys: keys as ReadonlySet<string> };
   });
 
+  /** Every cycle goal. Added 2026-10-10 with finance.set_cycle_budget.
+   *
+   *  THE SAME PROBE AS reviewDismissals, for the same reason: on a database where
+   *  schema_v45 has not been run, readAll's HEAD count reads a missing table as an EMPTY
+   *  one, and the door would say "no goal set" about a table that does not exist. One GET
+   *  of one row carries PostgREST's own sentence for a missing table, and only that
+   *  sentence means "not set up yet". Any other failure is a table that cannot be read,
+   *  and it fails closed like every other read — a budget answered from half the goals
+   *  would grade one line against the goal and the next against the standard budget,
+   *  and nothing in the reply would say so. */
+  const cycleBudgets = once(async () => {
+    const table = "cycle_budgets";
+    try {
+      await db.select({ table, orderBy: "id" }).page(0, 0);
+    } catch (e) {
+      if (isMissingTable(e, table)) return { known: false, rows: [] as CycleBudget[] };
+      throw new LedgerUnreadable(table, `probe failed (${String((e as Error)?.message ?? e)})`);
+    }
+    const rows = await readAll(db, { table, orderBy: "id" });
+    return { known: true, rows: rows.map(toCycleBudget) };
+  });
+
   return {
     pendingCharges,
     bankConnections,
     jobRuns,
     pushTargets,
     reviewDismissals,
+    cycleBudgets,
     changes(person) {
       const hit = changeCache.get(person);
       if (hit) return hit;

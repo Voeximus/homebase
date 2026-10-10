@@ -12,6 +12,7 @@ import type {
   Account,
   AppData,
   AppliesTo,
+  CycleBudget,
   Debt,
   MerchantRule,
   PaidBill,
@@ -143,6 +144,22 @@ function mapMerchantRule(r: any): MerchantRule {
   };
 }
 
+// One line's budget goal for one pay cycle (supabase/schema_v45_cycle_budgets.sql,
+// 2026-10-10). Mapped like every row here; whether a row is usable — a real line, a
+// dollar figure of 0 or more — is decided once, in src/lib/cycleBudget.ts, which leaves
+// a bad row out and keeps the standard budget for that line. NaN rather than 0 for a
+// missing amount, because 0 is a real goal ("nothing on this line this cycle").
+function mapCycleBudget(r: any): CycleBudget {
+  return {
+    id: r.id,
+    cycleStart: r.cycle_start,
+    line: r.line,
+    amount: r.amount == null ? Number.NaN : Number(r.amount),
+    setBy: r.set_by === "gino" || r.set_by === "xinyan" ? r.set_by : undefined,
+    at: r.at ?? undefined,
+  };
+}
+
 function mapFood(r: any): Food {
   return {
     id: r.id,
@@ -195,7 +212,8 @@ type SyncTable =
   | "recurring"
   | "paid_bills"
   | "merchant_rules"
-  | "foods";
+  | "foods"
+  | "cycle_budgets";
 type TicketMap = Partial<Record<SyncTable, number>>;
 
 /** Take the newest ticket for a table; every older in-flight read is now stale. */
@@ -332,6 +350,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     paidBills: [],
     merchantRules: [],
     foods: [],
+    // No goals until the table is read — which is the standard budget, the same
+    // numbers the screens showed before cycle goals existed.
+    cycleBudgets: [],
   });
   const [loading, setLoading] = useState(true);
 
@@ -443,6 +464,31 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (active && isNewest(seq.current, "merchant_rules", ticket))
         setData((p) => ({ ...p, merchantRules: rows.map(mapMerchantRule) }));
     }
+    // Budget goals for single pay cycles (2026-10-10). Either of their assistants can
+    // set one through the Muse write door, and the budget bars for the cycle in progress
+    // grade against it (src/lib/headline.ts envelopeStatus → src/lib/cycleBudget.ts) —
+    // so this is what makes a goal agreed in a chat show up on both phones.
+    //
+    // Paged and fail-closed like the two loaders above, for the same reason: a failed
+    // read keeps the goals already on screen rather than replacing them with an empty
+    // list, because an empty list here silently means "back to the standard budget" and
+    // the bars would jump to different targets for no reason anybody could see. That
+    // includes a database where schema_v45_cycle_budgets.sql has not been run yet: the
+    // read fails, nothing is replaced, and the screens keep the standard budget they
+    // started with. Logged as a warning, not an error, since that state is expected
+    // until the migration is applied.
+    async function loadCycleBudgets() {
+      const ticket = claimTicket(seq.current, "cycle_budgets");
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "cycle_budgets");
+      } catch (e) {
+        console.warn("loadCycleBudgets failed — keeping the budget goals already on screen", e);
+        return;
+      }
+      if (active && isNewest(seq.current, "cycle_budgets", ticket))
+        setData((p) => ({ ...p, cycleBudgets: rows.map(mapCycleBudget) }));
+    }
     async function loadFoods() {
       let ticket = claimTicket(seq.current, "foods");
       const { data: rows, error } = await supabase
@@ -512,6 +558,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       loadRecurring(),
       loadPaidBills(),
       loadMerchantRules(),
+      loadCycleBudgets(),
       foodsPromise,
     ]).finally(() => {
       if (active) setLoading(false);
@@ -543,6 +590,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       loadRecurring();
       loadPaidBills();
       loadMerchantRules();
+      loadCycleBudgets();
       loadFoods();
     };
 
@@ -607,6 +655,29 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           );
       });
 
+    // The budget goals listen on a channel OF THEIR OWN (2026-10-10), on purpose.
+    //
+    // A postgres_changes subscription names its table, and the realtime server checks
+    // every table a channel names when the channel joins. cycle_budgets arrives with a
+    // migration (schema_v45) that may not have been run when this code ships — and if
+    // a table the channel names cannot be subscribed to, the whole JOIN can fail. On
+    // the shared channel above that would take live updates for the ledger, the bills
+    // and the balances down with it, which is far too much to risk for one table. Here
+    // a failure costs only live goal updates, and the goals are still re-read on every
+    // SUBSCRIBED of the main channel and every return to the foreground (refetchAll),
+    // which is when a person switching back from their assistant would look.
+    const goalChannel = supabase
+      .channel("homebase-sync-cycle-budgets")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cycle_budgets" },
+        () => refetch("cycle_budgets", loadCycleBudgets),
+      )
+      .subscribe((status) => {
+        if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) loadCycleBudgets();
+        else console.warn(`cycle_budgets realtime ${status} — goals refresh when the app comes back to the foreground`);
+      });
+
     // Backstop for the installed PWA: phones freeze a backgrounded tab and can
     // drop the socket without any status callback firing, so pull fresh state
     // whenever the app comes back to the foreground. (UpdatePrompt has its own
@@ -622,6 +693,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       for (const timer of bursts.values()) clearTimeout(timer);
       bursts.clear();
       supabase.removeChannel(channel);
+      supabase.removeChannel(goalChannel);
     };
   }, []);
 

@@ -307,13 +307,29 @@ still settling." One number leads; the hold is context.
 
 **The trap first:** this is a **pay cycle**, not a month. It runs from the last
 payday through the day before the next one, so it crosses the end of the month,
-and each `target` is one cycle's share of a monthly figure — not the monthly
-figure. If you report a target as a monthly budget you will be wrong by half.
+and each `target` is a figure for that cycle — never the monthly figure. A target
+from the standard budget is one cycle's share of a monthly figure; if you report it
+as a monthly budget you will be wrong by half.
+
+**The targets can be this cycle's goal.** Since 2026-10-10 either of them can set a
+budget goal for one pay cycle with `finance.set_cycle_budget` on the write door. When
+a goal is set for the cycle in progress, each line it names carries the goal's figure
+and the envelope total moves with it; lines the goal does not name keep the standard
+budget's share. **Say which it is.** `targets_are` says it for the whole cycle — "this
+cycle's goal", "the standard budget", or "this cycle's goal for some lines, the standard
+budget for the rest" — and each line's `target_is` says it for that line. A goal is a
+decision they made; the standard budget is a default nobody chose this cycle. Never
+present one as the other, and never halve or double a goal: it is already a cycle figure.
 
 **What comes back:** the cycle's `start`, `end`, a ready-to-say `label`, which
-`day` of the cycle it is; the whole envelope's target and spend; then each line
-with `target`, `spent` and `left`. The reply carries that trap in its own `note` —
-read the note before you say a target out loud.
+`day` of the cycle it is; `targets_are`; the whole envelope's target and spend; then
+each line with `target`, `spent`, `left` and `target_is`. `goals_ahead` lists any goal
+already set for the cycles after this one (usually the next paycheck's, agreed a few
+days early), each with its `start`, `end`, `label`, `envelope_target` and lines —
+each takes over on its first day. `goal_table_set_up` is `false` only before the
+database has the table that holds goals; then every target is the standard budget, and
+the note says the goal table is not set up — not that nobody set a goal. The reply
+carries all of this in its own `note` — read the note before you say a target out loud.
 
 `left` can be negative. Say "over by $31" — do not soften it and do not write it
 as "-31 left".
@@ -1554,6 +1570,44 @@ how many — and read the reply's count back rather than the number you asked fo
 suggestion for both of them until what it noticed changes. If the list still shows
 it afterwards, the key did not match: send it again exactly as it came. Before the
 database is set up for this, it refuses in a sentence that says so — pass that on.
+
+## A budget goal for one pay cycle
+
+The standard budget is a monthly figure per line, and each pay cycle gets its share.
+Before a paycheck they often agree on something tighter or different for just that
+cycle — hold groceries here, less on dining, nothing for the dog. That is a **goal**,
+and it is written here and read back by `finance.budget_status` and by both phones'
+budget bars. It does not change the monthly plan: `finance.firepower` and the payoff
+figures stay on the standard budget.
+
+#### `finance.set_cycle_budget` — set (or clear) one pay cycle's budget goal
+
+**Takes `lines`, or `clear` — and optionally `cycle_start`.**
+
+- `lines` is an object of budget line to **dollars for that cycle**, never a monthly
+  figure: `{"groceries": 250, "dining": 100}`. The lines are `groceries`, `gas`,
+  `dining`, `household`, `pets` and `misc` — `finance.budget_status` lists them with
+  their labels. Name one line or all six; every line not named keeps what it had (its
+  own goal, or the standard budget). Zero is a real goal. A line already at that
+  amount is left alone, and a call where every line already is changes nothing and
+  says so. An unknown line is refused by name.
+- `clear: true` (instead of `lines`) removes the whole cycle's goal, so every line is
+  back on the standard budget.
+- `cycle_start` is the payday that opens the cycle, `YYYY-MM-DD` — the `start` that
+  `finance.budget_status` reports. Leave it out for the cycle in progress. It can be
+  one cycle back or up to two ahead; any other date, or a date that is not a cycle's
+  first day, is refused with the cycle starts that can be set.
+
+**Say the cycle and the figures before you send it**, and read the reply back: it names
+the cycle by its label and first day, each line it set, and what the cycle's budget
+comes to in all. Every call comes back with an undo token, and undoing it puts the
+previous goal back exactly — the old amounts, or no goal at all. An undo never
+overwrites a goal line set since: it stops at that line, keeps the newer goal and says
+so, and the lines it already put back stay back. Pass that sentence on; once the newer
+change is undone, asking for the same undo again puts the rest back. If the other phone
+changes a goal line while this is writing, nothing from the call is kept; read the
+budget again and ask once more. Before the database has the table for goals, it refuses
+in a sentence that says so — pass that on; the budget stays on the standard figures.
 
 ## One write per thing, across two people
 

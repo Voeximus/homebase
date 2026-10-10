@@ -113,8 +113,10 @@ function snapshotDb(tables: Record<string, DbRow[]>, shortPage?: string): Db {
       // review_dismissals (schema_v43) is written and not yet run on the live database,
       // so a snapshot does not carry it. Answer a page of it the way PostgREST answers a
       // table that is not there, so the read door's probe sees what it would see live.
-      if (q.table === "review_dismissals" && !(q.table in tables)) {
-        const missing = () => Promise.reject(new Error("read review_dismissals: Could not find the table 'public.review_dismissals' in the schema cache"));
+      // cycle_budgets (schema_v45, 2026-10-10) is in the same state, and gets the same answer.
+      if ((q.table === "review_dismissals" || q.table === "cycle_budgets") && !(q.table in tables)) {
+        const missing = () =>
+          Promise.reject(new Error(`read ${q.table}: Could not find the table 'public.${q.table}' in the schema cache`));
         return { count: () => Promise.resolve(0), page: missing };
       }
       const rows = () =>

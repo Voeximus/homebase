@@ -60,12 +60,33 @@ import type { Ctx, Refusal, Tool, ToolOutcome } from "./tools.ts";
 import { UNDO_REGISTRY } from "./undoRegistry.ts";
 // Values, not types: kit.ts imports nothing back out of this file, so this closes no
 // cycle. The placeholder id every example uses, and the shape-refusal pieces.
-import { EXAMPLE_ID, problemPad, problemsOf, shapeRefused, type ShapeCtx, type Shaped } from "./kit.ts";
+import { EXAMPLE_ID, isObject, problemPad, problemsOf, shapeRefused, type ShapeCtx, type Shaped } from "./kit.ts";
 import { itemSays, kindOfValue, labelOf, renameBy, unknownKeysSays, type ListShape } from "./shapes.ts";
 // A type-only import above, and this one from _shared: tools.ts imports THIS file's
 // registry as a value, so anything imported back out of it would close a runtime cycle.
 import { UUID } from "../_shared/muse/args.ts";
-import { isMissingTable, StatementRefused, type BillRow, type ChargeRow, type FinanceDb, type LabelRow } from "./dbFinance.ts";
+import {
+  isMissingTable,
+  StatementRefused,
+  type BillRow,
+  type ChargeRow,
+  type CycleBudgetRow,
+  type FinanceDb,
+  type LabelRow,
+} from "./dbFinance.ts";
+// A budget goal for one pay cycle (2026-10-10): which cycles can be set, the six lines,
+// and the targets a goal adds up to — the one module the app's budget bars and the read
+// door's finance.budget_status also answer from, through the generated copy.
+import {
+  BUDGET_LINE_KEYS,
+  cycleInProgress,
+  cycleTargets,
+  GOAL_LINE_MAX,
+  goalCycleProblem,
+  goalCycles,
+  type CycleSpan,
+} from "../_shared/muse/lib/cycleBudget.ts";
+import type { CycleBudget } from "../_shared/muse/lib/types.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 // The cooldown, and the sentences that explain it, shared with the read door's
 // freshness stamp so "too soon" has one definition rather than two.
@@ -87,7 +108,7 @@ import {
 // the read door, so the key it gives and the key this takes are one definition.
 import { SUGGESTION_KEY, SUGGESTION_KEY_MAX } from "../_shared/muse/worthALook.ts";
 import { DISPLAY } from "../_shared/muse/auth.ts";
-import { MERCHANT_RULE_INSERT, ruleHabit } from "./financeUndo.ts";
+import { CYCLE_BUDGET_INSERT, lineLabel, MERCHANT_RULE_INSERT, ruleHabit } from "./financeUndo.ts";
 import { cycleKeyOf } from "../_shared/muse/lib/selfAudit.ts";
 import { DUE_DAYS, STEP_DOWNS } from "../_shared/muse/lib/schedule.ts";
 import { isCardName } from "../_shared/muse/lib/forecast.ts";
@@ -3997,6 +4018,357 @@ const dismissSuggestion: Tool = {
   },
 };
 
+// ── finance.set_cycle_budget ─────────────────────────────────────────────────
+//
+// ADDED 2026-10-10. Set the budget goal for ONE pay cycle — what any of the six lines may
+// spend between one payday and the day before the next — or clear it so the cycle goes
+// back to the standard budget.
+//
+// WHY IT EXISTS. Every budget target in the app was a constant in src/lib/plan.ts: a
+// monthly figure per line, halved for each cycle. Nobody — not the app and not either
+// assistant — could say "this cycle we hold groceries here and aim lower on dining",
+// which is the conversation the household actually has a few days before a paycheck.
+// A goal is now a row per line in public.cycle_budgets
+// (supabase/schema_v45_cycle_budgets.sql), and src/lib/cycleBudget.ts is the one place
+// that turns those rows into targets: the app's budget bars and the read door's
+// finance.budget_status both call it, so a goal set here shows on both phones and in
+// both chats.
+//
+// WHICH CYCLE. `cycle_start` is the payday that opens the cycle, exactly as the app's
+// own payCycleFor() spells it — the shared goalCycleProblem() refuses any other date,
+// because a goal filed under the 16th would match no cycle and LOOK set. Left out, it is
+// the cycle in progress. It may reach one cycle back (to correct the one just finished)
+// and two ahead (the next paycheck and the one after); further than that is a plan, not
+// a goal, and that refusal names the cycles that can be set.
+//
+// WHAT A CALL CHANGES. `lines` names any of the six lines with dollars FOR THE CYCLE —
+// never a monthly figure. Each named line is set; every line not named keeps whatever it
+// had (its own goal, or the standard budget). A line already at that amount is left
+// alone, and a call where every line already is changes nothing and says so. An unknown
+// line is refused by name, with the six it can be. `clear: true` instead removes the
+// whole cycle's goal, so every line is back on the standard budget.
+//
+// THE UNDO RESTORES THE PREVIOUS GOAL EXACTLY — OR ITS ABSENCE. Every change is a
+// compare-and-set recorded BEFORE anything is written (commit()):
+//   · a line that had a goal → set_columns puts the old amount (and who set it) back,
+//     only while the row still holds what this wrote;
+//   · a line that had none → delete_row removes the new row, only while it still holds
+//     what this wrote. Its id is chosen here, before the write, so the undo can name it
+//     — FinanceDb.insertCycleBudget says why that needs its own verb;
+//   · a cleared cycle → one named inverse per cleared line (financeUndo.ts
+//     cycle-budget.insert) puts each row back under the id it had. A line given a goal
+//     again since keeps the newer one, and the undo STOPS there and says so: the lines
+//     it already put back stay back, and the ones after it wait. Once that newer change
+//     is undone, asking again finishes the job — a line already back counts as done.
+// The undo runs through applyUndo, not row by row (ROW_BY_ROW_TOOLS in undo.ts), on
+// purpose: the lines of one call are one answer, the same reason the write below keeps
+// nothing of a call that half landed.
+// If the other phone changes a goal line while this is writing, everything this call
+// had already written is put back and nothing is kept: a goal half from this call and
+// half from the other phone is a goal nobody chose.
+//
+// PLAIN SENTENCES. The summary names the cycle by its label and first day and each line
+// by the plan's own label with its dollars. No household figure is in this file; the
+// example's numbers are made up.
+
+/** Said when the goal table is not there yet. Nothing was changed by then. */
+const NO_GOAL_TABLE_SAYS =
+  "I cannot set a cycle's budget goal yet: the database is missing the table that holds goals " +
+  "(schema_v45_cycle_budgets.sql has not been run). Nothing was changed — the app and the budget " +
+  "status keep using the standard budget until that is set up.";
+
+/** What finance.set_cycle_budget was asked to do, once every field has been checked. */
+type GoalAsk =
+  | { mode: "set"; cycle: CycleSpan; lines: { line: string; amount: number }[] }
+  | { mode: "clear"; cycle: CycleSpan };
+
+const own = (o: Record<string, unknown>, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+
+/**
+ * set_cycle_budget's cycle, lines and clear — EVERY problem with them, before anything is
+ * read. All of it is decidable from the payload and the Arizona calendar, so handler.ts
+ * runs this before the hourly write counter is bumped and a malformed goal costs nothing.
+ */
+function planCycleBudget(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<GoalAsk> {
+  const pad = problemPad();
+
+  // Which cycle. The cycles a goal may be set for come from the shared module, walked
+  // from the Arizona date — never the runtime's, which from 5 PM is already tomorrow and,
+  // on a payday's eve, already the next cycle.
+  let cycle: CycleSpan | undefined;
+  if (payload.cycle_start === undefined) {
+    cycle = cycleInProgress(ctx.az);
+  } else if (!isDateISO(payload.cycle_start)) {
+    pad.no("cycle_start is the payday that opens the cycle, as YYYY-MM-DD — or leave it out for the cycle in progress.");
+  } else {
+    const problem = goalCycleProblem(payload.cycle_start, ctx.az);
+    if (problem) pad.no(problem);
+    else cycle = goalCycles(ctx.az).find((c) => c.start === payload.cycle_start);
+  }
+
+  const clear = payload.clear;
+  if (clear !== undefined && clear !== true) {
+    pad.no("clear only takes true — it puts the whole cycle back on the standard budget. Leave it out to set amounts.");
+  }
+
+  const lines: { line: string; amount: number }[] = [];
+  const raw = payload.lines;
+  const example = `like {"groceries": 250}. The lines are ${BUDGET_LINE_KEYS.join(", ")}.`;
+  if (clear === true) {
+    if (raw !== undefined) pad.no("Send lines to set amounts, or clear: true to go back to the standard budget — not both.");
+  } else if (raw === undefined) {
+    pad.no(`I need lines: each budget line you are setting, with dollars for the cycle, ${example}`);
+  } else if (!isObject(raw)) {
+    pad.no(`lines has to be an object of budget line to dollars for the cycle — it was ${kindOfValue(raw)}. Send it ${example}`);
+  } else {
+    const keys = Object.keys(raw);
+    if (keys.length === 0) pad.no(`lines is empty. Name at least one line, ${example}`);
+    const unknown = keys.filter((k) => !BUDGET_LINE_KEYS.includes(k));
+    if (unknown.length) pad.no(`lines: ${unknownKeysSays(unknown, BUDGET_LINE_KEYS)}`);
+    // In the plan's own order, so the summary reads the lines the way every screen
+    // lists them, whatever order they were sent in.
+    for (const key of BUDGET_LINE_KEYS) {
+      if (!own(raw, key)) continue;
+      const v = raw[key];
+      const n = money(v);
+      if (n === null || n < 0 || n > GOAL_LINE_MAX) {
+        const was = typeof v === "number" ? `${v}` : kindOfValue(v);
+        pad.no(`${key} has to be dollars for the cycle, from 0 to ${GOAL_LINE_MAX} — it was ${was}.`);
+      } else {
+        // To the cent, before anything is written: the column holds cents, and an undo
+        // compares what is there with what this wrote — a 12.345 stored as 12.35 would
+        // never match again, and the goal could never be put back.
+        lines.push({ line: key, amount: Math.round(n * 100) / 100 });
+      }
+    }
+  }
+
+  return pad.done((): GoalAsk => (clear === true ? { mode: "clear", cycle: cycle! } : { mode: "set", cycle: cycle!, lines }));
+}
+
+/** "the pay cycle Oct 15 – Oct 30 (starting 2026-10-15)" — both, because the label is
+ *  what a person says and the date is what a later call has to send back. */
+const cycleWords = (c: CycleSpan) => `the pay cycle ${c.label} (starting ${c.start})`;
+
+/** A goal row as the shared maths reads one, so the reply's cycle total comes from the
+ *  same function the screens use rather than from a sum written here. */
+const asGoal = (r: CycleBudgetRow): CycleBudget => ({ id: r.id, cycleStart: r.cycleStart, line: r.line, amount: r.amount });
+
+/** One line of a goal write: a line that had a goal and is changed, or one that had
+ *  none and gets a new row under an id chosen before anything is written. */
+type GoalOp =
+  | { kind: "update"; row: CycleBudgetRow; amount: number }
+  | { kind: "insert"; row: CycleBudgetRow };
+
+/**
+ * Put back what a goal write had already done, newest first — the same compare-and-set
+ * an undo would make, so a line somebody changed again in the meantime keeps that newer
+ * change. Returns how many could not go back for that reason.
+ */
+async function putBackGoal(db: FinanceDb, landed: readonly GoalOp[], me: string): Promise<number> {
+  let changedSince = 0;
+  for (const op of [...landed].reverse()) {
+    const hit =
+      op.kind === "update"
+        ? await db.setColumns("cycle_budgets", op.row.id, { amount: op.row.amount, set_by: op.row.setBy }, { amount: op.amount, set_by: me })
+        : await db.deleteRow("cycle_budgets", op.row.id, { amount: op.row.amount, set_by: me });
+    if (hit === "moved") changedSince += 1;
+  }
+  return changedSince;
+}
+
+/** The refusal for a goal line that changed under the write. */
+function goalMovedSays(putBack: number, changedSince: number): string {
+  return (
+    (putBack === 0
+      ? "A goal line for that cycle changed while I was working, so I stopped and changed nothing."
+      : `A goal line for that cycle changed while I was working, so I put back the ${putBack} I had already set and changed nothing.`) +
+    (changedSince > 0
+      ? ` ${changedSince === 1 ? "One of them was" : `${changedSince} of them were`} changed again in the meantime, so ${changedSince === 1 ? "it keeps" : "they keep"} that newer change.`
+      : "") +
+    " Read the budget again and ask me once more."
+  );
+}
+
+async function setGoal(
+  ctx: Ctx,
+  cycle: CycleSpan,
+  rows: CycleBudgetRow[],
+  lines: { line: string; amount: number }[],
+): Promise<ToolOutcome> {
+  const db = ctx.db as FinanceDb;
+  const me = ctx.person;
+  const cents = (n: number) => Math.round(n * 100);
+  const byLine = new Map(rows.map((r) => [r.line, r]));
+
+  const ops: GoalOp[] = [];
+  const already: string[] = [];
+  for (const { line, amount } of lines) {
+    const has = byLine.get(line);
+    if (has && cents(has.amount) === cents(amount)) {
+      already.push(line);
+      continue;
+    }
+    ops.push(
+      has
+        ? { kind: "update", row: has, amount }
+        : { kind: "insert", row: { id: crypto.randomUUID(), cycleStart: cycle.start, line, amount, setBy: me } },
+    );
+  }
+  if (ops.length === 0) {
+    return refuse(
+      409,
+      `${lines.length === 1 ? "That is" : "Those are"} already the goal for ${cycleWords(cycle)}, so nothing changed.`,
+    );
+  }
+
+  // The goal as it will stand once every line lands, for the reply's cycle total —
+  // computed by cycleTargets, the function the screens and the read door use.
+  const after = new Map(rows.map((r) => [r.line, asGoal(r)]));
+  for (const op of ops) {
+    after.set(op.row.line, op.kind === "update" ? { ...asGoal(op.row), amount: op.amount } : asGoal(op.row));
+  }
+  const targets = cycleTargets(cycle.start, [...after.values()]);
+
+  const steps: UndoStep[] = ops.map((op) =>
+    op.kind === "update"
+      ? {
+          kind: "set_columns",
+          table: "cycle_budgets",
+          id: op.row.id,
+          before: { amount: op.row.amount, set_by: op.row.setBy },
+          after: { amount: op.amount, set_by: me },
+        }
+      : { kind: "delete_row", table: "cycle_budgets", id: op.row.id, after: { amount: op.row.amount, set_by: me } },
+  );
+  const newAmount = (op: GoalOp) => (op.kind === "update" ? op.amount : op.row.amount);
+  const said = ops.map((op) => `${lineLabel(op.row.line)} ${dollars(newAmount(op))}`).join(", ");
+  const keptSays = already.length
+    ? ` ${already.map(lineLabel).join(", ")} ${already.length === 1 ? "was" : "were"} already at that amount.`
+    : "";
+  const restSays = lines.length < BUDGET_LINE_KEYS.length ? " The lines not named are unchanged." : "";
+
+  // ONE THING commit() IS OVER-CAUTIOUS ABOUT HERE, and it is the safe direction. commit()
+  // reads a delete_row step as "a row was inserted before I was called", so if a write
+  // below is refused by Postgres it leaves the change `pending` ("I cannot prove what
+  // happened") rather than `abandoned`. This tool inserts INSIDE write(), after the undo
+  // row exists, so nothing has landed early — but `pending` is never a false thing to say,
+  // and teaching commit() a second meaning of delete_row would be a change to every tool.
+  return commit(ctx, "finance.set_cycle_budget", {
+    steps,
+    summary: `Set the budget goal for ${cycleWords(cycle)}: ${said}.${keptSays}${restSays}`,
+    // About the state the goal leaves, so it is said and not stored — see commit()'s note.
+    note: scrubCap(
+      `Both phones and both assistants now grade that cycle against this goal; its budget comes to ${dollars(targets.total)} in all.`,
+      300,
+    ),
+    result: {
+      cycle_start: cycle.start,
+      cycle_end: cycle.end,
+      label: cycle.label,
+      lines: ops.map((op) => ({
+        key: op.row.line,
+        label: lineLabel(op.row.line),
+        was: op.kind === "update" ? op.row.amount : null,
+        now: newAmount(op),
+      })),
+      unchanged: already,
+      cycle_total: targets.total,
+    },
+    rowIds: ops.map((op) => op.row.id),
+    async write() {
+      const landed: GoalOp[] = [];
+      for (const op of ops) {
+        const hit =
+          op.kind === "update"
+            ? await db.setColumns("cycle_budgets", op.row.id, { amount: op.amount, set_by: me }, { amount: op.row.amount, set_by: op.row.setBy })
+            : (await db.insertCycleBudget(op.row)) === "ok"
+              ? "ok"
+              : "moved";
+        if (hit === "moved") {
+          const changedSince = await putBackGoal(db, landed, me);
+          return refuse(409, goalMovedSays(landed.length, changedSince));
+        }
+        landed.push(op);
+      }
+    },
+  });
+}
+
+async function clearGoal(ctx: Ctx, cycle: CycleSpan, rows: CycleBudgetRow[]): Promise<ToolOutcome> {
+  const db = ctx.db as FinanceDb;
+  if (rows.length === 0) {
+    return refuse(409, `There is no goal set for ${cycleWords(cycle)} — it already uses the standard budget — so nothing changed.`);
+  }
+  // One named inverse per cleared line, carrying the whole row, so each can go back
+  // under its own id. A line given a goal again since stops the undo at that line
+  // (applyUndo's rule for one answer): the lines already put back stay back, and asking
+  // again once that newer change is undone puts back the rest, because the handler
+  // counts a line that is already back as done. FIXED 2026-10-10 in review — this used
+  // to say the newer line "stops only itself", which was never what applyUndo does, and
+  // a line already back used to refuse every retry.
+  const steps: UndoStep[] = rows.map((r) => ({
+    kind: "run_handler",
+    handler: CYCLE_BUDGET_INSERT,
+    before: { id: r.id, cycle_start: r.cycleStart, line: r.line, amount: r.amount, set_by: r.setBy },
+  }));
+  const standard = cycleTargets(cycle.start, []);
+  return commit(ctx, "finance.set_cycle_budget", {
+    steps,
+    summary: `Cleared the budget goal for ${cycleWords(cycle)}, so every line is back on the standard budget.`,
+    note: scrubCap(`That cycle's budget comes to ${dollars(standard.total)} in all again.`, 300),
+    result: {
+      cycle_start: cycle.start,
+      cycle_end: cycle.end,
+      label: cycle.label,
+      cleared: rows.map((r) => ({ key: r.line, label: lineLabel(r.line), was: r.amount })),
+      cycle_total: standard.total,
+    },
+    rowIds: rows.map((r) => r.id),
+    async write() {
+      const gone: CycleBudgetRow[] = [];
+      for (const r of rows) {
+        if ((await db.deleteRow("cycle_budgets", r.id, { amount: r.amount, set_by: r.setBy })) === "moved") {
+          // Put back what this call already cleared, under the ids they had. A line the
+          // other phone has set again in the gap keeps that newer goal.
+          let changedSince = 0;
+          for (const g of [...gone].reverse()) {
+            if ((await db.insertCycleBudget(g)) === "taken") changedSince += 1;
+          }
+          return refuse(409, goalMovedSays(gone.length, changedSince));
+        }
+        gone.push(r);
+      }
+    },
+  });
+}
+
+const setCycleBudget: Tool = {
+  kind: "direct",
+  does:
+    "Set the budget goal for one pay cycle — any of the six lines, in dollars for that cycle, not a month — or clear: true to put the cycle back on the standard budget. Leave cycle_start out for the cycle in progress; otherwise it is the payday that opens the cycle, up to one cycle back or two ahead. Lines not named keep what they had.",
+  fields: ["cycle_start", "lines", "clear"],
+  // Made-up figures on two lines and no cycle_start, so the example is the cycle in
+  // progress whatever day it is read — a dated example would go stale in a month.
+  example: { lines: { groceries: 250, dining: 100 } },
+  check: (payload, ctx) => problemsOf(planCycleBudget(payload, ctx)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const plan = planCycleBudget(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const ask = plan.value;
+
+    let rows: CycleBudgetRow[];
+    try {
+      rows = await db.readCycleBudgets(ask.cycle.start);
+    } catch (e) {
+      if (isMissingTable(e, "cycle_budgets")) return refuse(503, NO_GOAL_TABLE_SAYS);
+      throw e;
+    }
+    return ask.mode === "clear" ? clearGoal(ctx, ask.cycle, rows) : setGoal(ctx, ask.cycle, rows, ask.lines);
+  },
+};
+
 // ── system.undo ──────────────────────────────────────────────────────────────
 //
 // The other half of the bargain. Phase 2's argument for dropping the approval queue
@@ -4296,6 +4668,8 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   // many flagged charges in one call, and a "worth a look" item waved away for both.
   "finance.confirm_charges": confirmCharges,
   "finance.dismiss_suggestion": dismissSuggestion,
+  // 2026-10-10: a budget goal for one pay cycle, read back by the app and budget_status.
+  "finance.set_cycle_budget": setCycleBudget,
   "system.undo": systemUndo,
 };
 

@@ -38,9 +38,13 @@
 import type { Json } from "../_shared/muse/args.ts";
 import { UUID } from "../_shared/muse/args.ts";
 import { NAME_MAX, scrubName, scrubOr } from "../_shared/muse/scrub.ts";
-import type { RuleRow } from "./dbFinance.ts";
+import type { CycleBudgetRow, RuleRow } from "./dbFinance.ts";
 import { refuse } from "./kit.ts";
 import type { UndoHandler, UndoRegistry } from "./undoContract.ts";
+// The six budget lines and the cap on one line's goal, from the shared cycle-goal module
+// the app and the read door use — so the undo accepts exactly what the tool could write.
+import { BUDGET_LINE_KEYS, GOAL_LINE_MAX } from "../_shared/muse/lib/cycleBudget.ts";
+import { LEAN_VARIABLE } from "../_shared/muse/lib/plan.ts";
 
 /** The handler's name, as stored in muse_undo. Exported so the tool that records it
  *  and the registry that runs it cannot spell it two ways. */
@@ -129,10 +133,116 @@ const undoMerchantRuleInsert: UndoHandler = {
   },
 };
 
+// ── putting a cleared cycle goal back ────────────────────────────────────────
+//
+// ADDED 2026-10-10 for finance.set_cycle_budget's `clear: true`, which deletes a pay
+// cycle's goal rows so the cycle goes back to the standard budget. Its undo has exactly
+// the shape forget_merchant's does, for exactly the reasons the header gives: it
+// RE-CREATES a deleted row, and its guard is about OTHER rows — it must refuse if a goal
+// has been set for that line in that cycle since (on either phone, through either
+// assistant), because putting the old one back would then overwrite a newer, deliberate
+// answer. No data step can say either half.
+//
+// So it is one handler with a narrow reach: it can put one goal row into cycle_budgets
+// under the id it had, and nothing else (FinanceDb.insertCycleBudget, its own verb). A
+// clear of several lines records one step per line, and applyUndo runs them newest first
+// and STOPS at the first line that has been set again since — the lines it already put
+// back stay back, the newer goal stays, and the lines after it wait. That is applyUndo's
+// rule for every change that is one answer rather than a batch of separate ones, and a
+// cycle's goal is one answer: set_cycle_budget's own write keeps nothing of a call that
+// half landed, for the same reason.
+//
+// ASKING AGAIN HAS TO FINISH THE JOB, so "already back" is SUCCESS. FOUND 2026-10-10 in
+// review: this handler used to refuse when the row it was about to put back was already
+// there under its own id. Because applyUndo stops at the first refusal and a retry starts
+// again from the newest step, the first line a previous attempt had put back refused
+// every retry, and the lines behind it could never come back with that token — the same
+// trap finance.confirm_charges fell into the same day. A goal row can only come back
+// under its old id through this very step (the door picks a fresh id for every new goal,
+// and nothing else writes this table with a chosen id), so finding that id there means
+// this step already ran, and the honest answer is "done". Its amount is deliberately NOT
+// compared: a different amount on that id is a newer goal set after it came back, which
+// this undo must not touch either way, and refusing over it would only stop the lines
+// behind it for good.
+//
+// THE NAME IS A NAME IN A DATABASE ROW, like MERCHANT_RULE_INSERT: renaming it orphans
+// every token already handed out. `<thing>.insert` is "put a deleted one back".
+
+/** The handler's name, as stored in muse_undo. */
+export const CYCLE_BUDGET_INSERT = "cycle-budget.insert";
+
+/** A cleared goal row, read back out of muse_undo and checked rather than trusted — the
+ *  same reason ruleFrom exists. The line must be one the plan has and the amount a
+ *  dollar figure the goal tool itself would have written, or nothing is put back. */
+function goalFrom(before: Json): CycleBudgetRow | null {
+  if (typeof before !== "object" || before === null || Array.isArray(before)) return null;
+  const { id, cycle_start, line, amount, set_by } = before;
+  if (typeof id !== "string" || !UUID.test(id)) return null;
+  if (typeof cycle_start !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(cycle_start)) return null;
+  if (typeof line !== "string" || !BUDGET_LINE_KEYS.includes(line)) return null;
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount > GOAL_LINE_MAX) return null;
+  if (set_by !== null && set_by !== "gino" && set_by !== "xinyan") return null;
+  return { id, cycleStart: cycle_start, line, amount, setBy: set_by };
+}
+
+/** "Groceries", for a line key — the plan's own label, never typed here. */
+export const lineLabel = (key: string): string => LEAN_VARIABLE.find((l) => l.key === key)?.label ?? key;
+
+const undoCycleBudgetInsert: UndoHandler = {
+  does: "Put a cleared budget goal for one line of one pay cycle back under its own id, unless a goal has been set for that line in that cycle since.",
+  async apply(before, ctx) {
+    const goal = goalFrom(before);
+    if (!goal) {
+      return refuse(
+        409,
+        "I wrote that goal down in a shape I cannot read back, so I changed nothing. Set it again with finance.set_cycle_budget if you want it.",
+      );
+    }
+    const label = lineLabel(goal.line);
+    /** The row on this line now, if any — read fresh each time it is asked. */
+    const onLine = async () => (await ctx.db.readCycleBudgets(goal.cycleStart)).find((r) => r.line === goal.line);
+    // Put back already — by an earlier try of this same undo. Done, not refused; the
+    // header says why, and why the amount is not compared.
+    const alreadyBack = () => ({
+      ok: true as const,
+      result: { id: goal.id, cycle_start: goal.cycleStart, line: goal.line, already_back: true },
+      rowIds: [goal.id],
+      say: `The ${label} goal for the cycle starting ${goal.cycleStart} was already back.`,
+    });
+    // The sentence for a line given a newer goal since. It says how to finish, because the
+    // undo stops here and a person needs to know what unblocks it: once the newer change
+    // is undone (by whoever made it), asking again puts this line and the rest back.
+    const newerSays = (when: string) =>
+      `A ${label} goal has been set again for the cycle starting ${goal.cycleStart} ${when}, so I left the new one as it is. ` +
+      "To bring the old goal back, undo that newer change first, then ask me to undo this one again.";
+
+    // REFUSE, NEVER OVERWRITE — a goal for this line under ANOTHER id is one set after the
+    // clear, and it is the newer answer. The read is for the sentence; the table's unique
+    // index on (cycle_start, line), inside the insert below, is what actually decides.
+    const there = await onLine();
+    if (there?.id === goal.id) return alreadyBack();
+    if (there) return refuse(409, newerSays("since I cleared the old one"));
+    if ((await ctx.db.insertCycleBudget(goal)) === "taken") {
+      // The table refused it. Usually the other phone set this line in the instant since
+      // the read; but two tries of this same undo landing together also end here, and
+      // then the row in the way IS this goal — which is done, not a conflict.
+      if ((await onLine())?.id === goal.id) return alreadyBack();
+      return refuse(409, newerSays("while I was putting the old one back"));
+    }
+    return {
+      ok: true,
+      result: { id: goal.id, cycle_start: goal.cycleStart, line: goal.line, amount: goal.amount },
+      rowIds: [goal.id],
+      say: `Put the ${label} goal of $${goal.amount.toFixed(2)} back for the cycle starting ${goal.cycleStart}.`,
+    };
+  },
+};
+
 /**
- * Every named inverse the finance side has. One, and the header says why it is one and
- * not zero; every other finance undo is a data step.
+ * Every named inverse the finance side has. Two, and the header says why each is one and
+ * not a data step; every other finance undo is a data step.
  */
 export const FINANCE_UNDO: UndoRegistry = {
   [MERCHANT_RULE_INSERT]: undoMerchantRuleInsert,
+  [CYCLE_BUDGET_INSERT]: undoCycleBudgetInsert,
 };

@@ -157,7 +157,7 @@ Do not turn on "always allow" for either of these.
 ## What you can ask — the read door
 
 **THE DOOR'S OWN LIST IS THE AUTHORITY, NOT THIS ONE.** Fetch `openapi.json` and use
-what it names — 41 tools as this is written, and that number only goes up. The ones
+what it names — 44 tools as this is written, and that number only goes up. The ones
 below are the handful I reach for most, written out because a summary reads faster
 than a schema. **If the door lists something this message does not mention, it
 exists and you should use it.** A heading here once said "eleven questions", stayed
@@ -178,9 +178,14 @@ a posted balance — there is no posted figure in this system at all.
 
 **`finance.budget_status`** — what is left in the budget **this pay cycle**. Not a
 month. It runs from the last payday to the day before the next one, so it crosses
-month ends, and each `target` is one cycle's share of a monthly figure. Report a
-target as a monthly budget and you are wrong by about half. `left` can be
-negative — say "over by $31", never "-31 left".
+month ends, and each `target` is a figure for that cycle. A standard-budget target is
+one cycle's share of a monthly figure — report it as a monthly budget and you are
+wrong by about half. **A target can also be this cycle's goal**, set with
+`finance.set_cycle_budget`: `targets_are` says which for the whole cycle and each
+line's `target_is` says which for that line — say "this cycle's goal" or "the standard
+budget" out loud, never one as the other, and never halve a goal. `goals_ahead` lists
+goals already set for the next cycles. `left` can be negative — say "over by $31",
+never "-31 left".
 
 **`finance.spend_by_category`** — where the money went, **over whole months only**.
 Both dates required, both `YYYY-MM-DD`, both included, up to 24 months. `from` has
@@ -250,7 +255,7 @@ than skipping them.
 
 ## What you can do — the write door
 
-Same rule as above: the door names 54 changes and its list wins. These are the ones
+Same rule as above: the door names 64 changes and its list wins. These are the ones
 that come up daily.
 
 **Three land straight away:**
@@ -290,6 +295,13 @@ can be reversed:
   and says how many could not go back. Say the merchant, category and count before
   sending.
 - `finance.dismiss_suggestion` — `key`, exactly as `finance.worth_a_look` gave it.
+- `finance.set_cycle_budget` — `lines` (budget line to dollars FOR THE CYCLE, e.g.
+  groceries, gas, dining, household, pets, misc), or `clear` set to true to put the cycle
+  back on the standard budget; optional `cycle_start`, the payday that opens the cycle
+  (leave it out for the cycle in progress; one back or up to two ahead). Lines not named
+  keep what they had. Say the cycle and every figure before sending, and read the reply's
+  total back. The undo puts the previous goal back exactly; if a line was given a goal
+  since, it stops at that line, keeps the newer goal and says so. Pass that on.
 - `finance.set_bill_amount` — `bill_id`, `amount`. Records what a bill actually
   cost; it goes to the right column whether the bill is fixed or variable. On an
   incoming row — a paycheck — raising the amount is refused unless the call also

@@ -23,6 +23,7 @@ import type {
   BillRow,
   ChangeInsert,
   ChargeRow,
+  CycleBudgetRow,
   DebtRow,
   DismissalRow,
   FinanceDb,
@@ -74,6 +75,9 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
   paid_bills: ["month", "bill_key", "paid"],
   merchant_rules: ["pattern", "kind", "category_id", "bill_name"],
   review_dismissals: ["key", "person"],
+  // Nothing through insertRow, exactly as dbFinanceSupabase.ts: a goal row carries the id
+  // the door chose, so it goes in through insertCycleBudget below.
+  cycle_budgets: [],
 };
 
 /** PostgREST 12's own words for a table that is not there, so the tools' "not set up
@@ -81,6 +85,9 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
  *  fake message would let that branch pass on something Postgres never says. */
 export const NO_DISMISSAL_TABLE =
   "Could not find the table 'public.review_dismissals' in the schema cache";
+/** The same sentence for cycle_budgets (schema_v45), written and not yet run. */
+export const NO_GOAL_TABLE =
+  "Could not find the table 'public.cycle_budgets' in the schema cache";
 
 export class FinanceFake implements FinanceDb {
   /** The ledger, keyed the way Postgres keys it. Tests read and seed these directly. */
@@ -92,10 +99,17 @@ export class FinanceFake implements FinanceDb {
     paid_bills: [],
     merchant_rules: [],
     review_dismissals: [],
+    cycle_budgets: [],
   };
   /** Set to be a database where schema_v43_review_dismissals.sql has not been run:
    *  every read and insert of review_dismissals fails the way PostgREST fails. */
   noDismissalTable = false;
+  /** Set to be a database where schema_v45_cycle_budgets.sql has not been run: every
+   *  read and insert of cycle_budgets fails the way PostgREST fails. */
+  noGoalTable = false;
+  /** Fires right after the door reads a cycle's goal rows, so a test can be the other
+   *  phone setting a goal in the gap between the read and the write. */
+  onReadCycleBudgets: ((cycleStart: string) => void) | null = null;
   /** How many times confirm_charges' list read ran, so a test can see one read was
    *  made for the whole batch rather than one per charge. */
   chargeBatchReads = 0;
@@ -385,6 +399,44 @@ export class FinanceFake implements FinanceDb {
     if (this.noDismissalTable) return Promise.reject(new Error(`read review_dismissals: ${NO_DISMISSAL_TABLE}`));
     const r = this.tables.review_dismissals.find((x) => x.key === key);
     return Promise.resolve(r ? { id: String(r.id), key: String(r.key), person: String(r.person) } : null);
+  }
+
+  readCycleBudgets(cycleStart: string): Promise<CycleBudgetRow[]> {
+    if (this.noGoalTable) return Promise.reject(new Error(`read cycle_budgets: ${NO_GOAL_TABLE}`));
+    // A snapshot, then the hook — the same order readCharge uses, so a test writing in
+    // the gap changes the table and not the door's copy of it.
+    const rows = this.tables.cycle_budgets
+      .filter((r) => r.cycle_start === cycleStart)
+      .map((r) => ({
+        id: String(r.id),
+        cycleStart: String(r.cycle_start),
+        line: String(r.line),
+        amount: Number(r.amount),
+        setBy: (r.set_by as string | null) ?? null,
+      }));
+    this.onReadCycleBudgets?.(cycleStart);
+    return Promise.resolve(rows);
+  }
+
+  /** "taken" exactly when the real insert would hit the unique index on (cycle_start,
+   *  line) or the primary key — so "the other phone set it in the gap" is the table's
+   *  answer, not a read the door made a moment earlier. */
+  insertCycleBudget(row: CycleBudgetRow): Promise<"ok" | "taken"> {
+    if (this.noGoalTable) return Promise.reject(new Error(`insert cycle_budgets: ${NO_GOAL_TABLE}`));
+    const clash = this.tables.cycle_budgets.some(
+      (r) => r.id === row.id || (r.cycle_start === row.cycleStart && r.line === row.line),
+    );
+    if (clash) return Promise.resolve("taken");
+    this.writes.push({ op: "insert_cycle_budget", table: "cycle_budgets", id: row.id });
+    this.tables.cycle_budgets.push({
+      id: row.id,
+      cycle_start: row.cycleStart,
+      line: row.line,
+      amount: row.amount,
+      set_by: row.setBy,
+    });
+    this.landed += 1;
+    return Promise.resolve("ok");
   }
 
   bankSyncTimes(): Promise<{ id: string; lastSyncAt: string | null; refreshRequestedAt: string | null }[]> {

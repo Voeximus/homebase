@@ -50,10 +50,13 @@ import { unusualCharges } from "../src/lib/unusual";
 import {
   toAccount,
   toAppData,
+  toCycleBudget,
   toRecurring,
   toTransaction,
   toWorkout,
 } from "../supabase/functions/_shared/muse/rows";
+// A pay cycle's budget goal (2026-10-10): the one function budget_status's targets come from.
+import { BUDGET_LINE_KEYS, cycleTargets } from "../src/lib/cycleBudget";
 import { reviewLedger } from "../src/lib/ledgerReview";
 import { selfAudit, danglingLinks } from "../src/lib/selfAudit";
 import {
@@ -2235,7 +2238,14 @@ describe("API.md's field names exist", () => {
       // `forgotten` is on a memory.recall reply only when the memory IS forgotten, and
       // the tool is swept above with a live key.
       "forgotten",
+      // `envelope_target` is on a finance.budget_status `goals_ahead` entry, which only
+      // exists once a goal is set for a later cycle (2026-10-10). This fixture sets none;
+      // the tests under "grades against this cycle's goal" drive it.
+      "envelope_target",
     ]) keys.add(k);
+    // The keys INSIDE finance.set_cycle_budget's `lines` — the six budget lines — off the
+    // shared module rather than typed here, so API.md can name the lines a goal takes.
+    for (const k of BUDGET_LINE_KEYS) keys.add(k);
 
     // API.md DOCUMENTS BOTH DOORS, so the write door's field names are printed in
     // the same backticks and have to count too. Until this was here, `reminder_id`
@@ -2445,5 +2455,118 @@ describe("schedule.list_reminders", () => {
     const res = await ask("schedule.list_reminders", {}, GINO_SECRET, { shortPage: "reminders" });
     expect(res.status).toBe(503);
     expect((await jsonOf(res)).error).toBe("ledger_unreadable");
+  });
+});
+
+// ── a pay cycle's budget goal ─────────────────────────────────────────────────
+//
+// ADDED 2026-10-10 with public.cycle_budgets (schema_v45) and the write door's
+// finance.set_cycle_budget. When a goal is set for the cycle in progress, budget_status's
+// targets are that goal — per line, and the envelope with them — and the reply says in
+// words which targets are the goal and which are the standard budget. Every figure is
+// made up. The instant is 30 Sep, 22:00 in Arizona: the cycle in progress opened that
+// day and runs to 14 Oct, and the next one opens on 15 Oct.
+describe("finance.budget_status grades against this cycle's goal when one is set", () => {
+  const goalRow = (cycle_start: string, line: string, amount: string, id = `cb-${cycle_start}-${line}`): DbRow => ({
+    id,
+    cycle_start,
+    line,
+    amount,
+    set_by: "xinyan",
+    at: "2026-09-29T20:00:00Z",
+  });
+  const withGoals = (...rows: DbRow[]) => {
+    const t = TABLES();
+    t.cycle_budgets = rows;
+    return t;
+  };
+  type Line = { key: string; target: number; spent: number; left: number; target_is: string };
+  const linesOf = (body: Record<string, unknown>) => new Map((body.lines as Line[]).map((l) => [l.key, l]));
+
+  it("says the targets are the standard budget when no goal is set, and how to set one", async () => {
+    const body = await jsonOf(await ask("finance.budget_status", {}, GINO_SECRET, {}, withGoals()));
+    expect(body.targets_are).toBe("the standard budget");
+    expect(body.goal_table_set_up).toBe(true);
+    expect(body.goals_ahead).toEqual([]);
+    for (const l of LEAN_VARIABLE) {
+      expect(linesOf(body).get(l.key), l.key).toMatchObject({ target: money(perCycle(l.target)), target_is: "the standard budget" });
+    }
+    expect((body.envelope as { target: number }).target).toBe(money(perCycle(sumTargets(LEAN_VARIABLE))));
+    expect(String(body.note)).toMatch(/pay cycle, not a month/i);
+    expect(String(body.note)).toContain("No goal is set for this cycle");
+    expect(String(body.note)).toContain("finance.set_cycle_budget");
+  });
+
+  it("uses the goal per line and in the envelope, and says which lines are the goal", async () => {
+    const rows = [goalRow("2026-09-30", "groceries", "175.00"), goalRow("2026-09-30", "dining", "37.25")];
+    const body = await jsonOf(await ask("finance.budget_status", {}, GINO_SECRET, {}, withGoals(...rows)));
+    const lines = linesOf(body);
+    expect(lines.get("groceries")).toMatchObject({ target: 175, target_is: "this cycle's goal" });
+    expect(lines.get("dining")).toMatchObject({ target: 37.25, target_is: "this cycle's goal" });
+    expect(lines.get("pets")).toMatchObject({ target: money(perCycle(LEAN_VARIABLE.find((l) => l.key === "pets")!.target)), target_is: "the standard budget" });
+    for (const l of lines.values()) expect(l.left, l.key).toBe(money(l.target - l.spent));
+    // The envelope is the shared function's total for exactly these rows.
+    const want = cycleTargets("2026-09-30", rows.map(toCycleBudget));
+    const env = body.envelope as { target: number; spent: number; left: number };
+    expect(env.target).toBe(money(want.total));
+    expect(env.left).toBe(money(want.total - env.spent));
+    expect(body.targets_are).toBe("this cycle's goal for some lines, the standard budget for the rest");
+    expect(String(body.note)).toContain("Say which is which");
+    expect(String(body.note)).toMatch(/pay cycle, not a month/i);
+  });
+
+  it("calls them this cycle's goal when every line has one, and never halves it", async () => {
+    const amounts = ["101.00", "22.00", "33.00", "44.00", "0.00", "6.00"];
+    const rows = LEAN_VARIABLE.map((l, i) => goalRow("2026-09-30", l.key, amounts[i]));
+    const body = await jsonOf(await ask("finance.budget_status", {}, GINO_SECRET, {}, withGoals(...rows)));
+    expect(body.targets_are).toBe("this cycle's goal");
+    expect([...linesOf(body).values()].map((l) => l.target)).toEqual(amounts.map(Number));
+    expect((body.envelope as { target: number }).target).toBe(206);
+    expect(String(body.note)).toContain("goal set for THIS cycle");
+  });
+
+  it("lists a goal already set for the next cycle, and keeps the cycle in progress on the standard budget", async () => {
+    const rows = [goalRow("2026-10-15", "groceries", "90.00"), goalRow("2026-10-15", "misc", "10.00")];
+    const body = await jsonOf(await ask("finance.budget_status", {}, GINO_SECRET, {}, withGoals(...rows)));
+    expect(body.targets_are).toBe("the standard budget");
+    const ahead = body.goals_ahead as { start: string; end: string; envelope_target: number; targets_are: string; lines: Line[] }[];
+    expect(ahead.map((c) => c.start)).toEqual(["2026-10-15"]);
+    expect(ahead[0].end).toBe("2026-10-30");
+    expect(ahead[0].envelope_target).toBe(money(cycleTargets("2026-10-15", rows.map(toCycleBudget)).total));
+    expect(ahead[0].targets_are).toBe("this cycle's goal for some lines, the standard budget for the rest");
+    expect(ahead[0].lines.find((l) => l.key === "groceries")).toMatchObject({ target: 90, target_is: "this cycle's goal" });
+    expect(String(body.note)).toContain("goals_ahead");
+  });
+
+  it("answers from the standard budget, and says why, before the goal table exists", async () => {
+    // The table's COUNT comes back zero when it is not there (a HEAD request's empty 404),
+    // so a door that trusted readAll alone would say "no goal is set" about a table that
+    // does not exist. It must say the table is not set up instead — and still answer.
+    const res = await ask("finance.budget_status", {}, GINO_SECRET, { missingTable: "cycle_budgets" });
+    expect(res.status).toBe(200);
+    const body = await jsonOf(res);
+    expect(body.goal_table_set_up).toBe(false);
+    expect(body.targets_are).toBe("the standard budget");
+    expect((body.envelope as { target: number }).target).toBe(money(perCycle(sumTargets(LEAN_VARIABLE))));
+    expect(String(body.note)).toContain("has not been set up yet");
+    expect(String(body.note)).not.toContain("No goal is set");
+  });
+
+  it("fails closed when the goals cannot be read for any other reason", async () => {
+    const res = await ask("finance.budget_status", {}, GINO_SECRET, {
+      failPage: { table: "cycle_budgets", message: "permission denied for table cycle_budgets" },
+    });
+    expect(res.status).toBe(503);
+    const body = await jsonOf(res);
+    expect(body.error).toBe("ledger_unreadable");
+    expect(body.table).toBe("cycle_budgets");
+    expect(body).not.toHaveProperty("envelope");
+  });
+
+  it("gives the same answer under a UTC clock and an Arizona clock", async () => {
+    const rows = [goalRow("2026-09-30", "groceries", "175.00"), goalRow("2026-10-15", "dining", "20.00")];
+    const at = (tz: string) =>
+      underTZ(tz, async () => jsonOf(await ask("finance.budget_status", {}, GINO_SECRET, {}, withGoals(...rows))));
+    expect(await at("UTC")).toEqual(await at("America/Phoenix"));
   });
 });

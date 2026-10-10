@@ -212,6 +212,27 @@ export interface MerchantRule {
   createdAt: string;
 }
 
+// One budget line's goal for ONE pay cycle (supabase/schema_v45_cycle_budgets.sql).
+//
+// Added 2026-10-10. Until then every budget figure was a constant in src/lib/plan.ts
+// (LEAN_VARIABLE, monthly, halved per cycle), so nobody — not the app and not either
+// assistant — could say "this cycle we are aiming lower on dining". A row here says
+// exactly that for one line in one cycle, and src/lib/cycleBudget.ts is the one place
+// that decides what a cycle's targets are: the goal where a row exists, the standard
+// budget's share everywhere else.
+//
+// `amount` is a CYCLE figure — what that line may spend between the payday in
+// `cycleStart` and the day before the next one. It is never halved and never doubled;
+// the standard budget is the only monthly number in the plan.
+export interface CycleBudget {
+  id: string;
+  cycleStart: string; // "YYYY-MM-DD" — the payday that opens the cycle
+  line: string; // a LEAN_VARIABLE key: groceries, gas, dining, household, pets, misc
+  amount: number; // dollars for that cycle, 0 or more
+  setBy?: "gino" | "xinyan"; // whose assistant (or whose phone) set it
+  at?: string; // when it was set
+}
+
 export interface AppData {
   transactions: Transaction[];
   debts: Debt[];
@@ -222,4 +243,10 @@ export interface AppData {
   paidBills: PaidBill[];
   merchantRules: MerchantRule[];
   foods: Food[]; // shared custom food library (meal builder)
+  // Budget goals for single pay cycles. OPTIONAL on purpose: the read door builds an
+  // AppData from seven tables and reads this one separately (it may not exist yet on
+  // a database where schema_v45 has not been run), and every older caller that builds
+  // an AppData by hand still compiles and simply has no goals — which means the
+  // standard budget, exactly as before 2026-10-10.
+  cycleBudgets?: CycleBudget[];
 }

@@ -1,6 +1,7 @@
 import { CircleCheck, Flame } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
+import { barPct } from "./barPct";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -121,7 +122,8 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
               const Icon = catIcon(c.catId);
               const color = catColor(c.catId);
               const over = c.spent > c.target;
-              const pct = Math.min(100, (c.spent / c.target) * 100);
+              // barPct, not a bare division: a cycle's goal can set a line to 0.
+              const pct = barPct(c.spent, c.target);
               return (
                 <button
                   key={c.catId}

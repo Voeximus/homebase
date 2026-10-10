@@ -37,6 +37,7 @@ import type {
   BillRow,
   ChangeInsert,
   ChargeRow,
+  CycleBudgetRow,
   DebtNameRow,
   DebtRow,
   DismissalRow,
@@ -141,6 +142,10 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
   // The suggestion's key and who waved it away. `id` and `at` are the table's own
   // defaults (schema_v43_review_dismissals.sql), so the database picks them.
   review_dismissals: ["key", "person"],
+  // NOTHING goes in through insertRow. A goal row always carries the id the door chose
+  // for it, so it has its own verb, insertCycleBudget below — see dbFinance.ts for why.
+  // An empty list here means a generic insert into this table is refused by name.
+  cycle_budgets: [],
 };
 
 export function financeDb(admin: SupabaseClient): FinanceDb {
@@ -634,6 +639,57 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       if (!data) return null;
       const row: DismissalRow = { id: str(data.id), key: str(data.key), person: str(data.person) };
       return row;
+    },
+
+    async readCycleBudgets(cycleStart) {
+      // A GET for the same reason readDismissal is one: a missing table then comes back
+      // as PostgREST's own sentence, which the tool can tell apart from "no goal set".
+      // Five named columns — the row's identity and the two a change replaces.
+      const { data, error } = await admin
+        .from("cycle_budgets")
+        .select("id, cycle_start, line, amount, set_by")
+        .eq("cycle_start", cycleStart)
+        .order("id", { ascending: true });
+      must(error, "read cycle_budgets");
+      const rows = (data ?? []) as Record<string, unknown>[];
+      // The unique index allows one row per line, and there are six lines. More than that
+      // is a table this door does not understand, and a write that cannot say which row
+      // it is replacing must not write.
+      if (rows.length > 6) {
+        throw new Error(`read cycle_budgets: ${rows.length} rows for one cycle, more than there are budget lines`);
+      }
+      return rows.map(
+        (r): CycleBudgetRow => ({
+          id: str(r.id),
+          cycleStart: str(r.cycle_start),
+          line: str(r.line),
+          amount: num(r.amount),
+          setBy: optStr(r.set_by),
+        }),
+      );
+    },
+
+    async insertCycleBudget(row) {
+      // Five named columns into one named table, under the id the door chose. No upsert:
+      // an upsert on (cycle_start, line) would overwrite a goal the other phone set in
+      // the gap, which is the one thing a compare-and-set door must never do.
+      const { error } = await admin
+        .from("cycle_budgets")
+        .insert({
+          id: row.id,
+          cycle_start: row.cycleStart,
+          line: row.line,
+          amount: row.amount,
+          set_by: row.setBy,
+        })
+        .select("id")
+        .single();
+      // 23505 is unique_violation: (cycle_start, line) or the primary key already holds
+      // this. It proves the statement rolled back, so nothing landed.
+      if (error?.code === "23505") return "taken";
+      must(error, "insert cycle_budgets");
+      landed += 1;
+      return "ok";
     },
 
     async bankSyncTimes() {
