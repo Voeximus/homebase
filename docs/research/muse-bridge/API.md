@@ -1595,8 +1595,14 @@ bills are placed on the calendar from an anchor date no tool writes.
 `closed` is `true` to close a debt or `false` to re-open one.
 
 **Say what it moves.** Only the debt list reads the minimum; what the plan sets aside
-for a card each month is the amount on the bill that pays it, which is
-`finance.set_bill_amount`. The rate is what the payoff plan charges interest at.
+for a card each month is the amount on the bill that pays it. Since 2026-10-25 a new
+minimum moves that bill too, in the same change and the same undo — but only when the
+bill was set to the old minimum, is fixed, monthly and the only bill paying the debt
+that is switched on and has not ended (one that has not started yet still counts). A
+bill above the old minimum is treated as a payment somebody chose and left
+alone; the reply says which happened, and `result.bill_moved` names the bill it moved
+(null when none). Anything left alone is `finance.set_bill_amount`. The rate is what the
+payoff plan charges interest at.
 
 **Closing is a flag, never a delete.** The debt stays, with its history, and
 `finance.debts` marks it `closed`. It refuses to close a debt that still shows money

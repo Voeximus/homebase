@@ -156,12 +156,14 @@ export { BadArgs } from "./args.ts";
 
 // ── finance.audit ─────────────────────────────────────────────────────────────
 //
-// Three of the nine checks put a raw ledger description or a single charge's date
+// Four of the twelve checks put a raw ledger description or a single charge's date
 // into `detail`, so `detail` cannot simply be forwarded:
 //   splits-sum            `${t.date} ${t.description} (slices … vs charge …)`
 //   one-payment-per-cycle `… is claimed by N charges (${date} $${amount}, …)`
 //   links-point-somewhere `${date} ${description} ($…) points at a deleted …`
-// The other five name a bill row, a hardcoded budget-line label, or category ids.
+//   hand-note-beside-bank-charge `… while the bank shows ${date} $${amount} for it`
+//                         (added 2026-10-24; off the allowlist, so it says CHECK_SAYS)
+// The other eight name a bill row, a debt, a hardcoded budget-line label, or category ids.
 //
 // So there is an ALLOWLIST, and it is an allowlist rather than a blocklist on
 // purpose: a check added to selfAudit.ts later is not on it, and gets the door's
@@ -277,6 +279,27 @@ const CHECK_SAYS: Record<string, { ok: string; fail: string }> = {
     // failure normally says. Points at the read tool that answers the question, rather
     // than at a screen.
     fail: "A recent bill was paid from the wrong account. Ask finance.search_transactions for that bill's charges.",
+  },
+  // Added 2026-10-24. Its app sentence names charge dates and amounts, so it is not on
+  // DETAIL_SAFE; the failure points at the read tool that names the bill and both
+  // charges (W5c), whose sentence says how to repair it. Both under the 104-character
+  // ceiling tests/museRead.test.ts holds every detail to.
+  "hand-note-beside-bank-charge": {
+    ok: "No bill is paid both by a hand note and by the bank.",
+    fail: "A bill is paid twice, by a hand note and by the bank. finance.worth_a_look names it.",
+  },
+  // Check 11, added 2026-10-25 (selfAudit.ts billCoversItsDebtMinimum). Its app sentence
+  // names bills, a debt and two amounts, so it is not on DETAIL_SAFE; this one points at
+  // the two reads that show both figures side by side.
+  "bill-covers-debt-minimum": {
+    ok: "Every bill that pays a debt plans at least that debt's minimum payment.",
+    fail: "A bill that pays a debt plans less than its minimum. Compare finance.debts with finance.bills.",
+  },
+  // Check 12, added 2026-10-25 (selfAudit.ts everyBillHasARealCategory). Its app
+  // sentence lists bill names, so it stays off DETAIL_SAFE and says this instead.
+  "bill-has-a-real-category": {
+    ok: "Every bill is filed under a real category.",
+    fail: "A bill is filed under 'other'. Read finance.bills and refile it with finance.edit_bill.",
   },
 };
 

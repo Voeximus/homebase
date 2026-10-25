@@ -17,6 +17,7 @@ import {
   commitmentProgress,
   billExpected,
   previousPayday,
+  isOpenDebt,
   type PayoffEvent,
 } from "../../lib/plan";
 import { firepowerStatus } from "../../lib/headline";
@@ -398,7 +399,10 @@ export function buildFinanceVMs(
   const cycleAnchor = previousPayday(now);
   cycleAnchor.setDate(cycleAnchor.getDate() - 4);
   const cycleStartKey = dateKeyOf(cycleAnchor);
+  // Open debts only (2026-10-25): a closed debt takes no payments, and the bank sync no
+  // longer credits one — its pattern names a lender whose NEW loan this money may be on.
   const debtPatterns = data.debts
+    .filter(isOpenDebt)
     .map((d) => d.trackPattern)
     .filter((p): p is string => !!p)
     .map((p) => p.toUpperCase());

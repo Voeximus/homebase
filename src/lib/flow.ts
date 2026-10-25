@@ -51,7 +51,10 @@ export interface FlowVerdict {
   why: string;
 }
 
-/** Does this flow change what the household is worth? */
+/** Is this flow ADDED as earnings or spending? `returned` is false here and still moves
+ *  net worth: runRate takes it off that month's spending (its rule 5, 2026-10-25),
+ *  because a refund nets against the purchase it paid back. `moved` and `repaid` change
+ *  nothing. */
 export const COUNTS_TOWARD_NET: Readonly<Record<Flow, boolean>> = {
   earned: true,
   spent: true,
@@ -126,6 +129,11 @@ export const transferRef = (description: string | undefined): string | null => {
  *  09/30 VIA WEB", "Mobile Banking payment to CRD 6813". */
 const digitRuns = (s: string): string[] => s.match(/\d{4}/g) ?? [];
 
+/** What a card PAYMENT says about itself, read lowercased: "PAYMENT FROM CHK …",
+ *  "PAYMENT - THANK YOU", "AUTOPAY", "ONLINE PYMT". A merchant's refund says none of
+ *  these. See rule 2 in flowOf. */
+const CARD_PAYMENT_WORDS = /\bpayment\b|\bpymt\b|\bpmt\b|thank ?you|\bauto ?pay\b|\bautomatic payment\b|\btransfer from\b|\bfrom (?:chk|sav|acct)\b/;
+
 /**
  * Classify one row.
  *
@@ -157,8 +165,24 @@ export function flowOf(txn: Transaction, own: OwnAccounts): FlowVerdict {
   // This is the one that inflated BOTH sides of every monthly figure. Money arriving
   // at a card is never income: it is the far half of a payment that already left a
   // checking account, and counting it adds a dollar the household never received.
+  //
+  // But not every credit on a card is a payment. FOUND 2026-10-25: a refunded online
+  // course and a returned online order both landed on a card and both read "a payment
+  // arriving at a card", which is untrue — no account paid anything; a merchant gave
+  // money back. That was only a wrong REASON while neither verdict moved a total.
+  // Since runRate began taking money back off spending (its rule 5), it is also a
+  // wrong NUMBER: a payment misread as a refund would raise net worth by the whole
+  // payment. So the payment test errs wide (payment words, transfer wording, one of
+  // the household's own last fours), and a card credit is a PAYMENT only when it says so — the
+  // words a payment carries, or one of the household's own last fours — and is
+  // otherwise money returned. The pairing pass below still calls it moved when its
+  // other half, carrying the same confirmation, left one of their own accounts.
   if (txn.type === "income" && own.cardIds.includes(txn.accountId ?? "")) {
-    return { flow: "moved", why: "a payment arriving at a card — the other half of money leaving an account" };
+    const own4 = digitRuns(txn.description ?? "").some((r) => own.lastFours.includes(r));
+    if (own4 || CARD_PAYMENT_WORDS.test(desc)) {
+      return { flow: "moved", why: "a payment arriving at a card — the other half of money leaving an account" };
+    }
+    return { flow: "returned", why: "money a merchant put back on a card — a refund, not a payment and not earnings" };
   }
 
   // ── 3. a payment naming one of the household's own cards or accounts ────────
@@ -169,6 +193,16 @@ export function flowOf(txn: Transaction, own: OwnAccounts): FlowVerdict {
 
     const lender = KNOWN_LENDERS.find((l) => desc.includes(l));
     if (lender) return { flow: "repaid", why: `a payment to ${lender}, which is a debt the app tracks` };
+  }
+
+  // ── 3b. money back from a lender ─────────────────────────────────────────────
+  // FOUND 2026-10-25 in review. A credit from a lender the household pays (an
+  // overpayment returned, a cancelled loan's payments sent back) reverses a DEBT
+  // PAYMENT, which was never spending — so it must not come off spending as a refund
+  // would. It is the far side of a repayment.
+  if (txn.type === "income") {
+    const lender = KNOWN_LENDERS.find((l) => desc.includes(l));
+    if (lender) return { flow: "repaid", why: `money back from ${lender}: it reverses a debt payment, never spending` };
   }
 
   // ── 4. money coming back for something already counted ──────────────────────

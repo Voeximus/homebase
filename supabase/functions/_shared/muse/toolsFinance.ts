@@ -868,6 +868,8 @@ const financeRunRate: Tool = {
         month: m.month,
         earned: m.earned,
         spent: m.spent,
+        money_back: m.returned,
+        money_back_rows: m.returnedRows.map(sayRow),
         net: m.net,
         net_without_one_offs: m.netOngoing,
         cash_change: m.cashChange,
@@ -875,7 +877,7 @@ const financeRunRate: Tool = {
       })),
       excluded: r.excluded.map((e) => ({ flow: e.flow, total: e.total, rows: e.rows.map(sayRow) })),
       note:
-        "TWO FIGURES, BOTH TRUE, AND THEY ANSWER DIFFERENT QUESTIONS. net_worth_per_month is earned minus spent — paying a card down does not appear in it, because cancelling debt with cash makes nobody poorer. cash_per_month is what actually moved through the checking accounts, which is the one a bank statement can be checked against. Say which one you mean. Both are the average of WHOLE months only — the current month is left out because a part-month carries a full rent and part of an income. Transfers between their own accounts and payments to their own cards or lenders are not spending: they move money that is already theirs. Every row left out is in `excluded` with the rule that excluded it, so this can be checked rather than believed.",
+        "TWO FIGURES, BOTH TRUE, AND THEY ANSWER DIFFERENT QUESTIONS. net_worth_per_month is earned minus spent — paying a card down does not appear in it, because cancelling debt with cash makes nobody poorer. cash_per_month is what actually moved through the checking accounts, which is the one a bank statement can be checked against. Say which one you mean. Both are the average of WHOLE months only — the current month is left out because a part-month carries a full rent and part of an income. Transfers between their own accounts and payments to their own cards or lenders are not spending: they move money that is already theirs. Money that came back (refunds, friends paying back their share, cash put back) is already taken off `spent` and shown per month as `money_back`. Every row left out is in `excluded` with the rule that excluded it, so this can be checked rather than believed.",
     };
   },
 };

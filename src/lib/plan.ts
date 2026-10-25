@@ -139,6 +139,22 @@ export const ATTACK_ORDER = [
   "Credit card (…4728)",
 ];
 
+/**
+ * Is this debt still running — not CLOSED (debts.closed_at, schema_v44)?
+ *
+ * FOUND 2026-10-25. A closed debt is finished and kept, never deleted, and the write door
+ * only closes one at a zero balance. But the bank sync's tracker did not read closed_at
+ * (supabase/functions/_shared/trackedDebts.ts has that half), so a paid-off loan whose
+ * pattern names the LENDER would have gone on taking payments meant for a new loan from
+ * the same lender — and every total here would have counted whatever it then showed as
+ * still owed. A closed debt is out of the totals and the payoff plan by what it IS, not
+ * only by happening to read $0.00. The debt LIST still shows it, marked closed, so the
+ * history of having paid it stays visible.
+ */
+export function isOpenDebt(d: Pick<Debt, "closedAt">): boolean {
+  return !d.closedAt;
+}
+
 /** Live debts sorted into the attack order (unknown names fall to the back, by balance). */
 export function orderedDebts(debts: Debt[]): Debt[] {
   const rank = (d: Debt) => {
@@ -245,7 +261,8 @@ export function planMath(
     .reduce((s, r) => s + monthlyAmount(r), 0);
   const fixedNonDebt = fixed - debtPaymentsInFixed;
   const firepower = income - fixedNonDebt - variable;
-  const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
+  // A closed debt is finished, whatever its balance reads (isOpenDebt, 2026-10-25).
+  const totalDebt = debts.filter(isOpenDebt).reduce((s, d) => s + d.balance, 0);
   return { income, fixed, fixedNonDebt, debtPaymentsInFixed, variable, firepower, totalDebt };
 }
 
@@ -450,7 +467,8 @@ export function payoffSchedule(
   if (monthlyFirepower <= 0) return [];
   const perPay = monthlyFirepower / 2;
   let reduction = Math.max(0, oneTimeReduction);
-  const bal = debtsOrdered.map((d) => ({
+  // Never aims money at a closed debt (isOpenDebt, 2026-10-25): it is finished.
+  const bal = debtsOrdered.filter(isOpenDebt).map((d) => ({
     id: d.id,
     name: d.name,
     balance: d.balance,

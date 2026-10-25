@@ -386,7 +386,12 @@ describe("September 2026 — what two more weeks of real bank data broke", () =>
     const w = spend("Bkofamerica Atm", 20, "BKOFAMERICA ATM 08/31 #000001616 WITHDRWL BROADWAY & MCCLINT TEMPE AZ");
     expect(w.kind).toBe("variable");
     expect(w.confidence).toBe("low"); // it must ask what the cash went on
-    expect(classifyCredit("BKOFAMERICA ATM 08/31 DEPOSIT")).toBe("transfer");
+    // CHANGED 2026-10-25: the deposit is no longer dropped. It is still not spending —
+    // it is money in, filed as cash coming back (category `refund`, see creditCategory
+    // and tests/moneyIn.test.ts), so the ledger records it, it is not counted as
+    // earnings, and the account's cash change is right. It does NOT bring spending
+    // down: the withdrawal above still counts as spent in full.
+    expect(classifyCredit("BKOFAMERICA ATM 08/31 DEPOSIT")).toBe("income");
   });
 
   // Rent drifts by a few dollars month to month ($1,731.98 → $1,732.16 →
@@ -414,10 +419,18 @@ describe("a rule the app should never have offered to save", () => {
     expect(spend("Sam's Club", 4.05, "CHECKCARD 0822 SAMS CLUB #495", taught).appCategory).toBe("groceries");
   });
 
-  it("inside the fuel range the taught answer still stands, and still asks", () => {
-    const c = spend("Sam's Club", 34.91, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ", taught);
-    expect(c.appCategory).toBe("transport");
-    expect(c.ambiguous).toBe(true);
+  // CHANGED 2026-10-25. Inside the range a pump charge can fall in, the pre-fill used
+  // to be whatever the taught rule said. Gino gave the household's own reading on
+  // 2026-10-24 (HOUSEHOLD_DEPARTMENT_RULES): untagged, $35 to $50 is gas, anything else
+  // the store. So the pre-fill is his band now, not the merchant-keyed rule — and the
+  // charge still asks, because the band is his reading, not the bank saying so.
+  it("inside the fuel range the household band sets the pre-fill, and it still asks", () => {
+    const below = spend("Sam's Club", 34.91, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ", taught);
+    expect(below.appCategory).toBe("groceries");
+    expect(below.ambiguous).toBe(true);
+    const inBand = spend("Sam's Club", 41.5, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ", taught);
+    expect(inBand.appCategory).toBe("transport");
+    expect(inBand.ambiguous).toBe(true);
   });
 
   it("a bank-tagged pump is fuel at any amount", () => {

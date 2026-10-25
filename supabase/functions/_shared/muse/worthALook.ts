@@ -195,6 +195,18 @@ function sentenceFor(rule: SuggestionRule, name: string | null, month: string | 
       return `${who} was charged every cycle before this one, and${inMonth} there is nothing${about}.`;
     case "W5b":
       return `${who} may be recorded twice${inMonth}${about}.`;
+    // 2026-10-24. The charges list carries the hand note and the bank's charge; the
+    // write door's link_charge_to_bill, called on the BANK's charge for this bill and
+    // month, attaches it and retires the note in one step with one undo.
+    //
+    // The month is SAID, by its key, since 2026-10-25 (found in review). This card places
+    // the bank's charge the way the bank sync does — billCycleFor, with its week of grace
+    // — while link_charge_to_bill, sent no month, uses the charge's calendar month. For a
+    // bill due on the 1st and paid a few days early those are two different months: the
+    // link would be refused, or land on the month before while the note went on holding
+    // the real one, and the double count would hide from the self-check for good.
+    case "W5c":
+      return `${who}${inMonth} is paid twice${about}: by a hand note and by the bank. Attach the bank's charge to the bill${month ? `, sending month ${month},` : ""} and the note is retired.`;
     case "W6":
       return name
         ? `${name} is set to repeat, but it looks like it only arrived once${about} a month.`

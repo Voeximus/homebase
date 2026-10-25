@@ -27,8 +27,24 @@ import {
   type PendingCorrection,
   type PlaidTxn,
 } from "../_shared/plaidSync.ts";
-import { billsPayableFrom, classify, classifyCredit, isPaycheck, matchRecurringName, type LearnedRules } from "../_shared/categorize.ts";
+import {
+  billLiveOnPaymentDate,
+  billsPayableFrom,
+  classify,
+  classifyCredit,
+  creditCategory,
+  creditHistoryFrom,
+  forExistingRow,
+  isPaycheck,
+  matchBillForCharge,
+  sharedAccountIds,
+  type CreditHistory,
+  type LearnedRules,
+} from "../_shared/categorize.ts";
+import { handNoteToRetire, holderOf, type CycleHolder, type PaidScanRow } from "../_shared/handNote.ts";
+import { mayLinkFromAnotherAccount, mayTakeOver, type ChargeStanding } from "../_shared/chargeStanding.ts";
 import { pendingFields } from "../_shared/pendingRow.ts";
+import { creditFlags, seedFlags, spendHistoryDescriptions } from "../_shared/seedOnly.ts";
 import {
   armDedupGuard,
   claimStatementCopy,
@@ -39,6 +55,7 @@ import {
 } from "../_shared/dedupGuard.ts";
 import { readAllPages } from "../_shared/readAllPages.ts";
 import { denyUnlessCaller } from "../_shared/callerAuth.ts";
+import { armedTrackedDebts, closedDebtPayment, closedTrackedDebts, trackedDebtFor } from "../_shared/trackedDebts.ts";
 
 const PLAID_ENV = Deno.env.get("PLAID_ENV") ?? "sandbox";
 const PLAID_BASE = `https://${PLAID_ENV}.plaid.com`;
@@ -136,18 +153,9 @@ function billAppliesTo(rec: { id: string; dueDays?: number[] }, date: string) {
   return { kind: "bill", recurringId: rec.id, monthKey, day: c.day, installmentIndex: c.idx, settled: true } as const;
 }
 
-// Is a recurring row live on the date a payment posted? A week of slack on each
-// edge, matching the GRACE window billAppliesTo uses, so paying a few days either
-// side of a window boundary still resolves to the right bill.
-function liveOnDate(r: { starts_on?: string | null; ends_on?: string | null }, iso: string): boolean {
-  const shift = (d: string, days: number) => {
-    const t = Date.parse(d + "T00:00:00Z");
-    return new Date(t + days * 86400000).toISOString().slice(0, 10);
-  };
-  if (r.starts_on && iso < shift(r.starts_on, -7)) return false;
-  if (r.ends_on && iso > shift(r.ends_on, 7)) return false;
-  return true;
-}
+// "Is a recurring row live on the date a payment posted?" lived here as liveOnDate until
+// 2026-10-24. It is billLiveOnPaymentDate in _shared/categorize.ts now, unchanged, so
+// the app's audit narrows bills by the same window this sync does (src/lib/billMatch.ts).
 
 // Which installment slot (ordinal in the sorted due_days) a STORED applies_to.day
 // belongs to — so the paidBill seed keys old/manual rows the SAME way billAppliesTo
@@ -305,10 +313,22 @@ async function syncConnection(connId: string, force = false) {
     // bill installments (so we never double-mark a manual / prior-import / re-sync one)
     const { data: recRows } = await admin
       .from("recurring")
-      .select("id, name, due_days, amount, direction, variable, category_id, starts_on, ends_on, account_id")
+      // known_amount and cadence since 2026-10-24: a bill paid from another account links
+      // only inside the amount band of what one charge toward it should be
+      // (billPerCharge in categorize.ts), and those are the two columns that decide it.
+      .select("id, name, due_days, amount, known_amount, cadence, direction, variable, category_id, starts_on, ends_on, account_id")
       .eq("active", true);
     // Only out-direction bills are payment targets (never match a paycheck/transfer).
     const outRecs = (recRows ?? []).filter((r: any) => r.direction === "out");
+
+    // The household's shared accounts — the ones owned "Joint" — because a bill paid
+    // from an account other than its own links only when one side is shared (see
+    // matchBillForCharge). Read across every connection, not just this one: a bill can
+    // be set on an account another bank login owns. A failed read leaves the set empty,
+    // which switches the cross-account link off and keeps today's behaviour exactly.
+    const { data: ownerRows, error: ownerErr } = await admin.from("accounts").select("id, owner");
+    if (ownerErr) console.warn("accounts owner read:", ownerErr.message, "— bills link from their own account only this sync");
+    const sharedAccts = sharedAccountIds(ownerErr ? [] : ((ownerRows ?? []) as { id: string; owner: string | null }[]));
 
     // Feed-tracked NON-bank debts (Affirm, Mom-China): a feed outflow whose
     // description contains the debt's track_pattern is a payment on it. We record
@@ -316,16 +336,18 @@ async function syncConnection(connId: string, force = false) {
     // select("*") so a deploy BEFORE schema_v14 just yields no track_pattern → the
     // list is empty and tracking stays dormant (no broken query).
     const { data: debtRows } = await admin.from("debts").select("*");
-    // Armed = pattern + a FIXED baseline + a since-date, and NOT a bank-linked card
-    // (those are owned by the v12 trigger). tracked_baseline must be present — never
-    // fall back to the live balance, or the recompute would re-subtract every sync.
-    const trackedDebts = (debtRows ?? []).filter(
-      (d: any) => d.track_pattern && d.tracked_baseline != null && !d.provider_account_id,
-    );
-    const matchTrackedDebt = (desc: string) => {
-      const up = (desc || "").toUpperCase();
-      return trackedDebts.find((d: any) => up.includes(String(d.track_pattern).toUpperCase()));
-    };
+    // Armed = pattern + a FIXED baseline + a since-date, NOT a bank-linked card (those
+    // are owned by the v12 trigger), and — since 2026-10-25 — NOT CLOSED: a paid-off
+    // loan whose pattern is the lender's name would take the payments on a new loan from
+    // the same lender. The rule and why it is shaped this way: _shared/trackedDebts.ts.
+    // Every place below that credits a payment to a debt, or recomputes a debt's
+    // balance from its payments, goes through this one list.
+    const trackedDebts = armedTrackedDebts(debtRows as any[] | null);
+    const matchTrackedDebt = (desc: string) => trackedDebtFor(trackedDebts, desc);
+    // The closed ones that would otherwise be armed. They credit nothing and are never
+    // recomputed; they are read only so that a payment one of them alone matches is
+    // RECORDED instead of dropped (closedDebtPayment, below and in _shared/trackedDebts.ts).
+    const closedDebts = closedTrackedDebts(debtRows as any[] | null);
     // Every row already linked to a bill, debt or goal — the record of which bill
     // cycles are settled. This was one unpaged, unordered select with no error
     // check, so two quiet failures were open at once. Past 1,000 linked rows,
@@ -336,10 +358,14 @@ async function syncConnection(connId: string, force = false) {
     // settlement for every bill at once. Paged under a total order now, and a read
     // that fails stops the sync before anything is written (the cursor is only
     // saved at the end, so the next run retries the same delta).
+    //
+    // More columns since 2026-10-24, so a month held by a hand-made "(already paid)"
+    // note can be told from one a real payment holds (handNote.ts). The extra columns
+    // are read, never written from here.
     const paidRows = await readAllPages("paid cycles", () =>
       admin
         .from("transactions")
-        .select("applies_to, provider_txn_id")
+        .select("id, type, amount, provider, account_id, status, applies_to, provider_txn_id, user_categorized, flow_override, splits")
         .not("applies_to", "is", null)
     );
     // Map recurringId → its due_days so we can key a stored bill row on its
@@ -350,9 +376,24 @@ async function syncConnection(connId: string, force = false) {
       `${at.recurringId}|${at.monthKey}|${at.installmentIndex ?? installmentIndexForDay(dueDaysById[at.recurringId], at.day)}`;
     const paidBill = new Set<string>();
     const seenProviderIds = new Set<string>();
+    // WHO holds each bill month, beside the bare "it is held" of paidBill — so a month
+    // held by a hand note alone can give way to the bank's own charge (handNote.ts).
+    // Expenses only, the way the app's checks count a month's payments.
+    const cycleHolders = new Map<string, CycleHolder[]>();
+    // The link each stored bank row already carries, by its bank id (2026-10-25), so a
+    // re-sent row this sync once linked from another account is written back as it is,
+    // and one it never linked is not linked now — see chargeStanding.ts.
+    const storedLinkById = new Map<string, unknown>();
     for (const t of paidRows) {
       const at = (t as any).applies_to;
-      if (at?.kind === "bill") paidBill.add(cycleKey(at));
+      if ((t as any).provider_txn_id) storedLinkById.set(String((t as any).provider_txn_id), at);
+      if (at?.kind === "bill") {
+        const key = cycleKey(at);
+        paidBill.add(key);
+        if ((t as any).type === "expense") {
+          (cycleHolders.get(key) ?? cycleHolders.set(key, []).get(key)!).push(holderOf(t as PaidScanRow));
+        }
+      }
       if ((t as any).provider_txn_id) seenProviderIds.add((t as any).provider_txn_id);
     }
 
@@ -526,11 +567,134 @@ async function syncConnection(connId: string, force = false) {
       }
     }
 
+    // Which of this delta's charges the ledger ALREADY holds, read before the loop below
+    // decides anything new for them (2026-10-25, see _shared/chargeStanding.ts). The two
+    // things the sync learned on 2026-10-24 — linking a bill paid from another account,
+    // and a bank charge taking a month from a hand note — are for charges ARRIVING. A row
+    // the bank re-sends (Plaid's `modified`, or everything after a cursor reset) is
+    // written by apply_bank_sync with `applies_to = coalesce(existing, new)` and no
+    // user_categorized guard, so a link decided for it here would land on a row a person
+    // may already have answered. The takeover checked this after the loop; the
+    // cross-account link did not check it at all, and that was the gap.
+    //
+    // The dedup scan's ids cover the delta's own dates (three days wider at each end), so
+    // they answer for most rows at no cost. Only an outflow they do not cover is asked
+    // about, by id — which is every genuinely new charge, and a stored one whose date the
+    // bank has moved. A stored PENDING row with the same id counts as stored, on purpose:
+    // it may carry a person's answer too, and then the sync keeps today's behaviour.
+    //
+    // A failed read THROWS, like every read before the first write: nothing has been
+    // written, the cursor is only saved at the end, and the next sync replays this delta.
+    // Read as "nothing is stored" instead, it would link exactly the rows it must not.
+    const storedIds = new Set<string>(knownProviderIds);
+    const askLedger = [
+      ...new Set(ops.upsertPosted.filter((r) => r.amount < 0 && !storedIds.has(r.providerTxnId)).map((r) => r.providerTxnId)),
+    ];
+    for (let i = 0; i < askLedger.length; i += 100) {
+      const ids = askLedger.slice(i, i + 100);
+      const rows = await readAllPages("stored charges", () =>
+        admin.from("transactions").select("provider_txn_id").eq("provider", "plaid").in("provider_txn_id", ids)
+      );
+      for (const r of rows) storedIds.add(String(r.provider_txn_id));
+    }
+    const standingOf = (row: (typeof ops.upsertPosted)[number]): ChargeStanding => ({
+      isNew: !storedIds.has(row.providerTxnId),
+      answered: !!row.pendingTxnId && corrections.has(row.pendingTxnId),
+      mapped: !!acctIdByProv[row.accountId],
+      storedLink: storedLinkById.get(row.providerTxnId) ?? null,
+    });
+
+    // What the household's own money OUT says about money coming IN — creditCategory
+    // reads it to tell a refund or a payback from earnings (2026-10-25). Read only when
+    // this sync carries a credit that could be one; a paycheck or a transfer never asks.
+    // A failed read fails OPEN, on purpose: every credit is then filed exactly as it was
+    // before that rule, which is a figure that was already being lived with, and a sync
+    // is not worth losing over it. The price, named: a credit filed other-income in a
+    // sync whose read failed keeps other-income on every later re-sync too (creditFlags
+    // keeps a credit's category), so that one row needs a person to call it a refund.
+    //
+    // The history is the ledger's money out PLUS this sync's own (spendHistoryDescriptions,
+    // 2026-10-25 in review): a purchase and its refund arriving in the same delta must
+    // see each other, or the refund is filed as earnings for good. A delta row counts
+    // when this sync is about to write it as spending — the same test the posted and
+    // pending loops below apply.
+    //
+    // That includes a payment only a CLOSED debt matches, which the posted loop now
+    // RECORDS as a bill payment instead of dropping it (closedDebtPayment). FOUND
+    // 2026-10-25 when this change and the closed-debt one were joined: each was built on
+    // its own, so this test still asked the loop's old question. That payment was written
+    // as spending but left out of the history, and a refund from the same lender in the
+    // same delta was filed as earnings for good. Asked with the loop's own arguments, so
+    // it answers exactly as the loop will (tests/syncSeams.test.ts).
+    let creditHistory: CreditHistory | undefined;
+    if (
+      [...ops.upsertPosted, ...ops.pendingUpsert].some(
+        (r) => r.amount > 0 && classifyCredit(r.description) === "income" && !isPaycheck(r.description),
+      )
+    ) {
+      try {
+        const spent = await readAllPages("spend history", () =>
+          admin.from("transactions").select("description").eq("type", "expense")
+        );
+        creditHistory = creditHistoryFrom([
+          ...spendHistoryDescriptions(
+            spent.map((r: any) => r.description as string | null),
+            ops.upsertPosted,
+            (r) =>
+              !!matchTrackedDebt(r.description) ||
+              classify(r.description, r.amount, learned, r.raw).kind !== "skip" ||
+              !!closedDebtPayment(closedDebts, r.description, seenProviderIds.has(r.providerTxnId))?.record,
+          ),
+          ...spendHistoryDescriptions([], ops.pendingUpsert, (r) => pendingFields(r, learned)?.type === "expense"),
+        ]);
+      } catch (e) {
+        console.warn("spend history (credits filed as before):", String((e as Error)?.message ?? e));
+      }
+    }
+
+    // A SEED-ONLY answer (Classification.seedOnly — a taught rule reached through a
+    // near spelling, added 2026-10-25) may file a NEW row but must not move one the
+    // ledger already has: "a guess may seed a row, never re-decide one" (schema_v26).
+    // apply_bank_sync already keeps the category when told to (keep_category), but it
+    // always takes needs_review from what is sent — so a re-delivered row would have
+    // its review flag cleared under a category the rule never set. So the flag such a
+    // row already carries is read here and sent back unchanged. A row not found is new.
+    // Fails CLOSED like the reads above: a wrong guess here re-decides history.
+    const seedOnlyIds = ops.upsertPosted
+      .filter((r) => r.amount < 0 && classify(r.description, r.amount, learned, r.raw).seedOnly)
+      .map((r) => r.providerTxnId);
+    const storedReview = new Map<string, boolean>();
+    for (let i = 0; i < seedOnlyIds.length; i += 100) {
+      const ids = seedOnlyIds.slice(i, i + 100);
+      const rows = await readAllPages("seed-only rows", () =>
+        admin
+          .from("transactions")
+          .select("provider_txn_id, needs_review")
+          .eq("provider", "plaid")
+          .eq("status", "posted")
+          .in("provider_txn_id", ids)
+      );
+      for (const r of rows) storedReview.set(r.provider_txn_id as string, r.needs_review === true);
+    }
+
     // group posted rows: living-spend by account, and BILL payments (matched to a
     // recurring) recorded as appliesTo=bill so they auto-mark paid + log the real
     // amount. Income / transfers (skip) are dropped.
     const postedByAcct: Record<string, any[]> = {};
     const billByAcct: Record<string, any[]> = {};
+    // Bank charges that will take a bill month from a hand note, decided in the loop
+    // and settled straight after it (they need two reads the loop cannot wait on). Each
+    // carries BOTH shapes: the linked row, and the extra-payment row it falls back to if
+    // the note cannot be removed — which is exactly what this sync wrote before.
+    const takeovers: {
+      acct: string;
+      note: CycleHolder;
+      bill: string;
+      linked: any;
+      fallback: any;
+      fallbackTo: Record<string, any[]>;
+    }[] = [];
+    const retiring = new Set<string>();
     for (const row of ops.upsertPosted) {
       // Incoming money: capture real income so it's VISIBLE and a reimbursement
       // payback can be matched against it. Internal transfers between our OWN
@@ -538,6 +702,11 @@ async function syncConnection(connId: string, force = false) {
       // from the bank's reported figure, so inserting income never distorts it.
       if (row.amount > 0) {
         if (classifyCredit(row.description) === "transfer") continue;
+        // Paycheck, refund or other income — see creditCategory. Its refund rules are
+        // seed-only, so a credit already in the ledger keeps the category it has
+        // (creditFlags in _shared/seedOnly.ts says why that covers other-income too).
+        const credit = creditCategory(row.description, row.raw, creditHistory);
+        const creditSeed = creditFlags(credit.categoryId);
         (postedByAcct[row.accountId] ??= []).push({
           provider_txn_id: row.providerTxnId,
           provider_account_id: row.accountId,
@@ -548,10 +717,11 @@ async function syncConnection(connId: string, force = false) {
           // and the id both recurring income rows already use. "paycheck" existed
           // in no catalog, so $33,033.19 of income was displayed under a fallback
           // label with a fallback colour.
-          category_id: isPaycheck(row.description) ? "salary" : "other-income",
+          category_id: credit.categoryId,
           description: row.description,
           raw_description: row.raw,
-          needs_review: false,
+          needs_review: creditSeed.needs_review,
+          keep_category: creditSeed.keep_category,
         });
         continue;
       }
@@ -561,7 +731,41 @@ async function syncConnection(connId: string, force = false) {
       // recomputed from the sum of these below.
       const td = row.amount < 0 ? matchTrackedDebt(row.description) : undefined;
       const c = classify(row.description, row.amount, learned, row.raw);
-      if (!td && c.kind === "skip") continue;
+      if (!td && c.kind === "skip") {
+        // A payment that only a CLOSED debt's pattern matches. FOUND in review
+        // 2026-10-25, on live data, before the change that stopped arming closed debts
+        // shipped: the categorizer files the lender's payments as skip, so once the
+        // closed loan was no longer armed, a payment on a NEW loan from the same lender
+        // would have fallen through to this `continue` and been written nowhere — not
+        // credited, not spending, gone from the ledger, and its pending row deleted as
+        // it posted. Such a payment is recorded now, as a bill
+        // payment flagged for a look and linked to nothing; a charge that already
+        // carries a link (the closed loan's own old payments, re-sent) is left exactly
+        // as it is. Every other skip row is dropped as before. The rule and why:
+        // closedDebtPayment in _shared/trackedDebts.ts.
+        const gone =
+          row.amount < 0
+            ? closedDebtPayment(closedDebts, row.description, seenProviderIds.has(row.providerTxnId))
+            : null;
+        if (!gone?.record) continue;
+        // Never silent, like the extra-payment path below: a row the categorizer would
+        // have dropped is being written, and that has to be readable in the logs.
+        console.log(
+          `closed debt: ${row.date} ${Math.abs(row.amount).toFixed(2)} ${row.description} ` +
+            `matches ${(gone.debt as any).name ?? "a closed debt"}, which is closed; recorded as a bill payment for a look`,
+        );
+        (postedByAcct[row.accountId] ??= []).push({
+          provider_txn_id: row.providerTxnId,
+          provider_account_id: row.accountId,
+          date: row.date,
+          amount: Math.abs(row.amount),
+          type: "expense",
+          description: row.description,
+          raw_description: row.raw,
+          ...gone.record,
+        });
+        continue;
+      }
       if (td || c.kind === "bill") {
         // Resolve to a recurring row tolerant of name drift (normalized / merchant
         // key). If the categorizer NAMED a bill but it doesn't resolve to a row,
@@ -596,16 +800,41 @@ async function syncConnection(connId: string, force = false) {
         // is either real spending or a sign the MODEL is wrong about when the
         // bill begins. Both of those want a human, so it falls through to the
         // needs-review path instead of quietly claiming a cycle.
-        const liveRecs = outRecs.filter((r: any) => liveOnDate(r, row.date));
+        const liveRecs = outRecs.filter((r: any) => billLiveOnPaymentDate(r, row.date));
         // And only bills paid FROM THIS ACCOUNT. The name matcher never asked whose
         // money it was, so Gino's own Claude Pro charge settled Xinyan's Claude Pro
         // bill in September — see billsPayableFrom. Narrowing here covers both match
         // paths below, and the day-and-amount fallback is the one that needs it most:
         // over 120 days its only fresh link would have been a $16.17 bubble-tea
         // charge settling the Sam's Club membership.
-        const payable = billsPayableFrom(liveRecs, acctIdByProv[row.accountId] ?? null);
+        const chargeAcct = acctIdByProv[row.accountId] ?? null;
+        const payable = billsPayableFrom(liveRecs, chargeAcct);
+        // …FIRST. Since 2026-10-24 a NAMED bill payment that matches nothing on its own
+        // account looks at the bills set on the household's other accounts, because the
+        // household pays from whichever account has the money: the car insurance came
+        // out of two accounts and never linked once, and an electric bill paid from the
+        // joint account never linked while the bill named another. matchBillForCharge
+        // keeps the own-account match exactly as it was and allows the other only on the
+        // name AND the amount band, with a shared account on one side — so the Claude Pro
+        // shape above stays shut. The day-and-amount guess below never crosses accounts.
+        let named = matchBillForCharge(c.billName, liveRecs, chargeAcct, row.amount, sharedAccts);
+        // …and only for a charge ARRIVING (2026-10-25, chargeStanding.ts): a stored row the
+        // bank re-sends keeps the shape it has — linked only if it already is, to this
+        // bill — and a charge whose pending row a person answered keeps their answer. Both
+        // fall to exactly what this sync did before the fallback existed.
+        if (named?.fromAnotherAccount && !mayLinkFromAnotherAccount(standingOf(row), String(named.bill.id))) {
+          named = null;
+        }
+        if (named?.fromAnotherAccount) {
+          // Never silent: the self-check's paid-from-its-own-account will flag this
+          // payment so a person can move the bill — and this line says why it linked.
+          console.log(
+            `bill from another account: ${row.date} ${Math.abs(row.amount).toFixed(2)} ${row.description} ` +
+              `— paid ${named.bill.name}, which is set on a different account`,
+          );
+        }
         const matched =
-          matchRecurringName(c.billName, payable) ??
+          named?.bill ??
           (c.kind === "bill" && !c.billName
             ? matchBillByDayAmount(payable, row.date, Math.abs(row.amount), paidBill)
             : null);
@@ -627,6 +856,19 @@ async function syncConnection(connId: string, force = false) {
           const rec = { id: matched.id as string, dueDays: (matched.due_days ?? undefined) as number[] | undefined };
           const at = billAppliesTo(rec, row.date);
           const key = `${rec.id}|${at.monthKey}|${at.installmentIndex}`;
+          // The row as it is written when it SETTLES this bill month.
+          const linked = {
+            provider_txn_id: row.providerTxnId,
+            provider_account_id: row.accountId,
+            date: row.date,
+            amount: Math.abs(row.amount),
+            type: "expense",
+            category_id: billCat,
+            description: row.description,
+            raw_description: row.raw,
+            applies_to: td ? { ...at, debtId: td.id } : at,
+            needs_review: false,
+          };
           // This installment is already recorded (manual entry, prior import, or
           // an earlier catch-up payment in the same cycle) and this is NOT that
           // same feed row re-syncing.
@@ -640,6 +882,59 @@ async function syncConnection(connId: string, force = false) {
           // that is already settled — so it keeps the bill's category, carries no
           // applies_to, and is flagged for a look.
           if (paidBill.has(key) && !seenProviderIds.has(row.providerTxnId)) {
+            // …unless it is also a payment on a tracked debt. The debt balance is
+            // recomputed as baseline − sum(payments carrying its debtId), so
+            // dropping that link would leave the second payment of a month
+            // uncredited and the debt reading high. It keeps the debt-only shape:
+            // credited, out of the budget, and not settling an already-settled
+            // bill cycle.
+            const extra = td
+              ? {
+                  provider_txn_id: row.providerTxnId,
+                  provider_account_id: row.accountId,
+                  date: row.date,
+                  amount: Math.abs(row.amount),
+                  type: "expense",
+                  category_id: billCat,
+                  description: row.description,
+                  raw_description: row.raw,
+                  applies_to: { kind: "debt", debtId: td.id, settled: true },
+                  needs_review: false,
+                }
+              : {
+                  provider_txn_id: row.providerTxnId,
+                  provider_account_id: row.accountId,
+                  date: row.date,
+                  amount: Math.abs(row.amount),
+                  type: "expense",
+                  category_id: billCat,
+                  description: row.description,
+                  raw_description: row.raw,
+                  needs_review: true,
+                };
+            const extraTo = td ? billByAcct : postedByAcct;
+            // UNLESS what holds the month is a hand-made "(already paid)" note alone,
+            // for this same amount (2026-10-24, see _shared/handNote.ts). Then this,
+            // the bank's own charge, is the payment the note stood in for: it takes the
+            // month, and the note is removed straight after this loop. Decided here,
+            // settled there — both shapes travel, so a note that cannot be removed
+            // leaves this row exactly as the line below would have written it.
+            //
+            // Only a charge that may take anything at all (chargeStanding.ts): new to the
+            // ledger, its pending row unanswered, and from an account this sync writes —
+            // a charge from an account `accounts` does not hold is never written below,
+            // so a note removed for it would leave the month paid by nothing.
+            const note = mayTakeOver(standingOf(row))
+              ? handNoteToRetire(cycleHolders.get(key), row.amount, matched.variable, retiring)
+              : null;
+            if (note) {
+              retiring.add(note.id);
+              takeovers.push({ acct: row.accountId, note, bill: `${matched.name} ${at.monthKey}`, linked, fallback: extra, fallbackTo: extraTo });
+              // Held by this charge from here on, so a second one in the same delta is
+              // an extra payment and never a second takeover.
+              cycleHolders.set(key, [{ id: row.providerTxnId, handNote: false, amount: Math.abs(row.amount) }]);
+              continue;
+            }
             // Never silent. This row is being re-routed away from the bill it
             // named, which is a reclassification, and every reclassification has
             // to be readable in the logs — the same rule the dedup absorb follows.
@@ -647,53 +942,12 @@ async function syncConnection(connId: string, force = false) {
               `extra payment: ${row.date} ${Math.abs(row.amount).toFixed(2)} ${row.description} ` +
                 `— ${matched.name} ${at.monthKey} was already settled; recorded as spending, not as the bill`,
             );
-            // …unless it is also a payment on a tracked debt. The debt balance is
-            // recomputed as baseline − sum(payments carrying its debtId), so
-            // dropping that link would leave the second payment of a month
-            // uncredited and the debt reading high. It keeps the debt-only shape:
-            // credited, out of the budget, and not settling an already-settled
-            // bill cycle.
-            if (td) {
-              (billByAcct[row.accountId] ??= []).push({
-                provider_txn_id: row.providerTxnId,
-                provider_account_id: row.accountId,
-                date: row.date,
-                amount: Math.abs(row.amount),
-                type: "expense",
-                category_id: billCat,
-                description: row.description,
-                raw_description: row.raw,
-                applies_to: { kind: "debt", debtId: td.id, settled: true },
-                needs_review: false,
-              });
-              continue;
-            }
-            (postedByAcct[row.accountId] ??= []).push({
-              provider_txn_id: row.providerTxnId,
-              provider_account_id: row.accountId,
-              date: row.date,
-              amount: Math.abs(row.amount),
-              type: "expense",
-              category_id: billCat,
-              description: row.description,
-              raw_description: row.raw,
-              needs_review: true,
-            });
+            (extraTo[row.accountId] ??= []).push(extra);
             continue;
           }
-          (billByAcct[row.accountId] ??= []).push({
-            provider_txn_id: row.providerTxnId,
-            provider_account_id: row.accountId,
-            date: row.date,
-            amount: Math.abs(row.amount),
-            type: "expense",
-            category_id: billCat,
-            description: row.description,
-            raw_description: row.raw,
-            applies_to: td ? { ...at, debtId: td.id } : at,
-            needs_review: false,
-          });
+          (billByAcct[row.accountId] ??= []).push(linked);
           paidBill.add(key);
+          cycleHolders.set(key, [{ id: row.providerTxnId, handNote: false, amount: Math.abs(row.amount) }]);
           continue;
         }
         // A tracked debt with no matching bill row keeps its debt-only shape.
@@ -727,6 +981,15 @@ async function syncConnection(connId: string, force = false) {
         continue;
       }
       // variable living spend
+      //
+      // A seed-only answer files a new row; a row already in the ledger keeps its
+      // category (keep_category) and the review flag it already carries (read above).
+      // See _shared/seedOnly.ts.
+      //
+      // At a multi-department merchant the category is a GUESS, so it may seed a new
+      // row but must never overwrite one that already has an answer. Without
+      // keep_category a re-sync silently re-decides months of history at once.
+      const flags = seedFlags(c, c.seedOnly ? storedReview.get(row.providerTxnId) : undefined);
       (postedByAcct[row.accountId] ??= []).push({
         provider_txn_id: row.providerTxnId,
         provider_account_id: row.accountId,
@@ -736,12 +999,81 @@ async function syncConnection(connId: string, force = false) {
         category_id: c.appCategory ?? "other",
         description: row.description,
           raw_description: row.raw,
-        needs_review: c.confidence === "low",
-        // At a multi-department merchant the category above is a GUESS, so it may
-        // seed a new row but must never overwrite one that already has an answer.
-        // Without this a re-sync silently re-decides months of history at once.
-        keep_category: c.ambiguous === true,
+        needs_review: flags.needs_review,
+        keep_category: flags.keep_category,
       });
+    }
+
+    // --- a hand note gives way to the bank's own charge (2026-10-24) -------------
+    // The takeovers the loop above decided on. The loop only ever queues a charge that
+    // is NEW to the ledger, whose pending row nobody answered, from an account this sync
+    // writes (mayTakeOver — the "stored charges" read above, which moved there from
+    // here on 2026-10-25 so the cross-account link could ask it too). One thing is left
+    // to settle here, FAILING CLOSED to the extra-payment row this sync has always
+    // written:
+    //
+    //   The note must still be the note. It is removed only by its id AND only while it
+    //   is still a hand note nobody has answered — no bank, no account, a settled bill
+    //   link, no hand category, flow or split — so a person who touched it in the
+    //   seconds since the read keeps it. Anything other than exactly one row removed
+    //   takes over nothing.
+    //
+    // The note goes BEFORE the charge is written below. If the write then fails, the
+    // sync throws and the cursor is not saved, so the next sync replays this delta and
+    // finds the month free: the charge links the ordinary way. Written the other way
+    // round, a failure in between would leave the note and the charge both claiming
+    // the month for good.
+    //
+    // A note removed here has no undo token — the sync is no person's request — so its
+    // whole row goes in the log line, enough to put it back by hand.
+    //
+    // KNOWN AND ACCEPTED (review, 2026-10-25): two syncs of one bank login running at
+    // the same moment — a webhook landing during the scheduled pull — can both decide
+    // the same takeover. One removes the note and links the charge; the other removes
+    // nothing, falls back, and upserts the extra-payment shape onto that same charge.
+    // apply_bank_sync keeps the existing link (coalesce), so the month stays paid once
+    // and no money moves; the charge just comes back flagged for review, and a person's
+    // "looks right" clears it. Nothing here locks a sync, and this is not worth the
+    // first lock.
+    if (takeovers.length) {
+      for (const tk of takeovers) {
+        let retired = false;
+        // Belt and braces for the loop's own gate: only an account this sync writes.
+        if (acctIdByProv[tk.acct]) {
+          const { data: gone, error: goneErr } = await admin
+            .from("transactions")
+            .delete()
+            .eq("id", tk.note.id)
+            .eq("type", "expense")
+            .is("provider", null)
+            .is("account_id", null)
+            .eq("applies_to->>kind", "bill")
+            .eq("applies_to->>settled", "true")
+            .or("user_categorized.is.null,user_categorized.eq.false")
+            .is("flow_override", null)
+            .is("splits", null)
+            // record_only too since 2026-10-25: a statement import's note gives way like
+            // a tapped one (handNote.ts), and putting it back means putting back the flag.
+            .select("id, date, amount, description, category_id, applies_to, record_only, created_at, person");
+          if (goneErr) console.warn("hand note takeover:", goneErr.message);
+          retired = !goneErr && (gone ?? []).length === 1;
+          if (retired) {
+            console.log(
+              `hand note retired: ${tk.bill} is paid by ${tk.linked.date} ${Number(tk.linked.amount).toFixed(2)} ` +
+                `${tk.linked.description}; removed the note ${JSON.stringify(gone![0])}`,
+            );
+          }
+        }
+        if (retired) {
+          (billByAcct[tk.acct] ??= []).push(tk.linked);
+        } else {
+          console.log(
+            `extra payment: ${tk.linked.date} ${Number(tk.linked.amount).toFixed(2)} ${tk.linked.description} ` +
+              `— ${tk.bill} is held by a hand note that stays; recorded as spending, not as the bill`,
+          );
+          (tk.fallbackTo[tk.acct] ??= []).push(tk.fallback);
+        }
+      }
     }
 
     // Carry a person's answer from each pending row onto the posted row that
@@ -936,7 +1268,7 @@ async function syncConnection(connId: string, force = false) {
       // What the row is — or whether it is written at all — is pendingFields'
       // decision (_shared/pendingRow.ts), lifted out of here so a test can reach
       // it. That is also where internal transfers are dropped, both directions.
-      const f = pendingFields(row, learned);
+      const f = pendingFields(row, learned, creditHistory);
       if (!f) continue;
       const pendingRow: Record<string, unknown> = {
         date: row.date,
@@ -1031,7 +1363,11 @@ async function syncConnection(connId: string, force = false) {
         .or("user_categorized.is.null,user_categorized.eq.false");
       let relabelled = 0;
       for (const r of old ?? []) {
-        const c = classify(r.description ?? "", -Math.abs(Number(r.amount)), learned, r.raw_description ?? undefined);
+        // Every row here is already in the ledger, so a seed-only rule (2026-10-25)
+        // does not get a say: this sweep answers exactly as it did before that rule.
+        const c = forExistingRow(
+          classify(r.description ?? "", -Math.abs(Number(r.amount)), learned, r.raw_description ?? undefined),
+        );
         if (c.ambiguous) continue;
         if (c.kind === "bill") {
           // Do not touch the category — just make sure it is asking. The name goes

@@ -49,6 +49,16 @@ describe("flowOf", () => {
     expect(flowOf(txn({ description: "Cherry Technol", amount: 151.72 }), own).flow).toBe("repaid");
   });
 
+  it("reads money back from a lender as reversing a debt payment, never as a refund", () => {
+    const v = flowOf(txn({ type: "income", amount: 9.5, accountId: "chk-g", categoryId: "refund", description: "AFFIRM.COM PAYME DES:TRANSFER" }), own);
+    expect(v.flow).toBe("repaid");
+  });
+
+  it("calls a card credit worded as a transfer from checking a payment, not a refund", () => {
+    const v = flowOf(txn({ type: "income", amount: 300, accountId: "card-g", description: "Online Banking transfer from CHK" }), own);
+    expect(v.flow).toBe("moved");
+  });
+
   it("does not count a refund as earnings", () => {
     // Counting it would count the same dollar twice — once going out as spending,
     // once coming back.
@@ -85,6 +95,71 @@ describe("runRate", () => {
     // disaster. September was quoted mid-flight as evidence of one.
     const r = runRate([paycheck("2026-08-01"), shop("2026-08-02", 100), paycheck("2026-09-01")], ACCOUNTS, "2026-09-30");
     expect(r.months.map((m) => m.month)).toEqual(["2026-08"]);
+  });
+
+  it("takes money back off spending instead of dropping it (rule 5)", () => {
+    // FOUND 2026-10-25: a refund was left out of the sum while the purchase it paid
+    // back stayed in `spent`, so every refund made the month look poorer by exactly the
+    // money that came back. Invented figures: $90 spent, $30 of it refunded.
+    const rows = [
+      paycheck("2026-08-01"),
+      shop("2026-08-03", 90, "Sample Outfitters"),
+      txn({ date: "2026-08-09", amount: 30, type: "income", categoryId: "refund", accountId: "chk-g", description: "Sample Outfitters" }),
+    ];
+    const r = runRate(rows, ACCOUNTS, "2026-09-15");
+    expect(r.months[0].spent).toBe(60);
+    expect(r.months[0].returned).toBe(30);
+    expect(r.months[0].net).toBe(1940);
+    expect(r.excluded.find((e) => e.flow === "returned")).toBeUndefined();
+  });
+
+  it("nets a refund that lands on a card, and money back in a later month lowers that month", () => {
+    const rows = [
+      paycheck("2026-07-01"),
+      txn({ date: "2026-07-20", amount: 50, accountId: "card-g", description: "Sample Course Site" }),
+      paycheck("2026-08-01"),
+      txn({ date: "2026-08-02", amount: 50, type: "income", categoryId: "refund", accountId: "card-g", description: "Sample Course Site" }),
+    ];
+    const r = runRate(rows, ACCOUNTS, "2026-09-15");
+    const jul = r.months.find((m) => m.month === "2026-07")!;
+    const aug = r.months.find((m) => m.month === "2026-08")!;
+    expect(jul.spent).toBe(50);
+    expect(aug.spent).toBe(-50);
+    expect(aug.returned).toBe(50);
+  });
+
+  it("takes a refunded one-off out of the ordinary month together with the purchase", () => {
+    // FOUND 2026-10-25 in review: the purchase left the ongoing figure as a one-off
+    // while its refund stayed in, so ongoing read $2,800 where it should be $2,000.
+    const rows = [
+      paycheck("2026-08-01"),
+      shop("2026-08-05", 800, "Sample Laptop Shop"),
+      txn({ date: "2026-08-20", amount: 800, type: "income", categoryId: "refund", accountId: "chk-g", description: "Sample Laptop Shop" }),
+    ];
+    const r = runRate(rows, ACCOUNTS, "2026-09-15");
+    expect(r.months[0].net).toBe(2000);
+    expect(r.months[0].netOngoing).toBe(2000);
+    expect(r.months[0].returnedRows).toHaveLength(1);
+  });
+
+  it("takes a later partial refund of a one-off out of the ordinary month too", () => {
+    const rows = [
+      paycheck("2026-07-01"),
+      shop("2026-07-05", 900, "Sample Furniture Co"),
+      paycheck("2026-08-01"),
+      txn({ date: "2026-08-03", amount: 300, type: "income", categoryId: "refund", accountId: "chk-g", description: "Sample Furniture Co" }),
+    ];
+    const r = runRate(rows, ACCOUNTS, "2026-09-15");
+    const aug = r.months.find((m) => m.month === "2026-08")!;
+    expect(aug.net).toBe(2300);
+    expect(aug.netOngoing).toBe(2000);
+  });
+
+  it("adds back a charge someone set to 'returned' by hand, because that money left", () => {
+    const rows = [paycheck("2026-08-01"), txn({ date: "2026-08-04", amount: 120, accountId: "chk-g", description: "Sample Shop", flowOverride: "returned" })];
+    const r = runRate(rows, ACCOUNTS, "2026-09-15");
+    expect(r.months[0].spent).toBe(120);
+    expect(r.months[0].net).toBe(1880);
   });
 
   it("keeps a card payment out of both sides of the month", () => {

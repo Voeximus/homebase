@@ -72,6 +72,10 @@ function mapDebt(r: any): Debt {
     trackPattern: r.track_pattern ?? undefined,
     trackedBaseline: r.tracked_baseline != null ? Number(r.tracked_baseline) : undefined,
     trackedSince: r.tracked_since ?? undefined,
+    // Mapped since 2026-10-25, so the app's own totals skip a closed debt the way the
+    // doors' do (isOpenDebt in plan.ts). The read is `select *`, so on a database
+    // without schema_v44 the key is absent and every debt reads open — which is true there.
+    closedAt: r.closed_at ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -774,6 +778,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       // the cash side comes from bank truth. Writing them optimistically here
       // would double-count (debt decremented twice + cash double-debited), so
       // this money event is a NO-OP: just let the feed do it.
+      //
+      // A CLOSED debt with a pattern still counts as auto-tracked here, on purpose, though
+      // the feed stopped crediting and recomputing closed debts on 2026-10-25. Letting one
+      // through would write a hand-entered row stamped with that debt's id — and if the
+      // debt were ever re-opened (finance.edit_debt closed: false), the feed's recompute
+      // sums EVERY expense row carrying its id, so that row would be credited a second
+      // time as a payment. The restore on delete below, and reverse_money_event's branch
+      // for older bill payments (schema_v28), test the pattern alone too, and the three
+      // move together or not at all. A closed debt is finished at $0.00 and takes no
+      // payments.
       if (debt && (debt.providerAccountId || debt.trackPattern)) {
         return;
       }
@@ -1086,6 +1100,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           }
           // Auto-tracked debts (bank-linked card or feed pattern) reconcile from the
           // feed; reverse_money_event skips them, so the optimistic restore must too.
+          // Closed or not (2026-10-25), exactly as the forward guard in the money-event
+          // path above decides it — see there for why a closed debt is not let through.
           const rdebt = debtId ? dataRef.current.debts.find((d) => d.id === debtId) : undefined;
           const debtAutoTracked = !!rdebt && (!!rdebt.providerAccountId || !!rdebt.trackPattern);
           const back = at?.appliedAmount ?? txn.amount;

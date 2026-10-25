@@ -1,4 +1,4 @@
-import type { AppData } from "../types";
+import type { AppData, Recurring, Transaction } from "../types";
 import {
   LEAN_VARIABLE,
   OUTSIDE_BUDGET_CASH_CATS,
@@ -8,12 +8,17 @@ import {
   sumTargets,
   payCycleFor,
   plannedMonthly,
+  isOpenDebt,
 } from "./plan";
 
 import { monthlySchedule } from "./schedule";
 import { addMonths } from "./forecast";
-import { monthKeyOf } from "./format";
+import { isoDate, monthKeyOf } from "./format";
+import { liveOn } from "./recurring";
+import { DEFAULT_CATEGORIES } from "./seed";
 import { transferIds } from "./flow";
+import { bankWouldLink, isHandNote, linkContextOf } from "./billMatch";
+import { billAmountBand } from "./categorize";
 
 // ── Does this add up? ─────────────────────────────────────────────────────────
 //
@@ -61,6 +66,9 @@ import { transferIds } from "./flow";
 //     bank row the debt, the hand-written row the bill — and that asymmetry IS the
 //     defect, invisible without the window. It belongs in the suggestions layer,
 //     where its thresholds can be said out loud and the user can judge them.
+//     (Its narrower cousin IS a check since 2026-10-24 — check 10: a bank charge
+//     that claims NOTHING, that the bank sync's own rules name as the bill, in the
+//     month a hand note holds. Check 10 says why that one clears the bar.)
 //   · an active bill linked to a debt at $0 is a phantom — pay a credit card to
 //     zero and the debt reads $0 while the bill row is still entirely correct,
 //     because the card gets used again next month. schedule.ts already gates the
@@ -107,6 +115,9 @@ export function selfAudit(data: AppData, now: Date = new Date()): AuditResult {
     onePaymentPerBillCycle(data),
     linksPointSomewhere(data),
     paidFromItsOwnAccount(data, now),
+    noHandNoteBesideTheBank(data),
+    billCoversItsDebtMinimum(data, now),
+    everyBillHasARealCategory(data, now),
   ];
   const failures = checks.filter((c) => c.status === "fail").length;
   return { checks, failures, clean: failures === 0 };
@@ -736,5 +747,263 @@ function paidFromItsOwnAccount(data: AppData, now: Date): AuditCheck {
     detail: offenders.length
       ? `${offenders.length} recent bill payment${offenders.length > 1 ? "s come" : " comes"} out of the wrong account: ${offenders.join("; ")}.`
       : `Every bill paid this month and last came out of the account that pays it.`,
+  };
+}
+
+// ── 10. A hand note gives way to the bank's own charge ───────────────────────
+/**
+ * WHY THIS EXISTS, found 2026-10-24. Four hand-made "(already paid)" notes were in the
+ * ledger and three of them paid a bill the bank had ALSO paid: the real charge sat
+ * beside the note as ordinary spending, so the same money was spent twice in the
+ * budget, the run rate and the plan. And the note did worse than double the figure —
+ * it held the bill's month, so the bank sync, Worth a look and the write door's
+ * link_charge_to_bill all read that month as taken and none of them could ever attach
+ * the real charge. Every check here passed: nothing claimed a month twice (check 7 —
+ * the bank charge claims nothing), every link resolved (check 8), the note paid the
+ * bill in full (check 6).
+ *
+ * THE QUESTION, exactly: is there a bill month held by a hand note alone, and a bank
+ * charge — attached to nothing — that the bank sync's own rules attach to that same
+ * bill and month, for the note's amount? Those are two answers the app gives to one
+ * question ("what paid this bill this month?"), from two places, and in a healthy app
+ * they agree: either the note is the only payment, or the bank's charge is.
+ *
+ * WHY IT CLEARS THIS FILE'S BAR when its debt-shaped cousin (the header's Cherry
+ * bullet) did not. That one needed a date window and an amount match INVENTED for it.
+ * This one invents nothing: which bill and which month are the sync's own answer
+ * (billMatch.ts, out of the file the sync shares byte for byte), and the amount is the
+ * sync's own band for "the same bill" — borrowed, not tuned here, and the only
+ * tolerance in this file. And the one innocent reading of a match — the bill paid in
+ * cash AND by the bank, for the same amount, in the same month — is the household
+ * paying one bill twice, which is worth failing on too.
+ *
+ * WHAT IT DOES NOT FIRE ON, because each is a correct ledger:
+ *   · a hand note with no bank charge behind it — a bill genuinely paid in cash, which
+ *     is what the note is for;
+ *   · a bank charge for a DIFFERENT amount than the note — part paid in cash, the rest
+ *     by card, both real. "Different" is outside the sync's band, which on a VARIABLE
+ *     bill is wide (±$15 or ±15%) because such a note is usually the app's estimate; so
+ *     on a variable bill a part-cash payment that close to the note IS flagged here, and
+ *     a person says which it was (said in review, 2026-10-25 — see _shared/handNote.ts);
+ *   · a bank charge already attached to something (the Cherry shape stays a
+ *     suggestion, W5b);
+ *   · a month two rows already claim — check 7's failure, not this one's.
+ *
+ * The bank sync now hands the month to the bank's charge on its own when the charge
+ * arrives (plaid/index.ts), so this fires on what came before that, and on a note
+ * written AFTER the charge. Worth a look (W5c) offers the repair.
+ *
+ * A note the STATEMENT IMPORT wrote (record_only) counts here like any other: the money
+ * is counted twice all the same. Worth a look cannot take that one off — the app never
+ * removes a statement row by itself — so its card says to delete it by hand, and Muse's
+ * link_charge_to_bill replaces it with the bank's charge (2026-10-25).
+ */
+export interface HandNoteBesideBank {
+  /** The hand note holding the bill's month. */
+  note: Transaction;
+  /** The bank's charges the sync's rules attach to that same month, none attached. */
+  charges: Transaction[];
+  bill: Recurring;
+  monthKey: string;
+  day: number;
+  installmentIndex: number;
+}
+
+/**
+ * The offenders behind check 10, as data — the danglingLinks pattern again, so Worth
+ * a look and the read door stand on the same resolution the check does rather than a
+ * second spelling of it.
+ */
+export function handNotesBesideBankCharges(data: AppData): HandNoteBesideBank[] {
+  const recs = new Map(data.recurring.map((r) => [r.id, r]));
+  // Who claims each bill month, read the way check 7 reads it.
+  const claims = new Map<string, Transaction[]>();
+  for (const t of data.transactions) {
+    const at = t.appliesTo;
+    if (t.type !== "expense" || at?.kind !== "bill" || !at.recurringId) continue;
+    const key = cycleKeyOf(at, recs.get(at.recurringId)?.dueDays);
+    (claims.get(key) ?? claims.set(key, []).get(key)!).push(t);
+  }
+  const held = new Map<string, Transaction>();
+  for (const [key, rows] of claims) {
+    if (rows.length === 1 && isHandNote(rows[0]) && recs.has(rows[0].appliesTo!.recurringId!)) held.set(key, rows[0]);
+  }
+  if (!held.size) return [];
+
+  const ctx = linkContextOf(data);
+  const found = new Map<string, HandNoteBesideBank>();
+  for (const tx of data.transactions) {
+    // A bank charge, posted, attached to nothing. A pending charge can still change
+    // or vanish, so it is evidence of nothing yet.
+    if (!tx.provider || tx.pending || tx.appliesTo || tx.type !== "expense") continue;
+    const link = bankWouldLink(tx, ctx);
+    if (!link) continue;
+    const key = cycleKeyOf({ recurringId: link.bill.id, monthKey: link.monthKey, day: link.day }, link.bill.dueDays);
+    const note = held.get(key);
+    if (!note) continue;
+    if (Math.abs(tx.amount - note.amount) > billAmountBand(note.amount, link.bill.variable)) continue;
+    const hit = found.get(key);
+    if (hit) hit.charges.push(tx);
+    else {
+      found.set(key, {
+        note,
+        charges: [tx],
+        bill: link.bill,
+        monthKey: link.monthKey,
+        day: link.day,
+        installmentIndex: Number(key.split("|")[2]) || 0,
+      });
+    }
+  }
+  return [...found.values()].sort((a, b) =>
+    a.monthKey !== b.monthKey ? (a.monthKey < b.monthKey ? -1 : 1) : a.note.id < b.note.id ? -1 : 1,
+  );
+}
+
+function noHandNoteBesideTheBank(data: AppData): AuditCheck {
+  const pairs = handNotesBesideBankCharges(data);
+  const twice = pairs.reduce((s, p) => s + p.note.amount, 0);
+  const offenders = pairs.map(
+    (p) =>
+      `${p.bill.name} ${p.monthKey} is paid by a hand note ($${p.note.amount.toFixed(2)}) while the bank shows ${p.charges
+        .map((c) => `${c.date} $${c.amount.toFixed(2)}`)
+        .join(", ")} for it`,
+  );
+  const many = pairs.length > 1;
+  return {
+    id: "hand-note-beside-bank-charge",
+    question: "Is any bill paid twice — once by a hand note and once by the bank?",
+    status: pairs.length ? "fail" : "ok",
+    detail: pairs.length
+      ? `${pairs.length} bill month${many ? "s are" : " is"} paid by a hand note while the bank's own charge for the same bill sits beside it as ordinary spending, counting $${twice.toFixed(2)} twice: ${offenders.join("; ")}. Worth a look shows each one. Take the note off — or attach the bank's charge to the bill through Muse, which takes the note off in the same step — and the bank's charge pays the bill.`
+      : `No bill month is paid by a hand note while the bank's own charge for it sits unattached.`,
+  };
+}
+
+// ── 11. A bill that pays a debt plans at least that debt's minimum ────────────
+/**
+ * WHY THIS EXISTS, found 2026-10-25. A card's minimum payment lives in two places: on
+ * the debt (debts.min_payment, which the debt list reads) and on the bill that pays it
+ * (recurring.linked_debt_id), whose price is what the plan actually sets aside each
+ * month and what the calendar shows due. The minimum changes after every statement, and
+ * for a long time only the first one was ever updated — so the plan could go on
+ * reserving last month's smaller minimum while the debt list showed the real one, and
+ * both screens would look fine on their own.
+ *
+ * WHY "AT LEAST" AND NOT "EQUAL", which is what keeps this check EXACT. A bill planning
+ * LESS than the minimum is wrong by definition: the lender will take at least the
+ * minimum, so the plan is counting on money that is already spoken for. A bill planning
+ * MORE is very often a choice — paying a card down faster than the minimum — and a check
+ * that failed on it would fire on correct use, which this file does not allow (see the
+ * header: a check that fires on the right answer teaches people to ignore the next one).
+ * finance.edit_debt now moves the bill with the minimum when the bill was set to the old
+ * one, so the drift this catches is the case nothing else will put right.
+ *
+ * What it compares: the debt's minimum against plannedMonthly() of every live bill that
+ * pays it, added together — the same function planMath prices with, so this is the
+ * plan's own number and not a third reading of it. Skipped, each because there is
+ * nothing to disagree with:
+ *   · a debt at $0.00 or closed — no minimum is due on it, and the calendar already
+ *     drops its bill (the "phantom" check the header rejects is exactly this case);
+ *   · a debt with no minimum recorded, or a minimum of zero;
+ *   · a bill outside its start/end window today, or turned off, which plans nothing.
+ * A bill pointing at a debt that does not exist is check 8's to report, not this one's.
+ *
+ * THE LAST PAYMENT. FOUND in review the same day: a loan with less left on it than its
+ * minimum is paid off by one final payment of whatever is left, and a bill planning
+ * exactly that is right. Compared against the bare minimum, the check failed on it. So
+ * the figure a bill must reach is the SMALLER of the minimum and the balance: what the
+ * lender can actually take this month.
+ */
+export interface DebtMinimumShortfall {
+  /** The debt's own name, as the app shows it. */
+  debt: string;
+  /** The bills that pay it, by name. */
+  bills: string[];
+  /** What the plan sets aside for it each month, all its bills together. */
+  plans: number;
+  minimum: number;
+  /** What the bills had to reach: the minimum, or the balance when less than that is
+   *  left (the last payment). */
+  due: number;
+}
+
+/** The offenders behind check 11, as data — the shape danglingLinks and
+ *  paidFromWrongAccount use, so a second caller stands on the same answer. */
+export function debtMinimumShortfalls(data: AppData, now: Date): DebtMinimumShortfall[] {
+  const today = isoDate(now);
+  const byDebt = new Map<string, { bills: string[]; plans: number }>();
+  for (const r of data.recurring) {
+    if (!r.active || r.direction !== "out" || !r.linkedDebtId || !liveOn(r, today)) continue;
+    const row = byDebt.get(r.linkedDebtId) ?? { bills: [], plans: 0 };
+    row.bills.push(r.name);
+    row.plans += plannedMonthly(r, data.transactions);
+    byDebt.set(r.linkedDebtId, row);
+  }
+  const out: DebtMinimumShortfall[] = [];
+  for (const d of data.debts) {
+    const paid = byDebt.get(d.id);
+    if (!paid || !isOpenDebt(d) || !(d.balance > CENT)) continue;
+    const minimum = d.minPayment;
+    if (minimum == null || !(minimum > CENT)) continue;
+    // The last payment is the balance, when less than the minimum is left.
+    const due = Math.min(minimum, d.balance);
+    if (paid.plans + CENT < due) out.push({ debt: d.name, bills: paid.bills, plans: paid.plans, minimum, due });
+  }
+  return out;
+}
+
+function billCoversItsDebtMinimum(data: AppData, now: Date): AuditCheck {
+  const short = debtMinimumShortfalls(data, now);
+  const offenders = short.map(
+    (s) =>
+      `${s.bills.join(" and ")} plans $${s.plans.toFixed(2)} a month for ${s.debt}, ` +
+      (s.due < s.minimum
+        ? `which has $${s.due.toFixed(2)} left to pay`
+        : `whose minimum is $${s.minimum.toFixed(2)}`),
+  );
+  return {
+    id: "bill-covers-debt-minimum",
+    question: "Does every bill that pays a debt plan at least that debt's minimum payment?",
+    status: offenders.length ? "fail" : "ok",
+    detail: offenders.length
+      ? `${offenders.length} debt${offenders.length > 1 ? "s are" : " is"} planned below ${offenders.length > 1 ? "their" : "its"} minimum payment: ${offenders.join("; ")}.`
+      : `Every bill that pays a debt plans at least that debt's minimum payment.`,
+  };
+}
+
+// ── 12. A bill is never filed as "unknown" ───────────────────────────────────
+/**
+ * FOUND 2026-10-25. The car-insurance bill, the car payment, the card payment and four
+ * more were filed under `other` — the Misc line's "unknown merchant" holding pen. A
+ * bill linked to its charge is outside the budget lines, so for months nothing showed.
+ * Then one insurance payment came from a different account than the bill named, did
+ * not link, inherited the bill's `other`, and landed in Misc as everyday spending:
+ * the line read hundreds over for a bill that had been paid on time.
+ *
+ * `other` is the absence of a category — add_bill and edit_bill already refuse it for
+ * that reason — so a bill carrying it is a row written before those refusals, or by a
+ * path that skips them. This check names every active outgoing bill still filed there,
+ * so the next one is fixed the day it appears, not the day a charge fails to link.
+ */
+function everyBillHasARealCategory(data: AppData, now: Date): AuditCheck {
+  // A category id the app does not know (deleted, or a typo) misses its bill just as
+  // badly as 'other', so it fails too. A bill whose window has ended is left alone.
+  const known = new Set((data.categories?.length ? data.categories : DEFAULT_CATEGORIES).map((c) => c.id));
+  const today = isoDate(now);
+  const offenders = data.recurring
+    .filter((r) => r.active && r.direction === "out" && liveOn(r, today))
+    .filter((r) => {
+      const c = r.categoryId || "other";
+      return c === "other" || !known.has(c);
+    })
+    .map((r) => r.name);
+  return {
+    id: "bill-has-a-real-category",
+    question: "Is every bill filed under a real category, never under 'other'?",
+    status: offenders.length ? "fail" : "ok",
+    detail: offenders.length
+      ? `${offenders.length} bill${offenders.length > 1 ? "s are" : " is"} filed under 'other', so a payment that misses its bill lands in Misc: ${offenders.join(", ")}.`
+      : `Every bill is filed under a real category.`,
   };
 }

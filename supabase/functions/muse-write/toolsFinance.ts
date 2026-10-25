@@ -68,11 +68,13 @@ import { UUID } from "../_shared/muse/args.ts";
 import {
   isMissingTable,
   StatementRefused,
+  type AccountRow,
   type BillRow,
   type ChargeRow,
   type CycleBudgetRow,
   type FinanceDb,
   type LabelRow,
+  type LinkedBillRow,
 } from "./dbFinance.ts";
 // A budget goal for one pay cycle (2026-10-10): which cycles can be set, the six lines,
 // and the targets a goal adds up to — the one module the app's budget bars and the read
@@ -86,7 +88,10 @@ import {
   goalCycles,
   type CycleSpan,
 } from "../_shared/muse/lib/cycleBudget.ts";
-import type { CycleBudget } from "../_shared/muse/lib/types.ts";
+import type { CycleBudget, MerchantRule, Recurring } from "../_shared/muse/lib/types.ts";
+// Which bill and month the bank sync would attach a charge to (2026-10-25): asked before
+// link_charge_to_bill lets a bank charge take a month from a hand note.
+import { bankWouldLink, linkContextOf, type BankLink } from "../_shared/muse/lib/billMatch.ts";
 import { azDateISO, daysBetweenISO, isDateISO } from "../_shared/muse/az.ts";
 // The cooldown, and the sentences that explain it, shared with the read door's
 // freshness stamp so "too soon" has one definition rather than two.
@@ -96,6 +101,7 @@ import { NAME_MAX, scrub, scrubCap, scrubName, scrubOr } from "../_shared/muse/s
 // with the read door so the two cannot describe it two ways again.
 import { isPayFloorRow, PAY_FLOOR_RULE } from "../_shared/muse/payFloor.ts";
 import {
+  billAmountBand,
   billKey,
   BUILT_IN_BILL_NAMES,
   isMultiDepartment,
@@ -1015,7 +1021,8 @@ function planLink(payload: Record<string, unknown>): Shaped<{ txnId: string; bil
 
 const linkChargeToBill: Tool = {
   kind: "direct",
-  does: "Attach a charge to a bill, which records that bill as paid for that month.",
+  does:
+    "Attach a charge to a bill, which records that bill as paid for that month. If a hand-made \"already paid\" note holds that month and the bank reads this charge as that bill, for the same amount, the note is taken off in the same step.",
   fields: ["transaction_id", "bill_id", "month"],
   example: { transaction_id: EXAMPLE_ID, bill_id: EXAMPLE_ID },
   check: (payload) => problemsOf(planLink(payload)),
@@ -1058,17 +1065,52 @@ const linkChargeToBill: Tool = {
     // through cycleKeyOf(), the one implementation in the codebase: there were five
     // spellings of this once, and that is the reason a duplicate payment was
     // invisible.
-    const applies = { kind: "bill", recurringId: bill.id, monthKey: month, day };
-    const wanted = cycleKeyOf(applies, dueDays);
+    const appliesIn = (m: string) => ({ kind: "bill", recurringId: bill.id, monthKey: m, day });
+    const applies = appliesIn(month);
     const payments = await db.billPayments(bill.id);
-    const taken = payments.some((p) => {
-      if (p.id === t.id) return false;
-      if (p.type !== "expense") return false;
-      const at = p.appliesTo as { kind?: string; recurringId?: string } | null;
-      if (!at || at.kind !== "bill" || at.recurringId !== bill.id) return false;
-      return cycleKeyOf(at, dueDays) === wanted;
-    });
-    if (taken) {
+    const holdersIn = (m: string) => {
+      const wanted = cycleKeyOf(appliesIn(m), dueDays);
+      return payments.filter((p) => {
+        if (p.id === t.id) return false;
+        if (p.type !== "expense") return false;
+        const at = p.appliesTo as { kind?: string; recurringId?: string } | null;
+        if (!at || at.kind !== "bill" || at.recurringId !== bill.id) return false;
+        return cycleKeyOf(at, dueDays) === wanted;
+      });
+    };
+    const holders = holdersIn(month);
+
+    // NO MONTH SENT, the charge's own month is free, and the BANK would count this charge
+    // toward a different month — one a hand note alone holds (2026-10-25, found in
+    // review). Worth a look's W5c places the pair the way the bank sync does, with
+    // billCycleFor's week of grace, so a bill due on the 1st and paid on the 28th is
+    // NEXT month's payment there, and this month's here. Left alone, this would attach
+    // the charge to the month before while the note went on holding the real one — the
+    // double count kept, and hidden from the self-check, because the charge would no
+    // longer be unattached. So when the bank's own reading names this bill and that
+    // month, and the note there is the same payment, the charge takes that month from
+    // the note. Anything short of all of that falls through to the charge's own month,
+    // exactly as before. A month that was SENT is always the month used.
+    if (payload.month === undefined && !holders.length && t.provider) {
+      const reading = await bankReadsAs(db, t, bill);
+      if (reading && reading.bill.id === bill.id && reading.monthKey !== month && sameCycle(reading, bill.id, reading.monthKey, day, dueDays)) {
+        const there = holdersIn(reading.monthKey);
+        const note = there.length === 1 ? await db.readCharge(there[0].id) : null;
+        if (note && isHandNoteRow(note) && sameNotePayment(t, note, bill)) {
+          return takeOverFromHandNote(ctx, t, note, bill, reading.monthKey, day, appliesIn(reading.monthKey));
+        }
+      }
+    }
+
+    if (holders.length) {
+      // ONE EXCEPTION, added 2026-10-24: the month is held by a hand note alone, and
+      // this is the bank's own charge for it. See takeOverFromHandNote.
+      const note = holders.length === 1 ? await db.readCharge(holders[0].id) : null;
+      if (note && isHandNoteRow(note) && t.provider) {
+        const why = await whyNotTakeOver(db, t, note, bill, month, day, dueDays);
+        if (why === null) return takeOverFromHandNote(ctx, t, note, bill, month, day, applies);
+        return refuse(409, why);
+      }
       return refuse(409, `Something else is already paying ${scrubCap(bill.name, 40)} for ${month}.`);
     }
 
@@ -1083,6 +1125,219 @@ const linkChargeToBill: Tool = {
     );
   },
 };
+
+// ── a hand note gives way to the bank's own charge ───────────────────────────
+//
+// FOUND 2026-10-24. Four hand-made "(already paid)" notes were in the ledger and three
+// of them paid a bill the bank had also paid. The note held the bill's month, so the
+// cycle guard above refused the bank's charge — "something else is already paying it"
+// — and the same money stayed in the books twice: once as the note, once as ordinary
+// spending. Worth a look names the pair (W5c), and this is the one step that repairs it.
+//
+// WHAT COUNTS AS A HAND NOTE: what finance.mark_bill_paid, the app's "paid" tap and the
+// statement import's bill rows write — a settled bill link on a row with no bank and no
+// account, so it moved no cash. And it must hold the month ALONE: two rows on one month
+// is the self-check's one-payment-per-cycle failure, and nothing here picks between them.
+//
+// WHEN IT GIVES WAY: only to a charge the BANK delivered (a hand-entered charge is
+// another hand note's word against this one), and only when the two amounts agree inside
+// the bank sync's own band for "the same bill". A note for a different amount is part of
+// a payment made another way — cash for some, card for the rest — and both stay. On a
+// variable bill that band is wide (±$15 or ±15%), so a part-cash payment close to the
+// note is read as the same payment; _shared/handNote.ts says why that risk is taken.
+// And since 2026-10-25 (found in review) only when the bank's own reading of the charge
+// names this bill, in this cycle — see bankReadsAs: the amount alone is a weak match.
+//
+// WHY THE NOTE IS REMOVED, not kept as a record or re-pointed. The three choices were:
+//   · keep it, flagged `record_only` — but nothing that adds up money reads that flag:
+//     the budget, the run rate, the calendar and every check would go on counting it,
+//     and the bank sync's duplicate guard would start treating it as a statement copy
+//     that can swallow a future bank delivery. It would stop nothing.
+//   · re-point its link at something that does not count — there is no such shape. A
+//     row with any link is held out of the budget and still counted as spent by the
+//     run rate, and a new "superseded" marker would have to be taught to every reader
+//     in the app and both doors; one reader missed is the double count again, silently.
+//   · remove it — one row fewer, so every reader stops counting it at once, with no new
+//     state to teach anyone. It moves no cash (no account; reverse_money_event's settled
+//     branch deletes and returns) and touches no debt. What the person said — "this bill
+//     is paid for this month" — is kept: the bank's charge now says it, with the real
+//     date and amount. And here the undo puts it back exactly, through the app's own
+//     restore_money_event, so nothing is lost that cannot be returned.
+
+/** A hand-made "already paid" note: a settled bill link, no bank, no account. A note
+ *  the statement import wrote (record_only) is one too, and gives way the same way —
+ *  the rule is written once, in _shared/handNote.ts. */
+function isHandNoteRow(t: ChargeRow): boolean {
+  const at = t.appliesTo as { kind?: string; settled?: unknown } | null;
+  return t.type === "expense" && !t.pending && !t.provider && !t.accountId && at?.kind === "bill" && at.settled === true;
+}
+
+/** The two amounts agree inside the bank sync's own band for "the same bill" — wide on
+ *  a variable bill (see _shared/handNote.ts for what that costs). */
+function sameNotePayment(t: ChargeRow, note: ChargeRow, bill: BillRow): boolean {
+  return Math.abs(t.amount - note.amount) <= billAmountBand(note.amount, bill.variable);
+}
+
+/**
+ * The bank sync's own reading of this charge — the bill it would attach it to and the
+ * month — or null when the sync would attach it to nothing.
+ *
+ * WHY THE TAKEOVER ASKS THIS (2026-10-25, found in review). Until then a bank charge took
+ * a month from a hand note on the amount alone. link_charge_to_bill used to refuse any
+ * month already held, so a wrong pairing from Muse — the wrong charge id, the wrong bill
+ * id — cost nothing; with the takeover, that same mistake removed a real note and paid
+ * the bill with a charge that is not that bill. The repo's rule is never to link on a
+ * weak match (the parking charge that settled a month's rent), and "about the same
+ * amount" is a weak match. So the charge must also be the bill by the categorizer's
+ * reading of its name, in the month the bank would count it toward — the question
+ * Worth a look's W5c asked before it named the pair.
+ *
+ * It is billMatch.ts's bankWouldLink, the app's copy of the sync's matching, asked over
+ * just this charge and this bill: the learned rule for the charge's merchant, the two
+ * accounts' owners (the cross-account rule needs to know which one is joint), and the
+ * bill row. So it answers "is this charge THAT bill, by its name, its account and its
+ * amount" — which is the question here, since the caller named the bill — and not which
+ * of two look-alike bills the sync would have picked. And this door never reads the raw
+ * bank line, so a bill the sync recognises only from that line is not recognised here:
+ * the note stays, which is the safe way round.
+ */
+async function bankReadsAs(db: FinanceDb, t: ChargeRow, bill: BillRow): Promise<BankLink | null> {
+  const key = merchantKey(t.description ?? "");
+  const [rule, chargeAcct, billAcct] = await Promise.all([
+    key ? db.readMerchantRule(key) : Promise.resolve(null),
+    t.accountId ? db.readAccount(t.accountId) : Promise.resolve(null),
+    bill.accountId && bill.accountId !== t.accountId ? db.readAccount(bill.accountId) : Promise.resolve(null),
+  ]);
+  const rec: Recurring = {
+    id: bill.id,
+    name: bill.name,
+    amount: bill.amount,
+    direction: bill.direction,
+    cadence: bill.cadence as Recurring["cadence"],
+    active: bill.active,
+    variable: bill.variable,
+    knownAmount: bill.knownAmount ?? undefined,
+    dueDays: bill.dueDays ?? undefined,
+    accountId: bill.accountId ?? undefined,
+    startsOn: bill.startsOn ?? undefined,
+    endsOn: bill.endsOn ?? undefined,
+    createdAt: "",
+  };
+  const ctx = linkContextOf({
+    merchantRules: rule
+      ? [{
+          pattern: rule.pattern,
+          kind: rule.kind as MerchantRule["kind"],
+          categoryId: rule.categoryId ?? undefined,
+          billName: rule.billName ?? undefined,
+        }]
+      : [],
+    accounts: [chargeAcct, billAcct].filter((a): a is AccountRow => !!a).map((a) => ({ id: a.id, owner: a.owner })),
+    recurring: [rec],
+  });
+  return bankWouldLink(
+    { type: t.type, date: t.date, amount: t.amount, description: t.description, accountId: t.accountId ?? undefined },
+    ctx,
+  );
+}
+
+/** The bank's reading lands on the same bill cycle — month AND instalment — as the one
+ *  this tool is writing, both through cycleKeyOf, the one spelling of a cycle. */
+function sameCycle(reading: BankLink, billId: string, month: string, day: number, dueDays: number[] | undefined): boolean {
+  return (
+    cycleKeyOf({ recurringId: billId, monthKey: reading.monthKey, day: reading.day }, dueDays) ===
+      cycleKeyOf({ recurringId: billId, monthKey: month, day }, dueDays)
+  );
+}
+
+/** Why this bank charge may NOT take `month` from this note — or null when it may. */
+async function whyNotTakeOver(
+  db: FinanceDb,
+  t: ChargeRow,
+  note: ChargeRow,
+  bill: BillRow,
+  month: string,
+  day: number,
+  dueDays: number[] | undefined,
+): Promise<string | null> {
+  const name = scrubCap(bill.name, 40);
+  if (!sameNotePayment(t, note, bill)) {
+    return `${name} for ${month} is already paid by a hand note for ${dollars(note.amount)}, and this charge is ${dollars(t.amount)} — too far apart to be the same payment, so both stay as they are.`;
+  }
+  const reading = await bankReadsAs(db, t, bill);
+  if (!reading || reading.bill.id !== bill.id) {
+    return `${name} for ${month} is already paid by a hand note, and nothing in this charge's name says it is that bill — so the note stays, and nothing changed.`;
+  }
+  if (reading.monthKey !== month) {
+    return `${name} for ${month} is already paid by a hand note, and the bank counts this charge toward ${reading.monthKey}, not ${month} — so the note stays, and nothing changed.`;
+  }
+  if (!sameCycle(reading, bill.id, month, day, dueDays)) {
+    return `${name} for ${month} is already paid by a hand note, and the bank counts this charge toward a different payment of that bill in ${month} — so the note stays, and nothing changed.`;
+  }
+  return null;
+}
+
+/** The note's whole row, captured before it is removed — the same columns
+ *  finance.delete_charge captures, because the undo is the same restore_money_event. */
+function wholeRowOf(t: ChargeRow): Record<string, UndoValue> {
+  return {
+    id: t.id,
+    date: t.date,
+    amount: t.amount,
+    type: t.type,
+    category_id: t.categoryId,
+    description: t.description,
+    account_id: t.accountId,
+    applies_to: t.appliesTo,
+    flow_override: t.flowOverride,
+    splits: t.splits,
+    anomaly_ack: t.anomalyAck,
+    user_categorized: t.userCategorized,
+    needs_review: t.needsReview,
+    record_only: t.recordOnly,
+    created_at: t.createdAt,
+    person: t.person,
+  };
+}
+
+function takeOverFromHandNote(
+  ctx: Ctx,
+  t: ChargeRow,
+  note: ChargeRow,
+  bill: BillRow,
+  month: string,
+  day: number,
+  applies: Record<string, UndoValue>,
+): Promise<ToolOutcome> {
+  const db = ctx.db as FinanceDb;
+  const name = scrubCap(bill.name, 40);
+  return commit(ctx, "finance.link_charge_to_bill", {
+    // In the order the changes are made; system.undo runs it backwards — the note comes
+    // back first, then the bank's charge is released.
+    steps: [
+      { kind: "set_columns", table: "transactions", id: t.id, before: { applies_to: null }, after: { applies_to: applies } },
+      { kind: "restore_money_event", row: wholeRowOf(note) },
+    ],
+    summary: `Attached the ${dollars(t.amount)} charge from ${t.date} to ${name} for ${month}, and took off the hand note for ${dollars(note.amount)} it was counted beside — the bank's charge pays the bill now.`,
+    result: { id: t.id, bill_id: bill.id, month, day, retired_note: note.id },
+    rowIds: [t.id, note.id],
+    async write() {
+      // The link first: if the charge moved, nothing has changed yet. The note second:
+      // if it is already gone, the month is paid by the bank's charge either way — but
+      // the undo would put back a note somebody else removed, so it is said out loud
+      // rather than recorded as a clean change (settle_reimbursable's rule).
+      if ((await db.setColumns("transactions", t.id, { applies_to: applies }, { applies_to: null })) === "moved") {
+        return refuse(409, MOVED);
+      }
+      if ((await db.reverseMoneyEvent(note.id)) === "moved") {
+        return refuse(
+          409,
+          `I attached the charge to ${name} for ${month}, and the hand note had already been removed — so there was nothing else to take off. Have a look in the app.`,
+        );
+      }
+    },
+  });
+}
 
 // ── finance.mark_bill_paid ───────────────────────────────────────────────────
 //
@@ -1421,29 +1676,55 @@ function incomeChangeRefused(
 // lives in `known_amount`, a fixed row's price is `amount`. Writing the wrong one
 // leaves the old figure in force and reads as a fix that did nothing — which is
 // exactly what reviewApply.ts:117-124 records.
-/** set_bill_amount's bill id, amount and confirm — every problem at once. */
-function planBillAmount(payload: Record<string, unknown>): Shaped<{ id: string; amount: number; confirmed: boolean }> {
+//
+// `clear: true` HANDS A VARIABLE BILL BACK TO ITS ROLLING ESTIMATE. FOUND 2026-10-25:
+// known_amount — the figure somebody read off a variable bill, which beats the rolling
+// average everywhere (plan.ts billExpected) — could be set and never unset. This tool
+// took only an amount above zero, finance.edit_bill has no such field, and the app only
+// ever writes a positive figure. So a figure read off ONE month's bill went on pricing
+// every month after it: an October-only override was pricing November, and the only
+// way out was raw SQL, with no audit row and no way back. Clearing is one column back to
+// null — one change, one undo token, like every other write here. It takes no amount
+// (sending both is refused, because "clear it and set it" is two different requests),
+// and it needs no confirm: nothing an incoming row is priced at reads known_amount, so
+// clearing one cannot change the plan's income.
+/** set_bill_amount's bill id, amount, confirm and clear — every problem at once. */
+function planBillAmount(
+  payload: Record<string, unknown>,
+): Shaped<{ id: string; amount: number; confirmed: boolean; clear: false } | { id: string; clear: true }> {
   const pad = problemPad();
   const id = pad.take(idArg(payload.bill_id, "the bill"));
-  const amount = pad.take(amountArg(payload.amount, "I need the amount off the bill, as a number above zero."));
+  if (payload.clear !== undefined && typeof payload.clear !== "boolean") {
+    pad.no("clear is either true or false. clear: true hands a variable bill back to its rolling estimate.");
+  }
+  const clearing = payload.clear === true;
+  if (clearing && payload.amount !== undefined) {
+    pad.no("Send clear: true on its own, or an amount — not both. Clearing hands the bill back to its rolling estimate; an amount records a new figure.");
+  }
+  const amount = clearing
+    ? undefined
+    : pad.take(amountArg(payload.amount, "I need the amount off the bill, as a number above zero — or clear: true to hand a variable bill back to its rolling estimate."));
   const confirmed = pad.take(confirmArg(payload));
-  return pad.done(() => ({ id: id!, amount: amount!, confirmed: confirmed! }));
+  return pad.done(() =>
+    clearing ? { id: id!, clear: true as const } : { id: id!, amount: amount!, confirmed: confirmed!, clear: false as const },
+  );
 }
 
 const setBillAmount: Tool = {
   kind: "direct",
-  does: "Record what a bill actually costs. Goes to the right column for a fixed or a variable bill. Raising an incoming row (a paycheck) needs confirm: true, and on Gino's pay floor only his own key can confirm.",
-  fields: ["bill_id", "amount", "confirm"],
+  does: "Record what a bill actually costs. Goes to the right column for a fixed or a variable bill. clear: true (and no amount) removes a recorded figure, handing a variable bill back to its rolling estimate. Raising an incoming row (a paycheck) needs confirm: true, and on Gino's pay floor only his own key can confirm.",
+  fields: ["bill_id", "amount", "confirm", "clear"],
   example: { bill_id: EXAMPLE_ID, amount: 64.2 },
   check: (payload) => problemsOf(planBillAmount(payload)),
   async run(payload, ctx) {
     const db = ctx.db as FinanceDb;
     const plan = planBillAmount(payload);
     if (!plan.ok) return shapeRefused(plan.problems, payload);
-    const { id, amount, confirmed } = plan.value;
-    const bill = await db.readBill(id);
+    const bill = await db.readBill(plan.value.id);
     if (!bill) return refuse(404, "There is no bill with that id.");
     const name = scrubCap(bill.name, 40) || "that bill";
+    if (plan.value.clear) return clearKnownAmount(ctx, bill, name);
+    const { amount, confirmed } = plan.value;
     // ── AN INCOMING ROW IS PRICED AT `amount`, AND ONLY THERE ─────────────────
     // The variable/fixed split below is about BILLS: billExpected() honours
     // known_amount for an outgoing variable row. Income never reads known_amount —
@@ -1491,6 +1772,62 @@ const setBillAmount: Tool = {
     );
   },
 };
+
+/**
+ * set_bill_amount with clear: true — known_amount back to null, through oneRow, so it is
+ * one compare-and-set and one undo that puts the figure back.
+ *
+ * WHAT IT SAYS DEPENDS ON WHAT READS THE FIGURE, because "cleared" alone does not tell
+ * anybody what the bill now costs. Three kinds of row:
+ *   · A VARIABLE row that is not income — a bill, or a transfer, which the calendar and
+ *     the forecast price the same way (monthlySchedule → billExpected) — is PRICED from
+ *     known_amount. Clearing hands it back to the average of its recent real payments,
+ *     or its stored amount until one is seen.
+ *   · A FIXED bill is priced at its stored amount, but the figure is still READ: it is
+ *     what the app judges the bill's payments against — whether a month reads as paid in
+ *     full (selfAudit check 6, settled-means-settled, owed = known_amount ?? amount) and
+ *     which charges the review matches to the bill, offers as its payment or calls a
+ *     price change (ledgerReview modelledOf). Clearing it puts that judgement back on the
+ *     stored amount. It would also come back as the PRICE the day the bill is made
+ *     variable again (set_bill_variable leaves known_amount alone).
+ *   · An INCOMING row is planned at its stored amount everywhere; clearing moves no
+ *     figure the plan uses.
+ * CORRECTED in review 2026-10-25: the first version said "nothing was reading it" on a
+ * fixed bill, which check 6 and the review both contradict, and gave a variable transfer
+ * the income sentence although the calendar prices it from the figure.
+ *
+ * No figure is worked out here. What the rolling estimate comes to is the app's
+ * arithmetic, and finance.bills says it.
+ */
+function clearKnownAmount(ctx: Ctx, bill: BillRow, name: string): Promise<ToolOutcome> {
+  const priced = bill.variable && bill.direction !== "in";
+  if (bill.knownAmount === null) {
+    return Promise.resolve(
+      refuse(
+        409,
+        priced
+          ? `${name} has no figure recorded, so it is already priced from its recent real payments. Nothing to clear.`
+          : `${name} has no figure recorded to clear. It is priced at its stored amount — send an amount to change that.`,
+      ),
+    );
+  }
+  const was = bill.knownAmount;
+  return oneRow(
+    ctx,
+    "finance.set_bill_amount",
+    { table: "recurring", id: bill.id },
+    { known_amount: null },
+    { known_amount: was },
+    priced
+      ? `Cleared the ${dollars(was)} recorded for ${name}. It is priced from its recent real payments again — its rolling estimate — or from its stored amount until one is seen.`
+      : bill.direction === "out"
+        ? `Cleared the ${dollars(was)} recorded for ${name}. It is a fixed bill, so its price was already its stored ${dollars(bill.amount)} — ` +
+          `but the app was judging its payments against ${dollars(was)}: whether a month reads as paid in full, and which charges the review matches to it. ` +
+          `It judges them against ${dollars(bill.amount)} now.`
+        : `Cleared the ${dollars(was)} recorded for ${name}. Money coming in is planned at its stored amount, which is unchanged.`,
+    { column: "known_amount", was, now: null, priced_from: priced ? "recent payments" : "stored amount" },
+  );
+}
 
 /**
  * "up from $X", "down from $X", or "the same as before" — which way a figure moved.
@@ -1582,7 +1919,7 @@ const WHAT_IT_MEANS: Record<string, string> = {
   spent: "real spending",
   moved: "a transfer between our own accounts, so it counts as neither",
   repaid: "a payment towards a debt, which moves money rather than spends it",
-  returned: "money coming back for something already counted",
+  returned: "money coming back for something already counted, so it lowers that month's spending",
 };
 
 // ── finance.set_bill_account ─────────────────────────────────────────────────
@@ -3019,6 +3356,9 @@ const unlinkDebtCard: Tool = {
 //     a card each month is the amount on the bill that pays it (plannedMonthly reads the
 //     bill, and set_bill_amount changes that one). The reply says so, so "I updated the
 //     minimum" is not heard as "the plan now pays it".
+//     SINCE 2026-10-25 that bill moves WITH the minimum, in the same change and the same
+//     undo, when it was set to the old minimum — followMinimum below says when it does
+//     not, and why. The reply says which happened.
 //   · the RATE is what payoffSchedule() and the forecast charge interest at, so the payoff
 //     projection moves with it.
 //   · the NAME is how ATTACK_ORDER in plan.ts puts the debts in order, by exact string. A
@@ -3090,7 +3430,7 @@ function planEditDebt(payload: Record<string, unknown>): Shaped<{
 
 const editDebt: Tool = {
   kind: "direct",
-  does: "Change a debt's name, minimum payment or interest rate (null clears the minimum or the rate), or close a paid-off debt without deleting it — closed true, or false to re-open it.",
+  does: "Change a debt's name, minimum payment or interest rate (null clears the minimum or the rate), or close a paid-off debt without deleting it — closed true, or false to re-open it. A new minimum also moves the bill that pays the debt, in the same change, when that bill was set to the old minimum.",
   fields: ["debt_id", "name", "min_payment", "apr", "closed"],
   example: { debt_id: EXAMPLE_ID, min_payment: 35 },
   check: (payload) => problemsOf(planEditDebt(payload)),
@@ -3130,6 +3470,8 @@ const editDebt: Tool = {
       said.push(`Renamed ${label} to ${now}.`);
     }
 
+    // The bill that pays this debt, when its price moves with the minimum (2026-10-25).
+    let follower: { step: ColumnStep; bill: LinkedBillRow } | null = null;
     if (minPayment !== undefined && minPayment !== debt.minPayment) {
       patch.min_payment = minPayment;
       before.min_payment = debt.minPayment;
@@ -3140,9 +3482,16 @@ const editDebt: Tool = {
             ? `${now}'s minimum payment is now ${dollars(minPayment)}, where none was recorded before.`
             : `${now}'s minimum payment is now ${dollars(minPayment)}, ${movedFrom(debt.minPayment, minPayment)}.`,
       );
-      notes.push(
-        "Only the debt list reads the minimum. What the plan sets aside for this debt each month is the amount on the bill that pays it, which finance.set_bill_amount changes.",
-      );
+      const follow = followMinimum(await db.billsPayingDebt(debt.id), debt.minPayment, minPayment, azDateISO(ctx.az));
+      if (follow.move && minPayment !== null) {
+        const bill = follow.move;
+        follower = {
+          bill,
+          step: { kind: "set_columns", table: "recurring", id: bill.id, before: { amount: bill.amount }, after: { amount: minPayment } },
+        };
+        said.push(`${billLabel(bill)}, the bill that pays it, now costs ${dollars(minPayment)} a month too, ${movedFrom(bill.amount, minPayment)}.`);
+      }
+      notes.push(follow.note);
     }
 
     if (apr !== undefined && apr !== debt.apr) {
@@ -3196,24 +3545,140 @@ const editDebt: Tool = {
     if (Object.keys(patch).length === 0) {
       return refuse(409, `${label} already reads that way. Nothing to change.`);
     }
-    return oneRow(
-      ctx,
-      "finance.edit_debt",
-      { table: "debts", id: debt.id },
-      patch,
-      before,
-      said.join(" "),
-      {
-        name: now,
-        min_payment: "min_payment" in patch ? patch.min_payment : debt.minPayment,
-        apr: "apr" in patch ? patch.apr : debt.apr,
-        ...("closed_at" in patch ? { closed: patch.closed_at !== null } : {}),
-        changed: Object.keys(patch),
+    const result = {
+      name: now,
+      min_payment: "min_payment" in patch ? patch.min_payment : debt.minPayment,
+      apr: "apr" in patch ? patch.apr : debt.apr,
+      ...("closed_at" in patch ? { closed: patch.closed_at !== null } : {}),
+      changed: Object.keys(patch),
+      bill_moved: follower
+        ? { id: follower.bill.id, name: billLabel(follower.bill), was: follower.bill.amount, now: minPayment ?? null }
+        : null,
+    };
+    if (!follower) {
+      return oneRow(
+        ctx,
+        "finance.edit_debt",
+        { table: "debts", id: debt.id },
+        patch,
+        before,
+        said.join(" "),
+        result,
+        notes.length ? notes.join(" ") : undefined,
+      );
+    }
+    // The debt row FIRST, then the bill — one token, and system.undo runs it backwards.
+    // writeInStep puts the debt back if the bill moved in the gap, so a refusal here
+    // never leaves the minimum changed while the bill that pays it was not.
+    const steps: ColumnStep[] = [
+      { kind: "set_columns", table: "debts", id: debt.id, before, after: patch },
+      follower.step,
+    ];
+    const billName = billLabel(follower.bill);
+    return commit(ctx, "finance.edit_debt", {
+      steps,
+      summary: said.join(" "),
+      note: notes.length ? notes.join(" ") : undefined,
+      result: { ...result, id: debt.id },
+      rowIds: [debt.id, follower.bill.id],
+      async write() {
+        const hit = await writeInStep(db, steps);
+        if (hit === "ok") return;
+        return refuse(
+          409,
+          hit.putBack
+            ? `Something changed ${hit.moved === 0 ? label : billName} while I was updating them, so I put back what I had already changed and changed nothing. Read them again and ask me once more.`
+            : `Something changed ${billName} while I was updating it, and ${label} had moved again too — so it may not all be back. Have a look at both in the app before asking me again.`,
+        );
       },
-      notes.length ? notes.join(" ") : undefined,
-    );
+    });
   },
 };
+
+/** A bill's name as the replies say it. */
+const billLabel = (b: { name: string }) => scrubCap(b.name, 40) || "the bill that pays it";
+
+/**
+ * Does the bill that pays this debt move with its minimum? FOUND 2026-10-25: a card's
+ * minimum payment lives in TWO places — debts.min_payment, which the debt list reads,
+ * and the amount on the bill that pays the debt (recurring.linked_debt_id), which is
+ * what the plan actually sets aside each month (plannedMonthly) and what the calendar
+ * shows due. finance.edit_debt changed the first and only told the assistant to change
+ * the second with another call — so after every statement the two could drift apart,
+ * and the plan went on reserving last month's minimum.
+ *
+ * THE BILL MOVES ONLY WHEN IT WAS FOLLOWING THE MINIMUM — its amount equal, to the cent,
+ * to the minimum this call replaces. Anything else leaves it alone and says why, because
+ * a bill that plans MORE than the minimum is usually a payment somebody chose (paying a
+ * card down faster), and overwriting it with the minimum would re-decide a person's
+ * choice — the one thing nothing here may do. The narrower cases, each left alone:
+ *   · no minimum, or a minimum of zero, coming in: that says nothing about what to plan,
+ *     and the calendar already drops the bill once the debt reads $0.00;
+ *   · more than one bill paying the debt: which of them carries the minimum is not
+ *     something the door can tell;
+ *   · a variable bill: the plan prices it from its real payments, not from `amount`;
+ *   · a bill that is not monthly: its amount is not a monthly figure.
+ * Only active bills going out that have NOT ENDED count — a bill turned off, or past its
+ * ends_on, sets nothing aside again. FOUND in review 2026-10-25: an old bill that had
+ * ended but was still switched on counted as a second payer and blocked the move with
+ * "2 bills pay this debt". A bill that has not STARTED yet still counts, unlike in
+ * selfAudit check 11, which asks what the plan sets aside today: a replacement bill that
+ * starts next month will plan whatever figure it carries, so it is a payer here, and a
+ * debt with a current bill and its replacement is left to a person, as any pair is.
+ */
+function followMinimum(
+  bills: readonly LinkedBillRow[],
+  was: number | null,
+  next: number | null,
+  today: string,
+): { move: LinkedBillRow | null; note: string } {
+  const paying = bills.filter((b) => b.active && b.direction === "out" && !(b.endsOn && b.endsOn < today));
+  if (paying.length === 0) {
+    return {
+      move: null,
+      note: "Only the debt list reads the minimum. What the plan sets aside for this debt each month is the amount on the bill that pays it, which finance.set_bill_amount changes.",
+    };
+  }
+  const cents = (n: number) => Math.round(n * 100);
+  if (next === null || cents(next) <= 0) {
+    return {
+      move: null,
+      note: `I left ${billLabel(paying[0])}${paying.length > 1 ? " and the other bills that pay it" : ""} alone: a minimum that is cleared or zero does not say what to plan for, and the calendar already drops the bill once the debt reads $0.00.`,
+    };
+  }
+  if (paying.length > 1) {
+    return {
+      move: null,
+      note: `${paying.length} bills pay this debt, so I did not pick one to carry the new minimum. finance.set_bill_amount changes each of them.`,
+    };
+  }
+  const bill = paying[0];
+  const name = billLabel(bill);
+  if (bill.variable) {
+    return {
+      move: null,
+      note: `${name} pays this debt and is priced from its real payments, so I left it alone. finance.set_bill_amount records a figure for it.`,
+    };
+  }
+  if (bill.cadence !== "monthly") {
+    return {
+      move: null,
+      note: `${name} pays this debt but is not a monthly bill, so its amount is not a monthly minimum and I left it alone.`,
+    };
+  }
+  if (was === null || cents(bill.amount) !== cents(was)) {
+    const below = cents(bill.amount) < cents(next);
+    return {
+      move: null,
+      note:
+        `${name} pays this debt at ${dollars(bill.amount)} a month, ` +
+        (was === null ? "and no minimum was on record for it to be following" : "which was not the old minimum") +
+        ", so it reads as a payment somebody chose and I left it alone." +
+        (below ? " It is now below the new minimum — finance.set_bill_amount changes it." : ""),
+    };
+  }
+  return { move: bill, note: `The plan sets aside what ${name} costs for this debt, so it moved with the minimum.` };
+}
 
 // ── the two set-aside writes ─────────────────────────────────────────────────
 

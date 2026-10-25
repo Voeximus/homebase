@@ -104,6 +104,63 @@ export function inWindow(r: Recurring, monthKey: string | undefined, day: number
   return true;
 }
 
+/**
+ * The day of `monthKey` a paycheck placed by DAY OF MONTH really lands on: the day
+ * itself, or the Friday before it when that day is a Saturday or a Sunday. `day` may be
+ * the month-end sentinel 31, which means the month's real last day.
+ *
+ * FOUND 2026-10-25. A semimonthly paycheck row says "the 15th and the last day", and
+ * the calendar put each check on exactly that date. But a bank does not deposit pay on
+ * a weekend — the ledger shows a month-end check that fell on a Sunday landing on the
+ * Friday before (the 29th), and a 15th that fell on a Saturday landing on Friday the
+ * 14th. So every screen and both doors saw that pay one or two days LATE: the
+ * per-account look-ahead (finance.next_bills look_ahead) walked a bill due on the
+ * Friday against a balance the paycheck had not reached yet, and could call an account
+ * short on a day it was not. Seeing money later than it arrives is the cautious way to
+ * be wrong, but a false shortfall is still a wrong answer, and it is the kind that
+ * trains people to stop believing the warning.
+ *
+ * Returns `day` UNCHANGED when nothing moves (a weekday, or no month to place it in),
+ * so every caller that already clamps the month-end sentinel itself keeps doing exactly
+ * what it did.
+ *
+ * WHAT THIS DOES NOT DO, ON PURPOSE:
+ *   · It never moves a check into the month before. The Friday before a weekend 1st (or
+ *     a Sunday 2nd) is in the previous month, and moving a check across a month would
+ *     make that month's calendar carry one check too many and the next one too few —
+ *     the calendar would then disagree with the plan, which counts the same pay in every
+ *     month (selfAudit check 1, schedule-vs-plan, compares exactly that). So such a
+ *     check stays on its date. No paycheck row is due on the 1st or the 2nd.
+ *   · It knows nothing about bank holidays — only Saturday and Sunday.
+ *   · Bills are not moved. When a bill due on a weekend actually draws is the biller's
+ *     rule, not the bank's, and the calendar's due day is what a payment is matched to.
+ *   · PAY CYCLES STAY ON THE NOMINAL PAYDAYS. payCycleFor, nextPayday and
+ *     previousPayday (plan.ts) still open a cycle on the 15th and on the last day,
+ *     weekend or not, so the budget bars, the cycle's budget goal, the headline's "still
+ *     due before payday" window and finance.next_bills' look_ahead.from all keep the
+ *     date the check is FOR. On purpose: a cycle's budget goal is stored under its start
+ *     date (cycle_budgets.cycle_start), so moving a start to the Friday before would
+ *     orphan a goal somebody set — and "a guess may seed a row, never re-decide one".
+ *     A cycle is a budgeting window, not a cash forecast; this function is for the
+ *     places that ask when money arrives. (Said here since a review on 2026-10-25,
+ *     which found the first version silent about it.)
+ *   · The daily allowance reads no pay timing at all: it spreads what is left of the
+ *     cycle's budget over the cycle's days (dailyAllowance.ts), so a check that lands
+ *     early changes none of its figures. look_ahead counts pay that lands AFTER today,
+ *     from the dates this places — the cycle start only opens its window for bills.
+ */
+export function paydayLandsOn(monthKey: string | undefined, day: number): number {
+  if (!monthKey) return day;
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return day;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month
+  const real = Math.min(Math.max(day, 1), lastDay);
+  const weekday = new Date(Date.UTC(y, m - 1, real)).getUTCDay(); // 0 = Sunday
+  const back = weekday === 6 ? 1 : weekday === 0 ? 2 : 0;
+  if (back === 0 || real - back < 1) return day;
+  return real - back;
+}
+
 /** A biweekly row can only be placed on real dates if it carries an anchor. */
 function biweeklyDays(r: Recurring, monthKey?: string): number[] | null {
   if (r.cadence !== "biweekly" || !r.anchorDate || !monthKey) return null;
@@ -157,9 +214,16 @@ export function monthlySchedule(
       // every remaining check in the month a bill starts or stops mid-way.
       const allDays = bw ?? r.dueDays ?? PAY_DAYS;
       for (const d of allDays) {
+        // The window is judged on the date the check is FOR, not the day it lands:
+        // a paycheck that starts on the 15th still pays that first check when the
+        // 15th is a Saturday and the money arrives on Friday the 14th.
         if (!inWindow(r, monthKey, d)) continue;
         entries.push({
-          day: d,
+          // A day-of-month payday on a weekend lands the Friday before it
+          // (paydayLandsOn, FOUND 2026-10-25). A biweekly row's dates are stepped
+          // from a date it is KNOWN to have landed, so they already carry the real
+          // weekday and are left exactly as they are.
+          day: bw ? d : paydayLandsOn(monthKey, d),
           label: r.name,
           amount: bw ? r.amount : monthly / allDays.length,
           direction: "in",

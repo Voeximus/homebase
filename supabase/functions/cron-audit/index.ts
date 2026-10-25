@@ -1,9 +1,12 @@
 // cron-audit — daily, run by pg_cron. Runs every self-check against the real ledger
 // and says so the morning something newly breaks.
 //
-// WHY THIS EXISTS. selfAudit.ts holds nine checks that are exactly zero in a healthy
+// WHY THIS EXISTS. selfAudit.ts holds twelve checks that are exactly zero in a healthy
 // ledger — do the bills add up the same way everywhere, is any bill paid twice, does
-// every link point at something real, was each bill paid from its own account. Until
+// every link point at something real, was each bill paid from its own account, is a
+// hand-made "already paid" note sitting beside the bank's own charge (the tenth,
+// 2026-10-24), does a bill that pays a debt plan at least its minimum (the eleventh,
+// 2026-10-25), is any bill filed under 'other' (the twelfth, 2026-10-25). Until
 // today they ran in exactly two places: when the app's Profile screen opened, and
 // when someone asked Muse for finance.audit. The app is the thing being retired, so
 // in practice the checks ran when somebody thought to ask — which is never on the day

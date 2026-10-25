@@ -9,6 +9,8 @@ const bill = (over: Partial<Recurring> = {}): Recurring => ({
   id: "b",
   name: "Bill",
   amount: 100,
+  // A real category by default: check 12 fails a bill filed under 'other' or under none.
+  categoryId: "bills",
   direction: "out",
   cadence: "monthly",
   active: true,
@@ -398,7 +400,11 @@ describe("check 8 — a link must point at something that still exists", () => {
     expect(byId(r, "links-point-somewhere").status).toBe("ok");
   });
 
-  it("the healthy household still passes, now across nine checks — the ninth asks whose account paid", () => {
+  // Twelve since 2026-10-25: the tenth asks whether a hand note sits beside the bank's
+  // charge (tests/handNoteTakeover.test.ts), the eleventh whether a bill that pays a debt
+  // plans at least its minimum (tests/museDebtBill.test.ts), the twelfth whether any bill
+  // is filed under 'other'.
+  it("the healthy household still passes, now across twelve checks — the ninth asks whose account paid", () => {
     const r = selfAudit(
       data({
         accounts: [account()],
@@ -408,7 +414,55 @@ describe("check 8 — a link must point at something that still exists", () => {
       NOW,
     );
     expect(r.clean).toBe(true);
-    expect(r.checks.length).toBe(9);
+    expect(r.checks.length).toBe(12);
+  });
+});
+
+describe("check 12 — a bill is never filed under 'other'", () => {
+  // FOUND 2026-10-25: an insurance payment that missed its bill inherited the bill's
+  // 'other' and landed in Misc as everyday spending. Invented bills below.
+  it("fails while an active bill is filed under other, and names it", () => {
+    const r = selfAudit(
+      data({ accounts: [account()], recurring: [bill({ id: "ins", name: "Sample Insurer", categoryId: "other", amount: 90, dueDays: [3] })], transactions: [] }),
+      NOW,
+    );
+    const c = byId(r, "bill-has-a-real-category");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("Sample Insurer");
+  });
+
+  it("passes for a real category, an inactive bill, or money coming in", () => {
+    const r = selfAudit(
+      data({
+        accounts: [account()],
+        recurring: [
+          bill({ id: "ins", name: "Sample Insurer", categoryId: "car", amount: 90, dueDays: [3] }),
+          bill({ id: "old", name: "Old Plan", categoryId: "other", amount: 10, dueDays: [5], active: false }),
+          bill({ id: "pay", name: "Sample Paycheck", categoryId: "other", amount: 900, dueDays: [15], direction: "in" }),
+        ],
+        transactions: [],
+      }),
+      NOW,
+    );
+    expect(byId(r, "bill-has-a-real-category").status).toBe("ok");
+  });
+
+  it("fails a category the app does not know, and leaves a bill whose window has ended", () => {
+    const r = selfAudit(
+      data({
+        accounts: [account()],
+        recurring: [
+          bill({ id: "typo", name: "Sample Typo Bill", categoryId: "biils", amount: 20, dueDays: [9] }),
+          bill({ id: "done", name: "Sample Finished Course", categoryId: "other", amount: 20, dueDays: [9], endsOn: "2026-01-31" }),
+        ],
+        transactions: [],
+      }),
+      NOW,
+    );
+    const c = byId(r, "bill-has-a-real-category");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("Sample Typo Bill");
+    expect(c.detail).not.toContain("Sample Finished Course");
   });
 });
 

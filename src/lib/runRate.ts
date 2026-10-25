@@ -28,6 +28,16 @@
 //   4. NOTHING IS HIDDEN. Every excluded row is returned with its amount, its
 //      description and the rule that excluded it. If the answer is wrong, the wrong
 //      line is visible rather than buried in a total.
+//
+//   5. MONEY BACK COMES OFF SPENDING. FOUND 2026-10-25: a refund or a friend paying
+//      back their share was left out of the sum entirely, while the purchase it paid
+//      back stayed in `spent` at full size. So every refund made the household look
+//      poorer by exactly the money it got back. That was small while most credits were
+//      filed as income; it stopped being small the day the categorizer began filing
+//      store refunds, paybacks and cash put back at the ATM as `refund`. A returned
+//      row is now subtracted from that month's spending — the purchase and its refund
+//      net to what was really spent — and the total is reported per month as
+//      `returned`, so it is shown, not buried.
 
 import type { Account, Transaction } from "../types";
 import { classify, COUNTS_TOWARD_NET, type Flow } from "./flow";
@@ -61,6 +71,13 @@ export interface MonthRate {
   cashChange: number;
   /** The same, with one-offs taken out — what an ordinary month of this shape looks like. */
   netOngoing: number;
+  /** Money that came back this month — refunds, paybacks, cash put back — already
+   *  taken off `spent` (rule 5). A refund for something bought in an earlier month
+   *  lowers this month, because that is when the money came back. */
+  returned: number;
+  /** Every row behind `returned`, with the rule that read it as money back — rule 4,
+   *  nothing is hidden. */
+  returnedRows: ExcludedRow[];
   oneOffs: ExcludedRow[];
   /** Whole months only; false means the window cut this month short. */
   whole: boolean;
@@ -148,6 +165,19 @@ export function runRate(
     monthsByMerchant.get(key)!.add(monthOf(txn.date));
   }
 
+  // MONEY BACK FOR A ONE-OFF IS A ONE-OFF TOO. FOUND 2026-10-25 in review: a $500+
+  // purchase was taken out of the ordinary month while the money that paid it back
+  // stayed in, so a refunded one-off made the ongoing rate look better than any real
+  // month. The merchants whose spending produced a one-off are collected first, so a
+  // later partial refund from one of them comes out with it.
+  const oneOffKeys = new Set<string>();
+  for (const { txn, verdict } of classified) {
+    if (verdict.flow !== "spent" || txn.amount < ONE_OFF_FLOOR) continue;
+    if (((txn.appliesTo ?? null) as { kind?: string } | null)?.kind === "bill") continue;
+    const key = merchantKey(txn.description);
+    if ((monthsByMerchant.get(key)?.size ?? 0) <= 1) oneOffKeys.add(key);
+  }
+
   const byMonth = new Map<string, MonthRate>();
   const excludedByFlow = new Map<Flow, ExcludedRow[]>();
 
@@ -158,10 +188,34 @@ export function runRate(
     if (cashIds.has(txn.accountId ?? "")) {
       let cashRow = byMonth.get(month);
       if (!cashRow) {
-        cashRow = { month, earned: 0, spent: 0, net: 0, cashChange: 0, netOngoing: 0, oneOffs: [], whole: true };
+        cashRow = { month, earned: 0, spent: 0, net: 0, cashChange: 0, netOngoing: 0, returned: 0, returnedRows: [], oneOffs: [], whole: true };
         byMonth.set(month, cashRow);
       }
       cashRow.cashChange += txn.type === "income" ? txn.amount : -txn.amount;
+    }
+
+    if (verdict.flow === "returned") {
+      let back = byMonth.get(month);
+      if (!back) {
+        back = { month, earned: 0, spent: 0, net: 0, cashChange: 0, netOngoing: 0, returned: 0, returnedRows: [], oneOffs: [], whole: true };
+        byMonth.set(month, back);
+      }
+      // The sign comes from the row: money in comes off spending; a charge someone set
+      // to "returned" by hand (set_flow allows it) is money OUT, so it adds back.
+      const backAmt = txn.type === "income" ? txn.amount : -txn.amount;
+      back.returned += backAmt;
+      back.spent -= backAmt;
+      back.returnedRows.push({ date: txn.date, amount: round2(backAmt), description: txn.description ?? "", why: verdict.why });
+      const key = merchantKey(txn.description);
+      if ((backAmt >= ONE_OFF_FLOOR && (monthsByMerchant.get(key)?.size ?? 0) <= 1) || (backAmt > 0 && oneOffKeys.has(key))) {
+        back.oneOffs.push({
+          date: txn.date,
+          amount: -round2(backAmt),
+          description: txn.description ?? "",
+          why: `$${round2(backAmt).toLocaleString()} back for something one-off — taken out of the ordinary month with it`,
+        });
+      }
+      continue;
     }
 
     if (!COUNTS_TOWARD_NET[verdict.flow]) {
@@ -173,7 +227,7 @@ export function runRate(
 
     let row = byMonth.get(month);
     if (!row) {
-      row = { month, earned: 0, spent: 0, net: 0, cashChange: 0, netOngoing: 0, oneOffs: [], whole: true };
+      row = { month, earned: 0, spent: 0, net: 0, cashChange: 0, netOngoing: 0, returned: 0, returnedRows: [], oneOffs: [], whole: true };
       byMonth.set(month, row);
     }
 
@@ -203,6 +257,7 @@ export function runRate(
   for (const m of months) {
     m.earned = round2(m.earned);
     m.spent = round2(m.spent);
+    m.returned = round2(m.returned);
     m.net = round2(m.earned - m.spent);
     m.cashChange = round2(m.cashChange);
     m.netOngoing = round2(m.net + m.oneOffs.reduce((s, o) => s + o.amount, 0));

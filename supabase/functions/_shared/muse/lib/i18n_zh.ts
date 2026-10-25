@@ -646,6 +646,11 @@ const SEED: Record<string, string> = {
   "{name} may be recorded twice for {month}": "{month} 的 {name} 可能记了两次",
   "You marked {name} paid by hand for {month} at {manual}. The bank also shows a {bank} charge on {date} that went against the {debt} balance. If they are the same payment, {month} is counting {manual} twice.":
     "你在 {month} 手工把 {name} 标记为已付 {manual}。银行在 {date} 也有一笔 {bank} 的消费，冲减了 {debt} 的余额。如果这是同一笔付款，{month} 就把 {manual} 算了两次。",
+  "{name} may be paid twice for {month}": "{month} 的 {name} 可能付了两次",
+  "You marked {name} paid by hand for {month} at {manual}. The bank also shows {bank} on {date} that it reads as this bill, and that charge is counted as ordinary spending too. If they are the same payment, {month} is counting {manual} twice. Take the hand note off and the bank's charge can pay the bill.":
+    "你在 {month} 手工把 {name} 标记为已付 {manual}。银行在 {date} 也有一笔 {bank}，应用认出它就是这笔账单，而这笔消费同时也算成了普通支出。如果这是同一笔付款，{month} 就把 {manual} 算了两次。删掉手工记的那一笔，银行这笔就能付这张账单。",
+  "A statement import marked {name} paid for {month} at {manual}. The bank also shows {bank} on {date} that it reads as this bill, and that charge is counted as ordinary spending too. If they are the same payment, {month} is counting {manual} twice. A row from a statement is not removed from here: delete the imported note yourself, and the bank's charge can pay the bill.":
+    "导入的对账单把 {month} 的 {name} 记为已付 {manual}。银行在 {date} 也有一笔 {bank}，应用认出它就是这笔账单，而这笔消费同时也算成了普通支出。如果这是同一笔付款，{month} 就把 {manual} 算了两次。对账单导入的记录不会在这里删除：请自己删掉导入的那一笔，银行这笔就能付这张账单。",
   "{name} looks like it already came in": "{name} 看着已经到账了",
   "The app expects {monthly} a month. One deposit of {actual} arrived on {date} and nothing like it before. If that was a one-off, the app is counting it every month from here.":
     "应用预计每月 {monthly}。{date} 到账了一笔 {actual}，之前没有类似的。如果那是一次性的，应用会从现在起每个月都算上它。",

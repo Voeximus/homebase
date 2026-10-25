@@ -57,7 +57,7 @@ import { scrubCap } from "../_shared/muse/scrub.ts";
 import {
   classify,
   classifyCredit,
-  isPaycheck,
+  creditCategory,
   merchantKey,
   stripStatementNoise,
   type LearnedRules,
@@ -65,6 +65,7 @@ import {
 import { DEFAULT_CATEGORIES } from "../_shared/muse/lib/seed.ts";
 import { addDaysISO } from "../_shared/muse/lib/format.ts";
 import { SAME_CHARGE_DAYS, sameMerchant } from "../_shared/sameCharge.ts";
+import { CLOSED_DEBT_FILING, closedDebtPayment, closedTrackedDebts } from "../_shared/trackedDebts.ts";
 
 /** How far back a statement row may be dated. 24 months is as far as the bank feed
  *  itself ever reaches back on a first sync, so nothing older can be "missing" from a
@@ -267,6 +268,11 @@ export interface HistoryFiling {
 export interface TrackedDebt {
   name: string;
   trackPattern: string;
+  /** Since 2026-10-25, what the sync's own rule reads about a CLOSED debt
+   *  (_shared/trackedDebts.ts). Absent or null reads as open, not set, not a card. */
+  closedAt?: string | null;
+  trackedBaseline?: number | null;
+  providerAccountId?: string | null;
 }
 
 /** The sync's own test (plaid/index.ts matchTrackedDebt): the pattern anywhere in the
@@ -274,6 +280,25 @@ export interface TrackedDebt {
 export function trackedDebtFor(description: string, debts: readonly TrackedDebt[]): TrackedDebt | null {
   const up = description.toUpperCase();
   return debts.find((d) => d.trackPattern.trim() !== "" && up.includes(d.trackPattern.toUpperCase())) ?? null;
+}
+
+/**
+ * The closed debt whose pattern is in the description, by the SYNC's rule — the one
+ * plaid/index.ts uses to record such a payment instead of dropping it (closedDebtPayment
+ * in _shared/trackedDebts.ts, 2026-10-25). Only a closed debt that would be armed if it
+ * were open counts: a pattern, a baseline, not a linked card. Called through the sync's
+ * own functions, not copied, so the door and the feed cannot drift apart on it.
+ */
+function closedDebtFor(description: string, debts: readonly TrackedDebt[]): TrackedDebt | null {
+  const rows = debts.map((d, i) => ({
+    id: String(i),
+    track_pattern: d.trackPattern,
+    tracked_baseline: d.trackedBaseline ?? null,
+    provider_account_id: d.providerAccountId ?? null,
+    closed_at: d.closedAt ?? null,
+    debt: d,
+  }));
+  return closedDebtPayment(closedTrackedDebts(rows), description, false)?.debt.debt ?? null;
 }
 
 /** What the app itself says about the row, before anything the caller named. */
@@ -289,23 +314,66 @@ type Verdict =
  * history labels, then the keyword guesses — passed the description as its own raw line,
  * which is how the statement import calls it (buildImportPlan) so the bank's pump and
  * store tokens still count. For money in it is the feed's rule: classifyCredit decides
- * whether it is a transfer between their own accounts, and otherwise a paycheck is
- * `salary` and anything else `other-income`.
+ * whether it is a transfer between their own accounts, and otherwise creditCategory
+ * files it: a paycheck is `salary`, cash put back at an ATM `refund`, anything else
+ * `other-income`.
+ *
+ * WHERE THIS DOOR AND THE FEED PART, named 2026-10-25 in review rather than hidden.
+ * The door's reads are narrow on purpose — the rule under this merchant's own keys
+ * (ruleKeysFor), the tracked debts — so two of that day's rules cannot reach a row
+ * written here:
+ *   · money in: creditCategory is asked WITHOUT the spend history (the door does not
+ *     read every expense), so a merchant's refund or a friend's payback added here is
+ *     `other-income`, where the feed would file the same row `refund`;
+ *   · money out: a rule taught under ANOTHER spelling of the merchant
+ *     (looseLearnedFor) is never loaded, so it cannot answer here, where on the feed
+ *     it would seed the row.
+ * Both land on the side the app answered before those rules existed, and the caller
+ * can always name the category. Closing the gap means reading the full rule set and
+ * the spend history here — a later piece, if the door's reads should widen.
  */
 function verdictOf(plan: HistoryPlan, learned: LearnedRules, debts: readonly TrackedDebt[]): Verdict {
   if (plan.type === "income") {
     if (classifyCredit(plan.description) === "transfer") {
       return { kind: "kept_out", reason: "money between your own accounts", income: true };
     }
-    const pay = isPaycheck(plan.description);
-    return { kind: "file", categoryId: pay ? "salary" : "other-income", needsReview: false, reason: pay ? "a paycheck" : "money in" };
+    // The feed's own category rule, asked without the spend history this door does not
+    // read — so a paycheck is salary, cash put back at an ATM is a refund (2026-10-25:
+    // classifyCredit no longer keeps that one out), and anything else other-income.
+    const credit = creditCategory(plan.description);
+    return { kind: "file", categoryId: credit.categoryId, needsReview: false, reason: credit.reason };
   }
   // A tracked debt first, the way the sync asks it first: there a matching outflow is
   // credited to the debt whatever classify() would have said about it.
-  const td = trackedDebtFor(plan.description, debts);
+  //
+  // OPEN debts only, since 2026-10-25. FOUND in review that day: the sync stopped
+  // crediting a CLOSED debt, but this door still refused a payment matching one, in a
+  // sentence saying the feed would credit it. With the sync's first version of that
+  // change, a payment on a new loan from the lender of a closed one would have been
+  // dropped by the sync AND refused here — in the ledger nowhere. A closed debt's match
+  // is judged below, the sync's way.
+  const td = trackedDebtFor(
+    plan.description,
+    debts.filter((d) => !d.closedAt),
+  );
   if (td) return { kind: "debt", name: scrubCap(td.name, 40) || "a tracked debt" };
   const c = classify(plan.description, -plan.amount, learned, plan.description);
   if (c.kind === "skip") {
+    // A payment only a CLOSED debt matches, which the app would otherwise leave out: the
+    // sync now RECORDS that row — a bill payment, flagged for a look, linked to nothing
+    // (closedDebtPayment) — so this door files it the same way rather than refusing what
+    // the feed itself would write. Asked before the "Debt:" label below, which names that
+    // same lender and would refuse it with no way through. Anything classify() does NOT
+    // skip goes on exactly as the sync sends it on, closed debt or not.
+    const closed = closedDebtFor(plan.description, debts);
+    if (closed) {
+      return {
+        kind: "file",
+        categoryId: CLOSED_DEBT_FILING.category_id,
+        needsReview: CLOSED_DEBT_FILING.needs_review,
+        reason: `a payment matching ${scrubCap(closed.name, 40) || "a debt"}, which is closed and takes no payments`,
+      };
+    }
     // His history labels name the debts too ("Debt: ..."), and they map to skip — but a
     // debt payment is not "kept out", it is credited somewhere this row cannot reach.
     if (c.hisCategory?.startsWith("Debt:")) {
@@ -347,11 +415,16 @@ function verdictOf(plan: HistoryPlan, learned: LearnedRules, debts: readonly Tra
  *     month, the payment would be in the ledger twice. Refused unless override is
  *     "bill_payment" — the path for a bill that shows unpaid, followed by the link.
  *
- *   · It is a DEBT payment — a tracked debt's pattern (the sync's own test), or a
+ *   · It is a DEBT payment — an OPEN tracked debt's pattern (the sync's own test), or a
  *     history label naming a debt. NO OVERRIDE. A debt's balance is worked out from
  *     the payments the bank feed links to it; a row written here links to nothing, so
  *     it would count as spending AND leave the debt reading as if it had not been paid.
  *     There is no way to file that correctly from this tool, so it never does.
+ *
+ *   · It matches only a CLOSED debt (2026-10-25) and classify() would leave it out. The
+ *     feed credits a closed debt nothing; it records such a payment as a bill payment
+ *     flagged for a look, so this files it the same way — an ordinary "file" answer,
+ *     and a named category is used as given like any other.
  *
  * An override that names something the app did not say is refused too: a stale or
  * pre-emptive override is a sign the caller is guessing, and the point of naming it is

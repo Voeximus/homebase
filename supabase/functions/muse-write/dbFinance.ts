@@ -212,6 +212,42 @@ export interface DebtRow {
   minPayment: number | null;
 }
 
+/**
+ * A bill that pays a debt (recurring.linked_debt_id), as finance.edit_debt reads it
+ * (2026-10-25): enough to decide whether the bill's price follows the debt's minimum,
+ * and the one column it then writes. Narrow on purpose, like every read here.
+ */
+export interface LinkedBillRow {
+  id: string;
+  name: string;
+  amount: number;
+  direction: "in" | "out" | "transfer";
+  cadence: string;
+  active: boolean;
+  variable: boolean;
+  /** The bill's last day (recurring.ends_on), or null when it runs on. Since a review on
+   *  2026-10-25: a bill that has ended plans nothing again, so it is not one of the
+   *  bills that pay the debt. */
+  endsOn: string | null;
+}
+
+/**
+ * A debt with a track_pattern, as finance.add_history_row reads it. The last three
+ * columns since 2026-10-25, when the bank sync stopped crediting CLOSED debts: the door
+ * judges a payment by the sync's own rule (_shared/trackedDebts.ts), and that rule asks
+ * whether the debt is closed, has a baseline and follows a card. Null when not set —
+ * and closedAt is null, which reads as open, on a database without schema_v44, where
+ * nothing can have closed a debt.
+ */
+export interface TrackedDebtRow {
+  id: string;
+  name: string;
+  trackPattern: string;
+  closedAt: string | null;
+  trackedBaseline: number | null;
+  providerAccountId: string | null;
+}
+
 export interface RuleRow {
   id: string;
   pattern: string;
@@ -340,6 +376,15 @@ export interface FinanceDb {
   countDebtPayments(debtId: string): Promise<number>;
 
   /**
+   * Every bill that pays this debt — recurring rows whose linked_debt_id names it — for
+   * finance.edit_debt (2026-10-25), which moves that bill's price with the minimum.
+   * Capped and counted like allBillNames, and it THROWS rather than answering from part
+   * of the list: a read that missed a second bill would let the tool move one of two
+   * bills as if it were the only one.
+   */
+  billsPayingDebt(debtId: string): Promise<LinkedBillRow[]>;
+
+  /**
    * Every row on this account dated `fromISO` to `toISO`, both included, whatever its
    * source (bank feed, statement import, hand entry) and whether it has posted — for
    * finance.add_history_row, which must not add a row that is already there.
@@ -355,8 +400,12 @@ export interface FinanceDb {
    * that pattern in a charge's description — for finance.add_history_row (2026-10-10),
    * which refuses to write a payment on one of them as spending. Capped and counted like
    * allDebtNames: a truncated list would let a debt payment through as spending.
+   *
+   * Closed debts are in the list too, with what the sync's own rule reads about them
+   * (2026-10-25): the sync no longer credits a closed debt, and a payment that only a
+   * closed one matches is recorded rather than refused — see TrackedDebtRow.
    */
-  trackedDebts(): Promise<{ id: string; name: string; trackPattern: string }[]>;
+  trackedDebts(): Promise<TrackedDebtRow[]>;
 
   /**
    * Every merchant rule that names a bill (`bill_name` set), for finance.edit_bill.

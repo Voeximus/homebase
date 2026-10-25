@@ -10,7 +10,7 @@
 // Pure: no DB, no Plaid, no clock. It reuses the categorizer's own tests rather
 // than carrying any of its own.
 
-import { classify, classifyCredit, isPaycheck, type LearnedRules } from "./categorize.ts";
+import { classify, classifyCredit, creditCategory, type CreditHistory, type LearnedRules } from "./categorize.ts";
 import type { NormalRow } from "./plaidSync.ts";
 
 /**
@@ -56,7 +56,7 @@ export interface PendingFields {
  * DISPLAY-ONLY rows, but no longer budget-invisible ones — the app counts pending
  * spend now, so what this files is what the budget reads until the charge settles.
  */
-export function pendingFields(row: NormalRow, learned: LearnedRules): PendingFields | null {
+export function pendingFields(row: NormalRow, learned: LearnedRules, history?: CreditHistory): PendingFields | null {
   // INTERNAL TRANSFERS ARE DROPPED HERE EXACTLY AS THE POSTED PATH DROPS THEM, by
   // the posted path's own tests run on the posted path's own wording.
   //
@@ -100,13 +100,18 @@ export function pendingFields(row: NormalRow, learned: LearnedRules): PendingFie
   // Internal transfers between the household's own accounts are still dropped
   // (classifyCredit), same as on the posted path — those are the same dollars
   // moving, not new money.
+  //
+  // Its category is the posted path's too (creditCategory, 2026-10-25): money back from
+  // a merchant the household spent at, or from someone it sent a Zelle to, is a refund
+  // rather than earnings, and so is cash put back at the ATM. A pending row is deleted
+  // and written again on every sync, so it is always a new row, and takes the rule.
   if (row.amount > 0) {
     if (classifyCredit(row.description) === "transfer") return null;
     if (asPosted && classifyCredit(asPosted) === "transfer") return null;
     return {
       type: "income",
       amount: row.amount,
-      category_id: isPaycheck(row.description) ? "salary" : "other-income",
+      category_id: creditCategory(row.description, row.raw, history).categoryId,
       needs_review: false,
     };
   }

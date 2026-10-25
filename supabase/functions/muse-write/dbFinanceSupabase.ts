@@ -43,10 +43,12 @@ import type {
   DismissalRow,
   FinanceDb,
   LabelRow,
+  LinkedBillRow,
   MoneyEvent,
   PaidMarkRow,
   PaidOverrideRow,
   RuleRow,
+  TrackedDebtRow,
 } from "./dbFinance.ts";
 import { LIST_CAP, provesRolledBack, StatementRefused } from "./dbFinance.ts";
 import { MAX_ROWS, PAGE } from "../_shared/muse/paging.ts";
@@ -349,15 +351,34 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
     async trackedDebts() {
       // finance.add_history_row (2026-10-10). Every debt with a pattern, closed or not:
       // the sync's own filter adds "has a baseline" and "is not a linked card", but a
-      // payment matching ANY debt's pattern is not something this door may file as
+      // payment matching ANY open debt's pattern is not something this door may file as
       // spending, so the refusal reads the wider set.
+      //
+      // CLOSED ones carry what the sync's rule reads about them, since 2026-10-25: the
+      // sync stopped crediting a closed debt that day and records a payment that only a
+      // closed one matches (_shared/trackedDebts.ts), so the door files such a row the
+      // same way instead of refusing it as a payment the feed will credit — which it no
+      // longer will. `*`, not a column list, because closed_at arrives with schema_v44:
+      // asked for by name, a database without that file answers 42703 and every row of
+      // money out would be refused over it. `*` hands back what is there, a missing
+      // closed_at reads as open (true on such a database), and the sync reads debts the
+      // same way for the same reason.
       const { data, error, count } = await admin
         .from("debts")
-        .select("id, name, track_pattern", { count: "exact" })
+        .select("*", { count: "exact" })
         .not("track_pattern", "is", null)
         .limit(LIST_CAP);
       must(error, "read tracked debts");
-      const rows = (data ?? []).map((r) => ({ id: str(r.id), name: str(r.name), trackPattern: str(r.track_pattern) }));
+      const rows = (data ?? []).map(
+        (r): TrackedDebtRow => ({
+          id: str(r.id),
+          name: str(r.name),
+          trackPattern: str(r.track_pattern),
+          closedAt: optStr(r.closed_at),
+          trackedBaseline: optNum(r.tracked_baseline),
+          providerAccountId: optStr(r.provider_account_id),
+        }),
+      );
       if (count !== null && count !== rows.length) {
         throw new Error(`read tracked debts: ${count} rows exist and ${rows.length} came back`);
       }
@@ -511,6 +532,34 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       must(error, "count debt payments");
       if (count === null) throw new Error("count debt payments: no count returned");
       return count;
+    },
+
+    async billsPayingDebt(debtId) {
+      // finance.edit_debt (2026-10-25). Filtered in the database, capped, and counted on
+      // the same filter: a list cut short would let the tool move one of two bills that
+      // pay a debt as though it were the only one.
+      const { data, error, count } = await admin
+        .from("recurring")
+        .select("id, name, amount, direction, cadence, active, variable, ends_on", { count: "exact" })
+        .eq("linked_debt_id", debtId)
+        .limit(LIST_CAP);
+      must(error, "read bills paying a debt");
+      const rows = (data ?? []).map(
+        (r): LinkedBillRow => ({
+          id: str(r.id),
+          name: str(r.name),
+          amount: num(r.amount),
+          direction: r.direction as LinkedBillRow["direction"],
+          cadence: str(r.cadence),
+          active: !!r.active,
+          variable: r.variable === true,
+          endsOn: optStr(r.ends_on),
+        }),
+      );
+      if (count !== null && count !== rows.length) {
+        throw new Error(`read bills paying a debt: ${count} rows exist and ${rows.length} came back`);
+      }
+      return rows;
     },
 
     async chargesNear(accountId, fromISO, toISO) {

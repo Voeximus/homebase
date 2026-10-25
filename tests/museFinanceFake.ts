@@ -28,10 +28,12 @@ import type {
   DismissalRow,
   FinanceDb,
   LabelRow,
+  LinkedBillRow,
   MoneyEvent,
   NearChargeRow,
   PaidOverrideRow,
   RuleRow,
+  TrackedDebtRow,
 } from "../supabase/functions/muse-write/dbFinance";
 import { StatementRefused } from "../supabase/functions/muse-write/dbFinance";
 import type { Person } from "../supabase/functions/muse-write/db";
@@ -279,11 +281,20 @@ export class FinanceFake implements FinanceDb {
     return Promise.resolve(r ? ((r.closed_at as string | null) ?? null) : null);
   }
 
-  trackedDebts(): Promise<{ id: string; name: string; trackPattern: string }[]> {
+  trackedDebts(): Promise<TrackedDebtRow[]> {
     return Promise.resolve(
       this.tables.debts
         .filter((r) => r.track_pattern != null)
-        .map((r) => ({ id: String(r.id), name: String(r.name ?? ""), trackPattern: String(r.track_pattern) })),
+        .map((r) => ({
+          id: String(r.id),
+          name: String(r.name ?? ""),
+          trackPattern: String(r.track_pattern),
+          // Read the way the real wiring's `select *` reads them (2026-10-25): a key the
+          // test's row does not carry is null.
+          closedAt: (r.closed_at as string | null | undefined) ?? null,
+          trackedBaseline: r.tracked_baseline == null ? null : Number(r.tracked_baseline),
+          providerAccountId: (r.provider_account_id as string | null | undefined) ?? null,
+        })),
     );
   }
 
@@ -358,6 +369,28 @@ export class FinanceFake implements FinanceDb {
     return Promise.resolve(
       this.tables.transactions.filter((r) => (r.applies_to as Row | null)?.debtId === debtId).length,
     );
+  }
+
+  /** finance.edit_debt's read of the bills that pay a debt (2026-10-25). A snapshot, like
+   *  readCharge's, so a test that changes a bill in the gap changes the table and not the
+   *  door's copy; the hook below is that gap. */
+  onReadBillsPayingDebt: ((debtId: string) => void) | null = null;
+
+  billsPayingDebt(debtId: string): Promise<LinkedBillRow[]> {
+    const rows = this.tables.recurring
+      .filter((r) => r.linked_debt_id === debtId)
+      .map((r) => ({
+        id: String(r.id),
+        name: String(r.name ?? ""),
+        amount: Number(r.amount ?? 0),
+        direction: (r.direction ?? "out") as LinkedBillRow["direction"],
+        cadence: String(r.cadence ?? "monthly"),
+        active: !!r.active,
+        variable: r.variable === true,
+        endsOn: (r.ends_on as string | null | undefined) ?? null,
+      }));
+    this.onReadBillsPayingDebt?.(debtId);
+    return Promise.resolve(rows);
   }
 
   /** How many times add_history_row's duplicate read ran, so a test can see a refused

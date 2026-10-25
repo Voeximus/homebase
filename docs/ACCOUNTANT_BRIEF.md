@@ -309,6 +309,26 @@ twice. That happened, for $791.14. The real charge now marks the bill paid on it
 own, and seed placeholders get cleaned up when the feed covers the same
 bill+month. **Never hand-enter something the feed will also deliver.**
 
+Since 2026-10-24 that clean-up is automatic and checked. When the bank sync delivers a
+NEW charge for a bill whose month is held by a hand "(already paid)" note alone, for the
+same amount within the sync's band, the charge takes the month and the note is removed
+(`_shared/handNote.ts`). A pair that predates that — or a note written after the charge —
+fails self-check 10 (`hand-note-beside-bank-charge`), and Worth a look's W5c or Muse's
+`finance.link_charge_to_bill` on the bank's charge repairs it. A note for a bill paid in
+cash, with no bank charge, is never touched. And a named bill paid from another account
+now links when one side is the joint account (`matchBillForCharge`, categorize.ts); the
+paid-from-its-own-account check still flags it so the bill can be moved.
+
+Tightened 2026-10-25 after review. Both of those apply only to a charge ARRIVING: a row
+the bank re-sends (`modified`, a cursor reset) is never given a new link or a note's month
+(`_shared/chargeStanding.ts`), and a posted charge whose pending row a person answered
+keeps their answer. Muse's `link_charge_to_bill` takes a month from a note only when the
+bank's own reading of the charge names that bill and cycle, and with no month sent it uses
+the month the bank would count the charge toward when a note is waiting there. A note the
+statement import wrote gives way to the bank's charge the same way, but Worth a look never
+removes one by itself. On a variable bill "the same amount" means within ±$15 or ±15%, so a
+part-cash payment that close to the note is read as the same payment.
+
 ### Rule 11 — Edge functions do **not** share the app's `src/lib`
 `supabase/functions/*` are separate deployments carrying their own copies of the
 scheduling rules. `cron-notify` once drifted two schema versions behind and

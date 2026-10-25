@@ -5,7 +5,8 @@ import { addMonths } from "./forecast";
 import { getLang, t } from "./i18n";
 import { liveOn, monthlyAmount } from "./recurring";
 import { DUE_DAYS, billCycleFor, firesInMonth } from "./schedule";
-import { cycleKeyOf } from "./selfAudit";
+import { cycleKeyOf, handNotesBesideBankCharges } from "./selfAudit";
+import { bankWouldLink, linkContextOf } from "./billMatch";
 
 // ── Worth a look ──────────────────────────────────────────────────────────────
 //
@@ -41,6 +42,7 @@ import { cycleKeyOf } from "./selfAudit";
 //   left over on the REAL side   -> W3  unmodelled repeat
 //                                   W7  a charge that matches a bill you model
 //   two real rows, one obligation-> W5  possible duplicate
+//   hand note + the bank's charge -> W5c one bill paid twice (2026-10-24)
 //   income that fired once only  -> W6  one-off income that landed
 //
 // TWO NUMBERS ARE BORROWED, NOT INVENTED:
@@ -59,7 +61,7 @@ import { cycleKeyOf } from "./selfAudit";
 
 /** Which rule fired. `kind` is what the card looks like; this is which test it
  *  came from — useful for an icon, and for a test that names its own threshold. */
-export type SuggestionRule = "W1" | "W2" | "W3" | "W4" | "W5a" | "W5b" | "W6" | "W7";
+export type SuggestionRule = "W1" | "W2" | "W3" | "W4" | "W5a" | "W5b" | "W5c" | "W6" | "W7";
 
 export type SuggestionKind =
   | "drift"
@@ -456,6 +458,7 @@ export function reviewLedger(
   out.push(...reviewPhantomAndMissing(safe, clock, cycles, explained));
   out.push(...reviewUnmodelled(safe, clock));
   out.push(...reviewDuplicates(safe, cycles));
+  out.push(...reviewHandNotes(safe));
   out.push(...reviewIncomeLanded(safe, clock));
 
   const dismissed = new Set(dismissedKeys);
@@ -497,6 +500,10 @@ export const REVIEW_STRINGS: string[] = [
   // W5b
   "{name} may be recorded twice for {month}",
   "You marked {name} paid by hand for {month} at {manual}. The bank also shows a {bank} charge on {date} that went against the {debt} balance. If they are the same payment, {month} is counting {manual} twice.",
+  // W5c
+  "{name} may be paid twice for {month}",
+  "You marked {name} paid by hand for {month} at {manual}. The bank also shows {bank} on {date} that it reads as this bill, and that charge is counted as ordinary spending too. If they are the same payment, {month} is counting {manual} twice. Take the hand note off and the bank's charge can pay the bill.",
+  "A statement import marked {name} paid for {month} at {manual}. The bank also shows {bank} on {date} that it reads as this bill, and that charge is counted as ordinary spending too. If they are the same payment, {month} is counting {manual} twice. A row from a statement is not removed from here: delete the imported note yourself, and the bank's charge can pay the bill.",
   // W6
   "{name} looks like it already came in",
   "The app expects {monthly} a month. One deposit of {actual} arrived on {date} and nothing like it before. If that was a one-off, the app is counting it every month from here.",
@@ -1062,6 +1069,101 @@ function reviewDuplicates(data: AppData, cycles: Map<string, Transaction[]>): Su
   return out;
 }
 
+// ── W5c — a hand note and the bank's own charge, paying one bill ──────────────
+/**
+ * FOUND 2026-10-24: three of the four hand-made "(already paid)" notes in the ledger
+ * paid a bill the bank had also paid. The bank's charge sat beside each note as
+ * ordinary spending, and because the note held the bill's month, W7 could never offer
+ * to attach it — W7 stands down on a month something already pays.
+ *
+ * The finding is selfAudit's check 10 (`handNotesBesideBankCharges`), and this stands
+ * on that same resolution rather than spelling it a second time: a month held by a
+ * hand note alone, a bank charge attached to nothing that the bank sync's own rules
+ * attach to that same bill and month, for the note's amount within the sync's band.
+ * The check says it is wrong; this offers the repair, the way check 8 and the deleted-
+ * bill card split the work.
+ *
+ * THE REPAIR IS THE HAND NOTE'S REMOVAL, never the bank row's. It is the one-row fix
+ * this layer allows (reviewTypes.ts §D.7): a hand note has no account, so taking it off
+ * moves no cash, and the bank's charge then stands alone in the month — where W7 offers
+ * to attach it. Through Muse it is one step: finance.link_charge_to_bill attaches the
+ * bank's charge and retires the note together, with one undo for both.
+ *
+ * Its debt-shaped cousin W5b (the bank charge went against the DEBT) is disjoint from
+ * this: the bank charge here is attached to nothing.
+ *
+ * A NOTE THE STATEMENT IMPORT WROTE gets the card and NO button (2026-10-25, found in
+ * review). Its row carries record_only, and applyFix refuses every record-only delete —
+ * "money that moved outside the app is not the app's to undo" — so the one-tap removal
+ * could only ever refuse, the dead button W5a was fixed for. The finding is still true
+ * (check 10 still fails on it), so the card still says it, and says what a person can
+ * do: delete the note from the charge itself, or have Muse attach the bank's charge,
+ * which replaces the note in one step (finance.link_charge_to_bill — a replacement by
+ * the bank's own record of the payment, not a bare removal; see _shared/handNote.ts).
+ *
+ * CAN BE WRONG: a bill paid in cash AND by the bank, the same amount, the same month —
+ * which is a bill paid twice, and worth a look in its own right.
+ */
+function reviewHandNotes(data: AppData): Suggestion[] {
+  const out: Suggestion[] = [];
+  for (const p of handNotesBesideBankCharges(data)) {
+    const { note, bill: r, monthKey } = p;
+    // The charge the sentence names: nearest the note's amount, then the earliest, so
+    // the same ledger always says the same thing.
+    const [first] = [...p.charges].sort(
+      (a, b) =>
+        Math.abs(a.amount - note.amount) - Math.abs(b.amount - note.amount) ||
+        (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1),
+    );
+    const ids = [note.id, ...p.charges.map((c) => c.id)].sort();
+    const monthName = monthLabel(monthKey);
+    const fromStatement = note.recordOnly === true;
+    const said = {
+      name: r.name,
+      month: monthName,
+      manual: money(note.amount),
+      bank: money(first.amount),
+      date: formatDate(first.date),
+    };
+    out.push({
+      key: `duplicate:${ids.join(":")}`,
+      rule: "W5c",
+      kind: "duplicate",
+      title: t("{name} may be paid twice for {month}", { name: r.name, month: monthName }),
+      detail: fromStatement
+        ? t(
+            "A statement import marked {name} paid for {month} at {manual}. The bank also shows {bank} on {date} that it reads as this bill, and that charge is counted as ordinary spending too. If they are the same payment, {month} is counting {manual} twice. A row from a statement is not removed from here: delete the imported note yourself, and the bank's charge can pay the bill.",
+            said,
+          )
+        : t(
+            "You marked {name} paid by hand for {month} at {manual}. The bank also shows {bank} on {date} that it reads as this bill, and that charge is counted as ordinary spending too. If they are the same payment, {month} is counting {manual} twice. Take the hand note off and the bank's charge can pay the bill.",
+            said,
+          ),
+      amount: note.amount,
+      evidence: {
+        recurringId: r.id,
+        monthKey,
+        txnIds: ids,
+        rows: [rowOf(note), ...p.charges.map(rowOf)],
+        modelled: note.amount,
+        observed: first.amount,
+      },
+      // Safe: a hand note has no account, so reversing it moves no cash. None for a
+      // statement import's note — applyFix would refuse it (see above).
+      fix: fromStatement
+        ? null
+        : {
+            action: "deleteTransaction",
+            txnId: note.id,
+            label: t("Remove the hand-entered one"),
+          },
+      txnIds: ids,
+      recurringId: r.id,
+    });
+  }
+  return out;
+}
+
 // ── W6 — one-off income that has landed ───────────────────────────────────────
 /**
  * You told the app to expect this money every month. It looks like it arrived
@@ -1210,12 +1312,33 @@ function reviewUnlinked(
   // fits two bills is dropped rather than assigned to the nearer one — see the note
   // on that arm.
   const accountMatches = new Map<string, number>();
+  // The charges some bill claims BY NAME. Since the third arm below, a charge the
+  // categorizer names as one bill can also fit a second bill through the account arm
+  // (rent and another bill of the same size on the joint account). The name is the
+  // stronger evidence, so the account arm's guess is dropped for such a charge rather
+  // than offering one charge for two bills.
+  const namedCharges = new Set<string>();
+  const linkCtx = linkContextOf(data);
 
   for (const tx of data.transactions) {
     if (tx.type !== "expense" || tx.appliesTo || tx.recordOnly) continue;
     if (!posted(tx) || !isFiniteAmount(tx.amount) || tx.amount <= 0) continue;
     if (!tx.date || tx.date < from) continue;
     const key = billKey(merchantKey(tx.description ?? ""));
+    // ── THE THIRD WAY TO MATCH, added 2026-10-24: the bank sync's own answer ──
+    //
+    // Neither arm below could see a bill paid from another account under a name that
+    // is not the bill's: "Srp" is not "Electric (SRP)" and "GEICO" is not "Car
+    // insurance", and the account arm only looks on the account the bill is set to.
+    // So a charge the sync left unlinked because it came out of a different account
+    // (the fault the sync's household fallback now fixes for NEW charges) stayed
+    // invisible here for good. bankWouldLink asks the sync's exact question — the
+    // categorizer names the bill, matchBillForCharge resolves it own-account-first and
+    // across the household's accounts only on name AND amount — so this arm offers
+    // nothing the sync would not link by itself the day the charge arrived. It is held
+    // to the name arm's standard below (the band, the bill's own month, one per
+    // month), never to the looser account arm's.
+    const linked = bankWouldLink(tx, linkCtx);
 
     for (const r of bills) {
       // ── TWO WAYS TO MATCH, and the second only became possible on 2026-10-01 ──
@@ -1233,7 +1356,7 @@ function reviewUnlinked(
       // that paired Chipotle with Spotify; "a charge ON THE ACCOUNT THIS BILL IS
       // PAID FROM, inside the amount band, in this bill's own cycle" is a far
       // narrower claim, and it still passes every guard below.
-      const byName = Boolean(key) && billKey(r.name) === key;
+      const byName = (Boolean(key) && billKey(r.name) === key) || linked?.bill.id === r.id;
       const byAccount = Boolean(r.accountId) && tx.accountId === r.accountId;
       if (!byName && !byAccount) continue;
       if (!liveOn(r, tx.date)) continue;
@@ -1278,6 +1401,7 @@ function reviewUnlinked(
         best.set(cycleKey, { tx, r, monthKey: cycle.monthKey, day: cycle.day, distance, byName });
       }
       if (!byName) accountMatches.set(tx.id, (accountMatches.get(tx.id) ?? 0) + 1);
+      else namedCharges.add(tx.id);
     }
   }
 
@@ -1289,6 +1413,7 @@ function reviewUnlinked(
     // a suggestion's clothes. The name arm keeps its own answer: an exact merchant
     // match that also happens to fit a second bill is still the first bill's.
     if (!hit.byName && (accountMatches.get(hit.tx.id) ?? 0) > 1) continue;
+    if (!hit.byName && namedCharges.has(hit.tx.id)) continue;
     const { tx, r, monthKey, day } = hit;
     const modelled = modelledOf(r);
     out.push({

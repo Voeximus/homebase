@@ -67,6 +67,10 @@ const MODULES = [
   "src/lib/schedule.ts",
   "src/lib/forecast.ts",
   "src/lib/selfAudit.ts",
+  // Which bill the bank sync would attach a charge to (2026-10-24), asked over rows
+  // already in the ledger. selfAudit's check 10 and Worth a look's W5c and W7 stand on
+  // it, so the doors' finance.audit and finance.worth_a_look need it too.
+  "src/lib/billMatch.ts",
   // the "worth a look" judgement rules and their closure
   "src/lib/categorize.ts",
   "src/lib/categorizeData.ts",

@@ -447,7 +447,9 @@ groups below say what is possible and when to reach for it.
   `finance.worth_a_look`, exactly as given.
 - **Bills.** `finance.add_bill`, `finance.promote_to_bill` (a repeating charge becomes
   a bill). `finance.edit_bill` — rename a bill or move it to another category; a rename
-  carries its merchant rules and paid marks with it. `finance.set_bill_amount`,
+  carries its merchant rules and paid marks with it. `finance.set_bill_amount`
+  (`clear` true, with no amount, removes a figure recorded on a variable bill so it goes
+  back to its rolling estimate — do that when a one-month figure should stop applying),
   `finance.set_bill_variable`, `finance.set_bill_due_day` (for a bill that comes out on
   one day a month), `finance.set_bill_account`, `finance.set_bill_window`,
   `finance.turn_bill_off` (a bill is turned off, never deleted), `finance.mark_bill_paid`,
@@ -464,7 +466,8 @@ groups below say what is possible and when to reach for it.
 - **Accounts and debts.** `finance.set_account_balance` (every figure is derived from
   it — say the number back before sending). `finance.add_debt`, `finance.edit_debt`
   (name, minimum, rate; `null` clears; `closed` true to close a paid-off debt, false to
-  re-open), `finance.link_debt_to_card`, `finance.unlink_debt_card`.
+  re-open; a new minimum also moves the bill that pays the debt when that bill was set
+  to the old minimum — read the reply for which happened), `finance.link_debt_to_card`, `finance.unlink_debt_card`.
   `finance.refresh_bank` asks the bank for anything new — it is not instant, so never
   read a figure straight after and call it the new one.
 - **A pay cycle's budget goal** — the one place a goal is kept. Never put a goal in

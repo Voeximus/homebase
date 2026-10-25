@@ -1561,21 +1561,58 @@ describe("W7 matches a bill by the account it is paid from", () => {
     expect(w7[0].evidence.txnIds).toEqual(["tx-rent"]);
   });
 
-  it("will not match a charge on a different account", () => {
+  // The tests below are about the ACCOUNT arm alone, so their charge carries a descriptor
+  // the categorizer does not name. Since 2026-10-24 W7 also asks the bank sync's own
+  // question (billMatch.ts), and the real landlord's descriptor IS named — the rent rule —
+  // so with it these would be testing that arm instead. That arm is pinned in
+  // tests/handNoteTakeover.test.ts, including this same two-bill shape.
+  const UNNAMED = "ACH HOLD Sample Landlord ON 10/02";
+  // The household's accounts as they really are: a joint one, and each person's own.
+  const householdAccounts = [
+    { id: JOINT, name: "Joint", owner: "Joint", type: "checking", balance: 0, sortOrder: 0, createdAt: "2026-01-01" },
+    { id: "acct-gino", name: "Checking", owner: "Gino", type: "checking", balance: 0, sortOrder: 1, createdAt: "2026-01-01" },
+  ];
+
+  // Renamed 2026-10-25 (found in review): this was "will not match a charge on a
+  // different account", and it only passed because its ledger had no accounts — so no
+  // account was known to be joint. With the household's real accounts the same charge IS
+  // offered, by name, through the third arm (the next test). What stays true, and what
+  // this holds, is that the account arm by itself never pairs a charge on another account.
+  it("the ACCOUNT arm alone never matches a charge on a different account", () => {
     // "A charge somewhere in the household for about this much" is the heuristic that
     // paired Chipotle with Spotify. The account is what makes this narrow.
+    for (const accounts of [[], householdAccounts]) {
+      const out = reviewLedger(
+        base({
+          accounts: accounts as never,
+          recurring: [rentBill] as never,
+          transactions: [rentCharge({ accountId: "acct-gino", description: UNNAMED })] as never,
+        }),
+        new Date("2026-10-05T12:00:00Z"),
+      );
+      expect(out.filter((s) => s.rule === "W7"), `${accounts.length} accounts`).toHaveLength(0);
+    }
+  });
+
+  it("a personal-account charge the bank NAMES as a joint bill is offered — the household pays from either", () => {
     const out = reviewLedger(
-      base({ recurring: [rentBill] as never, transactions: [rentCharge({ accountId: "acct-gino" })] as never }),
+      base({
+        accounts: householdAccounts as never,
+        recurring: [rentBill] as never,
+        transactions: [rentCharge({ accountId: "acct-gino" })] as never,
+      }),
       new Date("2026-10-05T12:00:00Z"),
     );
-    expect(out.filter((s) => s.rule === "W7")).toHaveLength(0);
+    const w7 = out.filter((s) => s.rule === "W7");
+    expect(w7).toHaveLength(1);
+    expect(w7[0].fix).toMatchObject({ action: "linkTransactionToBill", txnId: "tx-rent", recurringId: "bill-rent", monthKey: "2026-10" });
   });
 
   it("says nothing when one charge fits two bills on the same account", () => {
     // A coin toss wearing a suggestion's clothes. Dropped, not resolved.
     const twin = { ...rentBill, id: "bill-twin", name: "Something Else", dueDays: [2] };
     const out = reviewLedger(
-      base({ recurring: [rentBill, twin] as never, transactions: [rentCharge()] as never }),
+      base({ recurring: [rentBill, twin] as never, transactions: [rentCharge({ description: UNNAMED })] as never }),
       new Date("2026-10-05T12:00:00Z"),
     );
     expect(out.filter((s) => s.rule === "W7")).toHaveLength(0);
@@ -1585,7 +1622,7 @@ describe("W7 matches a bill by the account it is paid from", () => {
     const out = reviewLedger(
       base({
         recurring: [{ ...rentBill, accountId: undefined }] as never,
-        transactions: [rentCharge()] as never,
+        transactions: [rentCharge({ description: UNNAMED })] as never,
       }),
       new Date("2026-10-05T12:00:00Z"),
     );

@@ -21,6 +21,21 @@ export interface Classification {
   // so `appCategory` here is a PRE-FILL, not a finding. The importer must not use
   // it to overwrite a category an existing row already carries — see classify().
   ambiguous?: boolean;
+  // The answer came from a rule added on 2026-10-25 (a taught rule reached through a
+  // near spelling — see looseLearnedFor). It may SEED a new row. A row already in the
+  // ledger must not be moved by it: "a guess may seed a row, never re-decide one"
+  // (schema_v26), and a re-sync re-asks about every row it re-delivers. So `before`
+  // carries what the categorizer said before that rule existed, for any caller that is
+  // asking about a row that is already there (see forExistingRow).
+  seedOnly?: boolean;
+  before?: Classification;
+}
+
+/** What to apply to a row that is ALREADY in the ledger: the answer as it was before
+ *  any seed-only rule, so re-asking about an old row changes nothing it would not have
+ *  changed anyway. A new row takes `c` itself. */
+export function forExistingRow(c: Classification): Classification {
+  return c.seedOnly && c.before ? c.before : c;
 }
 
 // A learned rule, keyed by merchant key. Checked before everything else, so a
@@ -129,6 +144,154 @@ export function matchRecurringName<T extends { name: string }>(
   return null;
 }
 
+// ── Which bill a charge pays, when the household pays from any account ────────
+//
+// FOUND 2026-10-24. The household is one unit and pays a bill from whichever account
+// has the money that week, and billsPayableFrom (above) only ever let a charge settle a
+// bill set to pay from the charge's OWN account. So the car insurance came out of two
+// different accounts and not one instalment linked, and an electric bill paid from the
+// joint account never linked while the bill named another account. Each of those
+// charges was filed as spending AND left the bill reading unpaid — and that unpaid bill
+// is what got a hand-made "(already paid)" note written on top of the real charge.
+//
+// The fix is a fallback, never a replacement, and these are the pieces it stands on.
+// Everything below is shared byte-for-byte with the bank sync (this file has an edge
+// copy), so the sync, the app's audit and its suggestions ask ONE question.
+
+/**
+ * How far a charge may be from a bill's figure and still be that bill. The band the
+ * bank sync's day-and-amount matcher has always used (matchBillByDayAmount in
+ * plaid/index.ts) and Worth a look borrows (ledgerReview.ts band()): a fixed bill is
+ * nearly exact — a $21 subscription cannot absorb a $10 one — while a variable bill's
+ * figure is an estimate by design and keeps generous slack.
+ */
+export function billAmountBand(modelled: number, variable: boolean | null | undefined): number {
+  return variable ? Math.max(15, 0.15 * modelled) : Math.max(2, 0.03 * modelled);
+}
+
+/**
+ * Is a bill live on the date a payment posted? A week of slack on each edge, so paying
+ * a few days either side of a window boundary still resolves to the right bill — the
+ * same seven days billCycleFor's grace uses. Moved here from plaid/index.ts on
+ * 2026-10-24 (it was `liveOnDate` there) so the app's audit narrows bills exactly the
+ * way the sync does, rather than by a second spelling of the window.
+ */
+export function billLiveOnPaymentDate(
+  r: { starts_on?: string | null; ends_on?: string | null },
+  iso: string,
+): boolean {
+  const shift = (d: string, days: number) => {
+    const t = Date.parse(d + "T00:00:00Z");
+    return new Date(t + days * 86400000).toISOString().slice(0, 10);
+  };
+  if (r.starts_on && iso < shift(r.starts_on, -7)) return false;
+  if (r.ends_on && iso > shift(r.ends_on, 7)) return false;
+  return true;
+}
+
+/** A bill row, in the columns the household fallback reads — snake_case, the way the
+ *  bank sync selects them. The app maps its Recurring rows onto this shape. */
+export interface PayableBill {
+  name: string;
+  account_id?: string | null;
+  amount?: number | string | null;
+  known_amount?: number | string | null;
+  variable?: boolean | null;
+  due_days?: number[] | null;
+  cadence?: string | null;
+}
+
+/**
+ * What ONE charge toward this bill is expected to be. The figure a person read off the
+ * bill (known_amount) beats the contracted one, as everywhere else. A bill paid in
+ * instalments — two due days in a month — expects a share per charge, the way the
+ * calendar places it (schedule.ts divides by the due-day count); a biweekly bill charges
+ * its whole amount each time. NaN when the row carries no figure, which matches nothing.
+ */
+export function billPerCharge(b: PayableBill): number {
+  const known = b.known_amount == null ? NaN : Number(b.known_amount);
+  const figure = Number.isFinite(known) && known > 0 ? known : Number(b.amount);
+  if (!(figure > 0)) return NaN;
+  const days = Array.isArray(b.due_days) ? b.due_days.length : 0;
+  return b.cadence !== "biweekly" && days > 1 ? figure / days : figure;
+}
+
+/** The accounts the HOUSEHOLD holds together — owned "Joint". See matchBillForCharge
+ *  for why the fallback needs to know which ones they are. */
+export function sharedAccountIds(accounts: readonly { id: string; owner?: string | null }[]): Set<string> {
+  return new Set(accounts.filter((a) => a.owner === "Joint").map((a) => a.id));
+}
+
+/**
+ * The bill this charge pays, or null.
+ *
+ * FIRST, EXACTLY AS BEFORE: the name match over the bills paid from the charge's own
+ * account and the bills with no account (billsPayableFrom). Unchanged on purpose — that
+ * path carries no amount gate today and gains none, so nothing that links today stops
+ * linking. An own-account match always wins over one on another account.
+ *
+ * THEN, ONLY IF THAT FOUND NOTHING: the bills set on the household's other accounts —
+ * and only on two conditions at once, both stricter than the first pass:
+ *
+ *   · the NAME match, never anything weaker. matchRecurringName resolves the name the
+ *     categorizer gave (a bill rule or one of the bill's aliases); the day-and-amount
+ *     guess the sync keeps for unnamed bill payments never crosses accounts.
+ *   · the AMOUNT, inside billAmountBand of what one charge toward that bill should be.
+ *     The own-account pass has no such gate, and a cross-account match on the name
+ *     alone is how a small charge would settle a large bill — the $6 parking charge
+ *     that once settled a whole month's rent, arriving by a new door.
+ *
+ * AND ONE ACCOUNT ON EITHER SIDE MUST BE SHARED. This is the guard that keeps the reason
+ * billsPayableFrom was written. Both of them have their own Claude Pro seat and there is
+ * one Claude Pro bill, Xinyan's: Gino's own charge from his own account names the same
+ * bill at the same price, so name and amount both pass. What tells the two shapes apart
+ * is whose accounts are involved. A household bill paid from the joint account, or a
+ * bill set on the joint account paid from either person's, is the household paying from
+ * wherever the money is. One person's charge against a bill set on the OTHER person's
+ * own account is exactly the shape where each of them can hold the same subscription —
+ * so that one still falls through to needs_review, as it does today.
+ *
+ * THE GUARD HAS TWO EDGES, and both are known, said here so nobody finds them the hard
+ * way (found in review, 2026-10-25):
+ *   · it lets through one person's own subscription paid FROM the joint account against
+ *     the other person's same-named bill — a Claude Pro charge from the joint account
+ *     settles the Claude Pro bill set on one person's account, whichever seat it was.
+ *     The joint account is the household's money, so that is read as the household
+ *     paying; when it is the wrong seat, the self-check below names the payment and a
+ *     person unlinks it.
+ *   · it never links a payment between the two PERSONAL accounts: a bill set on one
+ *     person's account and paid from the other person's stays unlinked (needs_review),
+ *     exactly as before 2026-10-24. If the household really pays a bill that way, the
+ *     fix is to move the bill to the account it is paid from (or to the joint one).
+ *
+ * A linked payment from another account is still a payment from the wrong account, and
+ * the self-check "paid-from-its-own-account" still says so — so a person can move the
+ * bill to where it is really paid from. It just no longer stops the link.
+ */
+export function matchBillForCharge<T extends PayableBill>(
+  billName: string | undefined | null,
+  bills: readonly T[],
+  chargeAccountId: string | null | undefined,
+  chargeAmount: number,
+  shared: ReadonlySet<string>,
+): { bill: T; fromAnotherAccount: boolean } | null {
+  const own = matchRecurringName(billName, billsPayableFrom(bills, chargeAccountId));
+  if (own) return { bill: own, fromAnotherAccount: false };
+  // An unknown account already searched every bill above.
+  if (!billName || !chargeAccountId) return null;
+  const chargeShared = shared.has(chargeAccountId);
+  const elsewhere = bills.filter(
+    (b) => !!b.account_id && b.account_id !== chargeAccountId && (chargeShared || shared.has(b.account_id)),
+  );
+  const named = matchRecurringName(billName, elsewhere);
+  if (!named) return null;
+  const expected = billPerCharge(named);
+  const paid = Math.abs(Number(chargeAmount));
+  if (!(expected > 0) || !Number.isFinite(paid)) return null;
+  if (Math.abs(paid - expected) > billAmountBand(expected, named.variable)) return null;
+  return { bill: named, fromAnotherAccount: true };
+}
+
 /** Strip the noise the bank wraps a raw statement line in — the transaction-type
  *  prefix, the MMDD date, masked card digits, store #, "RECURRING" — so a known
  *  merchant hidden inside a raw line ("PURCHASE 0321 YAMI.COM YAMIBUY.COM/ECA
@@ -185,6 +348,16 @@ export function learnedFor(
   // A one- or two-character key is noise, not a merchant.
   if (rawKey.length < 2 || rawKey === key) return undefined;
   return learned[rawKey];
+}
+
+/** The merchant keys learnedFor() looks a rule up under, in its order: the clean
+ *  name's own key, then the raw line's with the statement noise stripped. */
+function ruleLookupKeys(key: string, raw?: string): string[] {
+  const out = key ? [key] : [];
+  const cleaned = raw ? stripStatementNoise(raw) : "";
+  const rawKey = cleaned ? merchantKey(cleaned) : "";
+  if (rawKey.length >= 2 && rawKey !== key) out.push(rawKey);
+  return out;
 }
 
 // The payment rails and the bank's own account-to-account wording, as they read once
@@ -273,31 +446,437 @@ export function isStatementNoiseKey(key: string): boolean {
   return false;
 }
 
+// ── one merchant, spelled two ways ─────────────────────────────────────────────
+//
+// FOUND 2026-10-25, looking back over the charges the app had flagged for review
+// while nobody was watching. A rule you taught matched only the WHOLE merchant key,
+// character for character, so the same shop spelled a second way was a stranger. A
+// rule taught on "H MART MESA LLC" never reached the charges Plaid names plain
+// "H Mart"; a rule on "E.T. TEA" never reached "E T Tea & Popcorn Chicken". Shops
+// already answered were asked about again, and the saved rules show the same thing
+// from the other side: one shop taught two and three times, once per spelling.
+//
+// So a name is reduced to its CORE before two names are compared: case, punctuation
+// and apostrophes go, a store number goes (#1234, STORE 123, T-1429, AZ1501), and so
+// do the words a bank tacks on the end — a corporate suffix (LLC, INC, CO, CORP, LTD),
+// a state code, a town the household shops in. Two names whose cores are equal are
+// one merchant.
+//
+// A TOWN OR STATE COMES OFF ONLY WHEN A NAME IS LEFT IN FRONT OF IT. FOUND 2026-10-25
+// in review, before any of this shipped: the place came off whatever was left, so
+// "CITY OF PHOENIX", "CITY OF MESA" and "CITY OF TEMPE" all came down to "CITY
+// OF", "UNIVERSITY OF ARIZONA" to the same core as "UNIVERSITY OF PHOENIX", "TOWN OF
+// GILBERT" to the same as "TOWN OF QUEEN CREEK" — and equal cores need no floor to
+// match. A rule taught on one city's parking fee would then have filed every other
+// city's charges, a water bill no bill rule catches among them, at high confidence and
+// without asking; and after any spend at one city, money in from another would have
+// read as a refund. The ledger already had a key of that shape. In those names the
+// place IS the name — what tells one city from the next — so it stays on whenever the
+// words in front fail the same floor as below (two real words, five letters) or end
+// in a filler word ("FAMILY DENTAL OF" before a town). The cost, taken on purpose: a
+// ONE-word name keeps its town too, so "FJORDIA TEMPE" no longer meets a plain
+// "FJORDIA". One word is too little to tell a brand from a word like "CITY" or
+// "DOWNTOWN" that many places share.
+//
+// And one core may run on past the other — "E T TEA" is the start of "E T TEA POPCORN
+// CHICKEN", "H MART" the start of "H MART MESA" — but only when the SHORTER one is a
+// name on its own: two words or more that are not "the"/"of"/"and", five letters at
+// least between them. That floor is what stops a short key swallowing a longer,
+// different merchant. It is whole words, never letters, so "SAM" cannot reach
+// "SAMS CLUB"; and a one-word name only ever matches itself, so "UBER" cannot reach
+// "UBER EATS" and "AMAZON" cannot reach "AMAZON KINDLE", which this household files
+// differently on purpose.
+//
+// What it refuses outright: the bank's own wording (isStatementNoiseKey — a loose
+// "CHECKCARD" would be the whole ledger), and any name that starts with a payment
+// rail. "ZELLE PAYMENT TO" is the bank's sentence and the PERSON is everything after
+// it, so a loose match there would hand one person's rule to everyone who shares a
+// first name with them.
+
+const CORPORATE_SUFFIXES = new Set(["LLC", "INC", "CO", "CORP", "CORPORATION", "INCORPORATED", "LTD", "LLP", "PLLC", "COMPANY"]);
+
+// A state code only comes off when a name is left in front of it (placeCanGo):
+// "NOLLIE MA" is a name, and "IKEA TEMPE AZ" is a name and a place.
+const US_STATE_CODES = new Set(
+  "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" "),
+);
+
+// Towns the bank appends to a merchant here, read off the household's own charges. A
+// place, not a word that could be part of a name, so "SURPRISE" is not on it. The bank
+// also cuts names short ("CHUBBY SKEWERS PHOENI", "HAIDILAO HOT POT ARIZON"), so a last
+// word of six letters or more that BEGINS one of these is a place too.
+const LOCATION_WORDS: readonly string[][] = [
+  "ARIZONA", "PHOENIX", "TEMPE", "MESA", "CHANDLER", "GILBERT", "SCOTTSDALE", "GLENDALE",
+  "PEORIA", "TUCSON", "FLAGSTAFF", "SEDONA", "PAYSON", "KINGMAN", "AVONDALE", "GOODYEAR",
+  "QUEEN CREEK", "APACHE JUNCTION", "LAS VEGAS", "NORTH LAS VEGAS", "HENDERSON",
+].map((w) => w.split(" "));
+
+const NOT_A_NAME_WORD = new Set(["THE", "A", "AN", "OF", "AND", "AT", "BY", "FOR", "IN", "ON", "TO"]);
+
+// The rails, as the first word or two of a key. See the note above.
+const RAIL_LED = /^(?:ZELLE|VENMO|PAYPAL|CASH APP|APPLE CASH|ONLINE BANKING|MOBILE BANKING|PAYMENT|TRANSFER|CHECKCARD|PURCHASE|DEPOSIT|WITHDRAWAL|ATM)\b/;
+
+/** A merchant key with its core worked out once, or null when the key may not be
+ *  matched loosely at all (the bank's own wording, a payment rail, nothing left). */
+export interface CoredKey {
+  key: string;
+  core: string[];
+}
+function coredKey(key: string): CoredKey | null {
+  if (!key || isStatementNoiseKey(key)) return null;
+  const core = merchantCore(key);
+  if (!core.length || RAIL_LED.test(core.join(" "))) return null;
+  return { key, core };
+}
+
+/** The words of a merchant name once the spelling noise is gone — see the note above.
+ *  Empty when nothing is left. */
+export function merchantCore(name: string): string[] {
+  let s = (name ?? "").toUpperCase();
+  s = s.replace(/&APOS;?|&#39;?/g, "'").replace(/&AMP;?/g, " ");
+  s = s.replace(/['’`]/g, "");
+  // Store numbers, before the punctuation goes: "#1234", "STORE 123", "T-1429".
+  s = s.replace(/#\s*[A-Z]*\d[A-Z0-9-]*/g, " ");
+  s = s.replace(/\b(?:STORE|STR|STE|UNIT|NO)\.?\s*#?\s*\d+\b/g, " ");
+  s = s.replace(/\b([A-Z]{1,3})-(\d{2,})\b/g, "$1$2");
+  let words = s.split(/[^A-Z0-9]+/).filter(Boolean);
+  // A lone S after a word is what is left of an apostrophe: "JOE S" is "JOES".
+  words = words.reduce<string[]>((out, w) => {
+    if (w === "S" && out.length) out[out.length - 1] += "S";
+    else out.push(w);
+    return out;
+  }, []);
+  // A word carrying a digit is a store or terminal code — except as the FIRST word,
+  // where it is the name ("7 ELEVEN", "99 RANCH MARKET", "365 RETAIL MARKETS").
+  words = words.filter((w, i) => i === 0 || !/\d/.test(w));
+  // Then the trailing words a bank adds: a corporate suffix as long as something is
+  // left in front, a state or a town only when a NAME is left in front (placeCanGo).
+  for (;;) {
+    const last = words[words.length - 1];
+    if (words.length > 1 && CORPORATE_SUFFIXES.has(last)) { words.pop(); continue; }
+    if (US_STATE_CODES.has(last) && placeCanGo(words.slice(0, -1))) { words.pop(); continue; }
+    const place = LOCATION_WORDS.find(
+      (p) => words.length > p.length && p.every((w, i) => {
+        const at = words[words.length - p.length + i];
+        // The bank's cut can only fall on the last word.
+        return at === w || (i === p.length - 1 && at.length >= 6 && w.startsWith(at));
+      }),
+    );
+    if (place && placeCanGo(words.slice(0, words.length - place.length))) {
+      words.splice(words.length - place.length);
+      continue;
+    }
+    break;
+  }
+  return words;
+}
+
+/** May a trailing town or state come off, leaving `rest`? Only when `rest` is a name
+ *  on its own — the isWholeName floor — and does not end in a filler word. "CITY OF"
+ *  and "UNIVERSITY OF" are not names; the place after them is. See the note above. */
+function placeCanGo(rest: readonly string[]): boolean {
+  return isWholeName(rest) && !NOT_A_NAME_WORD.has(rest[rest.length - 1]);
+}
+
+/** Is the shorter core a name on its own, strong enough to be the start of a longer
+ *  one? Two words that are not filler, five letters between them. */
+function isWholeName(core: readonly string[]): boolean {
+  const named = core.filter((w) => !NOT_A_NAME_WORD.has(w));
+  return named.length >= 2 && named.join("").replace(/[^A-Z]/g, "").length >= 5;
+}
+
+/**
+ * Are these two merchant keys the same merchant, spelled differently? Exact keys are
+ * the caller's job — this is the second look. See the note above for what counts.
+ */
+export function looseMerchantMatch(a: string, b: string): boolean {
+  const ca = coredKey(a);
+  const cb = coredKey(b);
+  return !!ca && !!cb && coresMatch(ca.core, cb.core);
+}
+
+function coresMatch(ca: readonly string[], cb: readonly string[]): boolean {
+  const [short, long] = ca.length <= cb.length ? [ca, cb] : [cb, ca];
+  if (!short.every((w, i) => w === long[i])) return false;
+  return short.length === long.length || isWholeName(short);
+}
+
+// Built once per rule set, not once per charge: the feed classifies every row of a
+// sync against the same rules.
+const looseRuleCache = new WeakMap<LearnedRules, { size: number; rules: { cored: CoredKey; rule: LearnedRule }[] }>();
+
+/**
+ * A learned rule reached through a near spelling of its merchant — the second look,
+ * after the exact one in learnedFor() has missed. `keys` are the charge's merchant
+ * keys, both namespaces, exactly the ones learnedFor() tried.
+ *
+ * Only ORDINARY-SPENDING rules with a real category take part. A bill rule settles a
+ * bill cycle, and settling one on a near match is how a $6 parking charge once paid a
+ * month's rent; a skip rule writes the charge nowhere. Both stay exact-only.
+ *
+ * When two rules reach the same charge and disagree, neither wins: the app does not
+ * know which shop this is, so it says nothing and the charge is asked about, as it
+ * would have been before.
+ */
+export function looseLearnedFor(
+  keys: readonly string[],
+  learned: LearnedRules | undefined,
+): { rule: LearnedRule; pattern: string } | undefined {
+  if (!learned) return undefined;
+  const entries = Object.entries(learned);
+  let cached = looseRuleCache.get(learned);
+  // A rule set that grew or shrank since it was cached is read again.
+  if (!cached || cached.size !== entries.length) {
+    const built: { cored: CoredKey; rule: LearnedRule }[] = [];
+    for (const [pattern, rule] of entries) {
+      if (rule.kind !== "variable" || !rule.categoryId || rule.categoryId === "other") continue;
+      const cored = coredKey(pattern);
+      if (cored) built.push({ cored, rule });
+    }
+    cached = { size: entries.length, rules: built };
+    looseRuleCache.set(learned, cached);
+  }
+  const rules = cached.rules;
+  const charge = keys.map(coredKey).filter((k): k is CoredKey => !!k);
+  if (!charge.length) return undefined;
+  const hits = rules.filter((r) => charge.some((k) => coresMatch(r.cored.core, k.core)));
+  if (!hits.length) return undefined;
+  if (hits.some((h) => h.rule.categoryId !== hits[0].rule.categoryId)) return undefined;
+  return { rule: hits[0].rule, pattern: hits[0].cored.key };
+}
+
 /** For an INCOMING credit (positive amount): is it real income — to surface and to
  *  match reimbursement paybacks against — or just an internal transfer between the
  *  household's OWN accounts (same dollars moving, not new money → stays hidden)?
  *  Paychecks, refunds, cashback, and money people send you all read as income;
  *  only "Internal:" history labels (account-to-account, spouse shuffle) are transfers. */
 export function classifyCredit(desc: string): "income" | "transfer" {
-  // Card-payment credits ("PAYMENT FROM CHK …" landing ON a credit card) and ATM
-  // cash deposits are the household's OWN money moving — the paired checking
-  // outflow is already recorded — so they must NOT book as new income (that both
-  // inflates gross income and double-counts the transfer). They carry no
-  // "Internal:" history label, so detect them explicitly.
+  // Card-payment credits ("PAYMENT FROM CHK …" landing ON a credit card) are the
+  // household's OWN money moving — the paired checking outflow is already recorded —
+  // so they must NOT book as new income (that both inflates gross income and
+  // double-counts the transfer). They carry no "Internal:" history label, so detect
+  // them explicitly.
+  //
+  // CHANGED 2026-10-25: an ATM cash deposit is no longer one of these. It was, on the
+  // reasoning that the cash was already the household's — but the withdrawal it came
+  // out of IS recorded, as spending ("cash withdrawal — say what it went on"), so the
+  // ledger saw the cash leave and never saw any of it come back: $100 out, $40 of it
+  // put back unspent, and the only record was the $100 leaving. It is written now, as
+  // cash coming back (category `refund` — see CASH_PUT_BACK and creditCategory), which
+  // flow.ts reads as `returned`. What that fixes: the deposit is in the ledger, it is
+  // not counted as earnings, and the checking account's cash change for the month is
+  // right. What it does NOT fix, said here so nobody reads more into it: spending. The
+  // run rate leaves a returned row out of net and the budget reads only expenses, so
+  // the withdrawal still counts as spent in full, and spending is still overstated by
+  // the cash put back. Bringing spending down means netting cash put back against cash
+  // taken out — a separate piece, and Gino's call. A phone cheque deposit never was
+  // dropped here, and still is not.
   if (
     // "TRANSFER FROM ACCT #1211 ON 09/10 VIA WEB" is how Bank of America words a
     // PENDING internal transfer. The POSTED twin reads "Online Banking transfer
     // from CHK 1211", which the "Internal:" history label below already catches —
     // so only the settled form was known, and a $39 shuffle between his own two
     // checking accounts booked as other-income for as long as it was processing.
-    /\bPAYMENT FROM (CHK|SAV)\b|BKOFAMERICA ATM|\bATM (CASH )?DEPOSIT\b/i.test(desc) ||
+    /\bPAYMENT FROM (CHK|SAV)\b/i.test(desc) ||
     /\bTRANSFER (FROM|TO) (ACCT|ACCOUNT|CHK|SAV)\b/i.test(desc)
   )
     return "transfer";
   const his = hisLookup(merchantKey(desc));
-  if (his && (his.startsWith("Internal:") || his === "Cash deposit"))
+  if (his && his.startsWith("Internal:"))
     return "transfer";
   return "income";
+}
+
+// ── what money coming in IS ───────────────────────────────────────────────────
+//
+// FOUND 2026-10-25. Every credit that was not a paycheck or a transfer was filed
+// `other-income`, and other-income counts as EARNED (src/lib/flow.ts) — so a refund
+// for an online order, a friend paying back their half of dinner, and cash put back in
+// the bank all read as the household making money. Money back for something already
+// spent is not earnings; counting it is counting the same dollar twice, once out and
+// once in. flow.ts already reads the `refund` category as exactly that ("returned").
+// Nothing was putting rows in it except a person by hand.
+//
+// So a credit is a `refund` when the household's own ledger says it is money back:
+//   · a credit from a merchant the household has SPENT AT — the same merchant, by
+//     the same near-spelling rule a taught rule uses (looseMerchantMatch);
+//   · a Zelle IN from a person the household has sent a Zelle TO — the friend who
+//     covered dinner and was paid back, or the other way round;
+//   · cash put back into the bank at an ATM (CASH_PUT_BACK), which needs no history.
+//
+// What does NOT change, said out loud because each one was decided:
+//   · a paycheck is `salary`, first, exactly as before;
+//   · a transfer between the household's own accounts, the spouse's Zelles and the
+//     card-payment credits are still dropped by classifyCredit before this is asked;
+//   · Zelles to and from Gino's mom: support she is sent is a bill, not a tab, so a
+//     person the Mom rule pays never counts as someone money comes BACK from;
+//   · tax refunds, payroll and payout platforms, remittance rails, interest and
+//     cashback stay `other-income` even when the household has paid that name before
+//     — a tax refund from an agency the household once paid is still income.
+//   · SEED ONLY. A credit already in the ledger keeps its category on a re-sync; the
+//     importer sends these with keep_category (schema_v26).
+//
+// What the payback rule CANNOT see, and files wrong — FOUND 2026-10-25 in review, left
+// open on purpose:
+//   · WHY THE MONEY CAME. It reads the person, never the memo. A Zelle in from
+//     someone the household once paid is a payback whatever it says it is for — pay
+//     for a job or for taking part in a study, money for something sold, a gift (a
+//     wedding gift from a friend they have Zelled before). Each of those is earnings
+//     or a gift, not money back, and lands in `refund` all the same, out of income.
+//     The ledger already holds one such row, filed other-income before this rule; the
+//     next one like it would be a refund. Whether a Zelle in that carries a memo keeps
+//     this seed or stays other-income is Gino's call, not a guess for this file to
+//     make; until he makes it, a person refiles that one row by hand.
+//   · A CHEQUE AT THE CASH MACHINE. See CASH_PUT_BACK.
+// And what it leaves out on purpose: a person the household's own history labels as
+// one of them ("Internal:", the spouse) is never someone money comes back FROM — a
+// Zelle between the two of them is money moving, not a tab being settled.
+
+/** Cash put back into the bank at a cash machine.
+ *
+ *  It cannot tell cash from a cheque. A cheque deposited at a Bank of America machine
+ *  is worded the same way ("BKOFAMERICA ATM … DEPOSIT"), so it is filed here too —
+ *  `refund`, "cash put back into the bank" — though a cheque is pay, a gift or a tax
+ *  refund. Nothing in the line says which. Before 2026-10-25 every such credit was
+ *  dropped (classifyCredit called it a transfer), so the earned figures are no worse
+ *  than they were; the LABEL is wrong for a cheque, and a test pins that, so a later
+ *  reader knows the rule's limit rather than finding it. A phone cheque deposit
+ *  ("BKOFAMERICA MOBILE … DEPOSIT") is a different line and is not matched here. */
+const CASH_PUT_BACK = /BKOFAMERICA ATM|\bATM\b[^]*\bDEPOSIT\b|\bCASH DEPOSIT\b/i;
+
+/** Names whose money in is income even when the household has paid that name before. */
+const NOT_A_PAYBACK =
+  /\bIRS\b|INTERNAL REVENUE|\bTREAS(?:URY)?\b|DEPT OF REV|DEPARTMENT OF REVENUE|\bTAX REF|\bPAYROLL\b|DIRECT DEP|\bPAYOUT\b|\bPAYPAL\b|\bVENMO\b|CASH APP|\bSTRIPE\b|\bUPWORK\b|\bFIVERR\b|PANDAREMIT|\bREMITLY\b|\bRMTLY\b|\bINTEREST\b|CASH ?BACK|\bREWARDS?\b|\bDIVIDEND/i;
+
+// The Mom bill's own test, as classifyCore applies it to money out.
+const MOM_ZELLE = /ZELLE PAYMENT TO MON\b/i;
+
+/**
+ * The person on the other end of a Zelle, as words, or null when this is not a Zelle
+ * in that direction. The posted wording names the direction ("Zelle payment to X",
+ * "Zelle payment from X"); the pending wording ("Zelle Transfer Conf# …; X") does not,
+ * so the caller vouches for it from the sign of the amount. The memo and the
+ * confirmation code are not part of the name.
+ */
+function zellePerson(desc: string, dir: "to" | "from"): string[] | null {
+  const words = (s: string) => s.toUpperCase().replace(/[^A-Z]+/g, " ").trim().split(" ").filter(Boolean);
+  const posted = desc.match(/^\s*ZELLE PAYMENT (TO|FROM)\s+(.+?)(?:\s+FOR\b|\s*;|\s+CONF\s*#|$)/i);
+  if (posted) return posted[1].toLowerCase() === dir ? words(posted[2]) : null;
+  const pending = desc.match(/^\s*ZELLE TRANSFER\s+CONF\s*#\s*[A-Z0-9]+\s*;\s*(.*\S)\s*$/i);
+  return pending ? words(pending[1]) : null;
+}
+
+/** One person, written two ways: the shorter name is the start of the longer, whole
+ *  words, and its first word is a real name of three letters or more — "RIVA TOLL" is
+ *  "RIVA TOLL JR", "DAN" is not "DANIELA".
+ *
+ *  A ONE-word name matches only itself, word for word. FOUND 2026-10-25 in review: the
+ *  start-of rule let a bare first name match any longer name beginning with it, so a
+ *  Zelle in from "DAN BRIGHT" counted as the same person as a "DAN" once paid, and the
+ *  other way round. That is the first-name collision RAIL_LED refuses on the merchant
+ *  side, and the household's own history has a one-word, three-letter name in it —
+ *  one of the household. Two people who share a first name are two people. */
+function samePerson(a: readonly string[], b: readonly string[]): boolean {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (!short.length || short[0].length < 3) return false;
+  if (short.length === 1) return long.length === 1 && short[0] === long[0];
+  return short.every((w, i) => w === long[i]);
+}
+
+/** Is this person one of the household, by Gino's own history labels? A Zelle to or
+ *  from them labelled "Internal:" (the spouse) is money moving between their own
+ *  pockets, so they are never someone money comes back from. */
+function householdPerson(person: readonly string[]): boolean {
+  const said = person.join(" ");
+  return [`Zelle payment to ${said}`, `Zelle payment from ${said}`].some(
+    (d) => hisLookup(merchantKey(d))?.startsWith("Internal:") === true,
+  );
+}
+
+/** What the household's own ledger says about where its money has gone — read from
+ *  the descriptions of money OUT, and asked by creditCategory. */
+export interface CreditHistory {
+  spentAt: readonly CoredKey[];
+  spentKeys: ReadonlySet<string>;
+  zelledTo: readonly string[][];
+}
+
+/** Build the history from the descriptions of the ledger's money-out rows. */
+export function creditHistoryFrom(spentDescriptions: Iterable<string | null | undefined>): CreditHistory {
+  const spentKeys = new Set<string>();
+  const spentAt: CoredKey[] = [];
+  const zelledTo: string[][] = [];
+  const people = new Set<string>();
+  for (const d of spentDescriptions) {
+    if (!d) continue;
+    const person = zellePerson(d, "to");
+    if (person) {
+      // A Zelle is a person, never a merchant. The person the Mom bill pays is left out,
+      // and so is one of the household (householdPerson, 2026-10-25 in review: a Zelle
+      // between the two of them put one of them on this list, so a Zelle in from them
+      // that no history label caught — the pending wording carries none — could be
+      // filed as a payback).
+      const said = person.join(" ");
+      if (!MOM_ZELLE.test(`Zelle payment to ${said}`) && !householdPerson(person) && !people.has(said)) {
+        people.add(said);
+        zelledTo.push(person);
+      }
+      continue;
+    }
+    for (const k of [merchantKey(d), merchantKey(stripStatementNoise(d))]) {
+      if (spentKeys.has(k)) continue;
+      const cored = coredKey(k);
+      if (!cored) continue;
+      spentKeys.add(k);
+      spentAt.push(cored);
+    }
+  }
+  return { spentAt, spentKeys, zelledTo };
+}
+
+export interface CreditCategory {
+  categoryId: "salary" | "refund" | "other-income";
+  reason: string;
+  /** Decided by a rule added 2026-10-25: may seed a new row, never re-decide one. */
+  seedOnly?: boolean;
+}
+
+/**
+ * The category of a credit classifyCredit has already called income. `raw` is the
+ * bank's own line, `history` the household's money out (creditHistoryFrom). Without
+ * history only the paycheck and cash-machine rules can answer, and everything else is
+ * `other-income` as before.
+ */
+export function creditCategory(desc: string, raw?: string, history?: CreditHistory): CreditCategory {
+  if (isPaycheck(desc)) return { categoryId: "salary", reason: "a paycheck" };
+  const sources = raw && raw !== desc ? [desc, raw] : [desc];
+  const hay = sources.join(" ");
+  if (CASH_PUT_BACK.test(hay)) {
+    return { categoryId: "refund", reason: "cash put back into the bank", seedOnly: true };
+  }
+  const income: CreditCategory = { categoryId: "other-income", reason: "money in" };
+  if (!history || NOT_A_PAYBACK.test(hay)) return income;
+  const his = hisLookup(merchantKey(desc));
+  if (his && (his.startsWith("Income:") || his === "Cashback")) return income;
+
+  const person = sources.map((s) => zellePerson(s, "from")).find((p) => p !== null);
+  if (person) {
+    // A Zelle in is a person, and only ever matched as one — and one of the household
+    // is never paying anything back (householdPerson).
+    return !householdPerson(person) && history.zelledTo.some((p) => samePerson(p, person))
+      ? { categoryId: "refund", reason: "money back from someone you have sent money to", seedOnly: true }
+      : income;
+  }
+
+  const keys = sources.flatMap((s) => [merchantKey(s), merchantKey(stripStatementNoise(s))]);
+  for (const k of keys) {
+    const cored = coredKey(k);
+    if (!cored) continue;
+    if (history.spentKeys.has(k) || history.spentAt.some((s) => coresMatch(s.core, cored.core))) {
+      return { categoryId: "refund", reason: "money back from a merchant you have spent at", seedOnly: true };
+    }
+  }
+  return income;
 }
 
 // Merchants that operate a FUEL STATION and a STORE under the same brand, so a
@@ -337,6 +916,50 @@ const STORE_TOKEN = /(?:\bQT\b|QUIKTRIP)[^]*\bINSIDE\b/i;
 // is 39 gallons and about three tanks for a 2012 Civic.
 const FUEL_CEILING = 70;
 const FUEL_FLOOR = 8;
+
+// A HOUSEHOLD RULE, not a measurement. Gino, 2026-10-24: at Sam's Club a charge of $35
+// to $50 that the bank did not tag as the pump is gas; any other untagged Sam's Club
+// charge is the store. His own hand-labels agree: every Sam's Club charge he has filed
+// by hand between $35 and $50 is transport, and most outside it are the store.
+//
+// What it decides is only the PRE-FILL of a charge the bank left untagged — the
+// category a new row starts in while it waits for a one-tap answer. It does not
+// change the rest of the department rule, each on purpose:
+//   · a charge the bank tagged as the pump stays fuel (resolveDepartment);
+//   · the row is still `ambiguous`, so the importer seeds a NEW row with it and never
+//     uses it to overwrite one already in the ledger (schema_v26 keep_category) — the
+//     re-sync that moved $702 on a coin flip is exactly what this must not repeat;
+//   · it is still asked about. Gino's band beats a coin flip; it is not the bank
+//     saying so.
+// Written as data for one merchant. Costco, Walmart and the rest have no rule of
+// their own, and get none by being near this one.
+const HOUSEHOLD_DEPARTMENT_RULES: readonly {
+  merchant: RegExp;
+  fuelFrom: number;
+  fuelTo: number;
+  fuel: string;
+  store: string;
+  said: string;
+}[] = [
+  { merchant: /SAM'?S ?CLUB/i, fuelFrom: 35, fuelTo: 50, fuel: "transport", store: "groceries", said: "Gino, 2026-10-24" },
+];
+
+/** The household's own pre-fill for an untagged charge at a merchant it has a rule
+ *  for, or null. Only asked about a charge resolveDepartment() calls ambiguous. */
+function householdDepartment(
+  desc: string,
+  raw: string | undefined,
+  amount: number,
+): { categoryId: string; reason: string } | null {
+  const rule = HOUSEHOLD_DEPARTMENT_RULES.find((r) => r.merchant.test(desc) || (!!raw && r.merchant.test(raw)));
+  if (!rule) return null;
+  const mag = Math.abs(amount);
+  const fuel = mag >= rule.fuelFrom && mag <= rule.fuelTo;
+  return {
+    categoryId: fuel ? rule.fuel : rule.store,
+    reason: `household rule (${rule.said}): $${rule.fuelFrom}–$${rule.fuelTo} with no pump tag is ${fuel ? "gas" : "outside that band, so the store"} — confirm`,
+  };
+}
 
 export type Department = "fuel" | "ambiguous" | null;
 
@@ -553,8 +1176,10 @@ const HISCAT_TO_APP: Record<string, { kind: TxnKind; appCategory?: string }> = {
   //   · Money COMING IN from a friend or relative. classify() never sees a credit (it
   //     returns skip for any amount ≥ 0 before this table is read); a credit goes
   //     through classifyCredit(), which only calls a row a transfer for an
-  //     "Internal:" label or a cash deposit — so a friends/family Zelle in was already
-  //     income, and still is.
+  //     "Internal:" label or an own-account line (a cash deposit too, until
+  //     2026-10-25) — so a friends/family Zelle in was already income, and still is.
+  //     (Since 2026-10-25 its category is creditCategory's: `refund` when it comes
+  //     from someone the household has sent a Zelle to.)
   //   · Money moving between the household's OWN accounts. "Internal: spouse" and
   //     "Internal: account transfer" stay `skip` just below: the same dollars moving
   //     from one of their pockets to another is not spending, and recording one leg
@@ -673,7 +1298,7 @@ export function classify(
   learned?: LearnedRules,
   raw?: string,
 ): Classification {
-  const out = classifyCore(desc, amount, learned, raw);
+  const out = classifyCore(desc, amount, learned, raw, true);
   // Flag rather than guess at a multi-department merchant — INCLUDING when a
   // learned rule fired. A learned rule is keyed by MERCHANT, and this whole branch
   // exists because one merchant runs two departments, so such a rule is
@@ -694,25 +1319,49 @@ export function classify(
   // ~28 chars, so "SAMS CLUB #495" may have lost it), and he confirmed four
   // token-less charges as fuel and three as store. Absence of the token carries no
   // information in either direction — which is exactly why this asks instead.
+  //
+  // Where the household has said how it reads this merchant (HOUSEHOLD_DEPARTMENT_RULES,
+  // 2026-10-24), its rule is the pre-fill instead of whatever the merchant path
+  // happened to land on. Still asked, still `ambiguous`, so still seed-only.
   if (
     out.kind === "variable" &&
     resolveDepartment(desc, raw, amount) === "ambiguous"
   ) {
+    const house = householdDepartment(desc, raw, amount);
     return {
       ...out,
+      appCategory: house?.categoryId ?? out.appCategory,
       confidence: "low",
       ambiguous: true,
-      reason: out.reason + " — fuel or store? confirm",
+      reason: house ? house.reason : out.reason + " — fuel or store? confirm",
     };
   }
+  // A seed-only answer carries the answer from before its rule, for a caller asking
+  // about a row the ledger already has — see Classification.seedOnly.
+  if (out.seedOnly) return { ...out, before: classifyCore(desc, amount, learned, raw, false) };
   return out;
 }
 
+/** His own history label for a merchant hidden under the statement noise of one line
+ *  — the label the last-resort lookup at the end of classifyCore answers with — or
+ *  undefined. Only a label the app knows how to file counts, exactly as there. One
+ *  helper for both places that ask, so the near-spelling step's "would his label
+ *  answer?" can never drift from what the label lookup actually does. */
+function noiseHiddenLabel(source: string): string | undefined {
+  const cleaned = stripStatementNoise(source);
+  if (!cleaned || cleaned === source.toUpperCase().trim()) return undefined;
+  const his = hisLookup(merchantKey(cleaned));
+  return his && HISCAT_TO_APP[his] ? his : undefined;
+}
+
+// `seeding` turns on the rules added 2026-10-25 that may only seed a new row. Off, this
+// is the categorizer exactly as it answered before them — which is what `before` is.
 function classifyCore(
   desc: string,
   amount: number,
-  learned?: LearnedRules,
-  raw?: string,
+  learned: LearnedRules | undefined,
+  raw: string | undefined,
+  seeding: boolean,
 ): Classification {
   if (!Number.isFinite(amount) || amount >= 0) {
     return { kind: "skip", reason: "credit / deposit", confidence: "high" };
@@ -856,7 +1505,8 @@ function classifyCore(
   // "Cash deposit", which maps to skip — correct for a deposit, and silently
   // wrong for a WITHDRAWAL, which is money leaving with no merchant attached.
   // A $20.00 withdrawal on 2026-08-31 was dropped this way. Only reached on a
-  // debit; classifyCredit still handles the deposit side.
+  // debit; the deposit side is creditCategory's, which since 2026-10-25 records it as
+  // cash coming back instead of dropping it.
   if (/\bWITHDRWL\b|\bWITHDRAWAL\b|\bATM\b.*\bCASH\b|\bCASH WITHDRAW/i.test(billHay)) {
     return {
       kind: "variable",
@@ -1034,6 +1684,45 @@ function classifyCore(
     }
   }
 
+  // A rule you taught, reached through another spelling of the same merchant — "H MART
+  // MESA LLC" answering for "H Mart". See looseLearnedFor for what counts as the same.
+  //
+  // WHY HERE, AND NOT BESIDE THE EXACT LOOKUP AT THE TOP. A near spelling is weaker
+  // evidence than an exact one, so it gets no rank the exact rule did not already
+  // leave open: every bill rule, every rail and amount-gated branch above, and his
+  // own history label for this exact merchant key all answer first. What it takes
+  // over is only what comes next — a keyword guess, the last-resort keyword lookup, or
+  // "new merchant" — and each of those is a low-confidence guess that asks him again.
+  //
+  // NOT his label under the statement noise. FOUND 2026-10-25 in review: this step
+  // sits before the last-resort lookup that strips the bank's noise off the line and
+  // asks his history labels again (noiseHiddenLabel), and that lookup is not a guess —
+  // it can answer "your label" at high confidence, or SKIP, a row kept out of the
+  // ledger. So a near rule could have beaten his own label for the merchant on the raw
+  // line, or written a row his label keeps out as spending. Whenever that lookup would
+  // answer, this step stands aside and the answer is exactly what it was before.
+  //
+  // Never at a fuel-and-store merchant: a merchant-keyed rule cannot answer there at
+  // all (see classify), and a loose one would only reach further. Seed-only: a row the
+  // ledger already has is not moved by it (forExistingRow).
+  if (
+    seeding &&
+    !amountGated &&
+    !isMultiDepartment(desc, raw) &&
+    !(raw && raw !== desc ? [desc, raw] : [desc]).some((s) => noiseHiddenLabel(s) !== undefined)
+  ) {
+    const near = looseLearnedFor(ruleLookupKeys(key, raw), learned);
+    if (near) {
+      return {
+        kind: "variable",
+        appCategory: near.rule.categoryId,
+        reason: `you taught it, as "${near.pattern}"`,
+        confidence: "high",
+        seedOnly: true,
+      };
+    }
+  }
+
   // Keyword pass reads BOTH namespaces. Plaid's clean name is lossy by design —
   // it reported "MOBILE PURCHASE 0905 USA TRAVEL CENTER KINGMAN AZ" as the bare
   // "Usa Travel Center" and "SQ *NANA'S SANDWICH SHO" as "Nana's Sandwich Sho",
@@ -1064,25 +1753,23 @@ function classifyCore(
   for (const source of raw && raw !== desc ? [desc, raw] : [desc]) {
     const cleaned = stripStatementNoise(source);
     if (cleaned && cleaned !== source.toUpperCase().trim()) {
-      const his2 = hisLookup(merchantKey(cleaned));
+      const his2 = noiseHiddenLabel(source);
       if (his2) {
         const map = HISCAT_TO_APP[his2];
-        if (map) {
-          if (map.kind !== "variable")
-            return {
-              kind: "skip",
-              hisCategory: his2,
-              reason: `your label: ${his2}`,
-              confidence: "high",
-            };
+        if (map.kind !== "variable")
           return {
-            kind: "variable",
-            appCategory: map.appCategory,
+            kind: "skip",
             hisCategory: his2,
             reason: `your label: ${his2}`,
-            confidence: map.appCategory === "other" ? "low" : "high",
+            confidence: "high",
           };
-        }
+        return {
+          kind: "variable",
+          appCategory: map.appCategory,
+          hisCategory: his2,
+          reason: `your label: ${his2}`,
+          confidence: map.appCategory === "other" ? "low" : "high",
+        };
       }
       for (const f of KEYWORD_FALLBACK) {
         if (f.re.test(cleaned)) {
