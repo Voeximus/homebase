@@ -127,6 +127,23 @@ export interface CycleBudgetRow {
   setBy: string | null;
 }
 
+/**
+ * One standing weekly plan, as public.week_plans stores it
+ * (supabase/schema_v46_week_plans.sql, 2026-10-25).
+ *
+ * Every column the write and its undo need and nothing else: `id` is what a
+ * compare-and-set and a delete aim at, `lines` and `setBy` are the two columns a change
+ * replaces (and so the two an undo checks are still there), and `weekStart` is what the
+ * row IS — never updated, only carried so a cleared row can be put back exactly as it
+ * was. `lines` is the jsonb document as stored: {line key: dollars per week}.
+ */
+export interface WeekPlanRow {
+  id: string;
+  weekStart: string;
+  lines: Record<string, number>;
+  setBy: string | null;
+}
+
 export interface BillRow {
   id: string;
   name: string;
@@ -352,8 +369,9 @@ export function provesRolledBack(code: unknown): code is string {
 
 // Whether an error is PostgREST saying a table is not there at all. It lives beside the
 // read door's paging, because both doors need the same answer about the same table —
-// review_dismissals and cycle_budgets, whose migrations are written and not yet run — and two spellings of
-// "is this the missing-table error" would be two chances to call an outage a setup step.
+// review_dismissals, cycle_budgets and week_plans, whose migrations are written and not
+// yet run — and two spellings of "is this the missing-table error" would be two chances
+// to call an outage a setup step.
 export { isMissingTable } from "../_shared/muse/paging.ts";
 
 export interface FinanceDb {
@@ -534,6 +552,30 @@ export interface FinanceDb {
    * the other phone setting the same line in the same instant is refused, not overwritten.
    */
   insertCycleBudget(row: CycleBudgetRow): Promise<"ok" | "taken">;
+
+  /**
+   * Every standing weekly plan, oldest week first — for finance.set_weekly_plan, which has
+   * to know the plan a week already follows (a plan STANDS from its Sunday on, so that can
+   * be a row filed long before) and the row that takes over after it.
+   *
+   * A GET, so on a database where supabase/schema_v46_week_plans.sql has not been run it
+   * THROWS with PostgREST's own words for a missing table, which the tool turns into "the
+   * database is not set up for this yet"; anything else is a real failure. The table is
+   * one row per plan change, tens a year; it throws rather than answer from part of it if
+   * the rows that came back are fewer than the rows that exist, because a plan worked out
+   * from half the rows could fill a line from the wrong week's plan.
+   */
+  readWeekPlans(): Promise<WeekPlanRow[]>;
+
+  /**
+   * Put one weekly plan row in under the id the door chose, and nothing else. "taken"
+   * means the table refused it because that week already has a plan row (or a row with
+   * that id) — so nothing was written. Its own verb for the reason insertCycleBudget is:
+   * the door picks the id BEFORE it writes, so the undo row can name the row it will
+   * remove, and a cleared row goes back under the id it had. No upsert — an upsert on
+   * week_start would overwrite a plan the other phone set in the gap.
+   */
+  insertWeekPlan(row: WeekPlanRow): Promise<"ok" | "taken">;
 
   /**
    * Every bank connection's two time columns, and NOTHING else.

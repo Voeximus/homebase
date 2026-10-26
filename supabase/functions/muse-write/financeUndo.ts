@@ -38,13 +38,16 @@
 import type { Json } from "../_shared/muse/args.ts";
 import { UUID } from "../_shared/muse/args.ts";
 import { NAME_MAX, scrubName, scrubOr } from "../_shared/muse/scrub.ts";
-import type { CycleBudgetRow, RuleRow } from "./dbFinance.ts";
+import type { CycleBudgetRow, RuleRow, WeekPlanRow } from "./dbFinance.ts";
 import { refuse } from "./kit.ts";
 import type { UndoHandler, UndoRegistry } from "./undoContract.ts";
 // The six budget lines and the cap on one line's goal, from the shared cycle-goal module
 // the app and the read door use — so the undo accepts exactly what the tool could write.
 import { BUDGET_LINE_KEYS, GOAL_LINE_MAX } from "../_shared/muse/lib/cycleBudget.ts";
 import { LEAN_VARIABLE } from "../_shared/muse/lib/plan.ts";
+// The weekly plan's rules (2026-10-25): which days a week starts on and the cap on one
+// line, from the shared module the read door's finance.week answers from.
+import { isSunday, weekOf, WEEK_LINE_MAX } from "../_shared/muse/lib/weekPlan.ts";
 
 /** The handler's name, as stored in muse_undo. Exported so the tool that records it
  *  and the registry that runs it cannot spell it two ways. */
@@ -238,11 +241,92 @@ const undoCycleBudgetInsert: UndoHandler = {
   },
 };
 
+// ── putting a cleared weekly plan back ───────────────────────────────────────
+//
+// ADDED 2026-10-25 for finance.set_weekly_plan's `clear: true`, which deletes the plan
+// row filed for one week so that week goes back to the plan standing before it. Its undo
+// has the shape the two above have, for the same two reasons: it RE-CREATES a deleted
+// row, and its guard is about OTHER rows — it must refuse if a plan has been set for that
+// week since (on either phone, through either assistant), because putting the old one
+// back would overwrite a newer, deliberate answer. One row per call, so there is no
+// "stops at a middle line" case; "already back" under its own id is success, for the
+// reason the cycle-goal restore gives (a retry must be able to finish the job).
+//
+// THE NAME IS A NAME IN A DATABASE ROW, like the two above: renaming it orphans every
+// token already handed out.
+
+/** The handler's name, as stored in muse_undo. */
+export const WEEK_PLAN_INSERT = "week-plan.insert";
+
+/** A cleared plan row, read back out of muse_undo and checked rather than trusted — the
+ *  same reason ruleFrom and goalFrom exist. The week must start on a real Sunday, every
+ *  line must be one the plan has, and every figure one the plan tool itself would have
+ *  written, or nothing is put back. */
+function weekPlanFrom(before: Json): WeekPlanRow | null {
+  if (typeof before !== "object" || before === null || Array.isArray(before)) return null;
+  const { id, week_start, lines, set_by } = before;
+  if (typeof id !== "string" || !UUID.test(id)) return null;
+  if (!isSunday(week_start)) return null;
+  if (typeof lines !== "object" || lines === null || Array.isArray(lines)) return null;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(lines)) {
+    if (!BUDGET_LINE_KEYS.includes(k)) return null;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > WEEK_LINE_MAX) return null;
+    out[k] = v;
+  }
+  if (set_by !== null && set_by !== "gino" && set_by !== "xinyan") return null;
+  return { id, weekStart: week_start, lines: out, setBy: set_by };
+}
+
+const undoWeekPlanInsert: UndoHandler = {
+  does: "Put a cleared weekly plan back under its own id, unless a plan has been set for that week since.",
+  async apply(before, ctx) {
+    const plan = weekPlanFrom(before);
+    if (!plan) {
+      return refuse(
+        409,
+        "I wrote that weekly plan down in a shape I cannot read back, so I changed nothing. Set it again with finance.set_weekly_plan if you want it.",
+      );
+    }
+    const week = weekOf(plan.weekStart).label;
+    /** The row filed for this week now, if any — read fresh each time it is asked. */
+    const onWeek = async () => (await ctx.db.readWeekPlans()).find((r) => r.weekStart === plan.weekStart);
+    const alreadyBack = () => ({
+      ok: true as const,
+      result: { id: plan.id, week_start: plan.weekStart, already_back: true },
+      rowIds: [plan.id],
+      say: `The weekly plan for the week of ${week} was already back.`,
+    });
+    const newerSays = (when: string) =>
+      `A plan has been set again for the week of ${week} ${when}, so I left the new one as it is. ` +
+      "To bring the old plan back, undo that newer change first, then ask me to undo this one again.";
+
+    // REFUSE, NEVER OVERWRITE — a row for this week under ANOTHER id is a plan set after
+    // the clear. The read is for the sentence; the table's unique index on week_start,
+    // inside the insert below, is what actually decides.
+    const there = await onWeek();
+    if (there?.id === plan.id) return alreadyBack();
+    if (there) return refuse(409, newerSays("since I cleared the old one"));
+    if ((await ctx.db.insertWeekPlan(plan)) === "taken") {
+      if ((await onWeek())?.id === plan.id) return alreadyBack();
+      return refuse(409, newerSays("while I was putting the old one back"));
+    }
+    const total = Math.round(Object.values(plan.lines).reduce((s, n) => s + n, 0) * 100) / 100;
+    return {
+      ok: true,
+      result: { id: plan.id, week_start: plan.weekStart, plan_total: total },
+      rowIds: [plan.id],
+      say: `Put the weekly plan for the week of ${week} back: $${total.toFixed(2)} a week in all.`,
+    };
+  },
+};
+
 /**
- * Every named inverse the finance side has. Two, and the header says why each is one and
- * not a data step; every other finance undo is a data step.
+ * Every named inverse the finance side has. Three, and the header says why each is one
+ * and not a data step; every other finance undo is a data step.
  */
 export const FINANCE_UNDO: UndoRegistry = {
   [MERCHANT_RULE_INSERT]: undoMerchantRuleInsert,
   [CYCLE_BUDGET_INSERT]: undoCycleBudgetInsert,
+  [WEEK_PLAN_INSERT]: undoWeekPlanInsert,
 };

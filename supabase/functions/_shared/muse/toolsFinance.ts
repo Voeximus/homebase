@@ -119,6 +119,12 @@ export const SAYS_DESCRIPTION: ReadonlySet<string> = new Set([
   // payments and transfers, whose descriptors carry account digits); never
   // `raw_description`.
   "finance.day_review",
+  // Added 2026-10-25, for the weekly view. "Where did the week go" needs the week's
+  // biggest charges by name, and money back by who gave it back — a list of amounts with
+  // no merchant is one nobody can recognise. The cleaned name only, long digit runs
+  // masked as finance.day_review masks them; never `raw_description`. Its picture holds
+  // no merchant at all — only the plan's own line labels.
+  "finance.week",
 ]);
 
 /** The most rows one search will return. A chat cannot use more than this, and a

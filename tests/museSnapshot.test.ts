@@ -43,6 +43,7 @@ import { createAuditSink, type AuditRow } from "../supabase/functions/_shared/mu
 import { PAGE, type Db, type DbQuery, type DbRow } from "../supabase/functions/_shared/muse/paging";
 import { TOOLS } from "../supabase/functions/_shared/muse/tools";
 import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
+import { PICTURE_FIELD, SAYS_PICTURE } from "../supabase/functions/_shared/muse/toolsWeek";
 import { toAppData } from "../supabase/functions/_shared/muse/rows";
 import { nowAZ } from "../supabase/functions/_shared/muse/az";
 import { cashAccounts, totalBalance, totalPendingHold } from "../src/lib/recurring";
@@ -114,7 +115,13 @@ function snapshotDb(tables: Record<string, DbRow[]>, shortPage?: string): Db {
       // so a snapshot does not carry it. Answer a page of it the way PostgREST answers a
       // table that is not there, so the read door's probe sees what it would see live.
       // cycle_budgets (schema_v45, 2026-10-10) is in the same state, and gets the same answer.
-      if ((q.table === "review_dismissals" || q.table === "cycle_budgets") && !(q.table in tables)) {
+      // So is week_plans (schema_v46, 2026-10-25): without it here the suite read the table
+      // as an existing EMPTY one, and never ran finance.week's missing-table path against
+      // the real ledger — the path production takes first (found in review).
+      if (
+        (q.table === "review_dismissals" || q.table === "cycle_budgets" || q.table === "week_plans") &&
+        !(q.table in tables)
+      ) {
         const missing = () =>
           Promise.reject(new Error(`read ${q.table}: Could not find the table 'public.${q.table}' in the schema cache`));
         return { count: () => Promise.resolve(0), page: missing };
@@ -216,6 +223,10 @@ function everyTool(): { tool: string; body: Record<string, unknown> }[] {
     // surface. The review says cleaned merchant names, so the descriptor check covers it.
     { tool: "finance.daily_allowance", body: {} },
     { tool: "finance.day_review", body: {} },
+    // 2026-10-25: the weekly view. Run against the real ledger because money back is a
+    // flow verdict over the whole ledger and the biggest charges name real merchants — so
+    // the descriptor checks below cover it, and its picture is checked line by line.
+    { tool: "finance.week", body: {} },
   ];
 }
 
@@ -496,7 +507,21 @@ describeSnapshot("the read door against the real ledger", () => {
       }
       return n;
     };
-    for (const [tool, text] of Object.entries(await allReplies())) {
+    for (const [tool, raw] of Object.entries(await allReplies())) {
+      let text = raw;
+      // finance.week's picture is the one declared multi-line string (SAYS_PICTURE,
+      // 2026-10-25). Each of its lines is held to the URL and control-character checks
+      // here, then it is taken out, and the rest of the reply is held to the no-newline
+      // rule like every other reply.
+      if (SAYS_PICTURE.has(tool)) {
+        const reply = JSON.parse(raw) as Record<string, unknown>;
+        for (const line of String(reply[PICTURE_FIELD]).split("\n")) {
+          expect(line, `${tool}'s picture sent a URL`).not.toMatch(/https?:|:\/\/|www\./);
+          expect(controlCount(line), `${tool}'s picture sent a control character`).toBe(0);
+        }
+        delete reply[PICTURE_FIELD];
+        text = JSON.stringify(reply);
+      }
       expect(text, `${tool} sent a newline`).not.toMatch(/\n|\\n/);
       expect(text, `${tool} sent a URL`).not.toMatch(/https?:|:\/\/|www\./);
       expect(controlCount(text), `${tool} sent a control character`).toBe(0);
@@ -535,6 +560,23 @@ describeSnapshot("the read door against the real ledger", () => {
     // Known only where the household table exists — and a snapshot carries it only once
     // schema_v43 has been run.
     expect(body.dismissals_known).toBe("review_dismissals" in SNAP!.tables);
+  });
+
+  it("plans the week from the pay-cycle budget, and says why, on a ledger without the plan table", async () => {
+    // Added 2026-10-25 (review): the path production takes until schema_v46 is run.
+    const res = await ask("finance.week");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    const known = "week_plans" in SNAP!.tables;
+    expect(body.plan_table_set_up).toBe(known);
+    if (!known) {
+      expect(body.plan_is).toBe("from the pay-cycle budget");
+      expect(String(body.note)).toContain("has not been set up yet");
+    }
+    // The fields reconcile to the cent, and spending is never below zero.
+    const n = (k: string) => Number(body[k]);
+    expect(Math.round((n("spent_on_lines") - n("money_back_total")) * 100)).toBe(Math.round(n("spent_total") * 100));
+    expect(n("spent_total")).toBeGreaterThanOrEqual(0);
   });
 
   // ── Rule 5, at the page boundary the real table sits on ─────────────────────

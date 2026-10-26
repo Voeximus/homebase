@@ -308,6 +308,13 @@ Homebase's own daily push still carries the bills-due heads-up in the meantime.
 
 ### J6 — Daily money check-in · start and end of each person's day
 
+**RETIRED 2026-10-25 — kept as history.** The daily allowance read as annoying and almost
+inaccurate: it swung after one big shop, sat at $0 for days after a cycle that ran over,
+never showed its sum, and a day is the wrong unit for weekly spending. "What can we
+spend?" is now `finance.week` — a weekly plan, Sunday to Saturday, with a ready picture
+both Muses show as it is — answered when asked, with **no scheduled daily money
+messages**. `MUSE-SKILL.md` has the new guidance. Nothing below is a job any more.
+
 Added 2026-10-10. **One household budget, two people on opposite clocks** — so the same
 two questions get asked at two different pairs of hours. They spend from one pool and
 both keys get the same figures: never split it into his and hers, and never name an

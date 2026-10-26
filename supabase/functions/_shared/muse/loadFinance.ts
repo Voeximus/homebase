@@ -24,8 +24,8 @@ import type { Db } from "./paging.ts";
 import { isMissingTable, LedgerUnreadable, readAll } from "./paging.ts";
 import type { Person } from "./auth.ts";
 import { checkSteps, type UndoRecord, type UndoState, type UndoStep } from "./undo.ts";
-import type { CycleBudget } from "./lib/types.ts";
-import { toCycleBudget } from "./rows.ts";
+import type { CycleBudget, WeekPlan } from "./lib/types.ts";
+import { toCycleBudget, toWeekPlan } from "./rows.ts";
 
 const STATES: readonly UndoState[] = ["pending", "undoable", "abandoned", "undone"];
 
@@ -146,6 +146,18 @@ export interface FinanceExtras {
    * it. Which rows count for which cycle is cycleTargets()'s decision, not the loader's.
    */
   cycleBudgets(): Promise<{ known: boolean; rows: CycleBudget[] }>;
+  /**
+   * Every standing weekly plan, household-wide — or `known: false` on a database where
+   * supabase/schema_v46_week_plans.sql has not been run, so finance.week can say "planned
+   * from the pay-cycle budget, and the plan table is not set up yet" rather than claim
+   * nobody set a plan. Added 2026-10-25 with finance.set_weekly_plan.
+   *
+   * The whole table, not one week: a plan STANDS until a later one is set, so the plan
+   * for a week can be a row filed months before it. It is one row per plan change — tens
+   * a year — and which row plans which week is standingRow()'s decision in
+   * src/lib/weekPlan.ts, not the loader's.
+   */
+  weekPlans(): Promise<{ known: boolean; rows: WeekPlan[] }>;
 }
 
 /** Memoise one promise per key, so a repeated read is the same read. */
@@ -282,6 +294,27 @@ export function createFinanceExtras(db: Db): FinanceExtras {
     return { known: true, rows: rows.map(toCycleBudget) };
   });
 
+  /** Every standing weekly plan. Added 2026-10-25 with finance.set_weekly_plan.
+   *
+   *  THE SAME PROBE AS cycleBudgets, for the same reason: before schema_v46 is run,
+   *  readAll's HEAD count reads the missing table as an EMPTY one, and the door would say
+   *  "no weekly plan set" about a table that does not exist. Only PostgREST's own
+   *  missing-table sentence, on a GET, means "not set up yet"; any other failure fails
+   *  closed — a week planned from half the plan rows could read one week against the
+   *  household's plan and the next against the fallback, and nothing in the reply would
+   *  say why. */
+  const weekPlans = once(async () => {
+    const table = "week_plans";
+    try {
+      await db.select({ table, orderBy: "id" }).page(0, 0);
+    } catch (e) {
+      if (isMissingTable(e, table)) return { known: false, rows: [] as WeekPlan[] };
+      throw new LedgerUnreadable(table, `probe failed (${String((e as Error)?.message ?? e)})`);
+    }
+    const rows = await readAll(db, { table, orderBy: "id" });
+    return { known: true, rows: rows.map(toWeekPlan) };
+  });
+
   return {
     pendingCharges,
     bankConnections,
@@ -289,6 +322,7 @@ export function createFinanceExtras(db: Db): FinanceExtras {
     pushTargets,
     reviewDismissals,
     cycleBudgets,
+    weekPlans,
     changes(person) {
       const hit = changeCache.get(person);
       if (hit) return hit;

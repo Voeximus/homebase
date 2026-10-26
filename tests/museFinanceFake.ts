@@ -34,6 +34,7 @@ import type {
   PaidOverrideRow,
   RuleRow,
   TrackedDebtRow,
+  WeekPlanRow,
 } from "../supabase/functions/muse-write/dbFinance";
 import { StatementRefused } from "../supabase/functions/muse-write/dbFinance";
 import type { Person } from "../supabase/functions/muse-write/db";
@@ -94,6 +95,8 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
   // Nothing through insertRow, exactly as dbFinanceSupabase.ts: a goal row carries the id
   // the door chose, so it goes in through insertCycleBudget below.
   cycle_budgets: [],
+  // The same for a weekly plan row (2026-10-25): it goes in through insertWeekPlan.
+  week_plans: [],
 };
 
 /** PostgREST 12's own words for a table that is not there, so the tools' "not set up
@@ -104,6 +107,9 @@ export const NO_DISMISSAL_TABLE =
 /** The same sentence for cycle_budgets (schema_v45), written and not yet run. */
 export const NO_GOAL_TABLE =
   "Could not find the table 'public.cycle_budgets' in the schema cache";
+/** The same sentence for week_plans (schema_v46), written and not yet run. */
+export const NO_WEEK_TABLE =
+  "Could not find the table 'public.week_plans' in the schema cache";
 
 export class FinanceFake implements FinanceDb {
   /** The ledger, keyed the way Postgres keys it. Tests read and seed these directly. */
@@ -116,6 +122,7 @@ export class FinanceFake implements FinanceDb {
     merchant_rules: [],
     review_dismissals: [],
     cycle_budgets: [],
+    week_plans: [],
   };
   /** Set to be a database where schema_v43_review_dismissals.sql has not been run:
    *  every read and insert of review_dismissals fails the way PostgREST fails. */
@@ -126,6 +133,12 @@ export class FinanceFake implements FinanceDb {
   /** Fires right after the door reads a cycle's goal rows, so a test can be the other
    *  phone setting a goal in the gap between the read and the write. */
   onReadCycleBudgets: ((cycleStart: string) => void) | null = null;
+  /** Set to be a database where schema_v46_week_plans.sql has not been run: every read
+   *  and insert of week_plans fails the way PostgREST fails. */
+  noWeekTable = false;
+  /** Fires right after the door reads the weekly plans, so a test can be the other phone
+   *  setting a plan in the gap between the read and the write. */
+  onReadWeekPlans: (() => void) | null = null;
   /** How many times confirm_charges' list read ran, so a test can see one read was
    *  made for the whole batch rather than one per charge. */
   chargeBatchReads = 0;
@@ -513,6 +526,34 @@ export class FinanceFake implements FinanceDb {
       amount: row.amount,
       set_by: row.setBy,
     });
+    this.landed += 1;
+    return Promise.resolve("ok");
+  }
+
+  readWeekPlans(): Promise<WeekPlanRow[]> {
+    if (this.noWeekTable) return Promise.reject(new Error(`read week_plans: ${NO_WEEK_TABLE}`));
+    // A snapshot — `lines` copied, not shared — then the hook, the same order readCharge
+    // uses, so a test writing in the gap changes the table and not the door's copy of it.
+    const rows = this.tables.week_plans
+      .map((r) => ({
+        id: String(r.id),
+        weekStart: String(r.week_start),
+        lines: { ...(r.lines as Record<string, number>) },
+        setBy: (r.set_by as string | null) ?? null,
+      }))
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    this.onReadWeekPlans?.();
+    return Promise.resolve(rows);
+  }
+
+  /** "taken" exactly when the real insert would hit the unique index on week_start or the
+   *  primary key — so "the other phone set it in the gap" is the table's answer. */
+  insertWeekPlan(row: WeekPlanRow): Promise<"ok" | "taken"> {
+    if (this.noWeekTable) return Promise.reject(new Error(`insert week_plans: ${NO_WEEK_TABLE}`));
+    const clash = this.tables.week_plans.some((r) => r.id === row.id || r.week_start === row.weekStart);
+    if (clash) return Promise.resolve("taken");
+    this.writes.push({ op: "insert_week_plan", table: "week_plans", id: row.id });
+    this.tables.week_plans.push({ id: row.id, week_start: row.weekStart, lines: { ...row.lines }, set_by: row.setBy });
     this.landed += 1;
     return Promise.resolve("ok");
   }

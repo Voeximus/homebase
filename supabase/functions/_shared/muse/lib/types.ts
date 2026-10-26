@@ -240,6 +240,25 @@ export interface CycleBudget {
   at?: string; // when it was set
 }
 
+// A STANDING weekly spending plan, from one Sunday on (supabase/schema_v46_week_plans.sql).
+//
+// Added 2026-10-25. The daily allowance — the cycle's target less what it spent, over the
+// days left — swung wildly after one big shop and sat at $0 for days after an overspent
+// cycle, and a day was the wrong unit anyway: groceries and gas are weekly, and a night
+// shift splits "today" at midnight. So the household agreed a plan per WEEK, Sunday to
+// Saturday, and src/lib/weekPlan.ts is the one place that turns these rows into the
+// week's figures.
+//
+// A row is not "this week only": the plan for any week is the latest row whose
+// `weekStart` is on or before that week's Sunday, so one row holds until another is set.
+// `lines` is dollars PER WEEK by budget-line key (the LEAN_VARIABLE keys).
+export interface WeekPlan {
+  id: string;
+  weekStart: string; // "YYYY-MM-DD", a Sunday
+  lines: Record<string, number>; // budget-line key → dollars per week, 0 or more
+  setBy?: "gino" | "xinyan"; // whose assistant (or whose phone) last set it
+}
+
 export interface AppData {
   transactions: Transaction[];
   debts: Debt[];

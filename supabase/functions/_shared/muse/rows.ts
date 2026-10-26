@@ -33,6 +33,7 @@ import type {
   Recurring,
   SavingsGoal,
   Transaction,
+  WeekPlan,
 } from "./lib/types.ts";
 import { DEFAULT_CATEGORIES } from "./lib/seed.ts";
 import type { BodyWeight } from "./lib/weightLog.ts";
@@ -181,6 +182,27 @@ export function toCycleBudget(r: DbRow): CycleBudget {
     setBy: who,
     at: opt(r.at),
   };
+}
+
+/**
+ * One standing weekly plan (supabase/schema_v46_week_plans.sql), added 2026-10-25.
+ * Transcription only: `lines` is jsonb, so it arrives as an object of line key to
+ * number. A value that is not a number becomes NaN rather than 0 — 0 is a real plan
+ * ("nothing on this line this week"), and a value nobody wrote must not become one;
+ * rowAmount() in src/lib/weekPlan.ts leaves a non-finite figure out and plans that line
+ * from the pay cycle instead, so the rule lives once, beside the maths. A `lines` that is
+ * not an object maps to no lines at all, for the same reason.
+ */
+export function toWeekPlan(r: DbRow): WeekPlan {
+  const who = r.set_by === "gino" || r.set_by === "xinyan" ? r.set_by : undefined;
+  const lines: Record<string, number> = {};
+  const raw = r.lines;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      lines[k] = typeof v === "number" ? v : Number.NaN;
+    }
+  }
+  return { id: str(r.id), weekStart: str(r.week_start), lines, setBy: who };
 }
 
 export function toBodyWeight(r: DbRow): BodyWeight {

@@ -123,6 +123,11 @@ import { MEMORY_READ_TOOLS } from "./memoryTools.ts";
 // day went against it. Its own file, like the domains above, and every figure in it comes
 // out of src/lib/dailyAllowance.ts through the generated copy.
 import { DAILY_TOOLS } from "./toolsDaily.ts";
+// The weekly view (2026-10-25): the week's plan against what was spent, with a ready
+// picture — the headline answer to "what can we spend?" in place of the daily allowance.
+// Its own file, and every figure and character of its picture comes out of
+// src/lib/weekPlan.ts through the generated copy.
+import { WEEK_TOOLS } from "./toolsWeek.ts";
 
 // The shape of a tool, the argument checks, and BadArgs live in args.ts, so every tool
 // file can use them without one importing another. Re-exported here because handler.ts,
@@ -1446,6 +1451,8 @@ export const TOOLS: readonly Tool[] = [
   ...MEMORY_READ_TOOLS,
   // Appended for the same reason: the daily money check-in, 2026-10-10.
   ...DAILY_TOOLS,
+  // And the weekly view that replaced it as the headline, 2026-10-25.
+  ...WEEK_TOOLS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, Tool> = new Map(TOOLS.map((t) => [t.name, t]));

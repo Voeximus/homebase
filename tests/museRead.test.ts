@@ -40,6 +40,7 @@ import { TOOLS as WRITE_TOOLS, TOOL_NAMES as WRITE_TOOL_NAMES } from "../supabas
 import { UNIVERSAL_FIELDS as WRITE_UNIVERSAL_FIELDS } from "../supabase/functions/muse-write/handler";
 import { READ_DOOR_NAMES } from "../supabase/functions/muse-write/shapes";
 import { SAYS_DESCRIPTION } from "../supabase/functions/_shared/muse/toolsFinance";
+import { PICTURE_FIELD, SAYS_PICTURE } from "../supabase/functions/_shared/muse/toolsWeek";
 import {
   isDismissed,
   redactSuggestions,
@@ -497,6 +498,12 @@ const EVERY_TOOL: { tool: string; body: Record<string, unknown> }[] = [
   // Rule 4 sweep is the check that its URL, newline and injection filtering holds.
   { tool: "finance.daily_allowance", body: {} },
   { tool: "finance.day_review", body: {} },
+  // The weekly view, 2026-10-25 — the headline answer to "what can we spend?". Called bare,
+  // like the daily tools: "this week" is the week holding the Arizona date, which is what
+  // the Rule 2 sweep checks. It says a cleaned merchant name (SAYS_DESCRIPTION) and it is
+  // the one tool that sends a multi-line picture (SAYS_PICTURE), which the Rule 4 sweep
+  // checks line by line.
+  { tool: "finance.week", body: {} },
   // ── phase 2: health and workout parity ──────────────────────────────────────
   // Every one of these answers about a row rather than a summary, which phase 1
   // deliberately refused to do. He asked for it: "Muse has to have every
@@ -938,7 +945,25 @@ describe("Rule 1 — every number comes from the app's own function", () => {
 describe("Rule 4 — every string out is scrubbed", () => {
   it("no reply from any tool contains a descriptor, a URL, a newline or an injection line", async () => {
     for (const { tool, body } of EVERY_TOOL) {
-      const text = await (await ask(tool, body)).text();
+      let text = await (await ask(tool, body)).text();
+      // THE ONE DECLARED MULTI-LINE STRING (2026-10-25). finance.week's picture is the
+      // door's own drawing, and its newlines are the door's own. It is not let off: every
+      // line of it is held to the same four checks below, one line at a time, and then it
+      // is taken out so the REST of the reply is held to the no-newline rule like
+      // everything else. A tool not on SAYS_PICTURE gets no such treatment.
+      if (SAYS_PICTURE.has(tool)) {
+        const reply = JSON.parse(text) as Record<string, unknown>;
+        const picture = String(reply[PICTURE_FIELD]);
+        expect(picture.split("\n").length, `${tool} drew no picture`).toBeGreaterThan(3);
+        for (const line of picture.split("\n")) {
+          expect(line, `${tool}'s picture carries a descriptor`).not.toContain("CANARY");
+          expect(line, `${tool}'s picture carries a URL`).not.toContain("http");
+          expect(line, `${tool}'s picture carries an injection line`).not.toMatch(/ignore previous/i);
+          expect(line, `${tool}'s picture carries a control character`).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+        }
+        delete reply[PICTURE_FIELD];
+        text = JSON.stringify(reply);
+      }
       // PHASE 2 SPLIT THIS PROMISE IN TWO, because he changed one half of it and not
       // the other.
       //
@@ -2255,6 +2280,10 @@ describe("API.md's field names exist", () => {
       // "today" and no one-day planned row, so the lists come back empty and the keys never
       // appear. tests/dailyAllowance.test.ts drives a ledger that fills every one of them.
       "line", "part_of_a_split", "why", "budget_line",
+      // `counted` and `not_counted_because` are on a finance.week money_back ROW
+      // (2026-10-25), and this fixture has no money back in its week, so the list comes
+      // back empty. tests/weekPlan.test.ts drives ledgers that fill both.
+      "counted", "not_counted_because",
     ]) keys.add(k);
     // The keys INSIDE finance.set_cycle_budget's `lines` — the six budget lines — off the
     // shared module rather than typed here, so API.md can name the lines a goal takes.

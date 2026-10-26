@@ -112,6 +112,12 @@ const MODULES = [
   // left — and how a finished day went against it. Muse's finance.daily_allowance and
   // finance.day_review report what this file works out; the door divides nothing itself.
   "src/lib/dailyAllowance.ts",
+  // The weekly view (2026-10-25): the week's plan per line — the standing weekly plan,
+  // or the pay cycle's rate × 7 where none is set — against what the budget counts as
+  // spent, with money back off the week's total and a ready picture. finance.week
+  // reports what this file works out and draws nothing itself; finance.set_weekly_plan
+  // takes its rules for which weeks can be set from here.
+  "src/lib/weekPlan.ts",
 ];
 
 /** Deno needs the file extension, and this folder is FLAT, so every relative

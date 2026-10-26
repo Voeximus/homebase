@@ -59,6 +59,12 @@ export const UNDO_TABLES = [
   // and clearing a cycle is undone by the one named inverse in muse-write/financeUndo.ts
   // that can put a cleared goal row back.
   "cycle_budgets",
+  // Added 2026-10-25 for finance.set_weekly_plan: a standing weekly plan is one row per
+  // plan change here (supabase/schema_v46_week_plans.sql). Setting a week is undone by the
+  // data kinds — set_columns puts the old `lines` back, delete_row removes a new row — and
+  // clearing a week is undone by the one named inverse in muse-write/financeUndo.ts that
+  // can put a cleared plan row back.
+  "week_plans",
 ] as const;
 
 export type UndoTable = (typeof UNDO_TABLES)[number];
@@ -146,6 +152,13 @@ export const UNDO_COLUMNS: Record<UndoTable, readonly string[]> = {
   // are what the row IS and are never updated, so they are not here: changing either
   // would make it a different goal.
   cycle_budgets: ["amount", "set_by"],
+  // `lines` and `set_by`, the two columns finance.set_weekly_plan replaces when it changes
+  // a week that already has a plan row — and the two a delete_row checks are still what
+  // the door wrote before it removes a row it added. `lines` is jsonb, compared as a
+  // document (key order does not count; see expectParts.ts). `week_start` is what the
+  // row IS and is never updated: changing it would make it a different week's plan.
+  // `updated_at` is the database's own (a trigger keeps it), never the door's.
+  week_plans: ["lines", "set_by"],
 };
 
 /** A JSON value, as it sits in a column or in the steps document. */

@@ -75,6 +75,7 @@ import {
   type FinanceDb,
   type LabelRow,
   type LinkedBillRow,
+  type WeekPlanRow,
 } from "./dbFinance.ts";
 // A budget goal for one pay cycle (2026-10-10): which cycles can be set, the six lines,
 // and the targets a goal adds up to — the one module the app's budget bars and the read
@@ -88,7 +89,22 @@ import {
   goalCycles,
   type CycleSpan,
 } from "../_shared/muse/lib/cycleBudget.ts";
-import type { CycleBudget, MerchantRule, Recurring } from "../_shared/muse/lib/types.ts";
+import type { CycleBudget, MerchantRule, Recurring, WeekPlan } from "../_shared/muse/lib/types.ts";
+// The weekly plan (2026-10-25): which weeks can be set, the cap on one line, and the plan a
+// week already follows — the one module the read door's finance.week answers from, through
+// the generated copy, so "what is this week's plan" has one answer on both doors.
+import {
+  cyclesInWeek,
+  nextRowAfter,
+  planForWeek,
+  PLAN_IS_WEEKLY,
+  weekOf,
+  weekPlanProblem,
+  WEEK_LINE_MAX,
+  WEEK_PLAN_WEEKS_AHEAD,
+  type WeekPlanFor,
+  type WeekSpan,
+} from "../_shared/muse/lib/weekPlan.ts";
 // Which bill and month the bank sync would attach a charge to (2026-10-25): asked before
 // link_charge_to_bill lets a bank charge take a month from a hand note.
 import { bankWouldLink, linkContextOf, type BankLink } from "../_shared/muse/lib/billMatch.ts";
@@ -114,7 +130,7 @@ import {
 // the read door, so the key it gives and the key this takes are one definition.
 import { SUGGESTION_KEY, SUGGESTION_KEY_MAX } from "../_shared/muse/worthALook.ts";
 import { DISPLAY } from "../_shared/muse/auth.ts";
-import { CYCLE_BUDGET_INSERT, lineLabel, MERCHANT_RULE_INSERT, ruleHabit } from "./financeUndo.ts";
+import { CYCLE_BUDGET_INSERT, lineLabel, MERCHANT_RULE_INSERT, ruleHabit, WEEK_PLAN_INSERT } from "./financeUndo.ts";
 import { cycleKeyOf } from "../_shared/muse/lib/selfAudit.ts";
 import { DUE_DAYS, STEP_DOWNS } from "../_shared/muse/lib/schedule.ts";
 import { isCardName } from "../_shared/muse/lib/forecast.ts";
@@ -5010,6 +5026,348 @@ const setCycleBudget: Tool = {
   },
 };
 
+// ── finance.set_weekly_plan ──────────────────────────────────────────────────
+//
+// ADDED 2026-10-25. Set the household's weekly spending plan — what each of the six lines
+// may spend in a week, Sunday to Saturday — or clear a week's row so the plan standing
+// before it applies again.
+//
+// WHY IT EXISTS. The daily allowance was the headline answer to "what can we spend", and
+// Gino called it "annoying, almost inaccurate": it swung after one big shop, sat at $0
+// for days after a cycle that ran over, never showed its sum, and a day is the wrong unit
+// for weekly spending. He approved a weekly view instead, and a weekly view needs a plan
+// per week. A plan is a row in public.week_plans (supabase/schema_v46_week_plans.sql),
+// and src/lib/weekPlan.ts is the one place that turns rows into a week's figures: the
+// read door's finance.week calls it, and this tool reads the same file for which weeks
+// can be set and what a week already follows.
+//
+// A PLAN STANDS. A row is the whole plan FROM its Sunday on: the plan for any week is the
+// latest row on or before that week's Sunday. So "set the weekly plan" once holds every
+// week after, until another is set — and the reply says which later row, if any, takes
+// over. A call names any of the six lines with dollars PER WEEK; every line not named
+// keeps what the standing plan had, and the row stores all six, so the figures that plan
+// the week are the figures in the reply.
+//
+// THE FIRST PLAN NAMES EVERY LINE — 2026-10-25, found in review. The first cut filled a
+// line nobody named from the pay-cycle budget when no weekly plan covered it, and stored
+// that. Those are derived figures — odd cents, and whatever goal the cycle had that week,
+// a one-cycle squeeze included — and once written they STOOD for every week after, while
+// the reply only said the line "keeps what the week already followed". A plan nobody
+// chose, made permanent by a sentence nobody would read that way. So a line whose figure
+// would come from the pay-cycle budget has to be named: the household's first weekly
+// plan names all six, and the refusal says which are missing and what the pay cycle
+// would have given them. Once a plan stands, naming one line is enough.
+//
+// WHICH WEEK. `week_start` may be any date inside the week: it is moved to that week's
+// Sunday, so nobody has to work out which day the week starts. Left out, it is this week.
+// It may reach 8 weeks ahead and never back past this week — a plan looks forward, and
+// re-planning a finished week would re-grade spending already done. The shared
+// weekPlanProblem() says so, and names the weeks that can be set.
+//
+// THE UNDO RESTORES THE PREVIOUS PLAN EXACTLY — OR ITS ABSENCE. One row per call, one
+// compare-and-set recorded BEFORE anything is written (commit()):
+//   · a week that had a row → set_columns puts the old `lines` (and who set them) back,
+//     only while the row still holds what this wrote;
+//   · a week that had none → delete_row removes the new row, only while it still holds
+//     what this wrote, under an id chosen here before the write;
+//   · a cleared week → the named inverse in financeUndo.ts (week-plan.insert) puts the
+//     row back under the id it had, unless a plan has been set for that week since.
+// If the other phone sets the same week while this is writing, nothing is kept.
+//
+// PLAIN SENTENCES. The message names the week by its label and first day, every one of
+// the six lines by the plan's own label with its dollars, and the week's total. No
+// household figure is in this file; the example's numbers are made up.
+
+/** Said when the plan table is not there yet. Nothing was changed by then. */
+const NO_WEEK_TABLE_SAYS =
+  "I cannot set a weekly plan yet: the database is missing the table that holds it " +
+  "(schema_v46_week_plans.sql has not been run). Nothing was changed — the week keeps being " +
+  "planned from the pay-cycle budget until that is set up.";
+
+/** What finance.set_weekly_plan was asked to do, once every field has been checked. */
+type WeekAsk =
+  | { mode: "set"; week: WeekSpan; lines: { line: string; amount: number }[] }
+  | { mode: "clear"; week: WeekSpan };
+
+/**
+ * set_weekly_plan's week, lines and clear — EVERY problem with them, before anything is
+ * read. All of it is decidable from the payload and the Arizona calendar, so handler.ts
+ * runs this before the hourly write counter is bumped and a malformed plan costs nothing.
+ */
+function planWeeklyPlan(payload: Record<string, unknown>, ctx: ShapeCtx): Shaped<WeekAsk> {
+  const pad = problemPad();
+  // The Arizona date — never the runtime's, which from 5 PM is already tomorrow and, on a
+  // Saturday evening, already next week.
+  const today = azDateISO(ctx.az);
+
+  let week: WeekSpan | undefined;
+  if (payload.week_start === undefined) {
+    week = weekOf(today);
+  } else if (!isDateISO(payload.week_start)) {
+    pad.no("week_start is any date inside the week you are planning, as YYYY-MM-DD — I move it to that week's Sunday. Leave it out for this week.");
+  } else {
+    const w = weekOf(payload.week_start);
+    const problem = weekPlanProblem(w.start, today);
+    if (problem) pad.no(problem);
+    else week = w;
+  }
+
+  const clear = payload.clear;
+  if (clear !== undefined && clear !== true) {
+    pad.no("clear only takes true — it removes that week's plan so the plan standing before it applies. Leave it out to set amounts.");
+  }
+
+  const lines: { line: string; amount: number }[] = [];
+  const raw = payload.lines;
+  const example = `like {"groceries": 90}. The lines are ${BUDGET_LINE_KEYS.join(", ")}.`;
+  if (clear === true) {
+    if (raw !== undefined) pad.no("Send lines to set amounts, or clear: true to remove that week's plan — not both.");
+  } else if (raw === undefined) {
+    pad.no(`I need lines: each budget line you are setting, with dollars per week, ${example}`);
+  } else if (!isObject(raw)) {
+    pad.no(`lines has to be an object of budget line to dollars per week — it was ${kindOfValue(raw)}. Send it ${example}`);
+  } else {
+    const keys = Object.keys(raw);
+    if (keys.length === 0) pad.no(`lines is empty. Name at least one line, ${example}`);
+    const unknown = keys.filter((k) => !BUDGET_LINE_KEYS.includes(k));
+    if (unknown.length) pad.no(`lines: ${unknownKeysSays(unknown, BUDGET_LINE_KEYS)}`);
+    // In the plan's own order, so the reply reads the lines the way every list does.
+    for (const key of BUDGET_LINE_KEYS) {
+      if (!own(raw, key)) continue;
+      const v = raw[key];
+      const n = money(v);
+      if (n === null || n < 0 || n > WEEK_LINE_MAX) {
+        const was = typeof v === "number" ? `${v}` : kindOfValue(v);
+        pad.no(`${key} has to be dollars per week, from 0 to ${WEEK_LINE_MAX} — it was ${was}.`);
+      } else {
+        // To the cent, before anything is written: an undo compares what is there with
+        // what this wrote, and a figure that changed on the way in would never match.
+        lines.push({ line: key, amount: Math.round(n * 100) / 100 });
+      }
+    }
+  }
+
+  return pad.done((): WeekAsk => (clear === true ? { mode: "clear", week: week! } : { mode: "set", week: week!, lines }));
+}
+
+/** "the week of Sun Oct 25 – Sat Oct 31 (starting 2026-10-25)" — both, because the label
+ *  is what a person says and the date is what a later call has to send back. */
+const weekWords = (w: WeekSpan) => `the week of ${w.label} (starting ${w.start})`;
+
+/** A plan row as the shared maths reads one. */
+const asWeekPlan = (r: WeekPlanRow): WeekPlan => ({
+  id: r.id,
+  weekStart: r.weekStart,
+  lines: r.lines,
+  setBy: r.setBy === "gino" || r.setBy === "xinyan" ? r.setBy : undefined,
+});
+
+/** The goals of the pay cycles a week falls in — what the fallback plan is built from
+ *  when no weekly plan covers a line. A database without the goal table has none, which
+ *  is the standard budget: the same answer the read door gives there. */
+async function goalsForWeek(db: FinanceDb, week: WeekSpan): Promise<CycleBudget[]> {
+  const out: CycleBudget[] = [];
+  for (const start of cyclesInWeek(week.start)) {
+    try {
+      for (const r of await db.readCycleBudgets(start)) {
+        out.push({ id: r.id, cycleStart: r.cycleStart, line: r.line, amount: r.amount });
+      }
+    } catch (e) {
+      if (isMissingTable(e, "cycle_budgets")) return [];
+      throw e;
+    }
+  }
+  return out;
+}
+
+/** Two plans' six figures, the same to the cent. */
+const sameWeekLines = (a: Record<string, number>, b: Record<string, number>): boolean =>
+  BUDGET_LINE_KEYS.every((k) => Math.round((a[k] ?? Number.NaN) * 100) === Math.round((b[k] ?? Number.NaN) * 100));
+
+/** Every line of a plan, labelled, in the plan's order: "Groceries $90.00, …". */
+const linesSaid = (lines: Record<string, number>): string =>
+  BUDGET_LINE_KEYS.map((k) => `${lineLabel(k)} ${dollars(lines[k] ?? 0)}`).join(", ");
+
+const weekTotal = (lines: Record<string, number>): number =>
+  Math.round(BUDGET_LINE_KEYS.reduce((s, k) => s + (lines[k] ?? 0), 0) * 100) / 100;
+
+/** What a week follows, in words, for a reply: the plan of some week, or the fallback. */
+const followsSaid = (p: WeekPlanFor): string =>
+  p.planIs === PLAN_IS_WEEKLY && p.setFor
+    ? `the plan set for the week of ${weekOf(p.setFor).label}`
+    : "the pay-cycle budget's share of the week";
+
+/** The sentence about what happens after this week — said, not stored (commit()'s note). */
+function standsSaid(week: WeekSpan, rows: readonly WeekPlan[]): string {
+  const next = nextRowAfter(week.start, rows);
+  return next
+    ? `From the week of ${weekOf(next.weekStart).label}, the plan already set for that week takes over.`
+    : "It stands for every week after it until another plan is set.";
+}
+
+async function setWeekPlan(
+  ctx: Ctx,
+  week: WeekSpan,
+  rows: WeekPlanRow[],
+  lines: { line: string; amount: number }[],
+): Promise<ToolOutcome> {
+  const db = ctx.db as FinanceDb;
+  const me = ctx.person;
+  const plans = rows.map(asWeekPlan);
+  const mine = rows.find((r) => r.weekStart === week.start);
+  // What the week follows now — its own row, the row standing before it, or the pay-cycle
+  // budget's share — worked out by the function finance.week reads the week with.
+  const before = planForWeek(week.start, plans, { cycleBudgets: await goalsForWeek(db, week) });
+  const was: Record<string, number> = Object.fromEntries(before.lines.map((l) => [l.key, l.plan]));
+
+  // All six lines: the named ones as sent, every other one as the standing plan had it.
+  const named = new Map(lines.map((l) => [l.line, l.amount]));
+  // A line not named whose figure would come from the pay-cycle budget is refused, never
+  // pinned — THE FIRST PLAN NAMES EVERY LINE, above. Nothing has been written yet.
+  const unplanned = before.lines.filter((l) => l.from !== PLAN_IS_WEEKLY && !named.has(l.key));
+  if (unplanned.length) {
+    const one = unplanned.length === 1;
+    return refuse(
+      409,
+      `No weekly plan covers ${unplanned.map((l) => lineLabel(l.key)).join(", ")} yet, so I need ${one ? "that line" : "those lines"} named too: ` +
+        `a weekly plan stands for every week after it, and filling ${one ? "it" : "them"} in from the pay-cycle budget ` +
+        `(${unplanned.map((l) => `${lineLabel(l.key)} ${dollars(l.plan)}`).join(", ")} for ${weekWords(week)}) would make that cycle's share the plan for good. ` +
+        `Send ${unplanned.map((l) => l.key).join(", ")} as well, in dollars per week. Nothing was changed.`,
+    );
+  }
+  const next: Record<string, number> = {};
+  for (const k of BUDGET_LINE_KEYS) next[k] = named.has(k) ? named.get(k)! : was[k];
+
+  // Nothing to do when the week already follows a weekly plan with these figures. A week
+  // on the fallback is different: writing its figures down pins them, which is a change.
+  if (sameWeekLines(next, was) && (mine || before.planIs === PLAN_IS_WEEKLY)) {
+    return refuse(
+      409,
+      `That is already the plan for ${weekWords(week)} — it follows ${followsSaid(before)} — so nothing changed.`,
+    );
+  }
+
+  const row: WeekPlanRow = mine
+    ? { ...mine, lines: next, setBy: me }
+    : { id: crypto.randomUUID(), weekStart: week.start, lines: next, setBy: me };
+  const steps: UndoStep[] = [
+    mine
+      ? {
+          kind: "set_columns",
+          table: "week_plans",
+          id: mine.id,
+          before: { lines: mine.lines, set_by: mine.setBy },
+          after: { lines: next, set_by: me },
+        }
+      : { kind: "delete_row", table: "week_plans", id: row.id, after: { lines: next, set_by: me } },
+  ];
+  const total = weekTotal(next);
+  const notNamed = BUDGET_LINE_KEYS.filter((k) => !named.has(k));
+  const keptSays = notNamed.length
+    ? ` ${notNamed.length === 1 ? "The line not named keeps" : "The lines not named keep"} what the week already followed: ${followsSaid(before)}.`
+    : "";
+
+  return commit(ctx, "finance.set_weekly_plan", {
+    steps,
+    summary: `Set the weekly plan for ${weekWords(week)}: ${linesSaid(next)} — ${dollars(total)} a week in all.`,
+    // About the state the plan leaves, so it is said and not stored — see commit()'s note.
+    note: scrubCap(`${standsSaid(week, plans)}${keptSays}`, 300),
+    result: {
+      week_start: week.start,
+      week_end: week.end,
+      label: week.label,
+      lines: BUDGET_LINE_KEYS.map((k) => ({ key: k, label: lineLabel(k), was: was[k], now: next[k] })),
+      not_named: notNamed,
+      plan_total: total,
+      stands_until: nextRowAfter(week.start, plans)?.weekStart ?? null,
+    },
+    rowIds: [row.id],
+    async write() {
+      if (mine) {
+        const hit = await db.setColumns("week_plans", mine.id, { lines: next, set_by: me }, { lines: mine.lines, set_by: mine.setBy });
+        if (hit === "moved") return refuse(409, MOVED);
+        return;
+      }
+      if ((await db.insertWeekPlan(row)) === "taken") {
+        return refuse(
+          409,
+          `A plan for ${weekWords(week)} was set from the other phone while I was working, so I changed nothing. Read the week again and ask me once more.`,
+        );
+      }
+    },
+  });
+}
+
+async function clearWeekPlan(ctx: Ctx, week: WeekSpan, rows: WeekPlanRow[]): Promise<ToolOutcome> {
+  const db = ctx.db as FinanceDb;
+  const mine = rows.find((r) => r.weekStart === week.start);
+  const plans = rows.map(asWeekPlan);
+  const goals = await goalsForWeek(db, week);
+  if (!mine) {
+    const follows = planForWeek(week.start, plans, { cycleBudgets: goals });
+    return refuse(
+      409,
+      `There is no plan filed for ${weekWords(week)} itself — it already follows ${followsSaid(follows)} — so nothing changed.`,
+    );
+  }
+  // What the week follows once its row is gone, from the same function finance.week uses.
+  const after = planForWeek(week.start, plans.filter((p) => p.id !== mine.id), { cycleBudgets: goals });
+  return commit(ctx, "finance.set_weekly_plan", {
+    steps: [
+      {
+        kind: "run_handler",
+        handler: WEEK_PLAN_INSERT,
+        before: { id: mine.id, week_start: mine.weekStart, lines: mine.lines, set_by: mine.setBy },
+      },
+    ],
+    summary: `Cleared the weekly plan filed for ${weekWords(week)}, so that week follows ${followsSaid(after)}.`,
+    note: scrubCap(`That comes to ${dollars(after.total)} a week in all.`, 300),
+    result: {
+      week_start: week.start,
+      week_end: week.end,
+      label: week.label,
+      cleared: BUDGET_LINE_KEYS.map((k) => ({ key: k, label: lineLabel(k), was: mine.lines[k] ?? null })),
+      now_follows: after.planIs,
+      now_follows_week_of: after.setFor,
+      plan_total: after.total,
+    },
+    rowIds: [mine.id],
+    async write() {
+      if ((await db.deleteRow("week_plans", mine.id, { lines: mine.lines, set_by: mine.setBy })) === "moved") {
+        return refuse(409, MOVED);
+      }
+    },
+  });
+}
+
+const setWeeklyPlan: Tool = {
+  kind: "direct",
+  does:
+    `Set the household's weekly spending plan, Sunday to Saturday — any of the six lines, in dollars per week — or clear: true to remove one week's plan so the plan standing before it applies. A plan stands for every week after it until another is set. Leave week_start out for this week; otherwise any date inside the week, up to ${WEEK_PLAN_WEEKS_AHEAD} weeks ahead. Lines not named keep what the standing plan had; the first plan names all six.`,
+  fields: ["lines", "week_start", "clear"],
+  // Made-up figures and no week_start, so the example is this week whatever day it is
+  // read — a dated example would go stale in a week. All six lines (2026-10-25, review),
+  // because the first plan has to name every line and the example is what an assistant
+  // copies first.
+  example: { lines: { groceries: 90, gas: 60, dining: 60, household: 70, pets: 0, misc: 30 } },
+  check: (payload, ctx) => problemsOf(planWeeklyPlan(payload, ctx)),
+  async run(payload, ctx) {
+    const db = ctx.db as FinanceDb;
+    const plan = planWeeklyPlan(payload, ctx);
+    if (!plan.ok) return shapeRefused(plan.problems, payload);
+    const ask = plan.value;
+
+    let rows: WeekPlanRow[];
+    try {
+      rows = await db.readWeekPlans();
+    } catch (e) {
+      if (isMissingTable(e, "week_plans")) return refuse(503, NO_WEEK_TABLE_SAYS);
+      throw e;
+    }
+    return ask.mode === "clear" ? clearWeekPlan(ctx, ask.week, rows) : setWeekPlan(ctx, ask.week, rows, ask.lines);
+  },
+};
+
 // ── system.undo ──────────────────────────────────────────────────────────────
 //
 // The other half of the bargain. Phase 2's argument for dropping the approval queue
@@ -5313,6 +5671,8 @@ export const FINANCE_WRITE_TOOLS: Record<string, Tool> = {
   "finance.dismiss_suggestion": dismissSuggestion,
   // 2026-10-10: a budget goal for one pay cycle, read back by the app and budget_status.
   "finance.set_cycle_budget": setCycleBudget,
+  // 2026-10-25: the household's standing weekly plan, read back by finance.week.
+  "finance.set_weekly_plan": setWeeklyPlan,
   "system.undo": systemUndo,
 };
 

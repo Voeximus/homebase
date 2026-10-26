@@ -57,6 +57,8 @@ import { ATTACK_ORDER, LEAN_VARIABLE, perCycle, sumTargets } from "../src/lib/pl
 // A pay cycle's budget goal (2026-10-10): the shared rule the write door's reply totals with.
 import { cycleTargets } from "../src/lib/cycleBudget.ts";
 import type { CycleBudget } from "../src/types.ts";
+// The weekly plan (2026-10-25): the shared rule the write door fills unnamed lines from.
+import { planForWeek } from "../src/lib/weekPlan.ts";
 import { readFileSync } from "node:fs";
 import { toAppData } from "../supabase/functions/_shared/muse/rows.ts";
 import { NAME_MAX, scrub } from "../supabase/functions/_shared/muse/scrub.ts";
@@ -391,6 +393,11 @@ describe("every finance write is driven here", () => {
     // the cycle in progress opened on the 15th and the next opens on the 30th). Made-up
     // figures; two new rows, and the undo removes both.
     "finance.set_cycle_budget": { cycle_start: "2026-09-30", lines: { groceries: 120, dining: 80 } },
+    // 2026-10-25: the household's standing weekly plan. Made-up figures for this week (the
+    // test's Arizona date is Saturday the 26th, so the week is Sep 20 – Sep 26), all six
+    // lines because the first plan has to name every one; one new row, and the undo
+    // removes it.
+    "finance.set_weekly_plan": { lines: { groceries: 70, gas: 50, dining: 45, household: 55, pets: 0, misc: 30 } },
     "system.undo": {},
     "finance.refresh_bank": {},
   };
@@ -4445,6 +4452,375 @@ describe("finance.set_cycle_budget", () => {
     it("a generic insert into the goal table is refused by name", async () => {
       const db = financeDb(client({ data: { id: G1 }, error: null }));
       await expect(db.insertRow("cycle_budgets", { line: "groceries" })).rejects.toThrow(/not a column this door inserts/);
+    });
+  });
+});
+
+// ── finance.set_weekly_plan ──────────────────────────────────────────────────
+//
+// ADDED 2026-10-25. The household's standing weekly plan, Sunday to Saturday, stored one
+// row per plan change in public.week_plans and read back by finance.week. Every figure
+// here is MADE UP; the repo is public.
+//
+// The instant is 7 PM on Saturday 26 Sep in Arizona — already Sunday the 27th in UTC — so
+// "this week" is Sep 20 – Sep 26, and a door that read the runtime's calendar would file
+// the plan under the wrong Sunday. A plan may be set for Sep 20 through Nov 15.
+
+describe("finance.set_weekly_plan", () => {
+  const SEP20 = "2026-09-20";
+  const OCT4 = "2026-10-04";
+  const OCT18 = "2026-10-18";
+  const W1 = "acac1111-2222-3333-4444-555555555555";
+  const W2 = "acac2222-2222-3333-4444-555555555555";
+  const W3 = "acac3333-2222-3333-4444-555555555555";
+  /** A full plan, $250 a week. */
+  const SIX = { groceries: 70, gas: 50, dining: 45, household: 55, pets: 0, misc: 30 };
+  const rowsOf = (db: Fake) => db.tables.week_plans;
+  const byIdRows = (db: Fake) => [...rowsOf(db)].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const seedRow = (db: Fake, id: string, weekStart: string, lines: Record<string, number>, setBy: string | null = "xinyan") =>
+    db.tables.week_plans.push({ id, week_start: weekStart, lines: { ...lines }, set_by: setBy });
+  /** What the pay-cycle budget gives each line in a week, from the shared rule. */
+  const fallback = (weekStart: string, goals: CycleBudget[] = []) =>
+    Object.fromEntries(planForWeek(weekStart, [], { cycleBudgets: goals }).lines.map((l) => [l.key, l.plan]));
+  const labels = LEAN_VARIABLE.map((l) => l.label);
+
+  it("sets THIS week — the Arizona week, not the runtime's — with every line the first plan names", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_weekly_plan", { lines: SIX });
+    expect(rowsOf(db)).toHaveLength(1);
+    const row = rowsOf(db)[0];
+    expect(row).toMatchObject({ week_start: SEP20, set_by: "gino" });
+    expect(row.lines).toEqual(SIX);
+    expect(body.result.week_start).toBe(SEP20);
+    expect(body.result.week_end).toBe("2026-09-26");
+    // The week both ways, every one of the six lines by the plan's own label, and the total.
+    expect(body.message).toContain("the week of Sun Sep 20 – Sat Sep 26 (starting 2026-09-20)");
+    for (const label of labels) expect(body.message).toContain(label);
+    expect(body.result.plan_total).toBe(250);
+    expect(body.message).toContain("$250.00 a week in all");
+    expect(body.message).toContain("It stands for every week after it until another plan is set.");
+    expect(body.message).not.toContain("not named");
+    expect(body.result.not_named).toEqual([]);
+  });
+
+  it("refuses to fill a line no plan covers from the pay cycle, says which and what it would have pinned, and writes nothing", async () => {
+    // FOUND 2026-10-25 in review: the first cut stored the pay cycle's share for every line
+    // not named, odd cents and any one-cycle goal included, and it stood for every week after.
+    const db = new Fake();
+    const was = fallback(SEP20);
+    const r = await no(db, "finance.set_weekly_plan", { lines: { groceries: 70, dining: 45 } });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("No weekly plan covers Gas + convenience, Household + Hygiene, Dog / pets, Misc / uncategorized yet");
+    expect(r.message).toContain(`Gas + convenience $${was.gas.toFixed(2)}`);
+    expect(r.message).toContain("for the week of Sun Sep 20 – Sat Sep 26 (starting 2026-09-20)");
+    expect(r.message).toContain("Send gas, household, pets, misc as well, in dollars per week. Nothing was changed.");
+    expect(db.writes).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+    expect(rowsOf(db)).toEqual([]);
+
+    // A hand-written standing row missing lines is held to the same rule, line by line.
+    const partial = new Fake();
+    seedRow(partial, W1, "2026-09-13", { groceries: 70, gas: 50, dining: 45 });
+    const r2 = await no(partial, "finance.set_weekly_plan", { lines: { dining: 50 } });
+    expect(r2.status).toBe(409);
+    expect(r2.message).toContain("No weekly plan covers Household + Hygiene, Dog / pets, Misc / uncategorized yet");
+    expect(r2.message).toContain("Send household, pets, misc as well");
+    expect(partial.writes).toHaveLength(0);
+    await ok(partial, "finance.set_weekly_plan", { lines: { dining: 50, household: 55, pets: 0, misc: 30 } });
+    expect(rowsOf(partial).find((x) => x.week_start === SEP20)!.lines).toEqual({ ...SIX, dining: 50 });
+  });
+
+  it("moves any date inside the week to that week's Sunday", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_weekly_plan", { week_start: "2026-10-07", lines: SIX });
+    expect(rowsOf(db)[0].week_start).toBe(OCT4);
+    expect(body.result.week_start).toBe(OCT4);
+    expect(body.message).not.toContain("not named");
+  });
+
+  it("keeps the standing plan's figures for the lines not named, and says which later plan takes over", async () => {
+    const db = new Fake();
+    seedRow(db, W1, SEP20, SIX);
+    seedRow(db, W2, OCT18, { ...SIX, groceries: 90 });
+    const body = await ok(db, "finance.set_weekly_plan", { week_start: OCT4, lines: { dining: 55 } });
+    const added = rowsOf(db).find((r) => r.week_start === OCT4)!;
+    expect(added.lines).toEqual({ ...SIX, dining: 55 });
+    expect(body.message).toContain("the plan set for the week of Sun Sep 20 – Sat Sep 26");
+    expect(body.message).toContain("From the week of Sun Oct 18 – Sat Oct 24, the plan already set for that week takes over.");
+    expect(body.result.stands_until).toBe(OCT18);
+    expect((body.result.lines as { key: string; was: number; now: number }[]).find((l) => l.key === "dining")).toEqual({
+      key: "dining",
+      label: "Dining out",
+      was: 45,
+      now: 55,
+    });
+  });
+
+  it("changes a week's own row in the caller's name, and the undo puts the old plan back exactly", async () => {
+    const db = new Fake();
+    seedRow(db, W1, SEP20, SIX, "xinyan");
+    const before = JSON.stringify(db.tables);
+    const body = await ok(db, "finance.set_weekly_plan", { lines: { groceries: 85 } });
+    expect(rowsOf(db)).toHaveLength(1);
+    expect(rowsOf(db)[0]).toMatchObject({ id: W1, set_by: "gino", lines: { ...SIX, groceries: 85 } });
+    await ok(db, "system.undo", { token: undoToken(body) });
+    // Byte for byte: the old figures AND who set them are back.
+    expect(JSON.parse(JSON.stringify(db.tables))).toEqual(JSON.parse(before));
+  });
+
+  it("records who set it from the key, never from the body", async () => {
+    const db = new Fake();
+    await ok(db, "finance.set_weekly_plan", { lines: SIX }, XINYAN);
+    expect(rowsOf(db)[0]).toMatchObject({ set_by: "xinyan" });
+    const r = await no(db, "finance.set_weekly_plan", { lines: { pets: 5 }, set_by: "gino" });
+    expect(r.status).toBe(400);
+    expect(rowsOf(db)).toHaveLength(1);
+  });
+
+  it("refuses a plan the week already follows, and writes nothing", async () => {
+    const db = new Fake();
+    seedRow(db, W1, SEP20, SIX);
+    const same = await no(db, "finance.set_weekly_plan", { lines: { groceries: SIX.groceries } });
+    expect(same.status).toBe(409);
+    expect(same.message).toContain("already the plan");
+    // A later week that already follows those figures through the standing plan, too.
+    const later = await no(db, "finance.set_weekly_plan", { week_start: OCT4, lines: SIX });
+    expect(later.status).toBe(409);
+    expect(later.message).toContain("the plan set for the week of Sun Sep 20 – Sat Sep 26");
+    expect(db.writes).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("writes a week's figures down even when they equal its fallback, because that pins them", async () => {
+    const db = new Fake();
+    await ok(db, "finance.set_weekly_plan", { lines: fallback(SEP20) });
+    expect(rowsOf(db)).toHaveLength(1);
+  });
+
+  it("names what the pay cycle would give a line — the goal where one is set, the standard budget where the goal table is missing", async () => {
+    const goals = [{ id: "abab9999-2222-3333-4444-555555555555", cycle_start: "2026-09-15", line: "gas", amount: 30, set_by: null }];
+    const db = new Fake();
+    db.tables.cycle_budgets.push(...goals);
+    const r = await no(db, "finance.set_weekly_plan", { lines: { groceries: 70 } });
+    expect(r.status).toBe(409);
+    // Sep 20 – Sep 26 lies wholly in the Sep 15 cycle (15 days): $30 for the cycle is $2 a day.
+    expect(r.message).toContain("Gas + convenience $14.00");
+    expect(rowsOf(db)).toEqual([]);
+
+    const noGoals = new Fake();
+    noGoals.noGoalTable = true;
+    const r2 = await no(noGoals, "finance.set_weekly_plan", { lines: { groceries: 70 } });
+    expect(r2.status).toBe(409);
+    expect(r2.message).toContain(`Gas + convenience $${fallback(SEP20).gas.toFixed(2)}`);
+    // And a plan naming all six goes through without the goal table.
+    await ok(noGoals, "finance.set_weekly_plan", { lines: SIX });
+    expect(rowsOf(noGoals)[0].lines).toEqual(SIX);
+  });
+
+  it("clears a week's own row so the plan before it applies, and the undo puts it back under its own id", async () => {
+    const db = new Fake();
+    seedRow(db, W1, SEP20, SIX);
+    seedRow(db, W2, OCT4, { ...SIX, dining: 20 }, null);
+    const before = JSON.stringify(db.tables);
+    const body = await ok(db, "finance.set_weekly_plan", { week_start: OCT4, clear: true });
+    expect(rowsOf(db).map((r) => r.id)).toEqual([W1]);
+    expect(body.message).toContain("Cleared the weekly plan filed for the week of Sun Oct 4 – Sat Oct 10 (starting 2026-10-04)");
+    expect(body.message).toContain("follows the plan set for the week of Sun Sep 20 – Sat Sep 26");
+    expect(body.message).toContain("$250.00 a week in all");
+    expect(body.result).toMatchObject({ now_follows: "weekly plan", now_follows_week_of: SEP20, plan_total: 250 });
+
+    await ok(db, "system.undo", { token: undoToken(body) });
+    const sorted = (t: Record<string, unknown[]>) => ({
+      ...t,
+      week_plans: [...(t.week_plans as { id: string }[])].sort((a, b) => a.id.localeCompare(b.id)),
+    });
+    expect(sorted(JSON.parse(JSON.stringify(db.tables)))).toEqual(sorted(JSON.parse(before)));
+
+    const nothing = new Fake();
+    seedRow(nothing, W1, SEP20, SIX);
+    const r = await no(nothing, "finance.set_weekly_plan", { week_start: OCT4, clear: true });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("There is no plan filed for the week of Sun Oct 4 – Sat Oct 10");
+    expect(r.message).toContain("already follows the plan set for the week of Sun Sep 20 – Sat Sep 26");
+    expect(nothing.changes).toHaveLength(0);
+  });
+
+  it("undoing a clear refuses while a newer plan holds that week, and finishes once that newer change is undone", async () => {
+    const db = new Fake();
+    seedRow(db, W2, OCT4, SIX);
+    const original = byIdRows(db).map((r) => ({ ...r, lines: { ...(r.lines as Record<string, number>) } }));
+    const cleared = await ok(db, "finance.set_weekly_plan", { week_start: OCT4, clear: true });
+    const newer = await ok(db, "finance.set_weekly_plan", { week_start: OCT4, lines: { ...SIX, groceries: 99 } });
+    const r = await no(db, "system.undo", { token: undoToken(cleared) });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("A plan has been set again for the week of Sun Oct 4 – Sat Oct 10");
+    expect(r.message).toContain("undo that newer change first");
+    expect(rowsOf(db)).toHaveLength(1);
+    expect((rowsOf(db)[0].lines as Record<string, number>).groceries).toBe(99);
+
+    await ok(db, "system.undo", { token: undoToken(newer) });
+    await ok(db, "system.undo", { token: undoToken(cleared) });
+    expect(byIdRows(db)).toEqual(original);
+  });
+
+  it("an undo refuses rather than overwrite a plan changed since", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_weekly_plan", { lines: SIX });
+    rowsOf(db)[0].lines = { ...(rowsOf(db)[0].lines as Record<string, number>), groceries: 75 }; // the other phone, afterwards
+    const r = await no(db, "system.undo", { token: undoToken(body) });
+    expect(r.status).toBe(409);
+    expect(rowsOf(db)).toHaveLength(1);
+    expect((rowsOf(db)[0].lines as Record<string, number>).groceries).toBe(75);
+  });
+
+  it("keeps nothing when the other phone sets the same week in the gap", async () => {
+    const db = new Fake();
+    db.onReadWeekPlans = () => {
+      db.onReadWeekPlans = null;
+      seedRow(db, W3, SEP20, { ...SIX, groceries: 60 });
+    };
+    const r = await no(db, "finance.set_weekly_plan", { lines: SIX });
+    expect(r.status).toBe(409);
+    expect(r.message).toContain("was set from the other phone");
+    expect(rowsOf(db).map((x) => x.id)).toEqual([W3]);
+    expect(db.changes[0].state).toBe("abandoned");
+
+    // And when it changes this week's existing row in the gap: the compare-and-set refuses.
+    const db2 = new Fake();
+    seedRow(db2, W1, SEP20, SIX);
+    db2.onReadWeekPlans = () => {
+      db2.onReadWeekPlans = null;
+      rowsOf(db2)[0].lines = { ...SIX, misc: 31 };
+    };
+    const r2 = await no(db2, "finance.set_weekly_plan", { lines: { groceries: 71 } });
+    expect(r2.status).toBe(409);
+    expect((rowsOf(db2)[0].lines as Record<string, number>).misc).toBe(31);
+    expect((rowsOf(db2)[0].lines as Record<string, number>).groceries).toBe(SIX.groceries);
+    expect(db2.changes[0].state).toBe("abandoned");
+  });
+
+  it("refuses a malformed plan with every problem at once, and writes nothing", async () => {
+    const offered = "starting 2026-09-20";
+    const cases: [Record<string, unknown>, string[]][] = [
+      [
+        { lines: { groceries: -5, food: 10, dining: "40" } },
+        ["groceries has to be dollars per week", "dining has to be dollars per week", "It does not take food", "groceries, gas, dining, household, pets, misc"],
+      ],
+      [{ week_start: "2026-09-13", lines: { groceries: 10 } }, ["already over", offered]],
+      [{ week_start: "2026-11-22", lines: { groceries: 10 } }, ["more than 8 weeks ahead", offered]],
+      [{ week_start: "09/30/2026", lines: { groceries: 10 } }, ["as YYYY-MM-DD"]],
+      [{ week_start: "2026-02-31", lines: { groceries: 10 } }, ["as YYYY-MM-DD"]],
+      [{ lines: { groceries: 10 }, clear: true }, ["not both"]],
+      [{ clear: false }, ["clear only takes true", "I need lines"]],
+      [{ lines: {} }, ["lines is empty"]],
+      [{ lines: [1] }, ["has to be an object", "it was a list"]],
+      [{ lines: { groceries: 20000 } }, ["from 0 to 5000", "it was 20000"]],
+      [{}, ["I need lines"]],
+    ];
+    for (const [args, says] of cases) {
+      const db = new Fake();
+      const r = await no(db, "finance.set_weekly_plan", args);
+      expect(r.status, JSON.stringify(args)).toBe(400);
+      for (const s of says) expect(r.message, JSON.stringify(args)).toContain(s);
+      expect(db.writes, JSON.stringify(args)).toHaveLength(0);
+      expect(db.changes, JSON.stringify(args)).toHaveLength(0);
+      expect(rowsOf(db)).toEqual([]);
+    }
+    // The far edge answers: the eighth week ahead.
+    const edge = new Fake();
+    await ok(edge, "finance.set_weekly_plan", { week_start: "2026-11-15", lines: SIX });
+    expect(rowsOf(edge)[0].week_start).toBe("2026-11-15");
+  });
+
+  it("takes dollars to the cent before writing them, so its own undo still finds what it wrote", async () => {
+    const db = new Fake();
+    const body = await ok(db, "finance.set_weekly_plan", { lines: { ...SIX, dining: 41.006 } });
+    expect((rowsOf(db)[0].lines as Record<string, number>).dining).toBe(41.01);
+    await ok(db, "system.undo", { token: undoToken(body) });
+    expect(rowsOf(db)).toEqual([]);
+  });
+
+  it("says so in a sentence, and changes nothing, on a database without the plan table", async () => {
+    const db = new Fake();
+    db.noWeekTable = true;
+    const r = await no(db, "finance.set_weekly_plan", { lines: { groceries: 70 } });
+    expect(r.status).toBe(503);
+    expect(r.message).toContain("schema_v46_week_plans.sql");
+    expect(r.message).toContain("Nothing was changed");
+    expect(db.writes).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+  });
+
+  it("an outage while reading the plans is a 500, not \"the database is not set up\"", async () => {
+    const db = new Fake();
+    db.readWeekPlans = () => Promise.reject(new Error("read week_plans: TypeError: fetch failed"));
+    const r = await handleWrite(post("finance.set_weekly_plan", { lines: { groceries: 70 } }), deps(db));
+    expect(r.status).toBe(500);
+    expect(String(r.body.message)).not.toContain("schema_v46");
+  });
+
+  it("the restore handler refuses a before-state it cannot read, and counts its own row as done", async () => {
+    const db = new Fake();
+    const ctx = { db, person: "gino", at: AT, az: AT, appUrl: "", push: () => Promise.resolve() } as unknown as Ctx;
+    const good = { id: W1, week_start: OCT4, lines: { ...SIX }, set_by: "gino" };
+    for (const before of [
+      null,
+      "groceries",
+      { ...good, id: "not-an-id" },
+      { ...good, week_start: "2026-10-05" }, // a Monday
+      { ...good, lines: { ...SIX, vacation: 10 } },
+      { ...good, lines: { ...SIX, groceries: -1 } },
+      { ...good, lines: { ...SIX, groceries: "70" } },
+      { ...good, lines: [70] },
+      { ...good, set_by: "someone" },
+    ]) {
+      const out = await UNDO_REGISTRY["week-plan.insert"].apply(before as never, ctx);
+      expect(out.ok, JSON.stringify(before)).toBe(false);
+    }
+    expect(rowsOf(db)).toEqual([]);
+    expect(db.writes).toHaveLength(0);
+    const out = await UNDO_REGISTRY["week-plan.insert"].apply(good as never, ctx);
+    expect(out.ok).toBe(true);
+    expect(rowsOf(db)).toEqual([good]);
+    // Asked again, it is already back — done, not refused.
+    const again = await UNDO_REGISTRY["week-plan.insert"].apply(good as never, ctx);
+    expect(again.ok).toBe(true);
+    expect(rowsOf(db)).toHaveLength(1);
+  });
+
+  describe("against the real client's shape", () => {
+    function client(reply: { data: unknown; error: { code?: string; message?: string } | null; count?: number }) {
+      const chain: Record<string, unknown> = {};
+      for (const m of ["from", "select", "eq", "order", "insert", "single"]) chain[m] = () => chain;
+      chain.then = (okFn: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(reply).then(okFn, bad);
+      return chain as unknown as Parameters<typeof financeDb>[0];
+    }
+    const row = { id: W1, weekStart: SEP20, lines: { ...SIX }, setBy: "gino" };
+
+    it("a plan already filed for that week is \"taken\", and nothing is counted as written", async () => {
+      const taken = financeDb(
+        client({ data: null, error: { code: "23505", message: 'duplicate key value violates unique constraint "week_plans_week_start_key"' } }),
+      );
+      expect(await taken.insertWeekPlan(row)).toBe("taken");
+      expect(taken.writesLanded()).toBe(0);
+      const fresh = financeDb(client({ data: { id: W1 }, error: null }));
+      expect(await fresh.insertWeekPlan(row)).toBe("ok");
+      expect(fresh.writesLanded()).toBe(1);
+    });
+
+    it("reads the jsonb plan as numbers, and refuses a read the row cap cut short", async () => {
+      const got = await financeDb(
+        client({ data: [{ id: W1, week_start: SEP20, lines: { groceries: 70, dining: "x" }, set_by: null }], error: null, count: 1 }),
+      ).readWeekPlans();
+      expect(got).toEqual([{ id: W1, weekStart: SEP20, lines: { groceries: 70, dining: Number.NaN }, setBy: null }]);
+      await expect(
+        financeDb(client({ data: [{ id: W1, week_start: SEP20, lines: {}, set_by: null }], error: null, count: 2 })).readWeekPlans(),
+      ).rejects.toThrow(/2 rows exist and 1 came back/);
+    });
+
+    it("a generic insert into the plan table is refused by name", async () => {
+      const db = financeDb(client({ data: { id: W1 }, error: null }));
+      await expect(db.insertRow("week_plans", { lines: {} })).rejects.toThrow(/not a column this door inserts/);
     });
   });
 });

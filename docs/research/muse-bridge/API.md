@@ -928,7 +928,117 @@ checking in the app.
 
 ---
 
+## The week — what we can spend, Sunday to Saturday
+
+Added 2026-10-25, and it is now **the** answer to "what can we spend?". The daily
+allowance below it was the headline until then, and it read as annoying and almost
+inaccurate: one big shop early in a pay cycle cut every later day's figure, a cycle that
+ran over left it at $0 for days, it never showed its sum, and a day is the wrong unit for
+spending that is weekly — groceries, gas — in a household where one person works nights
+and "today" splits at midnight. So the household agreed a **weekly plan**, per budget
+line, and this tool reads the week against it.
+
+**Every figure is worked out already, and so is the picture.** The door draws the week as
+a ready monospace picture — bars, figures and the sum in words — so both assistants show
+exactly the same thing and neither one computes, rounds or redraws anything. Show it in a
+code block as it stands, then say its Why line in your own words.
+
+**A plan stands.** The plan for a week is the latest weekly plan set on or before that
+week's Sunday, so one plan holds every week after it until another is set. With no plan
+set at all, the week is planned at the pay cycle's own rate — that cycle's budget per day
+× 7 — and the reply says so.
+
+### `finance.week` — what can we spend this week?
+
+**Takes** `week` (optional): `"this"` (the default), `"last"`, `"next"`, or any
+`YYYY-MM-DD` inside the week you want — the door finds its Sunday. Up to 53 weeks back or 8
+ahead; further is refused in a sentence.
+
+**What comes back:**
+
+- `week` — `start` (a Sunday), `end` (a Saturday) and a ready-to-say `label`, like
+  "Sun Mar 1 – Sat Mar 7". `is_this_week` says whether today is in it.
+- `plan_is` — "weekly plan" or "from the pay-cycle budget". Say which. With a weekly plan,
+  `plan_set_for_week_of` is the Sunday it was set for, which may be weeks before this one.
+  `plan_table_set_up: false` means the database cannot hold a weekly plan yet — not that
+  nobody set one.
+- `plan_total`, `spent_on_lines`, `money_back_total`, `money_back_not_counted`,
+  `spent_total`, `left_total`, `over_by`, `days_left` and `per_day_left`. `spent_total` is
+  `spent_on_lines` less `money_back_total` — the money back that counts — and is never
+  below zero. `money_back_not_counted` is the money back listed that does not count.
+  `over_by` is the week's overspend, or null when it is within plan.
+  `days_left` counts today through Saturday (0 for a finished week, 7 for one not
+  started). `per_day_left` is what is left spread over those days, or null once none is
+  left.
+- `lines` — per budget line: `key`, `label`, `plan`, `spent`, `left`, `over_by` (null
+  unless that line is over) and `plan_is`.
+- `money_back` — refunds dated in the week, largest first: `id`, `date`, `amount`,
+  `counted` (the part that comes off the week), `line` (the budget line it traces to, or
+  null), `not_counted_because` (null when all of it counts), the cleaned `merchant` and
+  `still_processing`.
+- `biggest` — the week's five biggest charges on the budget lines: `id`, `date`, `amount`,
+  `line`, the cleaned `merchant`, `still_processing` and `part_of_a_split`.
+- `picture` — the ready picture. `why` is its Why line as one sentence.
+- `note` — read it.
+
+**The traps.**
+
+- **Never redraw, reformat or recompute the picture.** Not a bar, not a rounding. Its
+  whole dollars are chosen so the sums it shows add up and never contradict the fields:
+  over or under is always the exact cents' verdict, and a gap that rounds to $0 but is not
+  $0 reads "under $1". The fields carry exact cents.
+- **Money back comes off the week's total, never off a line — and only money back that
+  traces to the lines counts** (2026-10-25). It traces when it is filed under a budget
+  line's category, or when a charge on the lines from the same merchant, in the 90 days
+  before it, is big enough to be what it paid back. And it never counts past what the
+  lines spent that week, so spending never reads below $0. A deposit filed as a refund, a
+  payback from a person, or a refund for something off the lines (electronics, a car
+  repair, a bill) is listed with `counted: 0` and its reason, and the Why line says how
+  much was left out. Never count it back in. A line can still read over plan while the
+  week is not.
+- **Spending is the budget's own.** Charges still processing count; money moved between
+  their own accounts does not; a charge tied to a bill, a debt or a planned item is not
+  everyday spending.
+- `left_total` can be negative. Say "over by $12", not "−12 left".
+
+#### `finance.set_weekly_plan` — set (or clear) the weekly plan
+
+**Takes `lines`, or `clear` — and optionally `week_start`.**
+
+- `lines` is an object of budget line to **dollars per week**, like
+  `{"groceries": 90, "dining": 60}`. The lines are the same six a pay cycle's goal
+  takes; `finance.week` lists them with their labels. **The first weekly plan names all
+  six.** Once a plan stands, name one line or all six — every line not named keeps what the
+  plan standing before it had. A line no weekly plan covers yet has to be named: the door
+  refuses rather than fill it in from the pay-cycle budget, because the plan it writes
+  stands for every week after, and the refusal says which lines and what the pay cycle
+  would have given them (2026-10-25). Zero is a real plan. Sending what the week already
+  follows changes nothing and says so.
+- `clear: true` (instead of `lines`) removes the plan filed for that one week, so the plan
+  standing before it applies again.
+- `week_start` is any `YYYY-MM-DD` inside the week; the door moves it to that week's
+  Sunday. Leave it out for this week. It can reach 8 weeks ahead, and never a week that is
+  already over.
+
+**Say the week and the figures before you send it**, and read the reply back: it names the
+week by its label and first day, every line's figure and the week's total, and whether a
+plan already set for a later week takes over from it. Every call comes back with an undo
+token, and undoing it puts the previous plan back exactly — or no plan at all. An undo
+never overwrites a plan set since: it refuses and says so. If the other phone sets the
+same week while this is writing, nothing from the call is kept. Before the database has the
+table for weekly plans, it refuses in a sentence that says so — pass that on.
+
+**Once `schema_v46_week_plans.sql` has run, the household's agreed plan is set once, all
+six lines, in one call** (2026-10-25). Until then every week is planned from the pay-cycle
+budget, which is not the plan they agreed.
+
+---
+
 ## The daily money check-in — the start of a day and the end of it
+
+**No longer the headline (2026-10-25).** "What can we spend?" is answered by `finance.week`
+above. These two still answer when asked about one day, and nothing about them changed —
+but do not lead with a daily figure, and do not send one as a scheduled message.
 
 Added 2026-10-10, for a routine they asked for: at the start of each person's day, *what
 can we spend today*; at the end of it, *the goal against what we spent, what to keep

@@ -49,6 +49,7 @@ import type {
   PaidOverrideRow,
   RuleRow,
   TrackedDebtRow,
+  WeekPlanRow,
 } from "./dbFinance.ts";
 import { LIST_CAP, provesRolledBack, StatementRefused } from "./dbFinance.ts";
 import { MAX_ROWS, PAGE } from "../_shared/muse/paging.ts";
@@ -161,6 +162,9 @@ const INSERT_COLUMNS: Record<UndoTable, readonly string[]> = {
   // for it, so it has its own verb, insertCycleBudget below — see dbFinance.ts for why.
   // An empty list here means a generic insert into this table is refused by name.
   cycle_budgets: [],
+  // The same for a weekly plan row (2026-10-25): it always carries the id the door chose,
+  // so it goes in through insertWeekPlan, and a generic insert here is refused by name.
+  week_plans: [],
 };
 
 export function financeDb(admin: SupabaseClient): FinanceDb {
@@ -800,6 +804,49 @@ export function financeDb(admin: SupabaseClient): FinanceDb {
       // this. It proves the statement rolled back, so nothing landed.
       if (error?.code === "23505") return "taken";
       must(error, "insert cycle_budgets");
+      landed += 1;
+      return "ok";
+    },
+
+    async readWeekPlans() {
+      // A GET for the same reason readCycleBudgets is one: a missing table then comes back
+      // as PostgREST's own sentence, which the tool can tell apart from "no plan set".
+      // Four named columns — the row's identity and the two a change replaces. Counted
+      // as well as read, so a response the server's row cap cut short is refused rather
+      // than taken for the whole table.
+      const { data, error, count } = await admin
+        .from("week_plans")
+        .select("id, week_start, lines, set_by", { count: "exact" })
+        .order("week_start", { ascending: true });
+      must(error, "read week_plans");
+      const rows = (data ?? []) as Record<string, unknown>[];
+      if (typeof count === "number" && count !== rows.length) {
+        throw new Error(`read week_plans: ${count} rows exist and ${rows.length} came back`);
+      }
+      return rows.map((r): WeekPlanRow => {
+        const lines: Record<string, number> = {};
+        const raw = r.lines;
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+          for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+            lines[k] = typeof v === "number" ? v : Number.NaN;
+          }
+        }
+        return { id: str(r.id), weekStart: str(r.week_start), lines, setBy: optStr(r.set_by) };
+      });
+    },
+
+    async insertWeekPlan(row) {
+      // Four named columns into one named table, under the id the door chose. No upsert,
+      // for the reason insertCycleBudget gives.
+      const { error } = await admin
+        .from("week_plans")
+        .insert({ id: row.id, week_start: row.weekStart, lines: row.lines, set_by: row.setBy })
+        .select("id")
+        .single();
+      // 23505 is unique_violation: week_start or the primary key already holds this. It
+      // proves the statement rolled back, so nothing landed.
+      if (error?.code === "23505") return "taken";
+      must(error, "insert week_plans");
       landed += 1;
       return "ok";
     },

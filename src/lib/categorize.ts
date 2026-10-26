@@ -758,7 +758,7 @@ const MOM_ZELLE = /ZELLE PAYMENT TO MON\b/i;
  * so the caller vouches for it from the sign of the amount. The memo and the
  * confirmation code are not part of the name.
  */
-function zellePerson(desc: string, dir: "to" | "from"): string[] | null {
+export function zellePerson(desc: string, dir: "to" | "from"): string[] | null {
   const words = (s: string) => s.toUpperCase().replace(/[^A-Z]+/g, " ").trim().split(" ").filter(Boolean);
   const posted = desc.match(/^\s*ZELLE PAYMENT (TO|FROM)\s+(.+?)(?:\s+FOR\b|\s*;|\s+CONF\s*#|$)/i);
   if (posted) return posted[1].toLowerCase() === dir ? words(posted[2]) : null;
@@ -776,7 +776,7 @@ function zellePerson(desc: string, dir: "to" | "from"): string[] | null {
  *  other way round. That is the first-name collision RAIL_LED refuses on the merchant
  *  side, and the household's own history has a one-word, three-letter name in it —
  *  one of the household. Two people who share a first name are two people. */
-function samePerson(a: readonly string[], b: readonly string[]): boolean {
+export function samePerson(a: readonly string[], b: readonly string[]): boolean {
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
   if (!short.length || short[0].length < 3) return false;
   if (short.length === 1) return long.length === 1 && short[0] === long[0];
@@ -786,7 +786,7 @@ function samePerson(a: readonly string[], b: readonly string[]): boolean {
 /** Is this person one of the household, by Gino's own history labels? A Zelle to or
  *  from them labelled "Internal:" (the spouse) is money moving between their own
  *  pockets, so they are never someone money comes back from. */
-function householdPerson(person: readonly string[]): boolean {
+export function householdPerson(person: readonly string[]): boolean {
   const said = person.join(" ");
   return [`Zelle payment to ${said}`, `Zelle payment from ${said}`].some(
     (d) => hisLookup(merchantKey(d))?.startsWith("Internal:") === true,
