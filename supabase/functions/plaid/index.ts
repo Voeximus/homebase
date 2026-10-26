@@ -4,6 +4,8 @@
 //   link_token — make a Link token (browser opens Link). connection_id ⇒ update mode.
 //   exchange   — public_token → access_token (stored in Vault) → discover accounts → first sync.
 //   sync       — pull /transactions/sync, reconcile, write posted rows + bank-truth balances.
+//   repaired   — after Link in update mode: clear 'needs_reauth' and sync (2026-10-26).
+//   disconnect — hard-delete a login's accounts and history; needs confirm = connection_id.
 //
 // The Plaid secret and the bank access_token live server-side ONLY — never sent
 // to the browser. Triggers that hit `sync`: the Plaid webhook (real-time, app
@@ -42,7 +44,7 @@ import {
   type LearnedRules,
 } from "../_shared/categorize.ts";
 import { handNoteToRetire, holderOf, type CycleHolder, type PaidScanRow } from "../_shared/handNote.ts";
-import { mayLinkFromAnotherAccount, mayTakeOver, type ChargeStanding } from "../_shared/chargeStanding.ts";
+import { mayLinkByShape, mayLinkFromAnotherAccount, mayTakeOver, type ChargeStanding } from "../_shared/chargeStanding.ts";
 import { pendingFields } from "../_shared/pendingRow.ts";
 import { creditFlags, seedFlags, spendHistoryDescriptions } from "../_shared/seedOnly.ts";
 import {
@@ -54,6 +56,8 @@ import {
   type StatementCopy,
 } from "../_shared/dedupGuard.ts";
 import { readAllPages } from "../_shared/readAllPages.ts";
+import { CREDIT_TRANSFER_REASON, droppedLine, uniqueByBankId, type DroppedLineRow } from "../_shared/droppedLines.ts";
+import { healthAfterFailure, healthAfterSync } from "../_shared/itemHealth.ts";
 import { denyUnlessCaller } from "../_shared/callerAuth.ts";
 import { armedTrackedDebts, closedDebtPayment, closedTrackedDebts, trackedDebtFor } from "../_shared/trackedDebts.ts";
 
@@ -441,6 +445,13 @@ async function syncConnection(connId: string, force = false) {
     // recompute below. The same gap re-fed any row already entered by hand or by
     // CSV/PDF import.
     //
+    // (2026-10-26: "Connect a bank" now repairs the tapping phone's own login when it
+    // needs signing in again, in update mode, through that connection_id branch — see
+    // repairTarget in src/lib/plaidClient.ts — so the commonest re-link no longer mints a
+    // new item. A person can still link the same bank a second time — while nothing is
+    // marked broken, or from a phone that is not the login's owner's — and this guard is
+    // what stands in that gap.)
+    //
     // What goes in the set, and why the scope is this narrow:
     //   • rows with NO provider_txn_id — hand-entered / imported: the overlap case
     //   • feed rows this connection does NOT own — the older item after a re-link
@@ -604,6 +615,36 @@ async function syncConnection(connId: string, force = false) {
       storedLink: storedLinkById.get(row.providerTxnId) ?? null,
     });
 
+    // The categorizer's answer for one posted outflow, AS THE LOOP BELOW USES IT — and,
+    // for a bill named only by the SHAPE of the line (an ACH transfer read as the car
+    // payment, SHAPE_BILL_RULES), the bill it settles, or null.
+    //
+    // That answer is seed-only (2026-10-26, in review). It links a charge only at the
+    // bill's own figure to the cent, from an account the bill may be paid from, and only
+    // a charge ARRIVING — or one already stored with that same link (mayLinkByShape in
+    // _shared/chargeStanding.ts). Every other charge it names — another size, or a stored
+    // row with no such link — is filed with `before`, the categorizer without that rule,
+    // which is exactly what this sync wrote before it. The first version sent those to
+    // the named-bill-with-no-row path instead, which rewrote a stored row's category to
+    // `other` and flagged it: a new rule re-deciding history.
+    //
+    // A tracked-debt payment keeps the shape answer either way: the debt is credited by
+    // its pattern whatever the categorizer says, as before.
+    //
+    // One function, asked by the spend history and the loop alike, so the two cannot
+    // disagree about which rows are written as spending.
+    const postedAnswer = (row: (typeof ops.upsertPosted)[number]) => {
+      const c = classify(row.description, row.amount, learned, row.raw);
+      if (!(c.kind === "bill" && c.billAmountGate)) return { c, shapeHit: null };
+      const live = outRecs.filter((r: any) => billLiveOnPaymentDate(r, row.date));
+      let shapeHit = matchBillForCharge(c.billName, live, acctIdByProv[row.accountId] ?? null, row.amount, sharedAccts, true);
+      if (shapeHit && !mayLinkByShape(standingOf(row), String(shapeHit.bill.id), shapeHit.fromAnotherAccount)) {
+        shapeHit = null;
+      }
+      const td = row.amount < 0 ? matchTrackedDebt(row.description) : undefined;
+      return { c: shapeHit || td ? c : forExistingRow(c), shapeHit };
+    };
+
     // What the household's own money OUT says about money coming IN — creditCategory
     // reads it to tell a refund or a payback from earnings (2026-10-25). Read only when
     // this sync carries a credit that could be one; a paycheck or a transfer never asks.
@@ -642,7 +683,7 @@ async function syncConnection(connId: string, force = false) {
             ops.upsertPosted,
             (r) =>
               !!matchTrackedDebt(r.description) ||
-              classify(r.description, r.amount, learned, r.raw).kind !== "skip" ||
+              postedAnswer(r).c.kind !== "skip" ||
               !!closedDebtPayment(closedDebts, r.description, seenProviderIds.has(r.providerTxnId))?.record,
           ),
           ...spendHistoryDescriptions([], ops.pendingUpsert, (r) => pendingFields(r, learned)?.type === "expense"),
@@ -695,13 +736,31 @@ async function syncConnection(connId: string, force = false) {
       fallbackTo: Record<string, any[]>;
     }[] = [];
     const retiring = new Set<string>();
+    // Every posted line this loop leaves out of the ledger, written to dropped_lines after
+    // the ledger write (2026-10-26, _shared/droppedLines.ts). These were bare `continue`s:
+    // the line went nowhere, so a rule that dropped real money did it without a sound.
+    // Only a line the ledger does NOT already hold counts — a stored row the bank re-sends
+    // and the categorizer now skips stays in the ledger as it is, so it is not "dropped".
+    // And only from an account the app holds: an account taken out of the app is not
+    // written at all, by choice, and listing its lines would argue with that choice.
+    const dropped: DroppedLineRow[] = [];
+    const noteDropped = (row: (typeof ops.upsertPosted)[number], reason: string) => {
+      if (storedIds.has(row.providerTxnId)) return;
+      const acct = acctIdByProv[row.accountId];
+      if (!acct) return;
+      const d = droppedLine(row, acct, reason);
+      if (d) dropped.push(d);
+    };
     for (const row of ops.upsertPosted) {
       // Incoming money: capture real income so it's VISIBLE and a reimbursement
       // payback can be matched against it. Internal transfers between our OWN
       // accounts are the same dollars moving (not new money) → drop. Balance comes
       // from the bank's reported figure, so inserting income never distorts it.
       if (row.amount > 0) {
-        if (classifyCredit(row.description) === "transfer") continue;
+        if (classifyCredit(row.description) === "transfer") {
+          noteDropped(row, CREDIT_TRANSFER_REASON);
+          continue;
+        }
         // Paycheck, refund or other income — see creditCategory. Its refund rules are
         // seed-only, so a credit already in the ledger keeps the category it has
         // (creditFlags in _shared/seedOnly.ts says why that covers other-income too).
@@ -730,7 +789,7 @@ async function syncConnection(connId: string, force = false) {
       // the debt. Recorded settled (out of the budget); the debt balance is
       // recomputed from the sum of these below.
       const td = row.amount < 0 ? matchTrackedDebt(row.description) : undefined;
-      const c = classify(row.description, row.amount, learned, row.raw);
+      const { c, shapeHit } = postedAnswer(row);
       if (!td && c.kind === "skip") {
         // A payment that only a CLOSED debt's pattern matches. FOUND in review
         // 2026-10-25, on live data, before the change that stopped arming closed debts
@@ -747,7 +806,11 @@ async function syncConnection(connId: string, force = false) {
           row.amount < 0
             ? closedDebtPayment(closedDebts, row.description, seenProviderIds.has(row.providerTxnId))
             : null;
-        if (!gone?.record) continue;
+        if (!gone?.record) {
+          // Dropped, as before — and now written down, with the categorizer's own reason.
+          noteDropped(row, c.reason || "left out by the categorizer");
+          continue;
+        }
         // Never silent, like the extra-payment path below: a row the categorizer would
         // have dropped is being written, and that has to be readable in the logs.
         console.log(
@@ -817,7 +880,13 @@ async function syncConnection(connId: string, force = false) {
         // keeps the own-account match exactly as it was and allows the other only on the
         // name AND the amount band, with a shared account on one side — so the Claude Pro
         // shape above stays shut. The day-and-amount guess below never crosses accounts.
-        let named = matchBillForCharge(c.billName, liveRecs, chargeAcct, row.amount, sharedAccts);
+        // A bill the categorizer named from the SHAPE of the line — an ACH transfer as the
+        // car payment (2026-10-26, SHAPE_BILL_RULES) — was decided by postedAnswer above:
+        // the bill it settles at its own amount to the cent, or (as a tracked-debt payment
+        // only) none. Any other charge it named reaches here as its `before` answer.
+        let named = c.billAmountGate
+          ? shapeHit
+          : matchBillForCharge(c.billName, liveRecs, chargeAcct, row.amount, sharedAccts);
         // …and only for a charge ARRIVING (2026-10-25, chargeStanding.ts): a stored row the
         // bank re-sends keeps the shape it has — linked only if it already is, to this
         // bill — and a charge whose pending row a person answered keeps their answer. Both
@@ -1149,6 +1218,48 @@ async function syncConnection(connId: string, force = false) {
       if (error) throw new Error("apply_bank_sync (reverse flush): " + error.message);
     }
 
+    // The lines this sync left out of the ledger, written down (2026-10-26, schema_v47).
+    // AFTER the ledger write, and never able to fail the sync: the money is already
+    // recorded, and a missing table (v47 not run yet) only costs this record. An upsert on
+    // the bank's id, so a re-sync of the same line writes the same row, not a second one.
+    //
+    // Two kinds of line come back OUT of the table, so it never lists something that is
+    // not dropped: one the ledger now holds (a rule changed and this sync wrote it), and
+    // one the bank withdrew (Plaid's `removed`). Both deletes are by the bank's id only.
+    //
+    // One row per bank id first (uniqueByBankId): a line Plaid lists in both `added` and
+    // `modified` would otherwise make Postgres refuse its whole batch. And a batch that
+    // fails does not stop the next one (2026-10-26, in review) — each is its own record.
+    try {
+      const lines = uniqueByBankId(dropped);
+      for (let i = 0; i < lines.length; i += 100) {
+        const { error: dErr } = await admin
+          .from("dropped_lines")
+          .upsert(lines.slice(i, i + 100), { onConflict: "provider_txn_id" });
+        if (dErr) console.warn(`dropped lines ${i + 1}–${Math.min(i + 100, lines.length)} (not recorded this sync):`, dErr.message);
+      }
+      if (lines.length) {
+        console.log(
+          `dropped: left ${lines.length} line(s) out of the ledger — ` +
+            lines
+              .map((d) => `${d.date} ${d.direction} ${d.amount.toFixed(2)} (${d.reason})`)
+              .join("; ")
+              .slice(0, 500),
+        );
+      }
+      const written = [
+        ...Object.values(postedByAcct).flat(),
+        ...Object.values(billByAcct).flat(),
+      ].map((r: any) => String(r.provider_txn_id));
+      const gone = [...new Set([...written, ...ops.reverse])];
+      for (let i = 0; i < gone.length; i += 100) {
+        const { error: gErr } = await admin.from("dropped_lines").delete().in("provider_txn_id", gone.slice(i, i + 100));
+        if (gErr) console.warn(`dropped lines ${i + 1}–${Math.min(i + 100, gone.length)} (clean-up skipped this sync):`, gErr.message);
+      }
+    } catch (e) {
+      console.warn("dropped lines:", String((e as Error)?.message ?? e));
+    }
+
     // The rest of each carried answer: the flags apply_bank_sync does not write.
     //
     // Each half is guarded on the POSTED row's own state, so a carry can never
@@ -1369,6 +1480,10 @@ async function syncConnection(connId: string, force = false) {
           classify(r.description ?? "", -Math.abs(Number(r.amount)), learned, r.raw_description ?? undefined),
         );
         if (c.ambiguous) continue;
+        // (A shape-named bill — an ACH transfer read as the car payment, 2026-10-26 — never
+        // reaches here as a bill: it is seed-only, so forExistingRow hands this sweep the
+        // answer from before that rule. An old unlinked row that is really a car payment
+        // is offered by W7 instead, which a person answers.)
         if (c.kind === "bill") {
           // Do not touch the category — just make sure it is asking. The name goes
           // in the log so there is a record of which bill it thinks it is.
@@ -1398,16 +1513,27 @@ async function syncConnection(connId: string, force = false) {
       console.warn("relabel sweep:", String((e as Error)?.message ?? e));
     }
 
+    // The money write succeeded, so the connection is healthy — but this update used to
+    // null last_error unconditionally, which is what let the pending failure above stay
+    // invisible for as long as it did.
+    //
+    // And since 2026-10-26 it no longer washes away a warning that a login is about to
+    // stop (_shared/itemHealth.ts). A webhook may have set 'needs_reauth' while this sync
+    // ran, so the health columns are decided from the row as it is NOW, read just before
+    // the write: an advance warning (PENDING_EXPIRATION / PENDING_DISCONNECT) stays, word
+    // for word, because a sync working today says nothing about the date it names; a login
+    // that had stopped is cleared, because this sync is the proof it works again.
+    const { data: health } = await admin
+      .from("bank_connections")
+      .select("status, last_error")
+      .eq("id", connId)
+      .maybeSingle();
     await admin
       .from("bank_connections")
       .update({
         cursor,
         last_sync_at: new Date().toISOString(),
-        // The money write succeeded, so the connection is healthy — but this
-        // update used to null last_error unconditionally, which is what let the
-        // pending failure above stay invisible for as long as it did.
-        status: "ok",
-        last_error: pendingErr ? pendingErr.slice(0, 400) : null,
+        ...healthAfterSync(health, pendingErr ? pendingErr.slice(0, 400) : null),
         consecutive_failures: 0,
       })
       .eq("id", connId);
@@ -1434,14 +1560,17 @@ async function syncConnection(connId: string, force = false) {
     const msg = String((e as Error)?.message ?? e);
     const { data: cf } = await admin
       .from("bank_connections")
-      .select("consecutive_failures")
+      .select("consecutive_failures, status, last_error")
       .eq("id", connId)
       .single();
+    // A login the bank stopped accepting is 'needs_reauth' with a plain "sign in again"
+    // reason, not a bare 'error' (2026-10-26, healthAfterFailure in _shared/itemHealth.ts);
+    // and a row already marked 'needs_reauth' keeps that instruction through any other
+    // failure. Everything else is recorded exactly as before.
     await admin
       .from("bank_connections")
       .update({
-        status: "error",
-        last_error: msg.slice(0, 400),
+        ...healthAfterFailure(cf, msg),
         consecutive_failures: (cf?.consecutive_failures ?? 0) + 1,
       })
       .eq("id", connId);
@@ -1463,11 +1592,46 @@ async function syncAll(p: any) {
   return json({ synced: out });
 }
 
+// The app finished Plaid Link in UPDATE mode for an existing connection (2026-10-26):
+// the person signed in again, and Plaid repaired the SAME login — no new item, no second
+// copy of the accounts. Nothing to exchange (update mode keeps the access token), so this
+// clears the "needs signing in again" mark and syncs at once. If the repair did not take,
+// that sync fails with the login error and the mark comes straight back
+// (healthAfterFailure), so clearing it first can never hide a login that still fails.
+async function repaired(p: any) {
+  const conn = p.connection_id;
+  if (!conn) return json({ error: "connection_id required" }, 400);
+  const { error } = await admin
+    .from("bank_connections")
+    .update({ status: "ok", last_error: null })
+    .eq("id", conn)
+    .eq("status", "needs_reauth");
+  if (error) throw new Error("repaired: " + error.message);
+  const result = await syncConnection(conn);
+  // How many accounts the login carries, so the app's "Linked N accounts" line reads the
+  // same after a repair as after a first link.
+  const { count } = await admin.from("accounts").select("id", { count: "exact", head: true }).eq("connection_id", conn);
+  return json({ connection_id: conn, repaired: true, accounts: count ?? 0, ...result });
+}
+
 // Remove a connection and everything it owns (its accounts + their feed rows +
 // pending). A real "disconnect bank" feature — and the cleanup for sandbox tests.
+//
+// IT TAKES A CONFIRMATION NOW (2026-10-26): `confirm` must repeat the connection id.
+// This is a hard delete of every account on the login and its whole transaction
+// history, with no undo, and until today any signed-in caller could set it off with one
+// field. Nothing in the app calls it (there is no disconnect button, by design); the
+// repeated id is the deliberate act a typed confirmation is everywhere else, so a stray
+// or half-built request answers 400 and deletes nothing.
 async function disconnect(p: any) {
   const conn = p.connection_id;
   if (!conn) return json({ error: "connection_id required" }, 400);
+  if (typeof p.confirm !== "string" || p.confirm !== conn) {
+    return json(
+      { error: "disconnect deletes this bank login's accounts and their whole history; send confirm equal to connection_id to do it" },
+      400,
+    );
+  }
   const { data: accts } = await admin.from("accounts").select("id").eq("connection_id", conn);
   const ids = (accts ?? []).map((a: any) => a.id);
   if (ids.length) await admin.from("transactions").delete().in("account_id", ids);
@@ -1487,6 +1651,7 @@ Deno.serve(async (req) => {
       case "link_token": return await linkToken(payload);
       case "exchange": return await exchange(payload);
       case "sync": return await syncAll(payload);
+      case "repaired": return await repaired(payload);
       case "set_webhook": return await setWebhook();
       case "disconnect": return await disconnect(payload);
       default: return json({ error: `unknown action: ${payload.action}` }, 400);

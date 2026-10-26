@@ -26,6 +26,7 @@ import type { Person } from "./auth.ts";
 import { checkSteps, type UndoRecord, type UndoState, type UndoStep } from "./undo.ts";
 import type { CycleBudget, WeekPlan } from "./lib/types.ts";
 import { toCycleBudget, toWeekPlan } from "./rows.ts";
+import { toDroppedLine, type DroppedLine } from "./droppedLines.ts";
 
 const STATES: readonly UndoState[] = ["pending", "undoable", "abandoned", "undone"];
 
@@ -158,6 +159,15 @@ export interface FinanceExtras {
    * src/lib/weekPlan.ts, not the loader's.
    */
   weekPlans(): Promise<{ known: boolean; rows: WeekPlan[] }>;
+  /**
+   * The bank lines the sync left out of the ledger (2026-10-26), dated `from` or later —
+   * or `known: false`, no rows, on a database where supabase/schema_v47_dropped_lines.sql
+   * has not been run. finance.worth_a_look reads it as nothing to say about dropped
+   * lines, which is the truth before the sync has anywhere to write them. Which lines are
+   * worth a look is droppedWorthALook()'s decision, not the loader's; `from` is
+   * droppedReadFrom(today), so the whole table is never read (nothing prunes it).
+   */
+  droppedLines(from: string): Promise<{ known: boolean; rows: DroppedLine[] }>;
 }
 
 /** Memoise one promise per key, so a repeated read is the same read. */
@@ -315,7 +325,40 @@ export function createFinanceExtras(db: Db): FinanceExtras {
     return { known: true, rows: rows.map(toWeekPlan) };
   });
 
+  /** The dropped bank lines dated `from` or later. Added 2026-10-26 with the sync's
+   *  dropped_lines.
+   *
+   *  THE SAME PROBE AS weekPlans, for the same reason: before schema_v47 is run, readAll's
+   *  HEAD count reads the missing table as an empty one. Here that would happen to be the
+   *  right answer, but only PostgREST's own missing-table sentence on a GET means "not set
+   *  up yet", and any other failure fails closed like every other read — a list of
+   *  dropped lines read from half the table would leave out the one that mattered with
+   *  nothing in the reply saying so. A row that is not a line (no id, date, direction or
+   *  amount) is left out rather than guessed at.
+   *
+   *  ONLY FROM `from` ON (2026-10-26, in review): on the server, count and pages alike,
+   *  so the read stays a few weeks long however long the table grows. One read per date,
+   *  memoised like the rest. */
+  const droppedReads = new Map<string, Promise<{ known: boolean; rows: DroppedLine[] }>>();
+  const droppedLines = (from: string) => {
+    const read = async () => {
+      const table = "dropped_lines";
+      try {
+        await db.select({ table, orderBy: "id" }).page(0, 0);
+      } catch (e) {
+        if (isMissingTable(e, table)) return { known: false, rows: [] as DroppedLine[] };
+        throw new LedgerUnreadable(table, `probe failed (${String((e as Error)?.message ?? e)})`);
+      }
+      const rows = await readAll(db, { table, orderBy: "id", gte: { date: from } });
+      return { known: true, rows: rows.map(toDroppedLine).filter((d): d is DroppedLine => d !== null) };
+    };
+    let p = droppedReads.get(from);
+    if (!p) droppedReads.set(from, (p = read()));
+    return p;
+  };
+
   return {
+    droppedLines,
     pendingCharges,
     bankConnections,
     jobRuns,

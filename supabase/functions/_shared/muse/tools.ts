@@ -114,7 +114,8 @@ import { catalogueOf, readEntries } from "./catalogue.ts";
 import { BadArgs, dateArg, intArg, lastDayOf, textArg, type Json, type Tool } from "./args.ts";
 import { FINANCE_TOOLS } from "./toolsFinance.ts";
 import { LABEL_MAX, NAME_MAX, money, scrub, scrubName, scrubOr } from "./scrub.ts";
-import { isDismissed, redactSuggestions } from "./worthALook.ts";
+import { droppedKey, isDismissed, redactSuggestions } from "./worthALook.ts";
+import { droppedReadFrom, droppedWorthALook } from "./droppedLines.ts";
 import { HEALTH_ABSENT, HEALTH_READS } from "./healthRead.ts";
 // The memory store's three read tools. Their own file, so nothing about how a memory
 // works lives in here and nothing about finance or health lives in there.
@@ -744,7 +745,12 @@ const financeWorthALook: Tool = {
   name: "finance.worth_a_look",
   summary: "What looks off but is a judgement call — the rule, the money, the charges it is standing on so you can act on it, and the key that dismisses it.",
   async run({ load, now }) {
-    const [data, dismissals] = await Promise.all([load.appData(), load.reviewDismissals()]);
+    const [data, dismissals, droppedRead] = await Promise.all([
+      load.appData(),
+      load.reviewDismissals(),
+      // Only the last few weeks of the table (droppedReadFrom) — the window and its slack.
+      load.droppedLines(droppedReadFrom(isoDate(now))),
+    ]);
     // THE HOUSEHOLD'S DISMISSALS ARE PASSED NOW, since 2026-10-10. This used to hand the
     // engine an empty set and answer `dismissals_known: false`, because dismissals lived
     // only in each phone's own storage ('hb-review-dismissed', src/lib/doctorDismissals.ts)
@@ -763,14 +769,21 @@ const financeWorthALook: Tool = {
     const suggestions = reviewLedger(data, now, dismissals.keys).filter(
       (s) => !isDismissed(s.key, dismissals.keys),
     );
-    const { suggestions: shown, total, left_out } = redactSuggestions(suggestions, data);
+    // W8, the door's own (2026-10-26): a bank line the sync left out of the ledger in the
+    // last two weeks that nothing explains as a transfer between their own accounts —
+    // droppedWorthALook decides which; a table not set up yet (schema_v47) is no lines.
+    // Dismissed by its key like every other suggestion.
+    const dropped = droppedWorthALook(droppedRead.rows, data, isoDate(now)).filter(
+      (d) => !isDismissed(droppedKey(d), dismissals.keys),
+    );
+    const { suggestions: shown, total, left_out } = redactSuggestions(suggestions, data, dropped);
     return {
       total,
       left_out,
       dismissals_known: dismissals.known,
       note: dismissals.known
-        ? "Anything either of you dismissed through Muse is already left out; a dismissal tapped on a phone before Muse could dismiss things is only on that phone, so one of those may still appear. To wave one away, send its `key` to finance.dismiss_suggestion on the write door. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token."
-        : "This lists everything, including anything already dismissed: the table that remembers dismissals has not been set up yet, so say so. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill on the write door, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token.",
+        ? "Anything either of you dismissed through Muse is already left out; a dismissal tapped on a phone before Muse could dismiss things is only on that phone, so one of those may still appear. To wave one away, send its `key` to finance.dismiss_suggestion on the write door. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token. A suggestion carrying `bank_line` is a bank line the app left out of the ledger: there is no charge to link, and finance.add_history_row puts it back only once one of them says it was real money."
+        : "This lists everything, including anything already dismissed: the table that remembers dismissals has not been set up yet, so say so. A suggestion carrying `charges` can be ACTED ON: link one with finance.link_charge_to_bill on the write door, using the charge id and the `bill` id. Say what it is before you do it, and every write comes back with an undo token. A suggestion carrying `bank_line` is a bank line the app left out of the ledger: there is no charge to link, and finance.add_history_row puts it back only once one of them says it was real money.",
       // Built key by key rather than spread, so nothing can ride along on a field
       // added to the engine's own type later.
       suggestions: shown.map((s) => {
@@ -787,6 +800,9 @@ const financeWorthALook: Tool = {
         // only say that something was wrong and never what, and the sentence they
         // used to end with ("open the app") names an app that is being retired.
         if (s.charges) o.charges = s.charges as unknown as Json;
+        // W8's bank line (2026-10-26): not a ledger charge, so nothing to link — what the
+        // line was, which way the money went, and why the sync left it out.
+        if (s.bank_line) o.bank_line = s.bank_line as unknown as Json;
         return o;
       }),
     };

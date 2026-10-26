@@ -126,7 +126,8 @@ export function bankWouldLink(tx: LinkCharge, ctx: LinkContext): BankLink | null
   const c = classify(tx.description ?? "", -amount, ctx.learned, tx.rawDescription);
   if (c.kind !== "bill" || !c.billName) return null;
   const live = ctx.bills.filter((b) => billLiveOnPaymentDate(b, tx.date));
-  const hit = matchBillForCharge(c.billName, live, tx.accountId ?? null, amount, ctx.shared);
+  // The sync's amount gate for a shape-named bill (2026-10-26) comes with the name.
+  const hit = matchBillForCharge(c.billName, live, tx.accountId ?? null, amount, ctx.shared, c.billAmountGate === true);
   if (!hit) return null;
   // The sync places the payment off the row's own due days (billAppliesTo), so this
   // does too — never the legacy name map the calendar falls back to.

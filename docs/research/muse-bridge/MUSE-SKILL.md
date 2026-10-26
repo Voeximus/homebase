@@ -369,7 +369,9 @@ reversed on purpose. The raw bank descriptor is still never returned by anything
   each `sentence` as it stands, and say `left_out` if it is above zero. A suggestion
   with `charges` can be acted on (usually `finance.link_charge_to_bill` with its `bill`
   id). To wave one away for both of us, send its `key` to `finance.dismiss_suggestion`.
-  Dismissals made through Muse are already left out.
+  Dismissals made through Muse are already left out. One with `bank_line` is a bank
+  line the app left out of the ledger — ask what it was; only if we say it was real
+  money, put it back with `finance.add_history_row` (it then stops being listed).
 - **`finance.unusual`** — this month's purchases far bigger than their category usually
   runs (or `{"month": "YYYY-MM"}`). A judgement call: say the charge and why it stands
   out, and let us decide. `finance.dismiss_unusual` waves one away.

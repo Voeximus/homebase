@@ -104,6 +104,10 @@ export interface DbQuery {
   orderBy: string;
   /** Equality filters, applied to BOTH the count and the pages. */
   eq?: Record<string, string>;
+  /** Lower bounds (column >= value), applied to BOTH the count and the pages, like `eq`.
+   *  Added 2026-10-26 for dropped_lines, which nothing prunes and which is read only for
+   *  its last few weeks. */
+  gte?: Record<string, string>;
 }
 
 export interface Db {

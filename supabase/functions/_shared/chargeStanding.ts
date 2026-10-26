@@ -49,8 +49,37 @@ export interface ChargeStanding {
  */
 export function mayLinkFromAnotherAccount(s: ChargeStanding, billId: string): boolean {
   if (s.isNew) return !s.answered;
+  return storedLinkIs(s, billId);
+}
+
+/** The ledger already holds this charge linked to `billId`. */
+function storedLinkIs(s: ChargeStanding, billId: string): boolean {
   const at = (s.storedLink ?? null) as { kind?: unknown; recurringId?: unknown } | null;
   return at?.kind === "bill" && at.recurringId === billId;
+}
+
+/**
+ * May the sync link this charge to `billId`, a bill the categorizer named only from the
+ * SHAPE of the line — an ACH transfer read as the car payment (SHAPE_BILL_RULES in
+ * categorize.ts, 2026-10-26) — at that bill's own amount to the cent?
+ *
+ *  · from ANOTHER account than the bill's: exactly mayLinkFromAnotherAccount.
+ *  · from the bill's own account, a NEW charge: yes — even when a person answered its
+ *    pending row. CHANGED 2026-10-26 in review: the first version refused that charge, so
+ *    a category tapped on the pending car payment (the phone buzzes on every pending
+ *    charge) left the posted one unlinked and the bill reading unpaid. A bill named by
+ *    its lender is linked on its own account in that case, and this is the same match
+ *    held tighter — the right account and the exact amount — so it is linked the same
+ *    way: the bill link wins over the carried category, and a flow the person set still
+ *    carries (carryCorrection in plaidSync.ts).
+ *  · a charge already stored, only when it already carries that same bill link: a
+ *    stored charge with no link keeps the shape it has. The rule is new, and a new rule
+ *    may seed a row but never re-decide one.
+ */
+export function mayLinkByShape(s: ChargeStanding, billId: string, fromAnotherAccount: boolean): boolean {
+  if (fromAnotherAccount) return mayLinkFromAnotherAccount(s, billId);
+  if (s.isNew) return true;
+  return storedLinkIs(s, billId);
 }
 
 /**

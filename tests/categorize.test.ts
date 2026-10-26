@@ -172,9 +172,12 @@ describe("regressions the existing rules already guard — pinned so a fix canno
     expect(c.appCategory).toBe("interest");
   });
 
+  // CHANGED 2026-10-26: Sam's Club has a household rule now, which answers its untagged
+  // charges without asking (see the household-rule tests in nearSpelling.test.ts), so the
+  // "still a question" half is pinned on a merchant with no rule of its own.
   it("a bank-tagged pump is fuel; an untagged charge inside the fuel range is a question", () => {
     expect(spend("Sam's Club", 41, "SAMSCLUB 4956 GAS 07/16").appCategory).toBe("transport");
-    expect(spend("Sam's Club", 34.91, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ").ambiguous).toBe(true);
+    expect(spend("Costco", 34.91, "CHECKCARD 0815 COSTCO WHSE #1234 TEMPE AZ").ambiguous).toBe(true);
   });
 });
 
@@ -422,15 +425,21 @@ describe("a rule the app should never have offered to save", () => {
   // CHANGED 2026-10-25. Inside the range a pump charge can fall in, the pre-fill used
   // to be whatever the taught rule said. Gino gave the household's own reading on
   // 2026-10-24 (HOUSEHOLD_DEPARTMENT_RULES): untagged, $35 to $50 is gas, anything else
-  // the store. So the pre-fill is his band now, not the merchant-keyed rule — and the
-  // charge still asks, because the band is his reading, not the bank saying so.
-  it("inside the fuel range the household band sets the pre-fill, and it still asks", () => {
+  // the store. So the pre-fill is his band now, not the merchant-keyed rule.
+  //
+  // CHANGED AGAIN 2026-10-26: the band no longer asks — the household answered it — but
+  // it only SEEDS: a row the ledger already has is asked about exactly as before
+  // (`before`, still ambiguous), so no re-sync can re-decide one.
+  it("inside the fuel range the household band answers, and only for a new row", () => {
     const below = spend("Sam's Club", 34.91, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ", taught);
     expect(below.appCategory).toBe("groceries");
-    expect(below.ambiguous).toBe(true);
+    expect(below.ambiguous).toBeFalsy();
+    expect(below.seedOnly).toBe(true);
+    expect(below.before?.ambiguous).toBe(true);
     const inBand = spend("Sam's Club", 41.5, "CHECKCARD 0815 SAMS CLUB #4956 TEMPE AZ", taught);
     expect(inBand.appCategory).toBe("transport");
-    expect(inBand.ambiguous).toBe(true);
+    expect(inBand.confidence).toBe("high");
+    expect(inBand.seedOnly).toBe(true);
   });
 
   it("a bank-tagged pump is fuel at any amount", () => {

@@ -528,6 +528,16 @@ ready-made `sentence` and a `key`; and `left_out`, how many did not fit in one r
 A suggestion may also carry `rule`, `kind`, a whole-dollar `amount`, a `month`, a
 `bill` id, and `charges` — the charges it is standing on, so it can be acted on.
 
+**`bank_line` (rule `W8`, since 2026-10-26) is a bank line the app left out of the
+ledger** in the last two weeks — one the bank sync's rules skipped and nothing explains
+as one half of a transfer between their own accounts: a Zelle to or from someone, a
+remittance. It carries the line's `date`, `amount`, `direction` (out or in), the
+cleaned `merchant` and `why` the sync left it out. It is not a ledger charge, so there
+is nothing to link. Say what it is and ask; only once one of them says it was real
+money, `finance.add_history_row` on the write door puts it back as history — and once
+it is back (a history row on the same account, the same way, for the same amount within
+three days) it is no longer listed, so there is nothing to dismiss.
+
 **Say the sentence as it stands, and say the number that was left out.** Never guess
 at what was held back.
 

@@ -14,7 +14,13 @@ import { type ScheduleEntry } from "../lib/schedule";
 import { t } from "../lib/i18n";
 import { Button, inputClass, labelClass, ProgressBar, Sheet } from "../components/ui";
 import { usePlaidLink } from "react-plaid-link";
-import { createLinkToken, exchangePublicToken } from "../lib/plaidClient";
+import {
+  createLinkToken,
+  exchangePublicToken,
+  findRepairTarget,
+  finishRepair,
+  storedLinkConnection,
+} from "../lib/plaidClient";
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function shortDebt(name: string): string {
@@ -542,7 +548,14 @@ function ConnectBank() {
   const onSuccess = async (public_token: string, metadata: any) => {
     setBusy(true);
     setStatus(t("Linking your accounts…"));
-    const { data, error } = await exchangePublicToken(public_token, metadata?.institution?.name);
+    // A repair (2026-10-26) has nothing to exchange — Plaid fixed the same login in
+    // place, and an exchange would store it a second time with a second copy of every
+    // account. Which login is being repaired was stashed with the token
+    // (createLinkToken), read back here so no stale render can lose it.
+    const repairing = storedLinkConnection();
+    const { data, error } = repairing
+      ? await finishRepair(repairing)
+      : await exchangePublicToken(public_token, metadata?.institution?.name);
     setBusy(false);
     setLinkToken(null);
     if (error) { setStatus("⚠️ " + error.message); return; }
@@ -554,10 +567,15 @@ function ConnectBank() {
     if (linkToken && ready) open();
   }, [linkToken, ready, open]);
 
+  // Same button, same words — but when THIS PHONE'S bank login needs signing in again, it
+  // repairs that login in Plaid's update mode instead of linking the bank a second time
+  // (which duplicated every account). Someone else's flagged login is repaired from their
+  // own phone. See repairTarget in plaidClient.ts.
   const start = async () => {
     setBusy(true);
     setStatus(null);
-    const { token, error } = await createLinkToken();
+    const target = await findRepairTarget();
+    const { token, error } = await createLinkToken(target ?? undefined);
     setBusy(false);
     if (error || !token) { setStatus("⚠️ " + (error ?? "no link token")); return; }
     setLinkToken(token);

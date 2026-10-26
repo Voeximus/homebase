@@ -168,7 +168,11 @@ describe("plaid-webhook records the syncs it triggers", () => {
 
   it("leaves no row for a ping that did no work", async () => {
     for (const body of [
-      { webhook_type: "ITEM", webhook_code: "ERROR", item_id: "item-1" },
+      // An ITEM ping about the login itself does work since 2026-10-26 (tests/itemHealth
+      // .test.ts); one that changes nothing here still leaves no row.
+      { webhook_type: "ITEM", webhook_code: "NEW_ACCOUNTS_AVAILABLE", item_id: "item-1" },
+      { webhook_type: "ITEM", webhook_code: "WEBHOOK_UPDATE_ACKNOWLEDGED", item_id: "item-1" },
+      { webhook_type: "ITEM", webhook_code: "PENDING_EXPIRATION" },
       { webhook_type: "TRANSACTIONS", webhook_code: "SOMETHING_ELSE", item_id: "item-1" },
       { webhook_type: "TRANSACTIONS", webhook_code: "SYNC_UPDATES_AVAILABLE" },
       "not json",

@@ -5,13 +5,27 @@
 
 import type { Recurring, Transaction } from "../types";
 import {
+  billAmountToTheCent,
   classify,
   merchantKey,
   matchRecurringName,
   stripStatementNoise,
   type LearnedRules,
+  type PayableBill,
 } from "./categorize";
 import { billCycleFor } from "./schedule";
+
+/** A bill row in the columns billAmountToTheCent reads — the same mapping billMatch.ts
+ *  makes for the app's audit, so the import asks the sync's own amount question. */
+const asPayableBill = (r: Recurring): PayableBill => ({
+  name: r.name,
+  account_id: r.accountId ?? null,
+  amount: r.amount,
+  known_amount: r.knownAmount ?? null,
+  variable: r.variable ?? false,
+  due_days: r.dueDays ?? null,
+  cadence: r.cadence,
+});
 
 export interface RawRow {
   date: string; // ISO YYYY-MM-DD
@@ -282,11 +296,20 @@ export function buildImportPlan(
     });
 
     if (c.kind === "bill" && c.billName) {
-      const rec = matchRecurringName(c.billName, recurring);
+      const named = matchRecurringName(c.billName, recurring);
+      // A bill named by the shape of the line (an ACH transfer, 2026-10-26) is that bill
+      // only at the bill's own amount, to the cent — billAmountToTheCent, the bank sync's
+      // own test — so a transfer of any other size is offered as spending, never as the
+      // bill.
+      const rec =
+        named && c.billAmountGate && !billAmountToTheCent(asPayableBill(named), r.amount) ? null : named;
       if (!rec) {
         // Bill rule matched but no such recurring row — treat as variable other.
         if (match === "same") duplicates.push(asDup(r));
-        else variable.push(asVariable("other", `${c.reason} (no matching bill row)`, true));
+        else
+          variable.push(
+            asVariable("other", named ? "an ACH transfer that is not the bill's amount" : `${c.reason} (no matching bill row)`, true),
+          );
         continue;
       }
       // Attribute to the bill CYCLE this payment settles — early payments roll to

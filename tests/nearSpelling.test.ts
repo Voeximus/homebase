@@ -9,8 +9,9 @@
 // merchant, one merchant's rule answering for another, a bill or skip rule settling on a
 // near match, and a new rule re-deciding a row the ledger already has.
 //
-// Also here: Gino's Sam's Club rule of 2026-10-24 (untagged $35–$50 is gas), which sets
-// only the pre-fill of a charge the bank did not tag, and the sync's seed-only flags.
+// Also here: Gino's Sam's Club rule of 2026-10-24 (untagged $35–$50 is gas) and the
+// Walmart rule of 2026-10-26 (untagged is the store), which answer a charge the bank did
+// not tag — for a NEW row only — and the sync's seed-only flags.
 //
 // THE PUBLIC REPO RULE. Every merchant, name and amount below is invented, except the
 // merchant names the categorizer itself already carries (Sam's Club, Costco).
@@ -285,11 +286,21 @@ describe("Sam's Club: Gino's band sets the pre-fill of an untagged charge (2026-
     for (const amount of [12.4, 34.99, 50.01, 66]) expect(store(amount).appCategory, String(amount)).toBe("groceries");
   });
 
-  it("it is still asked about, and still never overwrites a row the ledger has", () => {
+  // CHANGED 2026-10-26. The band used to be a pre-fill that still asked. The household
+  // answered, so it no longer asks — but it still only SEEDS. A new row is filed with it,
+  // unflagged; a row the ledger already has keeps its category and the flag it carries.
+  it("it is not asked about any more, and still never overwrites a row the ledger has", () => {
     const c = store(41.5);
-    expect(c.ambiguous).toBe(true);
-    expect(c.confidence).toBe("low");
-    expect(seedFlags(c, undefined).keep_category).toBe(true);
+    expect(c.ambiguous).toBeFalsy();
+    expect(c.confidence).toBe("high");
+    expect(c.seedOnly).toBe(true);
+    // A new row: filed, not flagged, and never used to overwrite.
+    expect(seedFlags(c, undefined)).toEqual({ needs_review: false, keep_category: true });
+    // A row already in the ledger and still asking keeps asking, under the category it has.
+    expect(seedFlags(c, true)).toEqual({ needs_review: true, keep_category: true });
+    // And anything asking about a stored row gets the old shape back: still a question.
+    expect(forExistingRow(c).ambiguous).toBe(true);
+    expect(forExistingRow(c).confidence).toBe("low");
   });
 
   it("a charge the bank tagged as the pump keeps its tag", () => {
@@ -304,5 +315,86 @@ describe("Sam's Club: Gino's band sets the pre-fill of an untagged charge (2026-
     expect(c.ambiguous).toBe(true);
     expect(c.appCategory).toBe("groceries");
     expect(c.reason).not.toContain("household rule");
+  });
+});
+
+// WALMART, 2026-10-26. Fifteen Walmart charges sat flagged "fuel or store?" for good:
+// Walmart is a fuel-and-store merchant, so a merchant-keyed rule is overridden there by
+// design and every untagged charge in the fuel range asked. The household's reading
+// (2026-10-26: an untagged Walmart charge is the store, not the pump; the category is
+// groceries, Gino's default of 2026-06-17 for mixed carts) is now a rule, and a charge
+// the bank tags as the pump is still fuel. Seed-only, like Sam's Club.
+describe("Walmart: an untagged charge is the store, and only a new row is filed by it", () => {
+  const walmart = (amount: number, raw = "CHECKCARD 1012 WAL-MART #1234 TEMPE AZ") => spend("Walmart", amount, undefined, raw);
+
+  it("an untagged charge anywhere in the fuel range is groceries, at high confidence, not asked", () => {
+    for (const amount of [8.5, 27.35, 41.5, 61.4]) {
+      const c = walmart(amount);
+      expect(c.kind, String(amount)).toBe("variable");
+      expect(c.appCategory, String(amount)).toBe("groceries");
+      expect(c.confidence, String(amount)).toBe("high");
+      expect(c.ambiguous, String(amount)).toBeFalsy();
+      expect(c.reason, String(amount)).toContain("household rule");
+    }
+  });
+
+  it("the Supercenter spelling is the same merchant", () => {
+    const c = walmart(23.4, "CHECKCARD 1012 WM SUPERCENTER #1234 TEMPE AZ");
+    expect(c.appCategory).toBe("groceries");
+    expect(c.confidence).toBe("high");
+  });
+
+  it("a charge the bank tagged as the pump keeps fuel", () => {
+    const c = walmart(38.2, "WAL-MART #1234 FUEL 10/12");
+    expect(c.appCategory).toBe("transport");
+    expect(c.confidence).toBe("high");
+    expect(c.seedOnly).toBeFalsy();
+  });
+
+  // FOUND 2026-10-26 in review: a fuel station on a Walmart lot writes its location into
+  // the raw line, and with no pump tag the rule filed it as groceries, unasked — fuel going
+  // silently into groceries. The veto sends it back to asking, as before the rule.
+  it("a fuel station on a Walmart lot is not Walmart's store: it still asks 'fuel or store?'", () => {
+    for (const [desc, raw] of [
+      ["Murphy USA", "CHECKCARD 1012 MURPHY7123ATWALMART PHOENIX AZ"],
+      ["Murphy Express", "CHECKCARD 1012 MURPHY EXPRESS 8801 AT WALMART MESA AZ"],
+      ["Example Stop", "CHECKCARD 1012 EXAMPLE STOP 42 AT WAL-MART TEMPE AZ"],
+    ] as const) {
+      const c = spend(desc, 41.2, undefined, raw);
+      expect(c.ambiguous, raw).toBe(true);
+      expect(c.confidence, raw).toBe("low");
+      expect(c.seedOnly, raw).toBeFalsy();
+      expect(c.reason, raw).not.toContain("household rule");
+    }
+  });
+
+  it("a Walmart rule a person taught does not change the answer", () => {
+    const taught: LearnedRules = { WALMART: rule("transport") };
+    const c = spend("Walmart", 41.5, taught, "CHECKCARD 1012 WAL-MART #1234 TEMPE AZ");
+    expect(c.appCategory).toBe("groceries");
+  });
+
+  it("seed-only: a new row is filed unflagged; a stored row keeps its category and its flag", () => {
+    const c = walmart(27.35);
+    expect(c.seedOnly).toBe(true);
+    expect(seedFlags(c, undefined)).toEqual({ needs_review: false, keep_category: true });
+    expect(seedFlags(c, true)).toEqual({ needs_review: true, keep_category: true });
+    // Asked about a row the ledger already has, the answer is the one from before the
+    // rule — the question it was — so the relabel sweep and a re-sync leave it alone.
+    const old = forExistingRow(c);
+    expect(old.ambiguous).toBe(true);
+    expect(old.confidence).toBe("low");
+  });
+
+  it("the app, the bank sync and the read door answer the same", () => {
+    for (const [desc, amount, raw] of [
+      ["Walmart", -27.35, "CHECKCARD 1012 WAL-MART #1234 TEMPE AZ"],
+      ["Walmart", -38.2, "WAL-MART #1234 FUEL 10/12"],
+      ["Sam's Club", -41.5, "CHECKCARD 1012 SAMS CLUB #1234 TEMPE AZ"],
+    ] as const) {
+      const a = clientCat.classify(desc, amount, undefined, raw);
+      expect(edgeCat.classify(desc, amount, undefined, raw)).toEqual(a);
+      expect(doorCat.classify(desc, amount, undefined, raw)).toEqual(a);
+    }
   });
 });

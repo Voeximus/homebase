@@ -65,11 +65,18 @@ import type { Suggestion, SuggestionRule } from "./lib/ledgerReview.ts";
 import type { AppData } from "./lib/types.ts";
 import { monthLabel } from "./lib/format.ts";
 import { dollars, scrub } from "./scrub.ts";
+import type { DroppedLine } from "./droppedLines.ts";
+
+/** The door's own rule, beside the engine's W1–W7: a bank line the sync left out of the
+ *  ledger that nothing explains as a transfer between their own accounts (2026-10-26,
+ *  droppedLines.ts). The engine cannot see it — it reads the ledger, and a dropped line
+ *  is by definition not in the ledger — so it is added here, not there. */
+export type DoorRule = "W8";
 
 /** One thing worth a look, with nothing in it he did not already own. */
 export interface RedactedSuggestion {
-  rule: SuggestionRule;
-  kind: Suggestion["kind"];
+  rule: SuggestionRule | DoorRule;
+  kind: Suggestion["kind"] | "dropped";
   sentence: string;
   /** What finance.dismiss_suggestion takes to wave this one away — see suggestionKey.
    *  Absent only on a grouped count, which stands for several suggestions at once. */
@@ -98,6 +105,11 @@ export interface RedactedSuggestion {
    *  `raw_description`, the verbatim bank text, remains forbidden and is still read
    *  by no tool. */
   charges?: { id: string; date: string; amount: number; merchant: string }[];
+  /** The bank line a W8 suggestion is about (2026-10-26). Not a ledger charge, so it has
+   *  no id to link: what the line was, the way `charges` says it, plus which way the
+   *  money went and why the sync left it out. The description is the sync's scrubbed one
+   *  and goes through the cleaner again here, like every merchant name. */
+  bank_line?: { date: string; amount: number; direction: "in" | "out"; merchant: string; why: string };
 }
 
 /**
@@ -137,7 +149,7 @@ export const SUGGESTION_KEY_MAX = 200;
  * nothing.
  */
 export const SUGGESTION_KEY =
-  /^(?:(?:drift|phantom|unmodelled|missing|duplicate|income-landed|unlinked|dangling):\S.*|h:[0-9a-f]{16})$/;
+  /^(?:(?:drift|phantom|unmodelled|missing|duplicate|income-landed|unlinked|dangling|dropped):\S.*|h:[0-9a-f]{16})$/;
 
 /** FNV-1a, 64-bit, over the key's UTF-8 bytes. Not a secret and not meant to be one:
  *  it only has to name one key, the same way on every call, with no clock and no
@@ -228,8 +240,48 @@ function groupSentence(rule: SuggestionRule, count: number): string {
   return `${count} charge${many ? "s" : ""} look like bills you already model. Open the app to see which.`;
 }
 
+/** The key a dropped line goes by — the engine's key shape (`<kind>:<evidence>`), with
+ *  the bank's own id as the evidence. A line is one line, so it never changes. */
+export function droppedKey(d: Pick<DroppedLine, "providerTxnId">): string {
+  return `dropped:${d.providerTxnId}`;
+}
+
+/** W8's sentence. Fixed words and a dollar figure only, like every sentence here — the
+ *  line itself is in `bank_line`. */
+function droppedSentence(direction: "in" | "out", amount: number | null): string {
+  const about = amount == null ? "some money" : `about $${amount}`;
+  return direction === "out"
+    ? `The bank shows ${about} going out that the app left out of the ledger, and nothing marks it as a transfer between your own accounts. If it was real spending it is missing from every figure; once one of you says so, finance.add_history_row puts it back as history.`
+    : `The bank shows ${about} coming in that the app left out of the ledger, and nothing marks it as a transfer between your own accounts. If it was money from outside the household, once one of you says so, finance.add_history_row puts it back as history.`;
+}
+
+/** A dropped line's description is stored up to 120 characters (the sync's cap, so a Zelle
+ *  memo and its confirmation code fit), and is said whole or not at all. */
+const DROPPED_SAY_MAX = 120;
+
+function redactDropped(d: DroppedLine): RedactedSuggestion {
+  const amount = dollars(d.amount);
+  const entry: RedactedSuggestion = {
+    rule: "W8",
+    kind: "dropped",
+    sentence: droppedSentence(d.direction, amount),
+    key: suggestionKey(droppedKey(d)),
+    bank_line: {
+      date: d.date,
+      amount: Math.round(d.amount * 100) / 100,
+      direction: d.direction,
+      merchant: scrub(d.description, DROPPED_SAY_MAX) ?? "(a name I cannot say safely)",
+      why: scrub(d.reason, 120) ?? "one of the sync's own rules",
+    },
+  };
+  if (amount != null) entry.amount = amount;
+  return entry;
+}
+
 /**
- * The engine's suggestions, redacted.
+ * The engine's suggestions, redacted — and, since 2026-10-26, the door's own W8: the bank
+ * lines the sync left out that nothing explains (droppedLines.ts), after the engine's
+ * and inside the same cap, so the engine's order is untouched.
  *
  * `data` is only read for one thing: the name of a bill row whose id a suggestion
  * already carries. No other field of it reaches the reply.
@@ -237,6 +289,7 @@ function groupSentence(rule: SuggestionRule, count: number): string {
 export function redactSuggestions(
   suggestions: readonly Suggestion[],
   data: AppData,
+  dropped: readonly DroppedLine[] = [],
 ): { suggestions: RedactedSuggestion[]; total: number; left_out: number } {
   const nameOf = new Map(data.recurring.map((r) => [r.id, r.name]));
   const byId = new Map(data.transactions.map((t) => [t.id, t]));
@@ -286,6 +339,8 @@ export function redactSuggestions(
   for (const [rule, g] of grouped) {
     out.push({ rule, kind: g.kind, count: g.count, sentence: groupSentence(rule, g.count) });
   }
+
+  for (const d of dropped) out.push(redactDropped(d));
 
   const total = out.length;
   return { suggestions: out.slice(0, MAX_SUGGESTIONS), total, left_out: Math.max(0, total - MAX_SUGGESTIONS) };

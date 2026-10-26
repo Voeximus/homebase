@@ -1,7 +1,8 @@
 // plaid-webhook — Plaid pings this when new transactions are available, so a
 // charge syncs + pushes to the phones the instant the bank reports it (instead
 // of waiting for the app to open). PUBLIC (verify_jwt=false) — guarded by a
-// shared secret in the URL (?token=...). It only ever triggers a read-only sync.
+// shared secret in the URL (?token=...). It only ever triggers a read-only sync — and,
+// since 2026-10-26, marks a bank login that needs signing in again (handle.ts).
 //
 // The handler itself is in handle.ts, with the client, fetch and push sender passed
 // in, so a test can drive it without a server or a database (split 2026-10-09, when

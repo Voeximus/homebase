@@ -37,9 +37,12 @@
 // `last_error` — all of those are written by the bank, and the tool that wants to
 // repeat them (finance.bank_status) scrubs each one itself. A stamp that is on every
 // reply is the worst possible place to hand a bank's own text back out, so it
-// carries none.
+// carries none. (`last_error` is READ, since 2026-10-26, for one yes-or-no: is it the
+// bank's advance warning? — isAdvanceWarning in _shared/itemHealth.ts, the sync's own
+// test. Not a word of it is said.)
 
 import { minutesSince } from "./az.ts";
+import { isAdvanceWarning } from "../itemHealth.ts";
 
 /**
  * How often the routine pull runs, in minutes.
@@ -105,6 +108,28 @@ export interface RefreshWindow {
 export interface FreshConnection extends RefreshWindow {
   status: string;
   lastSyncAt?: string | null;
+  /** Read only to tell an advance warning from a login that has stopped; never said. */
+  lastError?: string | null;
+  consecutiveFailures?: number;
+}
+
+/**
+ * A connection marked 'needs_reauth' that STILL WORKS: the bank's advance warning
+ * (PENDING_EXPIRATION / PENDING_DISCONNECT) is what marked it, no sync has failed since,
+ * and it synced inside the stale limit.
+ *
+ * WHY ALL THREE, FOUND 2026-10-26 in review. The first version asked only the clock — a
+ * sync inside 90 minutes — so for up to 90 minutes after a login had really stopped
+ * (ITEM_LOGIN_REQUIRED), the door said the figures were current "for now" and that the
+ * bank would stop "once its login lapses", when it already had. The reason on the row is
+ * what says which it is, read by the sync's own test (healthAfterSync), and a failed
+ * sync since is proof either way. The heartbeat asks the failures and the clock too.
+ */
+function stillWorking(c: FreshConnection, now: Date): boolean {
+  if (!isAdvanceWarning(c.lastError)) return false;
+  if ((c.consecutiveFailures ?? 0) > 0) return false;
+  const m = minutesSince(c.lastSyncAt, now);
+  return m !== null && m < BANK_STALE_MIN;
 }
 
 /**
@@ -172,6 +197,10 @@ function pending(c: FreshConnection): boolean {
  */
 export function freshnessOf(conns: readonly FreshConnection[], now: Date): Freshness {
   const needsReauth = conns.some((c) => c.status === "needs_reauth");
+  // Frozen: a connection that needs signing in again and is NOT still working on the
+  // bank's advance warning (stillWorking) — its login has already lapsed. One that is
+  // still working (2026-10-26) is said differently below.
+  const reauthFrozen = conns.some((c) => c.status === "needs_reauth" && !stillWorking(c, now));
   const refreshPending = conns.some(pending);
 
   let newest: string | null = null;
@@ -196,13 +225,24 @@ export function freshnessOf(conns: readonly FreshConnection[], now: Date): Fresh
     says =
       "There is no bank feed connected, so nothing here came from a bank: every figure is one of " +
       "theirs, as current as the last time they entered something.";
-  } else if (needsReauth) {
+  } else if (needsReauth && reauthFrozen) {
     // Loudest case, and it goes FIRST even when a sync happens to be recent: a
     // connection in needs_reauth is frozen, and a fresh-looking age on the others
     // is exactly how that hides.
     says =
       "At least one bank connection needs re-authorising in the app, so anything it feeds is frozen " +
       "where it was — say so before giving a balance, and check finance.bank_status for which one." +
+      waiting;
+  } else if (needsReauth) {
+    // SINCE 2026-10-26 the bank warns days ahead (PENDING_EXPIRATION / PENDING_DISCONNECT,
+    // plaid-webhook) and the connection is marked while it still works. Its own sync is
+    // recent, so the figures are current — but saying only "current" would bury the one
+    // thing that needs doing, and saying "frozen" would be untrue. So: both halves.
+    says =
+      "A bank connection needs signing in again: its last sync was recent, so these figures are current " +
+      "for now, but it stops bringing anything new in once its login lapses. Say so, and that it is fixed " +
+      "by signing in again with Connect a bank in the app, on the phone of the person whose login it is — " +
+      "finance.bank_status says which one and why." +
       waiting;
   } else if (ago === null) {
     says =

@@ -119,7 +119,11 @@ describe("the sync asks the spend history's question with the loop's own argumen
     const block = src.slice(at, src.indexOf("]);", at));
     expect(block).toContain("ops.upsertPosted");
     expect(block).toContain("!!matchTrackedDebt(r.description)");
-    expect(block).toContain('classify(r.description, r.amount, learned, r.raw).kind !== "skip"');
+    // The loop's own answer since 2026-10-26 (postedAnswer: the categorizer, with a bill
+    // named only by the shape of the line settled or filed as before) — asked here too.
+    expect(block).toContain('postedAnswer(r).c.kind !== "skip"');
+    expect(src).toContain("const { c, shapeHit } = postedAnswer(row);");
+    expect(src.slice(src.indexOf("const postedAnswer = "))).toMatch(/^const postedAnswer = [^]*?const c = classify\(row\.description, row\.amount, learned, row\.raw\);/);
     expect(block).toContain("closedDebtPayment(closedDebts, r.description, seenProviderIds.has(r.providerTxnId))?.record");
   });
 

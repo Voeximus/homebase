@@ -501,6 +501,9 @@ describe("the bank sync — a NEW bank charge takes the month from a hand note a
     expect(src).toMatch(/readAllPages\("stored charges"/);
     expect(src).toMatch(/mayTakeOver\(standingOf\(row\)\)/);
     expect(src).toMatch(/matchBillByDayAmount\(payable, row\.date/);
+    // Unchanged for a bill named by its biller. A bill named from the shape of the line
+    // (an ACH transfer as the car payment, 2026-10-26) is decided once, before the loop
+    // (postedAnswer) — held in tests/carPaymentAch.test.ts.
     expect(src).toMatch(/matchBillForCharge\(c\.billName, liveRecs, chargeAcct, row\.amount, sharedAccts\)/);
   });
 });

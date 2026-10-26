@@ -118,8 +118,13 @@ function snapshotDb(tables: Record<string, DbRow[]>, shortPage?: string): Db {
       // So is week_plans (schema_v46, 2026-10-25): without it here the suite read the table
       // as an existing EMPTY one, and never ran finance.week's missing-table path against
       // the real ledger — the path production takes first (found in review).
+      // And dropped_lines (schema_v47, 2026-10-26), written by the bank sync and not yet
+      // run either.
       if (
-        (q.table === "review_dismissals" || q.table === "cycle_budgets" || q.table === "week_plans") &&
+        (q.table === "review_dismissals" ||
+          q.table === "cycle_budgets" ||
+          q.table === "week_plans" ||
+          q.table === "dropped_lines") &&
         !(q.table in tables)
       ) {
         const missing = () =>

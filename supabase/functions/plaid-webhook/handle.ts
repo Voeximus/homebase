@@ -20,12 +20,19 @@
 // something to say, not on a schedule, so a quiet stretch is not a missed tick and
 // must not be alarmed on as one.
 //
-// Only a ping that triggers a sync is recorded. The token check, a body that is not
-// JSON, and webhook types other than transactions answer exactly as before and leave
-// no row: they did no work, and a row for each would bury the ones that did.
+// Only a ping that does work is recorded. The token check, a body that is not JSON, and
+// webhook types that change nothing answer exactly as before and leave no row: they did
+// no work, and a row for each would bury the ones that did.
+//
+// SINCE 2026-10-26 an ITEM webhook about the login itself does work too — it sets the
+// connection's status (applyItemUpdate below, _shared/itemHealth.ts), so the read door
+// and the heartbeat can say "needs signing in again" days before the feed stops. Those
+// pings are recorded the same way, numbers only. The token check in front of everything
+// is unchanged.
 
 import { recordRun } from "../_shared/jobRun.ts";
 import { syncCounts } from "../_shared/syncCounts.ts";
+import { itemWebhookUpdate, type ItemUpdate } from "../_shared/itemHealth.ts";
 
 export interface PushMessage {
   title: string;
@@ -48,6 +55,53 @@ export interface WebhookDeps {
 
 const money = (n: number) => "$" + Number(n).toFixed(2);
 
+/**
+ * Write what an ITEM webhook says onto the connection it is about (2026-10-26).
+ *
+ * Recorded in job_runs like a sync ping, with numbers only — it did work, and a failed
+ * write must show as a ping that arrived and was not acted on. Plaid still gets its 200
+ * whatever happens: a 500 makes Plaid retry the same ping.
+ *
+ * A repair only clears a row that is in 'needs_reauth', so a LOGIN_REPAIRED arriving
+ * while the row is fine (or in some other trouble) changes nothing.
+ *
+ * And a bank ERROR that signing in again will not fix never overwrites a 'needs_reauth'
+ * row (FOUND 2026-10-26 in review). It used to: the row became 'error', the next sync
+ * that worked then read it as plain trouble and set it 'ok' (healthAfterSync), and an
+ * advance warning was gone for good — Plaid sends PENDING_EXPIRATION once, so the login
+ * would then lapse with nobody told. "Sign in again" is the instruction that matters,
+ * the same rule healthAfterFailure keeps for a failed sync.
+ */
+async function applyItemUpdate(deps: WebhookDeps, itemId: string, item: ItemUpdate): Promise<Response> {
+  return await recordRun(deps.admin, "plaid-webhook", async () => {
+    try {
+      const { data: conn, error: connErr } = await deps.admin
+        .from("bank_connections")
+        .select("id")
+        .eq("item_id", itemId)
+        .maybeSingle();
+      if (connErr) throw new Error("bank_connections lookup: " + connErr.message);
+      if (!conn) return { ok: true, detail: { connections: 0 }, result: new Response("ok") };
+
+      const q = deps.admin
+        .from("bank_connections")
+        .update(item.status === "repaired" ? { status: "ok", last_error: null } : { status: item.status, last_error: item.reason })
+        .eq("id", conn.id);
+      const { error: upErr } = await (item.status === "repaired"
+        ? q.eq("status", "needs_reauth")
+        : item.status === "error"
+          ? q.neq("status", "needs_reauth")
+          : q);
+      if (upErr) throw new Error("bank_connections update: " + upErr.message);
+      console.log(`plaid-webhook: connection ${conn.id} → ${item.status === "repaired" ? "ok (repaired)" : item.status}`);
+      return { ok: true, detail: { connections: 1, status_changes: 1 }, result: new Response("ok") };
+    } catch (e) {
+      console.error("plaid-webhook item", String((e as Error)?.message ?? e));
+      return { ok: false, detail: { threw: true }, result: new Response("ok") };
+    }
+  });
+}
+
 export const TXN_CODES = ["SYNC_UPDATES_AVAILABLE", "DEFAULT_UPDATE", "INITIAL_UPDATE", "HISTORICAL_UPDATE", "TRANSACTIONS_REMOVED"];
 
 export async function handleWebhook(req: Request, deps: WebhookDeps): Promise<Response> {
@@ -65,6 +119,14 @@ export async function handleWebhook(req: Request, deps: WebhookDeps): Promise<Re
   const type = body.webhook_type;
   const code = body.webhook_code as string;
   const itemId = body.item_id as string;
+
+  // A bank login about to stop, or stopped, or working again (2026-10-26). These were
+  // answered "ok" and dropped, so a dead login was first noticed as a quiet feed. Now the
+  // connection's status says so — 'needs_reauth' with a plain reason — and the freshness
+  // stamp and the heartbeat say it out loud. Reached only past the token check above,
+  // which is unchanged. See _shared/itemHealth.ts for which codes mean what.
+  const item = itemId ? itemWebhookUpdate(body) : null;
+  if (item) return await applyItemUpdate(deps, itemId, item);
 
   if (type !== "TRANSACTIONS" || !TXN_CODES.includes(code) || !itemId) {
     return new Response("ok"); // ack everything else (Plaid expects a fast 200)

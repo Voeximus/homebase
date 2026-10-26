@@ -17,12 +17,16 @@ export function supabaseDb(admin: SupabaseClient): Db {
       const base = () => {
         let q = admin.from(query.table).select("*");
         for (const [col, value] of Object.entries(query.eq ?? {})) q = q.eq(col, value);
+        for (const [col, value] of Object.entries(query.gte ?? {})) q = q.gte(col, value);
         return q;
       };
       return {
         async count() {
+          // The same filters as the pages, or the count and the pages disagree and
+          // readAll refuses (2026-10-26: `gte` joins `eq`).
           let q = admin.from(query.table).select("*", { count: "exact", head: true });
           for (const [col, value] of Object.entries(query.eq ?? {})) q = q.eq(col, value);
+          for (const [col, value] of Object.entries(query.gte ?? {})) q = q.gte(col, value);
           const { count, error } = await q;
           if (error) throw new Error(error.message);
           return count ?? 0;

@@ -130,13 +130,23 @@ export function inAnyLine(catId: string): boolean {
 // the app — not the calendar, not the forecast, not the bill reminders — can see
 // it there. If a bill is missing, add the recurring row.)
 
-// Debt attack order (Gino's snowball — smallest first; clears the Affirms,
-// Xinyan's card and the family debt fast, then crushes the 19.99% card).
+// Debt attack order — the debts table's own NAMES, matched exactly (orderedDebts).
+//
+// CHANGED 2026-10-24, the household's decision. The old order was a snowball, smallest
+// first: Affirm, Xinyan's card, Mom (China), then the …4728 card last. By October that
+// order aimed the money at the wrong debt: Affirm is closed (paid off; a closed debt is
+// never on this list — the payoff plan skips it by closed_at anyway), and the …4728 card
+// is the only debt still charging interest. So:
+//   1. Gino's card (…4728) — the one debt costing money every month it stays.
+//   2. Xinyan's card (…6813) — paid in full by its due date, so it charges nothing.
+//   3. Cherry (dental) — its normal payment, 0%.
+//   4. Mom (China) — family, 0%.
+// A debt not named here falls to the back, smallest balance first.
 export const ATTACK_ORDER = [
-  "Affirm",
-  "Xinyan card (…6813)",
-  "Mom (China)",
   "Credit card (…4728)",
+  "Xinyan card (…6813)",
+  "Cherry (dental)",
+  "Mom (China)",
 ];
 
 /**
@@ -331,6 +341,15 @@ export interface PayoffEvent {
 // card is cleared, skim $500/check into savings — emergency fund first to $1,500,
 // then it rolls into investing/goals — and the rest keeps hitting the card. Until
 // the card is the last one standing, every check stays all-at-debt (snowball).
+//
+// OPEN, 2026-10-26: ATTACK_ORDER now puts that card FIRST (the 2026-10-24 decision), so
+// it is no longer the last one standing. The code below never read the card by name — it
+// starts the skim when ONE debt is left, whichever that is — so under the new order the
+// skim starts only once Mom (China) is the last debt, after the card, Xinyan's card and
+// Cherry are all paid. The 06-17 plan meant "once only the expensive card is left", and
+// the 10-24 decision did not say when savings start under the new order. That is the
+// household's call, so it is put to Gino as a question, and until it is answered this
+// code is exactly as it was. Do not "fix" it to either reading without that answer.
 export interface SavingsSplit {
   perCheck: number; // $ skimmed off each check for savings
   emergencyTarget: number; // fill emergency to here, then redirect to investing

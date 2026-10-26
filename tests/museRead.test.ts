@@ -61,6 +61,7 @@ import { BUDGET_LINE_KEYS, cycleTargets } from "../src/lib/cycleBudget";
 import { reviewLedger } from "../src/lib/ledgerReview";
 import { selfAudit, danglingLinks } from "../src/lib/selfAudit";
 import {
+  ATTACK_ORDER,
   LEAN_VARIABLE,
   payCycleFor,
   perCycle,
@@ -387,14 +388,18 @@ interface FakeOpts {
   missingTable?: string;
   /** Every page of this table fails with this message (the count still answers). */
   failPage?: { table: string; message: string };
+  /** Every query the loader made, pushed here as it is made. */
+  seen?: { table: string; eq?: Record<string, string>; gte?: Record<string, string> }[];
 }
 
 function fakeDb(tables: Record<string, DbRow[]>, opts: FakeOpts = {}): Db {
   return {
-    select({ table, orderBy, eq }) {
+    select({ table, orderBy, eq, gte }) {
+      opts.seen?.push({ table, eq, gte });
       const rows = () =>
         (tables[table] ?? [])
           .filter((r) => Object.entries(eq ?? {}).every(([k, v]) => String(r[k]) === v))
+          .filter((r) => Object.entries(gte ?? {}).every(([k, v]) => String(r[k]) >= v))
           .slice()
           .sort((a, b) => String(a[orderBy]).localeCompare(String(b[orderBy])));
       return {
@@ -679,9 +684,20 @@ describe("Rule 1 — every number comes from the app's own function", () => {
     const data = app();
     const math = planMath(data.recurring, data.debts, sumTargets(LEAN_VARIABLE), "2026-09-30", data.transactions);
     expect(body.total).toBe(money(math.totalDebt));
-    // Affirm is first in ATTACK_ORDER, so it comes before the Visa even though it
-    // is the smaller balance — that ordering is the plan's, not the door's.
+    // Neither fixture name is on ATTACK_ORDER since 2026-10-24 (Affirm is closed and off
+    // it), so both fall to the back, smallest balance first — that ordering is the
+    // plan's, not the door's. The attack list itself is held just below.
     expect((body.debts as { name: string }[]).map((d) => d.name)).toEqual(["Affirm", "Visa"]);
+  });
+
+  it("finance.debts puts a debt on the attack list ahead of the rest, whatever its balance", async () => {
+    // The household's order from 2026-10-24: the card charging interest first.
+    const tables = TABLES();
+    tables.debts.push({
+      id: "d-first", name: ATTACK_ORDER[0], balance: "9000.00", original_balance: "9000.00", color: "#ef4444", created_at: "2026-01-01T00:00:00Z",
+    });
+    const body = await jsonOf(await ask("finance.debts", {}, GINO_SECRET, {}, tables));
+    expect((body.debts as { id: string }[]).map((d) => d.id)).toEqual(["d-first", "d-affirm", "d-visa"]);
     // No payoff month: payoffSchedule's seven inputs are assembled in a view.
     expect(body).not.toHaveProperty("payoff_month");
     expect(body).not.toHaveProperty("debt_free_date");
@@ -1199,7 +1215,9 @@ describe("finance.worth_a_look", () => {
     // takes, and every part of it already leaves through `charges` and `bill`. It is
     // checked further down to be the engine's key or its fixed-shape stand-in, and the
     // URL / newline / injection asserts below cover it like every other string.
-    const ALLOWED = ["rule", "kind", "sentence", "key", "amount", "month", "bill", "count", "charges"];
+    // `bank_line` since 2026-10-26: W8, a bank line the sync left out of the ledger (the
+    // dropped-lines tests below). Like `charges`, the cleaned merchant name only.
+    const ALLOWED = ["rule", "kind", "sentence", "key", "amount", "month", "bill", "count", "charges", "bank_line"];
     for (const s of suggestions) {
       // `detail`, `title`, `evidence` and `fix` are the engine's and none of them may
       // travel.
@@ -1330,6 +1348,110 @@ describe("finance.worth_a_look", () => {
     expect(body.error).toBe("ledger_unreadable");
     expect(body.table).toBe("review_dismissals");
     expect(body).not.toHaveProperty("suggestions");
+  });
+
+  // ── W8: the bank lines the sync left out (2026-10-26) ──────────────────────
+  //
+  // The sync used to drop some posted lines with a bare `continue` — transfers between
+  // their own accounts, and anything a rule skipped — so a rule that dropped real money
+  // did it without a trace. It writes them to dropped_lines now (schema_v47), and this
+  // tool lists the recent ones nothing explains as one half of an own-account transfer.
+  // Every name, id and amount here is invented.
+  const droppedRow = (over: Partial<DbRow> = {}): DbRow => ({
+    id: "dl-1",
+    provider_txn_id: "ptx-friend",
+    account_id: "a1",
+    date: "2026-09-27",
+    amount: "60.00",
+    direction: "out",
+    description: "Zelle payment to SAM SAMPLE Conf# qq11zz22",
+    reason: "your label: Internal: spouse",
+    created_at: "2026-09-27T12:00:00Z",
+    ...over,
+  });
+  // The two halves of one Zelle between their own accounts: same code, same amount,
+  // opposite directions, two of their accounts. Dropped on both sides, and explained.
+  const pairedHalves = (): DbRow[] => [
+    droppedRow({ id: "dl-2", provider_txn_id: "ptx-out", account_id: "a1", amount: "250.00", description: "Zelle payment to PAT Conf# ab12cd34" }),
+    droppedRow({ id: "dl-3", provider_txn_id: "ptx-in", account_id: "a2", amount: "250.00", direction: "in", description: "Zelle payment from PAT Conf# AB12CD34" }),
+  ];
+
+  it("lists a dropped line nothing explains, with the line itself — and not the two halves of a transfer", async () => {
+    const tables = TABLES();
+    tables.dropped_lines = [droppedRow(), ...pairedHalves()];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, {}, tables));
+    const shown = body.suggestions as { rule: string; kind: string; key?: string; sentence: string; amount?: number; bank_line?: Record<string, unknown> }[];
+    const w8 = shown.filter((s) => s.rule === "W8");
+    expect(w8).toHaveLength(1);
+    expect(w8[0].kind).toBe("dropped");
+    expect(w8[0].key).toBe("dropped:ptx-friend");
+    expect(w8[0].key!).toMatch(SUGGESTION_KEY);
+    expect(w8[0].amount).toBe(60);
+    expect(w8[0].sentence).toContain("finance.add_history_row");
+    expect(w8[0].bank_line).toEqual({
+      date: "2026-09-27",
+      amount: 60,
+      direction: "out",
+      merchant: "Zelle payment to SAM SAMPLE Conf# qq11zz22",
+      why: "your label: Internal: spouse",
+    });
+    expect(body.total).toBe(engineSuggestions().length + 1);
+  });
+
+  it("a dismissed dropped line is left out, by the key it was handed out with", async () => {
+    const tables = TABLES();
+    tables.dropped_lines = [droppedRow()];
+    tables.review_dismissals = [{ id: "rd1", key: "dropped:ptx-friend", person: "gino" }];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, {}, tables));
+    expect((body.suggestions as { rule: string }[]).some((s) => s.rule === "W8")).toBe(false);
+  });
+
+  it("a line older than two weeks is not listed", async () => {
+    const tables = TABLES();
+    tables.dropped_lines = [droppedRow({ date: "2026-09-10" })];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, {}, tables));
+    expect((body.suggestions as { rule: string }[]).some((s) => s.rule === "W8")).toBe(false);
+  });
+
+  // FOUND 2026-10-26 in review: the loader read the whole table on every call, and
+  // nothing prunes it. It reads the window and its slack now, on the server.
+  it("reads only the last three weeks of the table, filtered on the server", async () => {
+    const tables = TABLES();
+    tables.dropped_lines = [droppedRow(), droppedRow({ id: "dl-old", provider_txn_id: "ptx-old", date: "2026-09-08" })];
+    const seen: NonNullable<FakeOpts["seen"]> = [];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, { seen }, tables));
+    const reads = seen.filter((q) => q.table === "dropped_lines" && q.gte);
+    expect(reads.length).toBeGreaterThan(0);
+    for (const q of reads) expect(q.gte).toEqual({ date: "2026-09-09" });
+    expect((body.suggestions as { key?: string }[]).filter((s) => s.key?.startsWith("dropped:")).map((s) => s.key)).toEqual([
+      "dropped:ptx-friend",
+    ]);
+  });
+
+  it("a line that has been put back as history is no longer listed", async () => {
+    const tables = TABLES();
+    tables.dropped_lines = [droppedRow()];
+    tables.transactions = [
+      ...tables.transactions,
+      txn({ id: "hist-1", date: "2026-09-28", amount: "60.00", category_id: "other", description: "Zelle to a friend", record_only: true, provider: null }),
+    ];
+    const body = await jsonOf(await ask("finance.worth_a_look", {}, GINO_SECRET, {}, tables));
+    expect((body.suggestions as { rule: string }[]).some((s) => s.rule === "W8")).toBe(false);
+  });
+
+  it("before schema_v47 is run, the missing table is no lines — and the tool still answers", async () => {
+    const res = await ask("finance.worth_a_look", {}, GINO_SECRET, { missingTable: "dropped_lines" });
+    expect(res.status).toBe(200);
+    const body = await jsonOf(res);
+    expect((body.suggestions as unknown[]).length).toBe(engineSuggestions().length);
+  });
+
+  it("fails closed when the dropped lines cannot be read for any other reason", async () => {
+    const res = await ask("finance.worth_a_look", {}, GINO_SECRET, {
+      failPage: { table: "dropped_lines", message: "permission denied for table dropped_lines" },
+    });
+    expect(res.status).toBe(503);
+    expect((await jsonOf(res)).table).toBe("dropped_lines");
   });
 
   it("hands out a stand-in, not the key, when the cleaner would change the key", () => {
@@ -2284,6 +2406,10 @@ describe("API.md's field names exist", () => {
       // (2026-10-25), and this fixture has no money back in its week, so the list comes
       // back empty. tests/weekPlan.test.ts drives ledgers that fill both.
       "counted", "not_counted_because",
+      // `bank_line` and its `direction` are on a finance.worth_a_look W8 suggestion
+      // (2026-10-26), which needs a dropped_lines row this fixture does not carry; the
+      // dropped-line tests under finance.worth_a_look drive both.
+      "bank_line", "direction",
     ]) keys.add(k);
     // The keys INSIDE finance.set_cycle_budget's `lines` — the six budget lines — off the
     // shared module rather than typed here, so API.md can name the lines a goal takes.

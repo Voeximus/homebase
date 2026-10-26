@@ -4598,6 +4598,8 @@ const SUGGESTION_ABOUT: Record<string, string> = {
   "income-landed": "income that may have been a one-off",
   unlinked: "a charge that looks like an unlinked bill payment",
   dangling: "a charge pointing at something deleted",
+  // The read door's own W8 (2026-10-26): a bank line the sync left out of the ledger.
+  dropped: "a bank line the app left out of the ledger",
   h: "one of the suggestions",
 };
 

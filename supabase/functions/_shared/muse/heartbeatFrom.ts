@@ -33,6 +33,7 @@
 import type { Loader } from "./load.ts";
 import { DISPLAY } from "./auth.ts";
 import { azDateISO, minutesSince } from "./az.ts";
+import { isAdvanceWarning } from "../itemHealth.ts";
 import {
   DEFAULT_ALERT_OWNER,
   heartbeat,
@@ -139,6 +140,8 @@ export async function heartbeatFrom(
       status: c.status,
       minutesSinceSync: since(c.lastSyncAt),
       consecutiveFailures: c.consecutiveFailures,
+      // A yes or no read off last_error by the sync's own test; no word of it is said.
+      advanceWarning: isAdvanceWarning(c.lastError),
     })),
     quietDays,
     stuckReminders: stuck,

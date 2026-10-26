@@ -36,6 +36,15 @@ export interface Classification {
   // asking about a row that is already there (see forExistingRow).
   seedOnly?: boolean;
   before?: Classification;
+  // The bill was named by the SHAPE of the bank line, not by the biller's own name
+  // (SHAPE_BILL_RULES, 2026-10-26). A name like that is a weak match on its own — every
+  // ACH transfer reads the same — so the charge may settle the bill only at that bill's
+  // own figure TO THE CENT (billAmountToTheCent; it was billAmountBand until review the
+  // same day). matchBillForCharge enforces it when told (`amountGated`), and so does
+  // every other place that resolves a named bill. Such an answer is also seed-only, with
+  // `before`: it is a new rule, and a row the ledger already holds keeps the answer it
+  // had (the sync reads `before` for any charge the bill does not take).
+  billAmountGate?: boolean;
 }
 
 /** What to apply to a row that is ALREADY in the ledger: the answer as it was before
@@ -230,6 +239,44 @@ export function sharedAccountIds(accounts: readonly { id: string; owner?: string
 }
 
 /**
+ * Is this charge the size of one charge toward this bill — inside billAmountBand of
+ * billPerCharge? False when the bill carries no figure, which matches nothing.
+ *
+ * Lifted out of matchBillForCharge on 2026-10-26, unchanged. A bill named only by the
+ * shape of the line is held tighter than this — see billAmountToTheCent.
+ */
+export function billAmountFits(b: PayableBill, chargeAmount: number): boolean {
+  const expected = billPerCharge(b);
+  const paid = Math.abs(Number(chargeAmount));
+  if (!(expected > 0) || !Number.isFinite(paid)) return false;
+  return Math.abs(paid - expected) <= billAmountBand(expected, b.variable);
+}
+
+/**
+ * Is this charge EXACTLY one charge toward this bill — billPerCharge to the cent? The
+ * amount test for a bill named only by the shape of the line (SHAPE_BILL_RULES).
+ *
+ * WHY NOT billAmountBand, CHANGED 2026-10-26 in review. The band is for a bill named by
+ * its biller, where the name is already strong evidence and the amount only has to look
+ * right; for a fixed bill it is the larger of $2 and 3%. A shape is no evidence at all
+ * — every ACH transfer reads the same — so the amount is the ONLY evidence, and 3% of a
+ * car payment is a $13 window an unrelated transfer could land in and settle that
+ * month's payment. A loan payment does not drift, so to the cent costs nothing; a
+ * payment that changes size falls to a look (W7 offers the link) until the bill row is
+ * changed to the new figure.
+ *
+ * A VARIABLE bill never fits: its amount moves by design, so the amount cannot tell its
+ * payment from any other transfer, and the shape alone is never enough.
+ */
+export function billAmountToTheCent(b: PayableBill, chargeAmount: number): boolean {
+  if (b.variable) return false;
+  const expected = billPerCharge(b);
+  const paid = Math.abs(Number(chargeAmount));
+  if (!(expected > 0) || !Number.isFinite(paid)) return false;
+  return Math.round(paid * 100) === Math.round(expected * 100);
+}
+
+/**
  * The bill this charge pays, or null.
  *
  * FIRST, EXACTLY AS BEFORE: the name match over the bills paid from the charge's own
@@ -274,6 +321,13 @@ export function sharedAccountIds(accounts: readonly { id: string; owner?: string
  * A linked payment from another account is still a payment from the wrong account, and
  * the self-check "paid-from-its-own-account" still says so — so a person can move the
  * bill to where it is really paid from. It just no longer stops the link.
+ *
+ * `amountGated` (2026-10-26) holds BOTH passes to the bill's own figure to the cent
+ * (billAmountToTheCent), in place of the band. It is passed for a bill the categorizer
+ * named from the SHAPE of the line rather than the biller's name
+ * (Classification.billAmountGate) — an ACH transfer reads the same whoever it pays, so
+ * without it any transfer out of the joint account would settle the car payment. A
+ * named bill whose amount does not fit is no match at all.
  */
 export function matchBillForCharge<T extends PayableBill>(
   billName: string | undefined | null,
@@ -281,9 +335,10 @@ export function matchBillForCharge<T extends PayableBill>(
   chargeAccountId: string | null | undefined,
   chargeAmount: number,
   shared: ReadonlySet<string>,
+  amountGated = false,
 ): { bill: T; fromAnotherAccount: boolean } | null {
   const own = matchRecurringName(billName, billsPayableFrom(bills, chargeAccountId));
-  if (own) return { bill: own, fromAnotherAccount: false };
+  if (own) return amountGated && !billAmountToTheCent(own, chargeAmount) ? null : { bill: own, fromAnotherAccount: false };
   // An unknown account already searched every bill above.
   if (!billName || !chargeAccountId) return null;
   const chargeShared = shared.has(chargeAccountId);
@@ -292,10 +347,7 @@ export function matchBillForCharge<T extends PayableBill>(
   );
   const named = matchRecurringName(billName, elsewhere);
   if (!named) return null;
-  const expected = billPerCharge(named);
-  const paid = Math.abs(Number(chargeAmount));
-  if (!(expected > 0) || !Number.isFinite(paid)) return null;
-  if (Math.abs(paid - expected) > billAmountBand(expected, named.variable)) return null;
+  if (!(amountGated ? billAmountToTheCent(named, chargeAmount) : billAmountFits(named, chargeAmount))) return null;
   return { bill: named, fromAnotherAccount: true };
 }
 
@@ -929,29 +981,60 @@ const FUEL_FLOOR = 8;
 // charge is the store. His own hand-labels agree: every Sam's Club charge he has filed
 // by hand between $35 and $50 is transport, and most outside it are the store.
 //
-// What it decides is only the PRE-FILL of a charge the bank left untagged — the
-// category a new row starts in while it waits for a one-tap answer. It does not
-// change the rest of the department rule, each on purpose:
+// What it decides is only a charge the bank left untagged. It does not change the rest
+// of the department rule, each on purpose:
 //   · a charge the bank tagged as the pump stays fuel (resolveDepartment);
-//   · the row is still `ambiguous`, so the importer seeds a NEW row with it and never
-//     uses it to overwrite one already in the ledger (schema_v26 keep_category) — the
-//     re-sync that moved $702 on a coin flip is exactly what this must not repeat;
-//   · it is still asked about. Gino's band beats a coin flip; it is not the bank
-//     saying so.
-// Written as data for one merchant. Costco, Walmart and the rest have no rule of
-// their own, and get none by being near this one.
+//   · it is SEED-ONLY, so the importer files a NEW row with it and never uses it to
+//     overwrite one already in the ledger (schema_v26 keep_category) — the re-sync that
+//     moved $702 on a coin flip is exactly what this must not repeat.
+//
+// CHANGED 2026-10-26: it is no longer asked about. Until then a charge this rule
+// answered was still marked `ambiguous` and filed for review, on the reasoning that the
+// band is the household's reading and not the bank saying so. But the household HAS
+// answered — that is what the rule is — and asking again on every charge only kept the
+// review list full of questions nobody needed to answer (15 Walmart charges were sitting
+// there asking "fuel or store?"). So a charge a rule answers is filed at high confidence
+// and not flagged. What protects history is the seed-only half, which is unchanged: a
+// row already in the ledger keeps the category and the flag it has (see classify).
+//
+// Written as data, one row per merchant the household has answered for. Costco and the
+// rest have no rule of their own, and get none by being near these.
+//
+// WALMART, 2026-10-26. No band: every untagged Walmart charge is the store (groceries).
+// That reading — store, not pump — is the household's instruction of 2026-10-26. The
+// category is Gino's answer of 2026-06-17, which was about a different question, mixed
+// carts (groceries or household goods): no strong preference, so groceries by default.
+// A charge the bank tags as the pump is still fuel, decided before any of this is read.
+//
+// `not` — A FUEL STATION ON A WALMART LOT, FOUND 2026-10-26 in review. The merchant
+// pattern is also read against the raw line, and a station that sits on a Walmart lot
+// writes its location there: a Murphy USA line reads like "MURPHY7123ATWALMART". Without
+// the veto that charge — fuel, with no pump tag — was filed as groceries at high
+// confidence and never asked, which is exactly the silent fuel-in-groceries this rule
+// must not cause. A vetoed charge has no household answer: it goes back to asking
+// "fuel or store?", as it did before the rule.
 const HOUSEHOLD_DEPARTMENT_RULES: readonly {
   merchant: RegExp;
-  fuelFrom: number;
-  fuelTo: number;
+  /** A line this matches is not the merchant's own store, so the rule does not answer. */
+  not?: RegExp;
+  /** The untagged amounts that are the pump, both ends included. Absent: none are. */
+  fuelFrom?: number;
+  fuelTo?: number;
   fuel: string;
   store: string;
   said: string;
 }[] = [
   { merchant: /SAM'?S ?CLUB/i, fuelFrom: 35, fuelTo: 50, fuel: "transport", store: "groceries", said: "Gino, 2026-10-24" },
+  {
+    merchant: /WAL-?MART|WM SUPERCENTER/i,
+    not: /MURPHY|AT ?WAL-?MART/i,
+    fuel: "transport",
+    store: "groceries",
+    said: "2026-10-26",
+  },
 ];
 
-/** The household's own pre-fill for an untagged charge at a merchant it has a rule
+/** The household's own answer for an untagged charge at a merchant it has a rule
  *  for, or null. Only asked about a charge resolveDepartment() calls ambiguous. */
 function householdDepartment(
   desc: string,
@@ -960,11 +1043,18 @@ function householdDepartment(
 ): { categoryId: string; reason: string } | null {
   const rule = HOUSEHOLD_DEPARTMENT_RULES.find((r) => r.merchant.test(desc) || (!!raw && r.merchant.test(raw)));
   if (!rule) return null;
+  if (rule.not && (rule.not.test(desc) || (!!raw && rule.not.test(raw)))) return null;
+  if (rule.fuelFrom == null || rule.fuelTo == null) {
+    return {
+      categoryId: rule.store,
+      reason: `household rule (${rule.said}): with no pump tag it is the store`,
+    };
+  }
   const mag = Math.abs(amount);
   const fuel = mag >= rule.fuelFrom && mag <= rule.fuelTo;
   return {
     categoryId: fuel ? rule.fuel : rule.store,
-    reason: `household rule (${rule.said}): $${rule.fuelFrom}–$${rule.fuelTo} with no pump tag is ${fuel ? "gas" : "outside that band, so the store"} — confirm`,
+    reason: `household rule (${rule.said}): $${rule.fuelFrom}–$${rule.fuelTo} with no pump tag is ${fuel ? "gas" : "outside that band, so the store"}`,
   };
 }
 
@@ -1067,6 +1157,10 @@ const BILL_RULES: { re: RegExp; not?: RegExp; bill: string }[] = [
   // NOT matching "COURTESY CDJR": that is the dealership, and a future service
   // visit would then settle a car-payment cycle — the same shape as the parking
   // garage settling the rent.
+  //
+  // CHECKED 2026-10-26: the real payment names no lender at all — it is a web ACH
+  // transfer. SHAPE_BILL_RULES below recognises it, at the bill's own amount only. This
+  // rule stays for the day the note is assigned and the lender's name appears.
   { re: /\bAHFC\b|AMERICAN HONDA|HONDA FINANCIAL/i, bill: "Car payment (Civic)" },
   // Cherry is BOTH a modeled monthly bill and a feed-tracked debt. Naming it
   // here is what lets the importer link a payment to both at once — without a
@@ -1124,6 +1218,35 @@ const BILL_ALIASES: { bill: string; not?: RegExp; aliases: string[] }[] = [
   { bill: "Card payment (…6813)", aliases: ["crd6813", "acct6813"] },
 ];
 
+// Bills the bank names by the SHAPE of the line, never by the biller. Checked after the
+// two passes above, so a line that names its biller is always settled by that name.
+//
+// WHY, FOUND 2026-10-26. The car payment rule above guessed the lender's name ("AHFC",
+// "American Honda") before the first payment, and the first real payment, on 2026-10-09,
+// read like neither: Bank of America wrote it as a web ACH transfer —
+// "<NAME> DES:ACH XFER ID:… INDN:<NAME> CO ID:… WEB" — paid from the joint account, and
+// nothing in it names Honda. It was filed as a new merchant and linked by hand. The next
+// one is due on the 6th and would have done the same.
+//
+// THE SHAPE IS NOT THE BILLER, and that is the whole risk. Every ACH transfer the bank
+// writes this way reads the same, whoever it pays — so the name alone must never settle
+// the bill (the law: never link a charge to a bill on a weak match). These answers carry
+// `billAmountGate`, and the charge settles the bill only at the bill's OWN figure, to the
+// cent (billAmountToTheCent — it was the 3% band until review the same day, a $13 window
+// on a car payment). An ACH transfer of any other size names the bill and resolves to
+// nothing. The figure is read from the bill row, never written here, so a new payment
+// amount needs no change to this file — only to the bill.
+//
+// AND THEY ARE SEED-ONLY (2026-10-26, in review): a new rule, so it may file a NEW row
+// but never re-decide one the ledger holds. The answer carries `before` — the
+// categorizer without these rules — and the bank sync files with `before` any charge the
+// bill does not take: one of another size, and one already stored that is not already
+// linked to that bill. Before this, a re-sent stored ACH row was rewritten from the
+// category it had to `other`, flagged.
+const SHAPE_BILL_RULES: { re: RegExp; bill: string }[] = [
+  { re: /\bDES:\s*ACH XFER\b/i, bill: "Car payment (Civic)" },
+];
+
 /**
  * Every bill NAME the built-in rules in this file hand back: BILL_RULES, BILL_ALIASES,
  * and the three named inside classify() itself (the Zelle branch and the two Anthropic
@@ -1137,7 +1260,14 @@ const BILL_ALIASES: { bill: string; not?: RegExp; aliases: string[] }[] = [
  * reads this file and fails if any bill name in it is missing from this list.
  */
 export const BUILT_IN_BILL_NAMES: readonly string[] = [
-  ...new Set([...BILL_RULES.map((r) => r.bill), ...BILL_ALIASES.map((b) => b.bill), "Mom", "Claude Pro", "Claude Max"]),
+  ...new Set([
+    ...BILL_RULES.map((r) => r.bill),
+    ...BILL_ALIASES.map((b) => b.bill),
+    ...SHAPE_BILL_RULES.map((r) => r.bill),
+    "Mom",
+    "Claude Pro",
+    "Claude Max",
+  ]),
 ];
 
 // Gino's own category labels → the app's category + whether it's living spend.
@@ -1298,7 +1428,8 @@ const KEYWORD_FALLBACK: { re: RegExp; appCategory: string }[] = [
  *  When the merchant sells fuel AND groceries but the descriptor doesn't say which,
  *  the honest answer is "I don't know": the result is forced to low confidence so
  *  the importer files it needs_review and asks once, instead of guessing and being
- *  quietly wrong on half of them. */
+ *  quietly wrong on half of them — unless the household has already answered for that
+ *  merchant (HOUSEHOLD_DEPARTMENT_RULES), when its answer files a new row unasked. */
 export function classify(
   desc: string,
   amount: number,
@@ -1327,20 +1458,39 @@ export function classify(
   // token-less charges as fuel and three as store. Absence of the token carries no
   // information in either direction — which is exactly why this asks instead.
   //
-  // Where the household has said how it reads this merchant (HOUSEHOLD_DEPARTMENT_RULES,
-  // 2026-10-24), its rule is the pre-fill instead of whatever the merchant path
-  // happened to land on. Still asked, still `ambiguous`, so still seed-only.
+  // Where the household has said how it reads this merchant (HOUSEHOLD_DEPARTMENT_RULES),
+  // its rule is the answer. Since 2026-10-26 it is not asked again — the household
+  // answered — but it is SEED-ONLY: a new row is filed with it, and a row the ledger
+  // already has is asked about exactly as before the change, through `before`, which is
+  // the old shape — the household's pre-fill, still `ambiguous` and still asking (it was
+  // that from 2026-10-24 to 2026-10-26). So the existing rows keep their category AND
+  // their review flag, and only a person closes those.
   if (
     out.kind === "variable" &&
     resolveDepartment(desc, raw, amount) === "ambiguous"
   ) {
     const house = householdDepartment(desc, raw, amount);
+    if (!house) {
+      return {
+        ...out,
+        confidence: "low",
+        ambiguous: true,
+        reason: out.reason + " — fuel or store? confirm",
+      };
+    }
     return {
-      ...out,
-      appCategory: house?.categoryId ?? out.appCategory,
-      confidence: "low",
-      ambiguous: true,
-      reason: house ? house.reason : out.reason + " — fuel or store? confirm",
+      kind: "variable",
+      appCategory: house.categoryId,
+      reason: house.reason,
+      confidence: "high",
+      seedOnly: true,
+      before: {
+        ...out,
+        appCategory: house.categoryId,
+        confidence: "low",
+        ambiguous: true,
+        reason: house.reason + " — confirm",
+      },
     };
   }
   // A seed-only answer carries the answer from before its rule, for a caller asking
@@ -1361,8 +1511,9 @@ function noiseHiddenLabel(source: string): string | undefined {
   return his && HISCAT_TO_APP[his] ? his : undefined;
 }
 
-// `seeding` turns on the rules added 2026-10-25 that may only seed a new row. Off, this
-// is the categorizer exactly as it answered before them — which is what `before` is.
+// `seeding` turns on the rules that may only seed a new row (the near spelling of
+// 2026-10-25, the shape-named bills of 2026-10-26). Off, this is the categorizer exactly
+// as it answered before them — which is what `before` is.
 function classifyCore(
   desc: string,
   amount: number,
@@ -1644,6 +1795,25 @@ function classifyCore(
         reason: `matched bill (alias): ${b.bill}`,
         confidence: "high",
       };
+    }
+  }
+
+  // A bill named by the shape of the line (SHAPE_BILL_RULES), only ever settled at the
+  // bill's own amount — `billAmountGate` is what tells the matcher to hold it to that.
+  // Seed-only, so off when `before` is being worked out: classify() attaches the answer
+  // without these rules, for a row the ledger already holds.
+  if (seeding) {
+    for (const r of SHAPE_BILL_RULES) {
+      if (r.re.test(billHay)) {
+        return {
+          kind: "bill",
+          billName: r.bill,
+          billAmountGate: true,
+          seedOnly: true,
+          reason: `the bank's ACH transfer shape — ${r.bill}, only at that bill's own amount`,
+          confidence: "high",
+        };
+      }
     }
   }
 

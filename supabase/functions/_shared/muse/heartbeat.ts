@@ -103,6 +103,9 @@ export interface ConnectionReading {
   status: string;
   minutesSinceSync: number | null;
   consecutiveFailures: number;
+  /** The row's reason is the bank's ADVANCE warning — the login still works for now
+   *  (isAdvanceWarning in _shared/itemHealth.ts). Absent reads as no. */
+  advanceWarning?: boolean;
 }
 
 export interface HeartbeatReadings {
@@ -277,6 +280,33 @@ export function heartbeat(r: HeartbeatReadings): Heartbeat {
   // whoever reads it to go and find out whose.
   for (const c of r.connections) {
     const who = `${c.owner}'s ${c.institution ?? "bank"}`;
+    // SAID PLAINLY, 2026-10-26. A login that needs signing in again used to come out as
+    // `in the state "needs_reauth" rather than ok` — true, and no use to anyone reading it
+    // on a lock screen. The bank now warns days ahead (plaid-webhook marks the connection
+    // while it still works), so the sentence says what to do, and whether it has already
+    // stopped: failing syncs, or none inside the stale limit, mean it has — and so does a
+    // reason that is not the advance warning (2026-10-26, in review: a webhook saying the
+    // login HAS stopped lands between two syncs, and until the next one failed this said
+    // "soon").
+    if (c.status === "needs_reauth") {
+      const stopped =
+        c.advanceWarning !== true ||
+        c.consecutiveFailures > 0 ||
+        c.minutesSinceSync === null ||
+        c.minutesSinceSync > BANK_STALE_MIN;
+      // On whose phone: "Connect a bank" repairs only the login of the phone it is tapped
+      // on (repairTarget in src/lib/plaidClient.ts), and links a new bank anywhere else.
+      const where = c.owner && c.owner !== "Joint" ? `on ${c.owner}'s phone` : "on the phone that linked it";
+      checks.push({
+        id: `bank:${c.owner}`,
+        question: `Is ${who} still connected?`,
+        status: "alarm",
+        says: stopped
+          ? `${who} needs signing in again: it has stopped syncing. Open the app ${where} and sign in with Connect a bank.`
+          : `${who} needs signing in again soon: it still syncs for now, but the bank has said it will stop. Open the app ${where} and sign in with Connect a bank before it does.`,
+      });
+      continue;
+    }
     if (c.status !== "ok" || c.consecutiveFailures > 0) {
       checks.push({
         id: `bank:${c.owner}`,
