@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import {
   Pencil,
   Landmark,
@@ -139,12 +139,15 @@ interface ProfileTaps {
 
 // A grouped bento list: a mono eyebrow label above a divided card.
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  // Inside the Aurora shell (2026-10-26) a group is Aurora's glass card; the rows
+  // inside keep their own layout until Profile gets its own Aurora pass.
+  const aurora = useContext(AuroraProfile);
   return (
     <div>
       <div className="eyebrow mb-2 px-1 text-taupe">{label}</div>
       <div
-        className="overflow-hidden rounded-[16px] border"
-        style={{ background: "#141a24", borderColor: "#232d3a" }}
+        className={aurora ? "au-glass overflow-hidden" : "overflow-hidden rounded-[16px] border"}
+        style={aurora ? undefined : { background: "#141a24", borderColor: "#232d3a" }}
       >
         {children}
       </div>
@@ -269,22 +272,34 @@ function PushRow() {
   );
 }
 
+/** True when Profile renders inside the Aurora shell: no gradient hero (the Aurora
+ *  header carries the title) and glass groups. */
+const AuroraProfile = createContext(false);
+
 export function ProfileTab({
   vm,
   taps = {},
   audit,
+  aurora = false,
 }: {
   vm: ProfileVM;
   taps?: ProfileTaps;
   /** Result of src/lib/selfAudit.ts. Optional so the tab still renders without it. */
   audit?: AuditResult;
+  aurora?: boolean;
 }) {
   return (
+    <AuroraProfile.Provider value={aurora}>
     <div className="flex flex-col gap-0">
-      {/* ── Identity hero ── */}
+      {/* ── Identity hero ── (inside Aurora: the same facts on a glass card — who
+          this phone belongs to is the one thing Profile must always say) */}
       <div
-        style={{ background: BRAND_GRADIENT }}
-        className="flex items-center gap-3.5 rounded-b-[24px] px-5 py-5 text-white"
+        style={aurora ? undefined : { background: BRAND_GRADIENT }}
+        className={
+          aurora
+            ? "au-glass mx-4 mt-3 flex items-center gap-3.5 px-5 py-5"
+            : "flex items-center gap-3.5 rounded-b-[24px] px-5 py-5 text-white"
+        }
       >
         {/* The initial inherited `text-white` from the hero, but it sits on the
             OWNER colour, not on the hero gradient — and both owner colours are
@@ -430,6 +445,10 @@ export function ProfileTab({
             />
           </div>
 
+          {/* Mine / Household. The Aurora money screens are always the household's
+              (2026-10-26), and nothing else reads the setting, so inside Aurora the
+              switch would do nothing — it is not shown there. */}
+          {!aurora && (
           <div
             className="flex items-center gap-3 border-b p-4"
             style={{ borderColor: ROW_BORDER }}
@@ -450,6 +469,7 @@ export function ProfileTab({
               onSelect={taps.onLens}
             />
           </div>
+          )}
 
           <PushRow />
 
@@ -529,6 +549,7 @@ export function ProfileTab({
       </div>
       <div className="h-2" />
     </div>
+    </AuroraProfile.Provider>
   );
 }
 

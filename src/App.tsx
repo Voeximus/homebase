@@ -43,7 +43,25 @@ const DoctorLab = import.meta.env.DEV
   ? lazy(() => import("./dev/DoctorLab").then((m) => ({ default: m.DoctorLab })))
   : null;
 
+// ?auroralab — the Aurora finance screens over an invented household. Same DEV-only
+// gating: the harness and its made-up figures never ship.
+const AuroraLab = import.meta.env.DEV
+  ? lazy(() => import("./dev/AuroraLab").then((m) => ({ default: m.AuroraLab })))
+  : null;
+
 export default function App() {
+  if (
+    import.meta.env.DEV &&
+    AuroraLab &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("auroralab")
+  ) {
+    return (
+      <Suspense fallback={null}>
+        <AuroraLab />
+      </Suspense>
+    );
+  }
   if (
     import.meta.env.DEV &&
     DesignLab &&

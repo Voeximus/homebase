@@ -268,4 +268,8 @@ export interface AppData {
   // an AppData by hand still compiles and simply has no goals — which means the
   // standard budget, exactly as before 2026-10-10.
   cycleBudgets?: CycleBudget[];
+  // The household's standing weekly plans (schema_v46). OPTIONAL for the same reason:
+  // the read door reads them separately, and an AppData built by hand has none, which
+  // plans every week from the pay cycle.
+  weekPlans?: WeekPlan[];
 }

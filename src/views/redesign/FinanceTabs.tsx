@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import { Wallet, HeartPulse, User, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../../store/FinanceStore";
 import { useAuth } from "../../auth/AuthProvider";
 import { useLang } from "../../components/LanguageProvider";
@@ -7,15 +6,18 @@ import { getLang, t } from "../../lib/i18n";
 import { syncNow } from "../../lib/plaidClient";
 import type { AppMode } from "../../components/ModeToggle";
 import type { Owner } from "../../lib/owner";
-import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
-import { TabNav, type TabKey } from "./TabNav";
-import { HomeTab } from "./HomeTab";
-import { InsightsTab } from "./InsightsTab";
-import { ActivityTab } from "./ActivityTab";
+import type { Lens } from "../../lib/lens";
 import { ProfileTab } from "./ProfileTab";
-import { buildFinanceVMs } from "./buildVMs";
+import { buildFinanceVMs, visibleLedger } from "./buildVMs";
+import "../../aurora/aurora.css";
+import { FloatingTabBar, PushedScreen, type AuroraTab } from "../../aurora/components";
+import { HomeScreen } from "../../aurora/HomeScreen";
+import { ActivityScreen } from "../../aurora/ActivityScreen";
+import { GoalsScreen } from "../../aurora/GoalsScreen";
+import { InsightsScreen } from "../../aurora/InsightsScreen";
+import { buildAuroraVMs } from "../../aurora/vms";
+import { money2 } from "../../aurora/logic";
 import { selfAudit } from "../../lib/selfAudit";
-import { LedgerSheet } from "../../components/LedgerSheet";
 import { AddTransactionSheet } from "../../components/AddTransactionSheet";
 import { ImportSheet } from "../../components/ImportSheet";
 import {
@@ -36,73 +38,9 @@ import { dismissLocally, loadDismissed, mergeDismissed } from "../../lib/doctorD
 import type { Suggestion } from "../../lib/reviewTypes";
 import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
 import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
-import { merchantKey } from "../../lib/categorize";
 import { monthKeyOf } from "../../lib/format";
 
-function Seg({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition"
-      style={active ? { background: "#34c5e8", color: "#06303a", fontWeight: 600 } : { color: "#8b97a6" }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function TopBar({
-  mode,
-  onMode,
-  lens,
-  onLens,
-}: {
-  mode: AppMode;
-  onMode: (m: AppMode) => void;
-  lens: Lens;
-  onLens: (l: Lens) => void;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between px-4 pb-2.5"
-      style={{ background: "#0b0f17", paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}
-    >
-      <span
-        className="flex rounded-full p-0.5"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
-      >
-        <Seg active={mode === "finance"} onClick={() => onMode("finance")}>
-          <Wallet size={14} /> {t("Finance")}
-        </Seg>
-        <Seg active={mode === "health"} onClick={() => onMode("health")}>
-          <HeartPulse size={14} /> {t("Health")}
-        </Seg>
-      </span>
-      <span
-        className="flex rounded-full p-0.5"
-        style={{ background: "#141a24", border: "1px solid #232d3a" }}
-      >
-        <Seg active={lens === "me"} onClick={() => onLens("me")}>
-          <User size={14} /> {t("Mine")}
-        </Seg>
-        <Seg active={lens === "all"} onClick={() => onLens("all")}>
-          <Users size={14} /> {t("All")}
-        </Seg>
-      </span>
-    </div>
-  );
-}
-
 export function FinanceTabs({
-  mode,
   onMode,
   owner,
   lens,
@@ -120,24 +58,57 @@ export function FinanceTabs({
   const { setLang } = useLang();
   // Persist the active tab so a language switch (which remounts the whole tree
   // via LanguageProvider's key bump) doesn't throw you back to Home.
-  const [tab, setTabState] = useState<TabKey>(() => {
+  type FinTab = Exclude<AuroraTab, "health">;
+  const [tab, setTabState] = useState<FinTab>(() => {
     try {
-      const t = localStorage.getItem("hb-fin-tab");
-      return t === "insights" || t === "activity" || t === "profile" ? t : "home";
+      const t = localStorage.getItem("au-fin-tab");
+      return t === "activity" || t === "goals" ? t : "home";
     } catch {
       return "home";
     }
   });
-  const setTab = (t: TabKey) => {
+  const setTab = (t: AuroraTab) => {
+    // Health is the fourth tab (decision 4, 2026-10-26): it switches mode, and the
+    // Health screen's own Finance switch brings you back to the tab you left.
+    if (t === "health") return onMode("health");
     try {
-      localStorage.setItem("hb-fin-tab", t);
+      localStorage.setItem("au-fin-tab", t);
     } catch {
       /* ignore */
     }
+    setPushed(null);
     setTabState(t);
   };
-  const [, setSyncing] = useState(false);
-  const [ledgerOpen, setLedgerOpen] = useState(false);
+  // A screen pushed over the tabs: Insights (from a week card) or Profile (from the
+  // avatar). Kept for the session, because switching language remounts this whole
+  // tree (LanguageProvider's key) — and the language switch lives ON Profile.
+  type Pushed = "insights" | "profile" | null;
+  const [pushed, setPushedState] = useState<Pushed>(() => {
+    try {
+      const p = sessionStorage.getItem("au-fin-pushed");
+      return p === "insights" || p === "profile" ? p : null;
+    } catch {
+      return null;
+    }
+  });
+  function setPushed(p: Pushed) {
+    try {
+      if (p) sessionStorage.setItem("au-fin-pushed", p);
+      else sessionStorage.removeItem("au-fin-pushed");
+    } catch {
+      /* ignore */
+    }
+    setPushedState(p);
+  }
+  // A push or a pop replaces the whole screen, so focus would fall to <body>; land it
+  // on the new screen's heading instead.
+  const screenKey = pushed ?? tab;
+  const lastScreen = useRef(screenKey);
+  useEffect(() => {
+    if (screenKey === lastScreen.current) return;
+    lastScreen.current = screenKey;
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(".au [data-au-focus]")?.focus({ preventScroll: true }));
+  }, [screenKey]);
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [envLine, setEnvLine] = useState<BudgetLine | null>(null);
@@ -146,20 +117,25 @@ export function FinanceTabs({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [billsOpen, setBillsOpen] = useState(false);
   const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
+  // The month the bill being paid belongs to — last month's, for an overdue one.
+  const [payMonth, setPayMonth] = useState<string | null>(null);
   const [txnId, setTxnId] = useState<string | null>(null);
-  const [ledgerView, setLedgerView] = useState<"all" | "unusual">("all");
   const [anomalyOpen, setAnomalyOpen] = useState(false);
   const [owedOpen, setOwedOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const anySheetOpen =
-    ledgerOpen || addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
+    addOpen || importOpen || !!envLine || sprintOpen || accountsOpen ||
     settingsOpen || billsOpen || !!payBillEntry || !!txnId || anomalyOpen || owedOpen || reviewOpen;
 
   // The attack ladder reads the shared payoff projection from buildVMs (vms.deploy).
+  // Household-wide ("all"), always: every Aurora figure — the balance, the forecast,
+  // the week, the debts — is the household's ("her money is my money"), and a list
+  // filtered to one person under totals for two would not add up. Nothing else reads
+  // the Mine/All setting, so Profile does not show its switch inside Aurora.
   const vms = useMemo(
-    () => buildFinanceVMs(data, owner, lens, { email: session?.user.email ?? "", lang: getLang() }),
-    [data, owner, lens, session],
+    () => buildFinanceVMs(data, owner, "all", { email: session?.user.email ?? "", lang: getLang() }),
+    [data, owner, session],
   );
 
   // The app checking its own arithmetic. Deliberately NOT lens-filtered: an
@@ -227,45 +203,12 @@ export function FinanceTabs({
     void ext.dismissSuggestion?.(s.key, s.kind);
   };
 
-  // Lens-filtered ledger + a merchant-rule lookup, for the reused LedgerSheet.
-  const personal = lens === "me";
-  const ledgerTxns = useMemo(() => {
-    const otherLabel = owner === "gino" ? "Xinyan" : "Gino";
-    const otherIds = new Set(
-      data.accounts.filter((a) => a.owner === otherLabel).map((a) => a.id),
-    );
-    return data.transactions
-      .filter((tx) => !tx.appliesTo?.settled)
-      // excluded set-asides drop from the all-time ledger too (match `visible`)
-      .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
-      .filter((tx) => !personal || !tx.accountId || !otherIds.has(tx.accountId));
-  }, [data.transactions, data.accounts, personal, owner]);
-  const hasRule = useMemo(() => {
-    const set = new Set(data.merchantRules.map((r) => r.pattern));
-    return (d: string) => set.has(merchantKey(d));
-  }, [data.merchantRules]);
-  // The Cash account LIST follows the lens like the cash TOTAL does: own + joint
-  // in "Mine", everyone in "Household". (The total in buildVMs was already
-  // lens-aware; this brings the expandable list in line.)
-  const lensAccounts = useMemo(
-    () =>
-      personal
-        ? [...ownAccounts(data.accounts, owner), ...jointAccounts(data.accounts)]
-        : data.accounts,
-    [data.accounts, personal, owner],
-  );
   const now = new Date();
   const monthKey = monthKeyOf(now);
 
-  const refresh = async () => {
-    setSyncing(true);
-    await syncNow(true).catch(() => {});
-    setSyncing(false);
-  };
-  const openCategory = (catId: string) =>
-    setEnvLine(LEAN_VARIABLE.find((l) => l.cats.includes(catId)) ?? null);
   const openBillPay = (b: MonthCalBill) => {
     setBillsOpen(false);
+    setPayMonth(null);
     setPayBillEntry({
       day: b.day,
       label: b.name,
@@ -283,76 +226,124 @@ export function FinanceTabs({
     ? (vms.envelopes.find((e) => e.key === envLine.key) ?? null)
     : null;
 
-  return (
-    <div
-      className="mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
-      style={{ background: "#0b0f17" }}
-    >
-      <TopBar mode={mode} onMode={onMode} lens={lens} onLens={onLens} />
-      <div
-        className="min-h-0 flex-1"
-        style={{ overflowY: anySheetOpen ? "hidden" : "auto", overscrollBehaviorY: "contain" }}
-      >
-        {tab === "home" ? (
-          <HomeTab
-            vm={vms.home}
-            taps={{
-              onCash: () => setAccountsOpen(true),
-              onDebt: () => setSprintOpen(true),
-              onBudget: () => setTab("insights"),
-              onBills: () => setBillsOpen(true),
-              onRecent: () => {
-                setLedgerView("all");
-                setLedgerOpen(true);
-              },
-              onAnomaly: () => setAnomalyOpen(true),
-              onOwed: () => setOwedOpen(true),
-            }}
-          />
-        ) : tab === "insights" ? (
-          <InsightsTab vm={vms.insights} taps={{ onCategory: openCategory }} />
-        ) : tab === "activity" ? (
-          <ActivityTab
-            vm={vms.activity}
-            reviewCount={suggestions.length}
-            taps={{
-              onRefresh: refresh,
-              onRow: (id) => setTxnId(id),
-              onAdd: () => setAddOpen(true),
-              onReview: () => setReviewOpen(true),
-            }}
-          />
-        ) : (
-          <ProfileTab
-            vm={vms.profile}
-            audit={audit}
-            taps={{
-              onHealth: () => onMode("health"),
-              onSignOut: () => void signOut(),
-              onImport: () => setImportOpen(true),
-              onEdit: () => setSettingsOpen(true),
-              onBank: () => setSettingsOpen(true),
-              onCards: () => setSettingsOpen(true),
-              onAdvanced: () => setSettingsOpen(true),
-              onLang: (l) => setLang(l),
-              onLens,
-              onToggleVariableBill: (id, on) => void setRecurringVariable(id, on),
-            }}
-          />
-        )}
-      </div>
-      <TabNav active={tab} onTab={setTab} badges={{ activity: suggestions.length }} />
+  // Every number the Aurora screens show, built once from the same data and
+  // view-models the sheets read (src/aurora/vms.ts).
+  const visible = useMemo(() => visibleLedger(data, owner, "all"), [data, owner]);
+  const au = useMemo(() => {
+    const notices = [];
+    // What the bank is holding but has not itemized yet (the old Cash tile's line).
+    if (vms.home.processing > 0)
+      notices.push({
+        id: "processing",
+        title: t("Waiting to post"),
+        sub: t("The bank is still holding this"),
+        amount: `~${money2(vms.home.processing)}`,
+        onClick: () => setAccountsOpen(true),
+      });
+    if (vms.home.anomalyCount > 0)
+      notices.push({
+        id: "anomaly",
+        title: t("Unusual purchases"),
+        sub: t("{n} buys ran higher than usual", { n: vms.home.anomalyCount }),
+        amount: String(vms.home.anomalyCount),
+        tone: "rose" as const,
+        onClick: () => setAnomalyOpen(true),
+      });
+    if (vms.home.owedToYou > 0)
+      notices.push({
+        id: "owed",
+        title: t("Owed to you"),
+        sub: t("{n} waiting to be paid back", { n: vms.home.owedList.length }),
+        amount: money2(vms.home.owedToYou),
+        tone: "teal" as const,
+        onClick: () => setOwedOpen(true),
+      });
+    return buildAuroraVMs(data, vms, visible, new Date(), { reviewCount: suggestions.length, notices });
+  }, [data, vms, visible, suggestions.length]);
 
-      <LedgerSheet
-        open={ledgerOpen}
-        onClose={() => setLedgerOpen(false)}
-        txns={
-          ledgerView === "unusual"
-            ? ledgerTxns.filter((t) => vms.home.anomalyIds.includes(t.id))
-            : ledgerTxns
-        }
-        hasRule={hasRule}
+  return (
+    <>
+    {/* The Aurora screens are scoped under .au; the sheets render beside it, so
+        none of Aurora's type or colour reaches them until each gets its own pass. */}
+    <div className={anySheetOpen ? "au au--locked" : "au"}>
+      {pushed === "insights" ? (
+        <InsightsScreen
+          vm={au.insights}
+          taps={{
+            onBack: () => setPushed(null),
+            onCategory: (key) => setEnvLine(LEAN_VARIABLE.find((l) => l.key === key) ?? null),
+          }}
+        />
+      ) : pushed === "profile" ? (
+        // Profile's rows were built on the body's 1.5 line height; they keep it.
+        <PushedScreen
+          scrollKey="profile"
+          title={t("Profile")}
+          onBack={() => setPushed(null)}
+          style={{ lineHeight: 1.5, letterSpacing: "-0.006em" }}
+        >
+              <ProfileTab
+                aurora
+                vm={{ ...vms.profile, lens }}
+                audit={audit}
+                taps={{
+                  onHealth: () => onMode("health"),
+                  onSignOut: () => void signOut(),
+                  onImport: () => setImportOpen(true),
+                  onEdit: () => setSettingsOpen(true),
+                  onBank: () => setSettingsOpen(true),
+                  onCards: () => setSettingsOpen(true),
+                  onAdvanced: () => setSettingsOpen(true),
+                  onLang: (l) => setLang(l),
+                  onLens,
+                  onToggleVariableBill: (id, on) => void setRecurringVariable(id, on),
+                }}
+              />
+        </PushedScreen>
+      ) : tab === "home" ? (
+        <HomeScreen
+          vm={au.home}
+          taps={{
+            onProfile: () => setPushed("profile"),
+            onBalance: () => setAccountsOpen(true),
+            onBills: () => setBillsOpen(true),
+            onBill: (b) => {
+              setPayMonth(b.monthKey);
+              setPayBillEntry({
+                day: b.day,
+                label: b.name,
+                amount: b.amount,
+                direction: "out",
+                recurringId: b.recurringId,
+                variable: b.variable,
+              });
+            },
+            onWeek: () => setPushed("insights"),
+          }}
+        />
+      ) : tab === "activity" ? (
+        <ActivityScreen
+          vm={au.activity}
+          taps={{
+            onWeek: () => setPushed("insights"),
+            onRow: (id) => setTxnId(id),
+            onReview: () => setReviewOpen(true),
+            onAdd: () => setAddOpen(true),
+            onRefresh: async () => {
+              await syncNow(true).catch(() => {});
+            },
+          }}
+        />
+      ) : (
+        <GoalsScreen vm={au.goals} taps={{ onPlan: () => setSprintOpen(true) }} />
+      )}
+      <FloatingTabBar
+        active={tab}
+        onTab={setTab}
+        badges={{ activity: suggestions.length }}
       />
+    </div>
+
       <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
       <CategorySheet
@@ -371,7 +362,8 @@ export function FinanceTabs({
         schedule={vms.deploy.schedule}
         totalDebt={vms.deploy.totalDebt}
       />
-      <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={lensAccounts} />
+      {/* Opened from Home's balance, which is the household's — so is the list. */}
+      <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={data.accounts} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />
       <BillsSheet
         open={billsOpen}
@@ -382,7 +374,7 @@ export function FinanceTabs({
       />
       <PayBillSheet
         entry={payBillEntry}
-        monthKey={monthKey}
+        monthKey={payMonth ?? monthKey}
         accounts={data.accounts}
         defaultAccountId={payRec?.accountId}
         variable={payRec?.variable ?? false}
@@ -392,7 +384,10 @@ export function FinanceTabs({
             : undefined;
           return !!d && (!!d.providerAccountId || !!d.trackPattern);
         })()}
-        onClose={() => setPayBillEntry(null)}
+        onClose={() => {
+          setPayBillEntry(null);
+          setPayMonth(null);
+        }}
         onPay={payBill}
         onMarkPaid={markBillPaid}
         onSetVariable={setRecurringVariable}
@@ -434,6 +429,6 @@ export function FinanceTabs({
           },
         }}
       />
-    </div>
+    </>
   );
 }

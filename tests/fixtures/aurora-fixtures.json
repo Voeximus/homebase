@@ -1,0 +1,232 @@
+{
+  "_about": "Illustrative sample data that reproduces the story told in the Aurora mockups. Not real user data. Use it for previews, storybook-style component states and unit tests. All dates are local calendar dates (YYYY-MM-DD).",
+  "today": "2026-10-25",
+  "currency": "USD",
+  "locale": "en-US",
+  "settings": {
+    "cushion": 500,
+    "discretionaryPerDay": 40,
+    "safeToSpendIncludesCushion": true,
+    "forecastDays": 30
+  },
+  "accounts": [
+    {
+      "id": "chk",
+      "name": "Everyday checking",
+      "type": "checking",
+      "last4": "4821",
+      "balance": 1830.42
+    },
+    {
+      "id": "sav",
+      "name": "High-yield savings",
+      "type": "savings",
+      "last4": "0937",
+      "balance": 12850.0
+    }
+  ],
+  "spentToday": 47.43,
+  "recurring": [
+    {
+      "id": "pay",
+      "name": "Payroll deposit",
+      "kind": "income",
+      "amount": 2060.0,
+      "cadence": "biweekly",
+      "next": "2026-11-06"
+    },
+    {
+      "id": "phone",
+      "name": "Phone bill",
+      "kind": "bill",
+      "amount": 45.0,
+      "cadence": "monthly",
+      "next": "2026-10-28",
+      "icon": "phone"
+    },
+    {
+      "id": "rent",
+      "name": "Rent",
+      "kind": "bill",
+      "amount": 1150.0,
+      "cadence": "monthly",
+      "next": "2026-11-01",
+      "icon": "rent",
+      "setAside": true
+    },
+    {
+      "id": "stream",
+      "name": "Streaming",
+      "kind": "bill",
+      "amount": 15.49,
+      "cadence": "monthly",
+      "next": "2026-11-03",
+      "icon": "bag"
+    },
+    {
+      "id": "power",
+      "name": "City Electric",
+      "kind": "bill",
+      "amount": 72.0,
+      "cadence": "monthly",
+      "next": "2026-11-10",
+      "icon": "rent"
+    }
+  ],
+  "goals": [
+    {
+      "id": "travel",
+      "name": "Travel",
+      "note": "Spring trip · March 2027",
+      "target": 1200,
+      "saved": 640,
+      "autofillPerPayday": 80,
+      "color": "violet"
+    },
+    {
+      "id": "emergency",
+      "name": "Emergency fund",
+      "target": 5000,
+      "saved": 2400,
+      "autofillPerPayday": 120,
+      "color": "teal"
+    },
+    {
+      "id": "laptop",
+      "name": "New laptop",
+      "target": 1200,
+      "saved": 240,
+      "autofillPerPayday": 0,
+      "color": "rose"
+    }
+  ],
+  "goalsFundedFromAccount": "chk",
+  "monthPlan": {
+    "month": "2026-10",
+    "categories": [
+      {
+        "id": "groceries",
+        "name": "Groceries",
+        "plan": 400,
+        "spent": 356,
+        "color": "violet"
+      },
+      {
+        "id": "eating-out",
+        "name": "Eating out",
+        "plan": 250,
+        "spent": 214,
+        "color": "rose"
+      },
+      {
+        "id": "transport",
+        "name": "Transport",
+        "plan": 220,
+        "spent": 148,
+        "color": "teal"
+      },
+      {
+        "id": "shopping",
+        "name": "Shopping",
+        "plan": 280,
+        "spent": 190,
+        "color": "amber"
+      },
+      {
+        "id": "fun",
+        "name": "Fun",
+        "plan": 200,
+        "spent": 156,
+        "color": "sky"
+      },
+      {
+        "id": "other",
+        "name": "Other",
+        "plan": 100,
+        "spent": 64,
+        "color": "silver"
+      }
+    ]
+  },
+  "transactions": [
+    {
+      "id": "t1",
+      "date": "2026-10-25",
+      "time": "14:14",
+      "merchant": "Corner Market",
+      "category": "Groceries",
+      "icon": "cart",
+      "amount": -42.18
+    },
+    {
+      "id": "t2",
+      "date": "2026-10-25",
+      "time": "09:02",
+      "merchant": "Bean & Leaf",
+      "category": "Coffee",
+      "icon": "coffee",
+      "amount": -5.25
+    },
+    {
+      "id": "t3",
+      "date": "2026-10-23",
+      "time": "06:00",
+      "merchant": "Payroll deposit",
+      "category": "Income",
+      "icon": "income",
+      "amount": 2060.0,
+      "recurringId": "pay"
+    },
+    {
+      "id": "t4",
+      "date": "2026-10-23",
+      "time": "18:40",
+      "merchant": "Fuel stop",
+      "category": "Transport",
+      "icon": "fuel",
+      "amount": -38.9
+    },
+    {
+      "id": "t5",
+      "date": "2026-10-23",
+      "time": "13:15",
+      "merchant": "Online order",
+      "category": "Shopping",
+      "icon": "bag",
+      "amount": -64.99
+    },
+    {
+      "id": "t6",
+      "date": "2026-10-22",
+      "time": "19:30",
+      "merchant": "Dinner out",
+      "category": "Eating out",
+      "icon": "coffee",
+      "amount": -48.6
+    },
+    {
+      "id": "t7",
+      "date": "2026-10-19",
+      "time": "08:00",
+      "merchant": "Streaming",
+      "category": "Subscriptions",
+      "icon": "bag",
+      "amount": -15.49
+    }
+  ],
+  "lastWeekSpent": 262.7,
+  "card": {
+    "last4": "7730",
+    "type": "debit",
+    "frozen": false,
+    "onlineAllowed": true,
+    "monthlyLimit": 1450,
+    "alertAtFraction": 0.9,
+    "spentThisMonth": 1128
+  },
+  "afford": {
+    "item": "Concert tickets ×2",
+    "price": 180
+  },
+  "_colourKeys": "Category and goal `color` values are keys of tokens.json → color.category (violet, rose, teal, amber, sky, silver)."
+}

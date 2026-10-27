@@ -12,6 +12,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.10.26a",
+    date: "October 26, 2026",
+    notes: [
+      "Finance has a new look: Aurora, the design Gino made — dark glass cards, soft glows and big thin numbers.",
+      "Home shows the money in checking (all three accounts together), a line of where it is heading over the next 30 days, what is left of this week's spending plan, the next payday and the next two bills. Tap the balance to see the accounts behind it.",
+      "The line counts the money that moves on its own: every bill and autopay (an overdue one too, and the card minimum and payment plans), your paychecks, and this week's plan for everyday spending. It leaves out the extra you choose to put on the debts each payday — the jump the line makes on a payday is how much there is to put on them. The pill under the balance turns pink if the line drops below $100 in the next seven days.",
+      "There are four tabs at the bottom: Home, Activity, Goals and Health. Goals is your debts — how much of each is paid off, and the payday the plan clears it. The round button at the top right of Home opens Profile and settings.",
+      "Activity lists every charge for both of you by day, with this week's spending on top — tap that card to see the pay cycle's budget as a ring. The refresh button at the top asks the bank for anything new.",
+      "Every money screen now shows the two of you together, so the Mine / Household switch is gone from Profile.",
+      "Profile opens from the round button on Home, in the new look on the outside; its rows and the pop-up sheets still look the old way inside. They are next.",
+    ],
+  },
+  {
     version: "2026.09.26a",
     date: "September 26, 2026",
     notes: [

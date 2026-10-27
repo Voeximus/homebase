@@ -1,0 +1,369 @@
+/* Aurora — the finance look (design handoff 2026-10-26).
+ *
+ * Tokens are copied VERBATIM from aurora-design-handoff/tokens/tokens.css; the
+ * component classes below copy their values from the handoff's reference-html
+ * (which wins over the written spec wherever the two disagree). Nothing here is
+ * reinterpreted: when a value looks odd, it is the design's value.
+ *
+ * Scoped: the tokens live on :root (all --au-*, so nothing collides), but every
+ * rule is under .au, so Health and the older sheets render exactly as before. */
+
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/Outfit-Variable.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* font */
+  --au-font-family: Outfit, 'Helvetica Neue', Arial, sans-serif;
+  --au-font-numeric: tabular-nums;
+  /* color */
+  --au-color-bg: #07080F;
+  --au-color-bg-raised: #0D0E19;
+  --au-color-text: #F4F5FA;
+  --au-color-text-2: #B9BBC8;
+  --au-color-text-3: #8E91A3;
+  --au-color-text-faint: #6E7186;
+  --au-color-pill-text: #E4E5EE;
+  --au-color-on-accent: #FFFFFF;
+  --au-color-violet: #7C68FF;
+  --au-color-violet-300: #B7ACFF;
+  --au-color-violet-400: #9B8CFF;
+  --au-color-teal: #3BE0CF;
+  --au-color-teal-text: #8FF0E5;
+  --au-color-rose: #FF7AB6;
+  --au-color-rose-text: #FF9CC8;
+  --au-color-rose-headline: #FFB3D3;
+  --au-color-amber: #FFC46B;
+  --au-color-amber-text: #FFC9A3;
+  --au-color-sky: #6CB8FF;
+  --au-color-silver: #C4C6D4;
+  --au-color-glass: rgba(255,255,255,0.05);
+  --au-color-glass-hi: rgba(255,255,255,0.06);
+  --au-color-glass-border: rgba(255,255,255,0.09);
+  --au-color-glass-border-hi: rgba(255,255,255,0.12);
+  --au-color-control-border: rgba(255,255,255,0.10);
+  --au-color-hairline: rgba(255,255,255,0.06);
+  --au-color-track: rgba(255,255,255,0.08);
+  --au-color-toggle-off: rgba(255,255,255,0.14);
+  --au-color-nav-bg: rgba(20,22,36,0.72);
+  --au-color-nav-border: rgba(255,255,255,0.08);
+  --au-color-sheet-bg: rgba(16,17,30,0.94);
+  --au-color-sheet-border: rgba(255,255,255,0.12);
+  --au-color-scrim: rgba(4,5,10,0.45);
+  --au-color-category-violet: #9B8CFF;
+  --au-color-category-rose: #FF7AB6;
+  --au-color-category-teal: #3BE0CF;
+  --au-color-category-amber: #FFC46B;
+  --au-color-category-sky: #6CB8FF;
+  --au-color-category-silver: #C4C6D4;
+  /* gradient */
+  --au-gradient-brand: linear-gradient(135deg, #7C68FF, #3BE0CF);
+  --au-gradient-progress: linear-gradient(90deg, #7C68FF, #3BE0CF);
+  /* radius */
+  --au-radius-bar: 4px;
+  --au-radius-input: 20px;
+  --au-radius-card: 24px;
+  --au-radius-segment: 26px;
+  --au-radius-nav: 32px;
+  --au-radius-pill: 999px;
+  /* space */
+  --au-space-gutter: 24px;
+  --au-space-content-top: 16px;
+  --au-space-nav-clearance: 108px;
+  /* shadow */
+  --au-shadow-nav: 0 20px 40px -12px rgba(0,0,0,0.7);
+  --au-shadow-accent: 0 8px 20px -8px rgba(124,104,255,0.8);
+  --au-shadow-tab-active: 0 8px 20px -6px rgba(124,104,255,0.8);
+  --au-shadow-sheet: 0 -20px 60px rgba(0,0,0,0.6);
+  --au-shadow-status-dot: 0 0 10px 2px rgba(59,224,207,0.6);
+  /* blur */
+  --au-blur-glass: 24px;
+  --au-blur-nav: 30px;
+  --au-blur-sheet: 30px;
+  /* motion */
+  --au-motion-fast: 180ms;
+  --au-motion-base: 240ms;
+  --au-motion-slow: 360ms;
+  --au-motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --au-motion-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ── shell ─────────────────────────────────────────────────────────────── */
+.au {
+  color-scheme: dark;
+  position: relative;
+  min-height: 100dvh;
+  background: var(--au-color-bg);
+  color: var(--au-color-text);
+  font-family: var(--au-font-family);
+  font-variant-numeric: var(--au-font-numeric);
+  -webkit-font-smoothing: antialiased;
+  /* The reference renders at the browser's own line height and tracking; the app's
+     body sets 1.5 and -0.006em, which every Aurora line would otherwise inherit. */
+  line-height: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
+}
+/* Resets at ZERO specificity (:where), so every component rule below wins over
+   them — a plain `.au button` here would outrank `.au-link` and paint it white —
+   and inside Tailwind's `base` layer, so its utilities (the Profile rows are built
+   from them) still win too: unlayered CSS beats every layer whatever its weight. */
+@layer base {
+  :where(.au) *, :where(.au) *::before, :where(.au) *::after { box-sizing: border-box; }
+  :where(.au) :where(button) { font: inherit; color: inherit; }
+  :where(.au) :where(p, h1, h2, ul, figure) { margin: 0; }
+  :where(.au) :where(ul) { padding: 0; list-style: none; }
+}
+
+/* The glow layer stays put while the column scrolls (foundations: "The
+   background glow layer stays fixed behind it"). */
+.au-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.au-bg-inner { position: relative; width: 100%; max-width: 480px; height: 100%; margin: 0 auto; }
+.au-glow { position: absolute; border-radius: 50%; }
+
+.au-scroll { position: relative; z-index: 1; height: 100dvh; overflow-y: auto; overscroll-behavior-y: contain; }
+.au-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + var(--au-space-content-top)) var(--au-space-gutter)
+    calc(var(--au-space-nav-clearance) + env(safe-area-inset-bottom));
+}
+
+.au-header { display: flex; align-items: center; justify-content: space-between; height: 44px; gap: 12px; }
+.au-header--baseline { align-items: baseline; }
+.au-greeting { font-size: 16px; font-weight: 400; color: var(--au-color-text-2); }
+.au-title { font-size: 30px; font-weight: 400; letter-spacing: -0.02em; }
+.au-title-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* Insights: the title and "Day n of N" share a baseline (reference: baseline-aligned
+   header); the back button stays centred on the row. */
+.au-title-row--baseline { align-items: baseline; }
+.au-title-row--baseline > .au-iconbtn { align-self: center; }
+/* A title that must fit beside other header content: it never paints past its box. */
+.au-title--fit { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-title--sm { font-size: 22px; }
+:where(.au) [data-au-focus]:focus { outline: none; }
+
+.au-avatar {
+  flex: none; width: 44px; height: 44px; padding: 2px; border: 0; border-radius: 22px;
+  background: var(--au-gradient-brand); cursor: pointer;
+}
+.au-avatar > span {
+  width: 100%; height: 100%; border-radius: 20px; background: var(--au-color-bg-raised);
+  color: var(--au-color-text); display: flex; align-items: center; justify-content: center;
+}
+
+.au-iconbtn {
+  flex: none; width: 44px; height: 44px; padding: 0; border-radius: 22px; cursor: pointer;
+  border: 1px solid var(--au-color-control-border); background: var(--au-color-glass);
+  color: var(--au-color-text); display: flex; align-items: center; justify-content: center;
+}
+/* The Insights tip's chevron: border .12, fill .04 (reference-html/05). */
+.au-iconbtn--soft { border-color: var(--au-color-glass-border-hi); background: rgba(255,255,255,0.04); }
+
+.au-pillbtn {
+  flex: none; height: 44px; padding: 0 16px 0 12px; border-radius: 22px; cursor: pointer;
+  border: 1px solid var(--au-color-control-border); background: var(--au-color-glass);
+  color: var(--au-color-text); display: flex; align-items: center; gap: 6px; font-size: 14px;
+}
+
+/* ── numbers ───────────────────────────────────────────────────────────── */
+.au-hero-label { font-size: 15px; font-weight: 400; letter-spacing: 0.02em; color: var(--au-color-text-2); }
+.au-hero { display: flex; align-items: flex-start; font-size: 66px; font-weight: 200; line-height: 1; letter-spacing: -0.035em; white-space: nowrap; }
+.au-hero--52 { font-size: 52px; }
+.au-hero--44 { font-size: 44px; }
+.au-hero-affix { font-size: 34px; font-weight: 300; margin-top: 8px; }
+.au-hero-symbol { margin-right: 4px; color: var(--au-color-text-2); }
+.au-hero-cents { color: var(--au-color-text-faint); }
+
+.au-pill {
+  margin-top: 10px; align-self: flex-start; display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px 8px 12px; border-radius: var(--au-radius-pill);
+  background: var(--au-color-glass-hi); border: 1px solid var(--au-color-control-border);
+  font-size: 14px; color: var(--au-color-pill-text);
+}
+.au-pill-dot { display: block; flex: none; width: 8px; height: 8px; border-radius: 4px; background: var(--au-color-teal); box-shadow: var(--au-shadow-status-dot); }
+.au-pill--warning { color: var(--au-color-rose-text); }
+.au-pill--warning .au-pill-dot { background: var(--au-color-rose); box-shadow: 0 0 10px 2px rgba(255,122,182,0.6); }
+.au-pill--stale .au-pill-dot { background: var(--au-color-text-2); box-shadow: none; }
+
+/* ── glass ─────────────────────────────────────────────────────────────── */
+.au-glass {
+  border-radius: var(--au-radius-card); background: var(--au-color-glass);
+  border: 1px solid var(--au-color-glass-border);
+  -webkit-backdrop-filter: blur(var(--au-blur-glass)); backdrop-filter: blur(var(--au-blur-glass));
+}
+button.au-glass, a.au-glass { color: inherit; text-align: left; cursor: pointer; font: inherit; text-decoration: none; }
+
+.au-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.au-stat { margin: 0; padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.au-stat-label { font-size: 13px; font-weight: 400; color: var(--au-color-text-2); }
+.au-stat-value { font-size: 32px; font-weight: 300; letter-spacing: -0.02em; white-space: nowrap; }
+.au-stat-sub { font-size: 13px; color: var(--au-color-text-3); }
+
+.au-list { padding: 14px 18px 8px; display: flex; flex-direction: column; }
+.au-list--rows { padding: 6px 18px; }
+.au-list-head { display: flex; justify-content: space-between; align-items: center; height: 22px; }
+.au-list-title { font-size: 15px; font-weight: 500; }
+/* 44px tall to the finger, 22px to the eye: the negative margin gives back what the
+   hit area adds, so the header row keeps the reference's 22px. */
+.au-link { font-size: 13px; color: var(--au-color-text-2); text-decoration: none; background: none; border: 0; padding: 0 0 0 12px; cursor: pointer; min-height: 44px; min-width: 44px; margin: -11px 0; }
+.au-rows { margin-top: 4px; display: flex; flex-direction: column; }
+.au-list--rows .au-rows { margin-top: 0; }
+
+.au-row { display: flex; align-items: center; gap: 12px; height: 52px; width: 100%; background: none; border: 0; padding: 0; text-align: left; color: inherit; cursor: pointer; }
+.au-row + .au-row,
+.au-rows > li + li > .au-row,
+.au-list > li + li > .au-row { border-top: 1px solid var(--au-color-hairline); }
+.au-row--56 { height: 56px; }
+.au-row--static { cursor: default; }
+.au-disc { flex: none; width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; }
+.au-disc--38 { width: 38px; height: 38px; border-radius: 19px; }
+.au-row-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.au-row-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.au-row-sub { font-size: 13px; color: var(--au-color-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.au-row-amt { flex: none; font-size: 15px; }
+.au-row-empty { font-size: 15px; color: var(--au-color-text-2); }
+
+/* ── controls ──────────────────────────────────────────────────────────── */
+.au-seg {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px;
+  border-radius: var(--au-radius-segment); background: var(--au-color-glass); border: 1px solid var(--au-color-nav-border);
+}
+.au-seg > button { height: 44px; border: 0; border-radius: 22px; background: transparent; color: var(--au-color-text-2); font-size: 14px; cursor: pointer; transition: background var(--au-motion-fast) var(--au-motion-ease-standard); }
+.au-seg > button[aria-pressed="true"] { background: var(--au-gradient-brand); color: var(--au-color-on-accent); font-weight: 500; }
+
+.au-btn { height: 44px; padding: 0 20px; border-radius: 22px; font-size: 15px; font-weight: 500; cursor: pointer; border: 0; }
+.au-btn--primary { background: var(--au-gradient-brand); color: var(--au-color-on-accent); box-shadow: var(--au-shadow-accent); }
+.au-btn--primary:active { transform: scale(0.97); box-shadow: none; }
+.au-btn--ghost { flex: none; padding: 0 16px; border: 1px solid var(--au-color-glass-border-hi); background: transparent; color: var(--au-color-text); font-size: 14px; font-weight: 400; }
+.au-btn--ghost:active { background: var(--au-color-glass-hi); }
+
+.au-chip { padding: 4px 10px; border-radius: var(--au-radius-pill); font-size: 12px; white-space: nowrap; }
+
+/* ── floating tab bar ──────────────────────────────────────────────────── */
+.au-nav {
+  position: fixed; z-index: 20;
+  left: max(24px, calc(50% - 216px)); right: max(24px, calc(50% - 216px));
+  bottom: calc(28px + env(safe-area-inset-bottom)); height: 64px; padding: 0 8px;
+  border-radius: var(--au-radius-nav); background: var(--au-color-nav-bg); border: 1px solid var(--au-color-nav-border);
+  -webkit-backdrop-filter: blur(var(--au-blur-nav)); backdrop-filter: blur(var(--au-blur-nav));
+  box-shadow: var(--au-shadow-nav);
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center;
+}
+.au-nav > button { position: relative; height: 56px; display: flex; align-items: center; justify-content: center; color: var(--au-color-text-3); background: none; border: 0; padding: 0; cursor: pointer; }
+.au-nav > button[aria-current="page"] { color: var(--au-color-on-accent); }
+.au-nav-on { width: 48px; height: 48px; border-radius: 24px; background: var(--au-gradient-brand); box-shadow: var(--au-shadow-tab-active); display: flex; align-items: center; justify-content: center; }
+/* A count the app wants seen (Worth a look). The mock tab bar has no labels, so
+   it is a small rose badge on the icon rather than text. */
+.au-nav-badge {
+  position: absolute; top: 8px; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--au-color-rose); color: #2A0E16; font-size: 10px; font-weight: 500;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(255,122,182,0.6);
+}
+
+/* ── charts ────────────────────────────────────────────────────────────── */
+.au-chart { margin: 18px calc(-1 * var(--au-space-gutter)) 0; display: flex; flex-direction: column; gap: 4px; }
+.au-chart svg { display: block; width: 100%; height: 150px; overflow: visible; }
+.au-chart-axis { position: relative; height: 16px; font-size: 12px; color: var(--au-color-text-3); }
+.au-chart-axis > span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.au-chart-axis > span.au-axis-end { transform: none; }
+
+/* ── activity ──────────────────────────────────────────────────────────── */
+.au-summary { margin-top: 16px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.au-summary-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.au-stat-lg { font-size: 36px; font-weight: 200; line-height: 1.05; letter-spacing: -0.03em; white-space: nowrap; }
+.au-group { display: flex; flex-direction: column; gap: 8px; }
+.au-group-head { display: flex; justify-content: space-between; align-items: center; height: 20px; padding: 0 4px; }
+.au-group-day { font-size: 13px; font-weight: 400; color: var(--au-color-text-2); }
+.au-group-net { font-size: 13px; color: var(--au-color-text-3); }
+.au-search {
+  flex: 1; min-width: 0; height: 44px; border-radius: 22px; padding: 0 16px;
+  background: var(--au-color-glass); border: 1px solid var(--au-color-glass-border);
+  color: var(--au-color-text); font: inherit; font-size: 17px; outline: none;
+}
+.au-search:focus { border-color: var(--au-color-violet-300); }
+.au-empty { padding: 48px 12px; text-align: center; font-size: 15px; color: var(--au-color-text-2); }
+
+/* ── insights ──────────────────────────────────────────────────────────── */
+.au-ring { position: relative; margin: 20px auto 0; width: 280px; height: 280px; }
+.au-ring-centre { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.au-display-md { font-size: 48px; font-weight: 200; line-height: 1; letter-spacing: -0.035em; }
+.au-ring-chip { margin-top: 8px; padding: 5px 12px; border-radius: var(--au-radius-pill); background: rgba(59,224,207,0.12); border: 1px solid rgba(59,224,207,0.28); font-size: 13px; color: var(--au-color-teal-text); }
+.au-ring-chip--over { background: rgba(255,122,182,0.12); border-color: rgba(255,122,182,0.28); color: var(--au-color-rose-text); }
+.au-legend { margin-top: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; row-gap: 14px; }
+.au-legend > li > button { display: flex; align-items: center; gap: 10px; font-size: 15px; width: 100%; min-height: 44px; margin: -12.5px 0; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; text-align: left; }
+.au-legend-dot { flex: none; width: 10px; height: 10px; border-radius: 5px; }
+.au-legend-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.au-legend-amt { color: var(--au-color-text-2); }
+.au-tip { margin-top: 24px; padding: 16px 16px 16px 18px; display: flex; align-items: center; gap: 14px; }
+.au-tip-disc { flex: none; width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; }
+.au-tip-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.au-tip-title { font-size: 15px; font-weight: 500; }
+.au-tip-text { font-size: 13px; line-height: 1.4; color: var(--au-color-text-2); }
+
+/* ── goals ─────────────────────────────────────────────────────────────── */
+.au-totals { margin-top: 20px; display: flex; flex-direction: column; gap: 6px; }
+.au-display-lg { font-size: 58px; font-weight: 200; line-height: 1; letter-spacing: -0.035em; white-space: nowrap; }
+.au-totals-sub { margin-top: 4px; font-size: 14px; color: var(--au-color-teal-text); }
+.au-share { margin-top: 16px; display: flex; gap: 4px; height: 8px; }
+.au-share > span { display: block; border-radius: 4px; min-width: 4px; }
+.au-goals { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+.au-goal { display: flex; align-items: center; gap: 14px; height: 84px; width: 100%; padding: 0 18px 0 12px; }
+.au-goal-ring { position: relative; flex: none; width: 60px; height: 60px; }
+.au-goal-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; }
+.au-goal-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.au-goal-name { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.au-goal-sub { font-size: 13px; color: var(--au-color-text-3); }
+.au-goal-end { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.au-goal-eta { font-size: 15px; }
+.au-goal-eta-sub { font-size: 12px; color: var(--au-color-text-3); }
+.au-payday { margin-top: 16px; padding: 14px 14px 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.au-payday-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.au-payday-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── profile (no Aurora mock — built from the system's own pieces) ───────── */
+.au-section-label { margin: 24px 4px 8px; font-size: 13px; color: var(--au-color-text-2); }
+.au-ctl { display: flex; align-items: center; gap: 12px; min-height: 60px; width: 100%; background: none; border: 0; padding: 8px 0; color: inherit; text-align: left; cursor: pointer; }
+.au-ctl + .au-ctl { border-top: 1px solid var(--au-color-hairline); }
+.au-ctl-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.au-ctl-title { font-size: 16px; }
+.au-ctl-sub { font-size: 13px; color: var(--au-color-text-3); }
+.au-ctl-val { flex: none; display: flex; align-items: center; gap: 4px; font-size: 16px; color: var(--au-color-text-2); }
+
+.au-skeleton { border-radius: var(--au-radius-card); background: var(--au-color-glass); animation: au-shimmer 1.2s ease-in-out infinite alternate; }
+@keyframes au-shimmer { from { background: rgba(255,255,255,0.03); } to { background: rgba(255,255,255,0.08); } }
+
+.au-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: au-draw 600ms var(--au-motion-ease-standard) forwards; }
+@keyframes au-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .au-draw { animation: none; stroke-dashoffset: 0; }
+  .au-skeleton { animation: none; }
+  .au-seg > button { transition: none; }
+}
+
+.au :focus-visible { outline: 2px solid var(--au-color-violet-300); outline-offset: 2px; }
+
+/* A sheet is open: the screen behind it stops scrolling (the old shell did the
+   same with overflow:hidden on its scroller). */
+.au--locked .au-scroll { overflow: hidden; }
+
+/* Reduce Transparency: solid fills (foundations, "Glass surfaces"). LAST in the file
+   on purpose — these rules have the same weight as .au-glass and .au-nav, so they
+   only win by coming after them. */
+@media (prefers-reduced-transparency: reduce) {
+  .au-glass { background: #12131E; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .au-nav { background: #141624; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* The refresh glyph turns while the bank is being asked. */
+.au-spin { animation: au-spin 900ms linear infinite; }
+@keyframes au-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .au-spin { animation: none; opacity: 0.6; } }

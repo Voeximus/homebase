@@ -13,6 +13,7 @@ import type {
   AppData,
   AppliesTo,
   CycleBudget,
+  WeekPlan,
   Debt,
   MerchantRule,
   PaidBill,
@@ -164,6 +165,27 @@ function mapCycleBudget(r: any): CycleBudget {
   };
 }
 
+// One standing weekly plan (supabase/schema_v46_week_plans.sql). Mapped the way the
+// Muse doors map it (supabase/functions/_shared/muse/rows.ts toWeekPlan): a value that
+// is not a number becomes NaN, never 0 — 0 is a real plan ("nothing on this line this
+// week") — and rowAmount() in src/lib/weekPlan.ts then plans that line from the pay
+// cycle instead, so the rule lives once, beside the maths.
+function mapWeekPlan(r: any): WeekPlan {
+  const lines: Record<string, number> = {};
+  const raw = r.lines;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      lines[k] = typeof v === "number" ? v : Number.NaN;
+    }
+  }
+  return {
+    id: r.id,
+    weekStart: r.week_start,
+    lines,
+    setBy: r.set_by === "gino" || r.set_by === "xinyan" ? r.set_by : undefined,
+  };
+}
+
 function mapFood(r: any): Food {
   return {
     id: r.id,
@@ -217,7 +239,8 @@ type SyncTable =
   | "paid_bills"
   | "merchant_rules"
   | "foods"
-  | "cycle_budgets";
+  | "cycle_budgets"
+  | "week_plans";
 type TicketMap = Partial<Record<SyncTable, number>>;
 
 /** Take the newest ticket for a table; every older in-flight read is now stale. */
@@ -357,6 +380,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     // No goals until the table is read — which is the standard budget, the same
     // numbers the screens showed before cycle goals existed.
     cycleBudgets: [],
+    // No plan until the table is read: every week then plans from the pay cycle,
+    // which is what the read door says too when no row stands.
+    weekPlans: [],
   });
   const [loading, setLoading] = useState(true);
 
@@ -493,6 +519,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (active && isNewest(seq.current, "cycle_budgets", ticket))
         setData((p) => ({ ...p, cycleBudgets: rows.map(mapCycleBudget) }));
     }
+    // The household's weekly plan (2026-10-26, for the Aurora home's "Left this week").
+    // Same fail-closed read as the cycle budgets above: a failed read keeps the plan on
+    // screen, because an empty list silently means "plan every week from the cycle".
+    async function loadWeekPlans() {
+      const ticket = claimTicket(seq.current, "week_plans");
+      let rows: any[];
+      try {
+        rows = await readEveryRow(supabase, "week_plans");
+      } catch (e) {
+        console.warn("loadWeekPlans failed — keeping the weekly plan already on screen", e);
+        return;
+      }
+      if (active && isNewest(seq.current, "week_plans", ticket))
+        setData((p) => ({ ...p, weekPlans: rows.map(mapWeekPlan) }));
+    }
     async function loadFoods() {
       let ticket = claimTicket(seq.current, "foods");
       const { data: rows, error } = await supabase
@@ -563,6 +604,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       loadPaidBills(),
       loadMerchantRules(),
       loadCycleBudgets(),
+      loadWeekPlans(),
       foodsPromise,
     ]).finally(() => {
       if (active) setLoading(false);
@@ -595,6 +637,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       loadPaidBills();
       loadMerchantRules();
       loadCycleBudgets();
+      loadWeekPlans();
       loadFoods();
     };
 
@@ -682,6 +725,20 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         else console.warn(`cycle_budgets realtime ${status} — goals refresh when the app comes back to the foreground`);
       });
 
+    // The weekly plan gets its own channel for the reason the goals do: a table the
+    // realtime server cannot subscribe to must not take the shared channel down.
+    const weekChannel = supabase
+      .channel("homebase-sync-week-plans")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "week_plans" },
+        () => refetch("week_plans", loadWeekPlans),
+      )
+      .subscribe((status) => {
+        if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) loadWeekPlans();
+        else console.warn(`week_plans realtime ${status} — the plan refreshes when the app comes back to the foreground`);
+      });
+
     // Backstop for the installed PWA: phones freeze a backgrounded tab and can
     // drop the socket without any status callback firing, so pull fresh state
     // whenever the app comes back to the foreground. (UpdatePrompt has its own
@@ -698,6 +755,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       bursts.clear();
       supabase.removeChannel(channel);
       supabase.removeChannel(goalChannel);
+      supabase.removeChannel(weekChannel);
     };
   }, []);
 
