@@ -55,8 +55,7 @@ export default defineConfig(({ mode }) => ({
         // install and every update download 20 MB for a feature most opens never
         // touch. They are cached the first time a scan actually needs them
         // (runtimeCaching below).
-        // ttf: the Aurora screens' Outfit font, so they keep their type offline too.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,ttf}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         runtimeCaching: [
           {
             // Cache-first: these files are immutable. Model URLs carry their

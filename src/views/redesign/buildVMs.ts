@@ -75,23 +75,6 @@ export interface FinanceVMs {
   };
 }
 
-/** The lens-filtered ledger, newest first — the one predicate every list of
- *  transactions on the finance screens shares (Activity, the Aurora list). */
-export function visibleLedger(data: AppData, owner: Owner, lens: Lens): Transaction[] {
-  const personal = lens === "me";
-  const otherLabel = owner === "gino" ? "Xinyan" : "Gino";
-  const otherAccountIds = new Set(data.accounts.filter((a) => a.owner === otherLabel).map((a) => a.id));
-  return data.transactions
-    .filter((tx) => !tx.appliesTo?.settled)
-    // "Set aside · excluded" drops out of the active ledger (like a transfer);
-    // "set aside · reimbursable" stays VISIBLE until settled (it's owed to you).
-    .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
-    .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
-    .sort((a, b) =>
-      a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date),
-    );
-}
-
 export function buildFinanceVMs(
   data: AppData,
   owner: Owner,
@@ -237,7 +220,15 @@ export function buildFinanceVMs(
   // debtFreeBy / monthsToGo are derived from the deploy plan (built after bills).
 
   // ── lens-filtered ledger (same predicate as OnePager `recent`/`ledgerTxns`) ──
-  const visible = visibleLedger(data, owner, lens);
+  const visible = data.transactions
+    .filter((tx) => !tx.appliesTo?.settled)
+    // "Set aside · excluded" drops out of the active ledger (like a transfer);
+    // "set aside · reimbursable" stays VISIBLE until settled (it's owed to you).
+    .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
+    .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
+    .sort((a, b) =>
+      a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date),
+    );
 
   const catName = (id: string) => data.categories.find((c) => c.id === id)?.name ?? id;
   const envLabel = (catId: string) =>

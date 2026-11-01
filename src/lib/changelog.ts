@@ -12,6 +12,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.10.31a",
+    date: "October 31, 2026",
+    notes: [
+      "Finance is back to the look it had before Aurora: the same Home, Insights, Activity and Profile tabs, cleaner and straight to the point.",
+      "The Mine / All switch is back at the top, next to Finance and Health.",
+      "Two small fixes from the Aurora work stay: what was sent at the debts this pay cycle now counts payments the bank names, not only ones tagged in the app, and the \"not in budget\" labels are translated in Chinese.",
+    ],
+  },
+  {
     version: "2026.10.26a",
     date: "October 26, 2026",
     notes: [
