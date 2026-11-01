@@ -51,9 +51,7 @@ const MOCK_INSIGHTS: InsightsVM = {
   living: 2742,
   variable: 1250,
   atDebt: 1983,
-  debtFreeBy: "Oct '26",
-  monthsToGo: 4,
-  interest: 248,
+  payoff: { kind: "plan", date: "Oct '26", monthsToGo: 4, interest: 248, nextAmount: 991, nextDate: "Jun 30", overBy: 0 },
   ladder: [
     { rank: 1, name: "Affirm", amount: 289, target: true },
     { rank: 3, name: "Xinyan card …6813", amount: 591, live: true },
@@ -131,10 +129,8 @@ const ENV: EnvelopeVM = {
 const HOME: HomeVM = {
   firepower: 1983,
   overspent: 0,
-  debtFreeBy: "Oct '26",
+  payoff: { kind: "plan", date: "Oct '26", monthsToGo: 4, interest: 248, nextAmount: 991, nextDate: "Jun 30", overBy: 0 },
   deployedThisCycle: 0,
-  nextAmount: 991,
-  nextDate: "Jun 30",
   cash: 2322,
   cashAccounts: 3,
   processing: 144.43,

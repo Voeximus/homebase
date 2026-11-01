@@ -12,6 +12,13 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.11.01a",
+    date: "November 1, 2026",
+    notes: [
+      "Payoff shows a date again: the month you're debt-free if you stay on budget. If spending has run over budget lately, a line under it says by how much a month. Insights and the debt list say the same.",
+    ],
+  },
+  {
     version: "2026.10.31b",
     date: "October 31, 2026",
     notes: [

@@ -36,11 +36,18 @@ import {
   forecastPlan,
   lowestPoint,
   monthGetter,
+  OVER_BUDGET_NOISE,
+  payoffPlan,
   runForecast,
 } from "../src/lib/headline";
 import {
   LEAN_VARIABLE,
   OUTSIDE_BUDGET_CASH_CATS,
+  PAY_DAYS,
+  SAVINGS_SPLIT,
+  autopaysOf,
+  minFirepowerToClear,
+  orderedDebts,
   lineSpent,
   payCycleFor,
   planMath,
@@ -57,7 +64,8 @@ import { dueBeforeNextPayday, monthCalendar } from "../src/lib/schedule";
 import { forecast } from "../src/lib/forecast";
 import { totalBalance } from "../src/lib/recurring";
 import { isoDate, monthKeyOf } from "../src/lib/format";
-import type { AppData, Transaction } from "../src/types";
+import { netVariableSpentInMonth } from "../src/lib/weekPlan";
+import type { AppData, Recurring, Transaction } from "../src/types";
 
 const txn = (date: string, amount: number, categoryId = "groceries"): Transaction => ({
   id: `t-${date}-${amount}-${categoryId}`,
@@ -509,5 +517,155 @@ describe("both callers go through it", () => {
     }
     const copy = readFileSync("supabase/functions/_shared/muse/lib/headline.ts", "utf8");
     expect(copy).toContain("GENERATED — DO NOT EDIT");
+  });
+});
+
+// ── payoff: the plan date, if on budget ──────────────────────────────────────
+//
+// Added 2026-11-01. Every figure below is MADE UP: the repo is public.
+//
+// The date is the PLAN: planned pay, planned bills and the lean budget, run from
+// today's balances. The last three months' spending is reported beside it as "over
+// budget a month" and never moves it. These check both halves of that sentence.
+describe("payoffPlan", () => {
+  // 10 Mar 2027, an Arizona evening. The last three complete months are Dec, Jan, Feb.
+  const NOW_P = new Date(2027, 2, 10, 19, 0, 0);
+  const TARGET = sumTargets(LEAN_VARIABLE);
+  const row = (id: string, name: string, amount: number, over: Partial<Recurring> = {}): Recurring =>
+    ({
+      id,
+      name,
+      amount,
+      direction: "out",
+      cadence: "monthly",
+      active: true,
+      dueDays: [1],
+      categoryId: "housing",
+      createdAt: "2026-01-01T00:00:00Z",
+      ...over,
+    }) as Recurring;
+  const PAY = row("p1", "Paycheck", 2000, { direction: "in", cadence: "semimonthly", dueDays: [15, 31], categoryId: "salary" });
+  const RENT = row("b1", "Rent", 1500);
+  // A debt-linked bill: planMath adds it back to firepower, the schedule pays it to its own debt.
+  const LOAN_BILL = row("b2", "Loan B payment", 100, { dueDays: [20], categoryId: "bills", linkedDebtId: "dB" });
+  const DEBTS = [
+    { id: "dA", name: "Card A", balance: 2400, originalBalance: 3000, apr: 20, minPayment: 25, color: "#888888", createdAt: "2026-01-01T00:00:00Z" },
+    { id: "dB", name: "Loan B", balance: 600, originalBalance: 900, apr: 0, minPayment: 100, color: "#888888", createdAt: "2026-01-01T00:00:00Z" },
+  ];
+  const pdata = (txns: Transaction[] = [], recurring: Recurring[] = [PAY, RENT, LOAN_BILL], debts: unknown[] = DEBTS): AppData =>
+    ({ transactions: txns, debts, accounts: [], recurring, categories: [], goals: [], paidBills: [], merchantRules: [] }) as unknown as AppData;
+  /** One graded charge in each of the three complete months before NOW_P. */
+  const monthly = (amount: number): Transaction[] => ["2026-12-05", "2027-01-05", "2027-02-05"].map((d) => txn(d, amount));
+  const fpOn = (d: AppData, on: string) => planMath(d.recurring, d.debts, TARGET, on, d.transactions).firepower;
+
+  it("never reads the pace: $1,000/mo and $3,000/mo of past spending give the same date", () => {
+    const lean = payoffPlan(pdata(monthly(1000)), NOW_P);
+    const heavy = payoffPlan(pdata(monthly(3000)), NOW_P);
+    expect(lean.kind).toBe("plan");
+    expect(heavy.kind).toBe("plan");
+    expect(heavy.clearsOn).toEqual(lean.clearsOn);
+    expect(heavy.schedule).toEqual(lean.schedule);
+    expect(lean.pace).toBe(1000);
+    expect(lean.overBy).toBe(0);
+    expect(heavy.pace).toBe(3000);
+    expect(heavy.overBy).toBe(heavy.pace - heavy.target);
+    expect(heavy.target).toBe(TARGET);
+  });
+
+  it("holds across a month boundary when no payday falls between", () => {
+    // Jan 31 is a payday, so from 10 PM that evening the next one is Feb 15, as it is on
+    // the morning of Feb 1. At midnight the three months in the pace move from Oct–Dec
+    // to Nov–Jan, and January was heavy, so the pace jumps. The date must not.
+    const d = pdata([txn("2026-10-05", 1200), txn("2026-11-05", 1200), txn("2026-12-05", 1200), txn("2027-01-05", 4000)]);
+    const before = payoffPlan(d, new Date(2027, 0, 31, 22, 0, 0));
+    const after = payoffPlan(d, new Date(2027, 1, 1, 8, 0, 0));
+    expect(before.kind).toBe("plan");
+    expect(after.kind).toBe("plan");
+    expect(after.clearsOn).toEqual(before.clearsOn);
+    expect(after.pace).not.toBeCloseTo(before.pace, 2);
+  });
+
+  it("cannot be pulled in by a bill that ends next month: it uses today's figure", () => {
+    const gym = row("b3", "Gym", 200, { dueDays: [3], categoryId: "health", endsOn: "2027-04-20" });
+    const d = pdata([], [PAY, RENT, LOAN_BILL, gym]);
+    const today = fpOn(d, isoDate(NOW_P));
+    // The relief is real from May, or the assertion below would be vacuous.
+    expect(fpOn(d, "2027-05-01")).toBeGreaterThan(today);
+    expect(payoffPlan(d, NOW_P).planFirepower).toBe(today);
+  });
+
+  it("counts a cost that starts in three months from today", () => {
+    const car = row("b4", "Car payment", 300, { dueDays: [6], categoryId: "car", startsOn: "2027-06-01" });
+    const d = pdata([], [PAY, RENT, LOAN_BILL, car]);
+    const june = fpOn(d, "2027-06-01");
+    expect(june).toBeLessThan(fpOn(d, isoDate(NOW_P)));
+    const got = payoffPlan(d, NOW_P);
+    expect(got.planFirepower).toBe(june);
+    // And the date is the one that lower figure gives.
+    expect(got.clearsOn!.getTime()).toBeGreaterThan(payoffPlan(pdata(), NOW_P).clearsOn!.getTime());
+  });
+
+  it("takes money back that traces to the lines off the pace, by its amount", () => {
+    // One complete month of spending, so the pace IS that month's figure.
+    const spend = [txn("2027-02-05", 1800)];
+    // The same merchant gives $90 back a week later.
+    const back: Transaction = { ...txn("2027-02-12", 90, "refund"), type: "income" };
+    const gross = payoffPlan(pdata(spend), NOW_P);
+    const net = payoffPlan(pdata([...spend, back]), NOW_P);
+    expect(gross.pace).toBe(1800);
+    expect(net.pace).toBe(1800 - 90);
+    expect(net.overBy).toBe(gross.overBy - 90);
+    expect(netVariableSpentInMonth(pdata([...spend, back]), "2027-02")).toBe(1800 - 90);
+    // Still only the line beside the date.
+    expect(net.clearsOn).toEqual(gross.clearsOn);
+  });
+
+  it("reads over budget by less than $25 a month as on budget", () => {
+    const under = payoffPlan(pdata(monthly(TARGET + OVER_BUDGET_NOISE - 5)), NOW_P);
+    expect(under.pace - under.target).toBeCloseTo(OVER_BUDGET_NOISE - 5, 6);
+    expect(under.overBy).toBe(0);
+    const at = payoffPlan(pdata(monthly(TARGET + OVER_BUDGET_NOISE)), NOW_P);
+    expect(at.overBy).toBeCloseTo(OVER_BUDGET_NOISE, 6);
+  });
+
+  it("is debt-free when every balance is 0, and when no debt is tracked", () => {
+    const paid = payoffPlan(pdata([], undefined, DEBTS.map((d) => ({ ...d, balance: 0 }))), NOW_P);
+    const none = payoffPlan(pdata([], undefined, []), NOW_P);
+    for (const p of [paid, none]) {
+      expect(p.kind).toBe("debtFree");
+      expect(p.schedule).toEqual([]);
+      expect(p.clearsOn).toBeNull();
+    }
+  });
+
+  it("says pay is not set when there is no paycheck row", () => {
+    const got = payoffPlan(pdata([], [RENT, LOAN_BILL]), NOW_P);
+    expect(got.kind).toBe("noPay");
+    expect(got.schedule).toEqual([]);
+    expect(got.clearsOn).toBeNull();
+  });
+
+  it("is short when pay cannot cover the bills plus the budget, by what it takes to have any date", () => {
+    const thin = row("p1", "Paycheck", 1500, { direction: "in", cadence: "semimonthly", dueDays: [15, 31], categoryId: "salary" });
+    const d = pdata([], [thin, RENT, LOAN_BILL]);
+    const got = payoffPlan(d, NOW_P);
+    expect(got.kind).toBe("short");
+    expect(got.planFirepower).toBeLessThanOrEqual(0);
+    expect(got.clearsOn).toBeNull();
+    const need = minFirepowerToClear(orderedDebts(d.debts), NOW_P, PAY_DAYS, SAVINGS_SPLIT, autopaysOf(d.recurring, isoDate(NOW_P)));
+    expect(got.shortBy).toBeCloseTo(need - got.planFirepower, 6);
+    expect(got.shortBy).toBeGreaterThan(0);
+  });
+
+  it("is short too when a small plan cannot outrun the interest", () => {
+    const big = [{ ...DEBTS[0], balance: 60000, apr: 29.99 }];
+    const d = pdata([], [PAY, RENT], big);
+    const got = payoffPlan(d, NOW_P);
+    expect(got.kind).toBe("short");
+    expect(got.planFirepower).toBeGreaterThan(0);
+    expect(got.clearsOn).toBeNull();
+    const need = minFirepowerToClear(orderedDebts(d.debts), NOW_P, PAY_DAYS, SAVINGS_SPLIT, []);
+    expect(got.shortBy).toBeCloseTo(need - got.planFirepower, 6);
+    expect(got.shortBy).toBeGreaterThan(0);
   });
 });

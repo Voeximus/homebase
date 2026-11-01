@@ -2,6 +2,7 @@ import { CircleCheck, Flame } from "lucide-react";
 import { BRAND_GRADIENT, catColor, catIcon, conicFromSegments, gaugeSegs } from "../../lib/catColor";
 import { t } from "../../lib/i18n";
 import { barPct, budgetVerdict } from "./barPct";
+import type { PayoffVM } from "./vm";
 
 const money = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -18,16 +19,9 @@ export interface InsightsVM {
   living: number;
   variable: number;
   atDebt: number;
-  debtFreeBy: string;
-  monthsToGo: number;
-  interest: number;
-  // Does the payoff plan clear at the current pace? When false there is no date, no
-  // month count and no interest total to state. Optional so a mock compiles; absent
-  // reads as true.
-  clears?: boolean;
-  // When it does not clear: how far short a month the planned pay falls ($/mo) — the
-  // same figure as HomeVM.payoffShortBy. Optional; absent reads as 0.
-  shortBy?: number;
+  // The payoff, the SAME object as HomeVM.payoff, so the card and Home's tile say the
+  // same thing in every state.
+  payoff: PayoffVM;
   ladder: { rank: number; name: string; amount: number; live?: boolean; apr?: number; target?: boolean }[];
   // True in the Mine lens: every figure here is the household's.
   household?: boolean;
@@ -45,7 +39,8 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
   const verdict = budgetVerdict(vm.budgetSpent, vm.budgetTarget, vm.budgetCycleDay, vm.budgetCycleDays);
   const onTrack = verdict === "ok";
   const leftInBudget = vm.budgetTarget - vm.budgetSpent;
-  const clears = vm.clears !== false;
+  const payoff = vm.payoff;
+  const overBy = payoff.kind === "plan" || payoff.kind === "short" ? payoff.overBy : 0;
   // Days AFTER today, so `day n of total` + `days left` reconciles to the cycle
   // length instead of overlapping on today and reading one too many.
   const daysLeft = Math.max(0, vm.budgetCycleDays - vm.budgetCycleDay);
@@ -176,7 +171,7 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
           className="rounded-[18px] border p-4"
           style={{ background: "#141a24", borderColor: "#232d3a" }}
         >
-          <div className="eyebrow mb-3 text-taupe">{t("Where every dollar goes")}</div>
+          <div className="eyebrow mb-3 text-taupe">{t("Where every dollar goes · on budget")}</div>
           {/* This bar's three widths were the LITERALS 45.9% / 20.9% / 33.2%.
               They match the design-lab's mock numbers exactly, which is why it
               looked right in the harness and in the screenshots — but it never
@@ -229,28 +224,47 @@ export function InsightsTab({ vm, taps = {} }: { vm: InsightsVM; taps?: Insights
           className="flex items-end justify-between rounded-[18px] border p-4"
           style={{ background: "#15172b", borderColor: "#282a4a" }}
         >
+          {/* The same states and words as Home's Payoff tile: a real figure on top,
+              its condition under it, and the amber over-budget line when there is one. */}
           <div>
-            <div className="text-[11.5px]" style={{ color: "#a5b4fc" }}>{t("debt-free")}</div>
-            {/* No date: say so in words, as Home's Payoff tile does — a bare dash
-                headline read as broken or still loading. */}
-            <div className="text-[26px] font-bold leading-none tracking-tight text-bone">
-              {clears ? vm.debtFreeBy : t("No date yet")}
+            <div className="text-[11.5px]" style={{ color: "#a5b4fc" }}>
+              {payoff.kind === "debtFree" || payoff.kind === "plan" ? t("debt-free") : t("Payoff")}
             </div>
-            <div className="mt-1 text-[12px]" style={{ color: "#a5b4fc" }}>
-              {!clears
-                ? vm.shortBy
-                  ? t("{amount}/mo short at this pace", { amount: money(vm.shortBy) })
-                  : t("no date at this pace")
-                : vm.monthsToGo === 1
-                  ? t("~1 month to go")
-                  : t("~{n} months to go", { n: vm.monthsToGo })}
+            {/* break-keep, as on Home's tile: never split a Chinese month mid-word. */}
+            <div className="break-keep text-[26px] font-bold leading-none tracking-tight text-bone">
+              {payoff.kind === "debtFree"
+                ? t("Debt-free")
+                : payoff.kind === "noPay"
+                  ? t("Pay not set")
+                  : payoff.kind === "plan"
+                    ? payoff.date
+                    : t("{amount}/mo", { amount: money(payoff.shortBy) })}
             </div>
+            <div
+              className="mt-1 text-[12px]"
+              style={{ color: payoff.kind === "short" ? "#f0556e" : "#a5b4fc" }}
+            >
+              {payoff.kind === "debtFree"
+                ? t("Nothing left to pay")
+                : payoff.kind === "noPay"
+                  ? t("Add your paychecks")
+                  : payoff.kind === "plan"
+                    ? payoff.monthsToGo === 1
+                      ? t("if on budget · ~1 month")
+                      : t("if on budget · ~{n} months", { n: payoff.monthsToGo })
+                    : t("short, even on budget")}
+            </div>
+            {overBy > 0 && (
+              <div className="mt-0.5 text-[12px] font-medium" style={{ color: "#e3b341" }}>
+                {t("{amount}/mo over budget", { amount: money(overBy) })}
+              </div>
+            )}
           </div>
-          {/* No date means no interest total either; nothing is drawn rather than a dash. */}
-          {clears && (
+          {/* Only a plan that clears has an interest total; nothing is drawn otherwise. */}
+          {payoff.kind === "plan" && (
             <div className="text-right">
-              <div className="text-[11.5px]" style={{ color: "#a5b4fc" }}>{t("interest you'll pay")}</div>
-              <div className="text-[20px] font-bold text-bone">~{money(vm.interest)}</div>
+              <div className="text-[11.5px]" style={{ color: "#a5b4fc" }}>{t("interest")}</div>
+              <div className="text-[20px] font-bold text-bone">~{money(payoff.interest)}</div>
             </div>
           )}
         </div>

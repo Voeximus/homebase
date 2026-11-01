@@ -381,6 +381,9 @@ export function FinanceTabs({
         ordered={vms.deploy.ordered}
         schedule={vms.deploy.schedule}
         totalDebt={vms.deploy.totalDebt}
+        pace={vms.deploy.pace}
+        target={vms.deploy.target}
+        overBy={vms.deploy.overBy}
       />
       <AccountsSheet open={accountsOpen} onClose={() => setAccountsOpen(false)} accounts={lensAccounts} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} onImport={() => setImportOpen(true)} />

@@ -6,14 +6,9 @@
 import type { AppData, Transaction, Debt } from "../../types";
 import {
   orderedDebts,
-  payoffSchedule,
-  payoffClears,
-  PAY_DAYS,
-  SAVINGS_SPLIT,
   LEAN_VARIABLE,
   variableSpentBetween,
   variableSpentThisMonth,
-  avgVariableSpend,
   commitmentProgress,
   billExpected,
   previousPayday,
@@ -23,8 +18,11 @@ import {
   type PayoffEvent,
 } from "../../lib/plan";
 import { firepowerStatus } from "../../lib/headline";
+// The payoff date, Home's tile and the Insights card, from one call.
+import { payoffPlan } from "../../lib/headline";
 // The Home Bills tile reads the Bills sheet's own window, from the same call.
 import { billsBeforeNextPayday, monthGetter } from "../../lib/headline";
+import { monthYearLabel } from "../../lib/format";
 import { transferIds } from "../../lib/flow";
 import { unusualCharges } from "../../lib/unusual";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
@@ -33,7 +31,7 @@ import { inActivityLedger, isTransferRow, needsReviewTx, countedTx } from "../..
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
 import { t } from "../../lib/i18n";
-import type { HomeVM } from "./vm";
+import type { HomeVM, PayoffVM } from "./vm";
 import type { InsightsVM } from "./InsightsTab";
 import type { ActivityVM, ActivityMonth, ActivityRow, ActivityFate } from "./ActivityTab";
 import type { ProfileVM } from "./ProfileTab";
@@ -42,8 +40,6 @@ import type { EnvelopeVM } from "./CategorySheet";
 const pad = (n: number) => String(n).padStart(2, "0");
 const monthKeyOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 const dateKeyOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const fmtMY = (d: Date) =>
-  d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '");
 const fmtDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 // An account row's dot is its owner's colour — the same accent the avatar and the
@@ -77,8 +73,14 @@ export interface FinanceVMs {
   // all read THIS, so their send-amounts and debt-free date never diverge.
   deploy: {
     ordered: Debt[];
-    schedule: PayoffEvent[]; // the payoff projection (drives the ladder + debt-free date)
+    schedule: PayoffEvent[]; // the payoff plan, if on budget (drives the ladder + debt-free date)
     totalDebt: number;
+    // The last three months' graded spend a month (net of money back), the budget it
+    // is measured against, and how far over it ran (0 = within it, or no debt or no
+    // pay set) — the ladder's amber line. None of the three moves a date.
+    pace: number;
+    target: number;
+    overBy: number;
   };
 }
 
@@ -118,8 +120,7 @@ export function buildFinanceVMs(
   // hidden in the ORDER of the calls. Same functions, same order, same numbers on
   // this screen as before.
   const head = firepowerStatus(data, now);
-  const { math, envelope, monthlyTarget, firepower } = head;
-  const spentMonth = head.spentThisMonth;
+  const { math, envelope, firepower } = head;
   // The same idea on the cycle horizon — what the budget bar shows. NOT the same
   // number as head.overspendThisMonth: one grades a month, the other a pay cycle.
   const overspend = head.overspendThisCycle;
@@ -128,12 +129,6 @@ export function buildFinanceVMs(
   const spent = envelope.spent;
   const lineFor = new Map(envelope.lines.map((l) => [l.key, l]));
   const ordered = orderedDebts(data.debts);
-  // Project the payoff from the SUSTAINABLE pace — a trailing average of ACTUAL
-  // variable spend — so the debt-free date tracks real behavior: a one-off
-  // over-budget month barely moves it, a sustained trend does. This month's spend
-  // above that pace dents the next payday once (that cash is already gone).
-  const projVariable = avgVariableSpend(data.transactions, now, 3, monthlyTarget);
-  const projFirepower = Math.max(0, math.income - math.fixedNonDebt - projVariable);
   // The deploy plan (lump-now + flow-after) is built below — after the bills
   // section — because it needs the bills-before-next-payday hold-back.
   const totalOriginal = data.debts.reduce((s, d) => s + d.originalBalance, 0);
@@ -228,8 +223,6 @@ export function buildFinanceVMs(
   }));
   const donut = lineRows.filter((r) => r.spent > 0).map((r) => ({ catId: r.catId, amount: r.spent }));
 
-  // debtFreeBy / monthsToGo are derived from the deploy plan (built after bills).
-
   // ── the listed ledger: the household's, then the lens over it ──
   // inActivityLedger (src/lib/activityRules.ts) is the ONE rule for which rows the
   // lists show — FinanceTabs builds the All-activity ledger from it too, so the two
@@ -319,38 +312,42 @@ export function buildFinanceVMs(
   // the red overdue figure rather than naming the same bill as both.
   const nextDue = due.bills.find((b) => !b.overdue);
 
-  // ── Debt payoff projection (for the attack-ladder view + the debt-free date) ──
-  // Month-to-date against the MONTHLY pace, deliberately: `projVariable` is a
-  // 30-day average, so the overspend debited against it has to be a 30-day figure
-  // too. This used to read the per-CYCLE `spent`, comparing half a period against
-  // a whole one — a ~15-day total almost never clears a 30-day pace, so the dent
-  // came out 0 for essentially every input and a blown month never moved the
-  // debt-free date at all. NOT the same number as the hero tile's
-  // `overspendThisMonth` (src/lib/headline.ts): that grades the month against the
-  // budget TARGET, this grades it against the SUSTAINABLE pace. Two different
-  // questions about one month — they are meant to differ.
-  const monthDent = Math.max(0, spentMonth - projVariable);
-  const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
-  // The Home tile's "what leaves on payday" is the first payday that actually SENDS
-  // money at the debt. The first paydays of a schedule can send $0 — this month's
-  // spend above the pace is debited from them first — and schedule[0] then read
-  // "$0", which the tile could only hide.
-  const next = schedule.find((e) => e.toDebt > 0.005) ?? null;
-  // A schedule that ran out its 240-payday guard without clearing the debt is
-  // the same SHAPE as one that finished — a non-empty array — so `schedule.length`
-  // was reading "it gave up in Aug '36" as "you are debt-free in Aug '36".
-  // payoffClears() asks the only question that separates them.
-  const clears = payoffClears(schedule);
-  const debtFreeBy = clears ? fmtMY(schedule[schedule.length - 1].date) : "—";
-  const monthsToGo = clears
-    ? Math.max(1, Math.round((schedule[schedule.length - 1].date.getTime() - now.getTime()) / 2.592e9))
-    : 0;
-  const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
-  // When the plan does not clear: how far short a month the planned paychecks fall of
-  // living costs plus the recent spending pace — the honest reason there is no date.
-  // At the planned pay (a floor), so the screen says "at this pace", never a promise.
-  const payoffShortBy = clears ? 0 : Math.max(0, projVariable - (math.income - math.fixedNonDebt));
-  const deploy = { ordered, schedule, totalDebt: math.totalDebt };
+  // ── The payoff: the plan date, if on budget (the Payoff tile, Insights, the ladder) ──
+  // One call (src/lib/headline.ts payoffPlan): the planned pay, the planned bills and
+  // the lean budget, run from today's balances. The recent spending pace is beside the
+  // date as a measured "over budget" figure and never moves it.
+  const payoff = payoffPlan(data, now, head);
+  const payoffVM: PayoffVM =
+    payoff.kind === "plan"
+      ? {
+          kind: "plan",
+          date: monthYearLabel(payoff.clearsOn!, extra.lang === "zh"),
+          monthsToGo: payoff.monthsToGo,
+          interest: payoff.interest,
+          // The DEBT portion only: in the last phase a payday's `total` also holds the
+          // savings skim, which is not money sent at the debt.
+          nextAmount: payoff.next?.toDebt ?? 0,
+          nextDate: payoff.next ? fmtDay(payoff.next.date) : "",
+          overBy: payoff.overBy,
+        }
+      : payoff.kind === "short"
+        ? // Whole dollars, rounded UP: it is what the plan needs, so a need of a few
+          // cents reads "$1/mo", never "$0/mo" over "short, even on budget". Cents
+          // first, so float noise above a whole dollar does not add one.
+          { kind: "short", shortBy: Math.ceil(Math.round(payoff.shortBy * 100) / 100), overBy: payoff.overBy }
+        : payoff.kind === "noPay"
+          ? { kind: "noPay" }
+          : { kind: "debtFree" };
+  const deploy = {
+    ordered,
+    schedule: payoff.schedule,
+    totalDebt: math.totalDebt,
+    pace: payoff.pace,
+    target: payoff.target,
+    // Only where Home and Insights show the amber line too (plan, short): with no
+    // debt or no pay set, none of the three screens prints it.
+    overBy: payoff.kind === "plan" || payoff.kind === "short" ? payoff.overBy : 0,
+  };
 
   // ── Tracking: what was actually sent at debt this cycle (live from tagged txns).
   // Cycle starts at the previous payday (− a few days of early-post grace).
@@ -441,14 +438,9 @@ export function buildFinanceVMs(
     owedToYou,
     owedList,
     owedSettled,
-    debtFreeBy,
-    payoffShortBy,
+    // The SAME object as insights.payoff, so the two screens cannot disagree.
+    payoff: payoffVM,
     deployedThisCycle,
-    // the "Send X at the debt" tile is the DEBT portion only — in the final
-    // payoff phase `total` also includes the savings skim (surfaced separately in
-    // the slip), so using toDebt keeps the label honest.
-    nextAmount: next ? next.toDebt : 0,
-    nextDate: next ? fmtDay(next.date) : "—",
     cash,
     cashAccounts: cashAcctCount,
     processing,
@@ -511,13 +503,7 @@ export function buildFinanceVMs(
     // the wrong one for "where every dollar goes", where it left the debt share unaccounted for
     // and dropped the Debt slice from the bar entirely in any month that ran over.
     atDebt: Math.max(0, math.firepower),
-    debtFreeBy,
-    monthsToGo,
-    interest: totalInterest,
-    clears,
-    // The same "short a month" figure as Home's Payoff tile, so the two screens say
-    // the same thing when there is no date.
-    shortBy: payoffShortBy,
+    payoff: payoffVM,
     ladder,
     household: personal,
   };

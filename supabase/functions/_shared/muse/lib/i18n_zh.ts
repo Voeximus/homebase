@@ -260,14 +260,11 @@ const SEED: Record<string, string> = {
   Over: "超支",
   "{amount} left in the lean budget": "精简预算还剩 {amount}",
   "Lean budget · plan vs actual": "精简预算 · 计划与实际",
-  "Where every dollar goes": "每一块钱的去向",
   Living: "生活开支",
   Variable: "浮动开支",
   Income: "收入",
   "At debt": "还债",
   "debt-free": "无债之日",
-  "~{n} months to go": "约还剩 {n} 个月",
-  "interest you'll pay": "将支付的利息",
   "Attack ladder": "还债顺序",
   "· smallest first": "· 从最小开始",
 
@@ -1064,10 +1061,7 @@ const SEED: Record<string, string> = {
   "after {amount} still processing": "已扣除处理中的 {amount}",
   "1 account": "1 个账户",
   "Debt-free": "已无债务",
-  "No date yet": "暂无日期",
   "Nothing left to pay": "已无欠款",
-  "{amount}/mo short at this pace": "按此进度每月差 {amount}",
-  "not clearing at this pace": "按此进度还不清",
   "ahead of pace": "花得偏快",
   "1 buy ran higher than usual": "1 笔消费高于平常",
   "{amount} this week": "本周 {amount}",
@@ -1075,14 +1069,11 @@ const SEED: Record<string, string> = {
   // ── 2026-10-31 audit fixes: Insights + category sheet ──
   "Ahead of pace": "花得偏快",
   "{amount} over the lean budget": "超出精简预算 {amount}",
-  "no date at this pace": "按此进度暂无日期",
-  "~1 month to go": "约还剩 1 个月",
   "· in the order we pay": "· 按还款顺序",
   "1 day left": "还剩 1 天",
   "{amount} of this is still processing at the bank": "其中 {amount} 银行仍在处理",
 
   // ── 2026-10-31 audit fixes: sheets ──
-  "In the order we pay them": "按我们的还款顺序",
   "from your bank": "来自银行",
   "Balances come from your bank. Charges still processing are already taken out.":
     "余额来自银行。处理中的消费已经扣除。",
@@ -1118,6 +1109,19 @@ const SEED: Record<string, string> = {
   "Is any bill paid twice — once by a hand note and once by the bank?": "有没有账单被付了两次——一次是手动记录，一次是银行？",
   "Does every bill that pays a debt plan at least that debt's minimum payment?": "每笔用来还债的账单，计划金额都不低于该债务的最低还款额吗？",
   "Is every bill filed under a real category, never under 'other'?": "每笔账单都归入了真正的分类，而不是“其他”吗？",
+
+  // ── 2026-11-01 Payoff: the plan date, if on budget ──
+  "if on budget": "如果按预算",
+  "{amount}/mo over budget": "每月超预算 {amount}",
+  "short, even on budget": "按预算也不够",
+  "Pay not set": "未设工资",
+  "Add your paychecks": "请添加工资",
+  "if on budget · ~{n} months": "如果按预算 · 约 {n} 个月",
+  "if on budget · ~1 month": "如果按预算 · 约 1 个月",
+  interest: "利息",
+  "Where every dollar goes · on budget": "每一块钱的去向 · 按预算",
+  "In the order we pay them · dates if on budget": "按我们的还款顺序 · 日期按预算计算",
+  "Last 3 months: {pace}/mo vs {target} budget": "近 3 个月：每月 {pace}，预算 {target}",
 };
 
 // Muscle region names come from muscleRegions.ts, so the body map, the Progress

@@ -73,6 +73,29 @@ export function monthKeyOf(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 
+/**
+ * A "YYYY-MM" month key moved by whole months, still a month key.
+ *
+ * String arithmetic on the two numbers, so no Date is built and no time zone gets a
+ * vote: headline.ts walks the next twelve months with it and may not build a Date.
+ */
+export function shiftMonthKey(key: string, n: number): string {
+  const [y, m] = key.split("-").map(Number);
+  const i = y * 12 + (m - 1) + n;
+  const year = Math.floor(i / 12);
+  return `${year}-${pad2(i - year * 12 + 1)}`;
+}
+
+/**
+ * The month a date falls in, the way the payoff date is printed: "Oct '26" in
+ * English, "2026年10月" in Chinese. The English form is the one the Payoff tile has
+ * always used.
+ */
+export function monthYearLabel(d: Date, zh = false): string {
+  if (zh) return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '");
+}
+
 /** "June 2026" for a "YYYY-MM" key. */
 export function monthLabel(key: string): string {
   const d = new Date(key + "-01T00:00:00");

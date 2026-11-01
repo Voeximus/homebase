@@ -324,6 +324,33 @@ export interface PayoffPayment {
   name: string;
   amount: number;
   clears: boolean; // this payment zeroes the debt
+  // The part of `amount` the debt's own autopay bill paid (autopaysOf). Present only
+  // when an autopay paid something, so a schedule built with no autopays is exactly
+  // what it always was. The bank pulls this part by itself: anything that tells
+  // someone what to send by hand has to leave it out.
+  auto?: number;
+}
+
+/** A bill that pays a debt by itself: half its monthly amount on each payday, to its
+ *  own debt, until its last date. */
+export interface Autopay {
+  debtId: string;
+  perPay: number;
+  endsOn?: string | null;
+}
+
+/**
+ * The debt-linked bills live on `isoDate`, as autopays for payoffSchedule.
+ *
+ * Priced with monthlyAmount, the same figure planMath's debtPaymentsInFixed adds back
+ * to firepower. So the autopays are exactly the dollars that went back into
+ * firepower: paying them first moves no money, it only sends those dollars to the
+ * debt the bill really pays rather than to the top of the attack order.
+ */
+export function autopaysOf(recurring: Recurring[], isoDate: string): Autopay[] {
+  return recurring
+    .filter((r) => r.active && r.direction === "out" && r.linkedDebtId != null && liveOn(r, isoDate))
+    .map((r) => ({ debtId: r.linkedDebtId!, perPay: monthlyAmount(r) / 2, endsOn: r.endsOn ?? null }));
 }
 export interface PayoffEvent {
   date: Date;
@@ -470,6 +497,16 @@ export function previousPayday(before: Date, payDays: number[] = PAY_DAYS): Date
  * fix is to evaluate the window per projected month, which forecast.ts already
  * does correctly by rebuilding monthlySchedule for each monthKey. Doing that here
  * means giving payoffSchedule a per-month firepower series instead of a number.
+ *
+ * Until then, payoffPlan (headline.ts) hands in the LOWEST planMath firepower of
+ * this month and the next eleven, so a bill that starts later in the year is
+ * counted from today and a bill that ends soon cannot pull the date in. That is
+ * conservative, not exact: a month that is really better is still priced at the
+ * worst one.
+ *
+ * `autopays` are the debt-linked bills (autopaysOf). Each payday they are paid to
+ * their own debts first, out of the same payday money, and what is left goes down
+ * the attack order. They never add money.
  */
 export function payoffSchedule(
   debtsOrdered: Debt[],
@@ -477,11 +514,11 @@ export function payoffSchedule(
   from: Date,
   payDays: number[] = PAY_DAYS,
   split?: SavingsSplit,
-  // This month's budget overspend, applied as a ONE-TIME debit on the earliest
-  // paydays only (then full firepower resumes). Pass the SUSTAINABLE monthly
-  // firepower as `monthlyFirepower` so a single over-budget month dents the
-  // payoff now without projecting forward as if every future month is over.
+  // A ONE-TIME debit on the earliest paydays only (then full firepower resumes).
+  // No screen passes it now: the payoff date is the plan, and this month's spending
+  // does not move it.
   oneTimeReduction = 0,
+  autopays: readonly Autopay[] = [],
 ): PayoffEvent[] {
   if (monthlyFirepower <= 0) return [];
   const perPay = monthlyFirepower / 2;
@@ -548,14 +585,43 @@ export function payoffSchedule(
         interest += i;
       }
     let fire = debtFire;
-    const payments: PayoffPayment[] = [];
+    // Per debt this payday: everything it got, and the part its own autopay paid.
+    const paid = new Map<string, { amount: number; auto: number }>();
+    const day = isoDate(date);
+    // First, each debt-linked bill pays its own debt, out of this payday's money.
+    for (const a of autopays) {
+      if (fire <= 0.005) break;
+      if (a.endsOn && day > a.endsOn) continue;
+      const b = bal.find((x) => x.id === a.debtId);
+      if (!b || b.balance <= 0.005) continue;
+      const pay = Math.min(a.perPay, fire, b.balance);
+      if (pay <= 0) continue;
+      b.balance -= pay;
+      fire -= pay;
+      const p = paid.get(b.id) ?? { amount: 0, auto: 0 };
+      p.amount += pay;
+      p.auto += pay;
+      paid.set(b.id, p);
+    }
+    // Then what is left goes down the attack order.
     for (const b of bal) {
       if (fire <= 0.005) break;
       if (b.balance <= 0.005) continue;
       const pay = Math.min(fire, b.balance);
       b.balance -= pay;
       fire -= pay;
-      payments.push({ debtId: b.id, name: b.name, amount: pay, clears: b.balance <= 0.005 });
+      const p = paid.get(b.id) ?? { amount: 0, auto: 0 };
+      p.amount += pay;
+      paid.set(b.id, p);
+    }
+    // One payment per debt, in the attack order, and `clears` read after both passes.
+    const payments: PayoffPayment[] = [];
+    for (const b of bal) {
+      const p = paid.get(b.id);
+      if (!p) continue;
+      const payment: PayoffPayment = { debtId: b.id, name: b.name, amount: p.amount, clears: b.balance <= 0.005 };
+      if (p.auto > 0) payment.auto = p.auto;
+      payments.push(payment);
     }
     const toDebt = debtFire - fire;
     const remaining = bal.reduce((s, b) => s + Math.max(0, b.balance), 0);
@@ -590,6 +656,38 @@ export function payoffClears(schedule: PayoffEvent[]): boolean {
 }
 
 /**
+ * The smallest monthly firepower whose schedule reaches zero inside the 240-payday
+ * guard, to the cent, rounded up. 0 when nothing is owed.
+ *
+ * This is what "short" means on the Payoff tile: how much more a month the plan
+ * needs before it has ANY date. Not the gap to $0 a month, which says nothing about
+ * interest outrunning a small payment.
+ *
+ * A bisection, which is valid because more firepower never leaves more debt
+ * (tests/payoff.test.ts). The upper bound, four times what is owed plus $1,000 a
+ * month, clears any debt in a payday or two even after the savings skim.
+ */
+export function minFirepowerToClear(
+  debtsOrdered: Debt[],
+  from: Date,
+  payDays: number[] = PAY_DAYS,
+  split?: SavingsSplit,
+  autopays: readonly Autopay[] = [],
+): number {
+  const open = debtsOrdered.filter(isOpenDebt).filter((d) => d.balance > 0.005);
+  if (!open.length) return 0;
+  const owed = open.reduce((s, d) => s + d.balance, 0);
+  let lo = 0;
+  let hi = 4 * owed + 1000;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (payoffClears(payoffSchedule(debtsOrdered, mid, from, payDays, split, 0, autopays))) hi = mid;
+    else lo = mid;
+  }
+  return Math.ceil(hi * 100) / 100;
+}
+
+/**
  * What's actually been spent on *variable* living this month — the free-form
  * purchases (groceries, gas, dining, …) logged to the ledger. Excludes bill and
  * debt payments (those have an appliesTo), so it measures the lean budget only.
@@ -612,17 +710,24 @@ export function variableSpentThisMonth(
   return total;
 }
 
-/** The SUSTAINABLE variable-spend pace: the average of actual variable spend over
- *  the last `months` COMPLETE calendar months (the current, partial month is
- *  excluded). The payoff timeline projects from this, so the debt-free date drifts
- *  with real behavior — a one-off over-budget month is diluted by the others, a
- *  sustained trend moves the date. Falls back to the budget target until at least
- *  one complete month of spend history exists. */
+/** The variable-spend pace: the average of actual variable spend over the last
+ *  `months` COMPLETE calendar months (the current, partial month is excluded).
+ *  Falls back to the budget target until at least one complete month of spend
+ *  history exists.
+ *
+ *  The payoff DATE does not read this (payoffPlan in headline.ts: the date is the
+ *  plan, on budget). The pace is only the measured "over budget a month" line.
+ *
+ *  `spentOf` prices a month instead of the gross graded spend, e.g. net of money
+ *  back (netVariableSpentInMonth in weekPlan.ts). Which months count is still
+ *  decided on the gross figure, so a month with no spending stays skipped either
+ *  way. Left out, nothing changes. */
 export function avgVariableSpend(
   transactions: Transaction[],
   now: Date,
   months: number,
   fallback: number,
+  spentOf?: (monthKey: string) => number,
 ): number {
   // Only count complete months from the lean-plan start onward — PRE-plan months
   // were normal (higher) spending and would wrongly inflate the "sustainable pace".
@@ -634,7 +739,7 @@ export function avgVariableSpend(
     const key = monthKeyOf(d);
     if (key < floor) continue; // ignore pre-plan months
     const spent = variableSpentThisMonth(transactions, key);
-    if (spent > 0) totals.push(spent); // a month with no data reads 0 → skip it
+    if (spent > 0) totals.push(spentOf ? spentOf(key) : spent); // a month with no data reads 0 → skip it
   }
   if (totals.length === 0) return fallback;
   return totals.reduce((s, t) => s + t, 0) / totals.length;

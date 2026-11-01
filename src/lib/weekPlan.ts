@@ -59,9 +59,9 @@
 // getDay read, the same dayOf cycleBudget.ts uses.
 
 import type { AppData, CycleBudget, Transaction, WeekPlan } from "../types";
-import { LEAN_VARIABLE, lineSpent, payCycleFor, spendingSlicesBetween, spentByCategoryBetween, type BudgetLine } from "./plan";
+import { LEAN_VARIABLE, lineSpent, payCycleFor, spendingSlicesBetween, spentByCategoryBetween, variableSpentThisMonth, type BudgetLine } from "./plan";
 import { cycleTargets } from "./cycleBudget";
-import { addDaysISO, isoDate } from "./format";
+import { addDaysISO, isoDate, shiftMonthKey } from "./format";
 import { classify } from "./flow";
 import { householdPerson, samePerson, zellePerson } from "./categorize";
 
@@ -571,6 +571,27 @@ export function moneyBackOf(
     });
   }
   return out.sort(byAmountThenId);
+}
+
+/**
+ * A calendar month's graded spending with its money back taken off, by the same
+ * rule the week uses (moneyBackOf): money back counts only where it traces to the
+ * lines, and never takes the month below $0. Not runRate's rule, which counts
+ * every row flowOf calls returned, traced or not.
+ *
+ * It exists for the payoff's "over budget a month" line (payoffPlan in
+ * headline.ts), so that line and the week figure on the same screen agree about a
+ * refund. The budget bars and the hero firepower still read the gross figure.
+ */
+export function netVariableSpentInMonth(
+  data: Pick<AppData, "transactions" | "accounts">,
+  monthKey: string,
+  lines: readonly BudgetLine[] = LEAN_VARIABLE,
+): number {
+  const gross = variableSpentThisMonth(data.transactions, monthKey);
+  const last = addDaysISO(`${shiftMonthKey(monthKey, 1)}-01`, -1);
+  const backC = moneyBackOf(data, `${monthKey}-01`, last, gross, lines).reduce((s, m) => s + inCents(m.counted), 0);
+  return (inCents(gross) - backC) / 100;
 }
 
 /**

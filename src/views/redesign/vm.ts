@@ -13,17 +13,34 @@ export interface RecentRow {
   pending?: boolean; // still-processing bank charge
 }
 
+// The payoff, as Home's Payoff tile and the Insights card both draw it — one object,
+// built once (payoffPlan in src/lib/headline.ts) and handed to both screens.
+//   · debtFree — nothing open is owed.
+//   · noPay    — no live paycheck row, so there is no plan to date.
+//   · plan     — the month the plan clears, if on budget. `overBy` is how far the
+//                last three months ran over budget a month (0 = within it); it is
+//                printed beside the date and never moves it.
+//   · short    — the plan does not clear even on budget; `shortBy` is the extra $/mo
+//                it needs before it has any date.
+export type PayoffVM =
+  | { kind: "debtFree" }
+  | { kind: "noPay" }
+  | {
+      kind: "plan";
+      date: string; // "Oct '26", or "2026年10月" in Chinese
+      monthsToGo: number;
+      interest: number;
+      nextAmount: number; // the first payday that sends money at the debt (0 = none)
+      nextDate: string; // "Jun 30", or "" when there is none
+      overBy: number;
+    }
+  | { kind: "short"; shortBy: number; overBy: number };
+
 export interface HomeVM {
   firepower: number; // $/mo free to fire at debt (already net of budget overspend)
   overspent: number; // $ over the lean budget this PAY CYCLE (0 = on/under budget)
-  debtFreeBy: string; // "Oct '26", or "—" when the plan does not clear at the current pace
-  // When the plan does not clear: how far a month the planned paychecks fall short of
-  // living costs plus the recent spending pace ($/mo). 0 when it clears. Optional so a
-  // mock without it still compiles; absent reads as 0.
-  payoffShortBy?: number;
+  payoff: PayoffVM;
   deployedThisCycle: number; // $ actually sent at debt this cycle (live from tagged txns) — tracking
-  nextAmount: number; // the first payday that actually sends money at the debt
-  nextDate: string; // "Jun 30"
   cash: number;
   cashAccounts: number;
   processing: number; // ~$ still settling at the bank (0 = hide)

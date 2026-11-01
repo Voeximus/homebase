@@ -23,9 +23,10 @@ interface Taps {
 export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
   const donutSegs = vm.donut.map((d) => ({ color: catColor(d.catId), value: d.amount }));
   const verdict = budgetVerdict(vm.budgetSpent, vm.budgetTarget, vm.budgetCycleDay, vm.budgetCycleDays);
-  const shortBy = vm.payoffShortBy ?? 0;
-  const debtFree = vm.debtLeft <= 0.005;
-  const noDate = vm.debtFreeBy === "—";
+  const payoff = vm.payoff;
+  // How far the last three months ran over budget a month: measured, beside the date,
+  // never moving it. 0 when within budget, and for the states with no plan to date.
+  const overBy = payoff.kind === "plan" || payoff.kind === "short" ? payoff.overBy : 0;
   const overdue = vm.bills.overdue ?? 0;
   return (
     <div className="flex flex-col gap-0">
@@ -119,27 +120,55 @@ export function HomeTab({ vm, taps = {} }: { vm: HomeVM; taps?: Taps }) {
           <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "#818cf8" }}>
             <Flame size={14} /> {t("Payoff")}
           </div>
-          {/* Never a bare "—" over the hero's own "% cleared": when the plan does not
-              clear at the current pace, say so and say by how much a month. */}
-          <div className="mt-1.5 text-[22px] font-bold text-bone">
-            {debtFree ? t("Debt-free") : noDate ? t("No date yet") : vm.debtFreeBy}
+          {/* Always a real figure: the month the plan clears, with its condition
+              ("if on budget") under it. Never a bare "—", never "no date".
+              break-keep: Chinese may break between any two characters, so on a
+              narrow phone a month split as "2026年10" / "月". It still wraps at a
+              space ("Pay not set", "每月 $1,234"). */}
+          <div className="mt-1.5 break-keep text-[22px] font-bold text-bone">
+            {payoff.kind === "debtFree"
+              ? t("Debt-free")
+              : payoff.kind === "noPay"
+                ? t("Pay not set")
+                : payoff.kind === "plan"
+                  ? payoff.date
+                  : t("{amount}/mo", { amount: money(payoff.shortBy) })}
           </div>
-          <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-faint)" }}>
-            {debtFree
+          <div
+            className="mt-0.5 text-[11px]"
+            style={{
+              color:
+                payoff.kind === "plan"
+                  ? "var(--color-taupe)"
+                  : payoff.kind === "short"
+                    ? "#f0556e"
+                    : "var(--color-faint)",
+            }}
+          >
+            {payoff.kind === "debtFree"
               ? t("Nothing left to pay")
-              : vm.nextAmount > 0
-                ? t("{amount} on {date}", { amount: money(vm.nextAmount), date: vm.nextDate })
-                : noDate
-                  ? shortBy > 0
-                    ? t("{amount}/mo short at this pace", { amount: money(shortBy) })
-                    : t("not clearing at this pace")
-                  : ""}
+              : payoff.kind === "noPay"
+                ? t("Add your paychecks")
+                : payoff.kind === "plan"
+                  ? t("if on budget")
+                  : t("short, even on budget")}
           </div>
+          {/* One more line only when there is something to say: how far over budget
+              a month (amber, as the Cash tile's line), or else the next send. */}
+          {overBy > 0 ? (
+            <div className="mt-0.5 text-[11px] font-medium" style={{ color: "#e3b341" }}>
+              {t("{amount}/mo over budget", { amount: money(overBy) })}
+            </div>
+          ) : payoff.kind === "plan" && payoff.nextAmount > 0 ? (
+            <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-faint)" }}>
+              {t("{amount} on {date}", { amount: money(payoff.nextAmount), date: payoff.nextDate })}
+            </div>
+          ) : null}
           <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
             <div
               className="h-full"
               style={{
-                width: `${vm.debtProgressPct}%`,
+                width: `${payoff.kind === "debtFree" ? 100 : vm.debtProgressPct}%`,
                 background: "linear-gradient(90deg,#6366f1,#22d3ee)",
               }}
             />

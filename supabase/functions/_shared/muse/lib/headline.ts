@@ -35,6 +35,8 @@
 //   · firepowerStatus       — "available this month"     (buildVMs.ts)
 //   · billsBeforeNextPayday — "still due before payday"  (BillsSheet.tsx)
 //   · forecastPlan/runForecast — the forward projection  (the retired ForecastTab)
+// and, since 2026-11-01, a fifth:
+//   · payoffPlan            — the payoff date, if on budget (buildVMs.ts)
 //
 // AND TWO THAT NO SCREEN EVER HAD, added 2026-10-10 for the Muse read door, which is
 // becoming the only interface. They live here for the same reason the four do — the
@@ -52,8 +54,16 @@ import type { AppData, CycleBudget, Debt, Transaction } from "./types.ts";
 import {
   LEAN_VARIABLE,
   OUTSIDE_BUDGET_CASH_CATS,
+  PAY_DAYS,
+  SAVINGS_SPLIT,
+  autopaysOf,
+  avgVariableSpend,
   lineSpent,
+  minFirepowerToClear,
+  orderedDebts,
   payCycleFor,
+  payoffClears,
+  payoffSchedule,
   planMath,
   recentCycleSpend,
   spentByCategory,
@@ -65,9 +75,11 @@ import {
   type BudgetLine,
   type CycleSpend,
   type PayCycle,
+  type PayoffEvent,
   type PlanMath,
 } from "./plan.ts";
-import { addDaysISO, isoDate, monthKeyOf } from "./format.ts";
+import { addDaysISO, isoDate, monthKeyOf, shiftMonthKey } from "./format.ts";
+import { netVariableSpentInMonth } from "./weekPlan.ts";
 import { isCreditAccount, totalBalance } from "./recurring.ts";
 import {
   dueBeforeNextPayday,
@@ -260,6 +272,112 @@ export function firepowerStatus(
     overspendThisCycle,
     outsideBudgetCash,
     firepower,
+  };
+}
+
+// ── payoff: the plan date, if on budget ───────────────────────────────────────
+//
+// THE DATE IS THE PLAN, NOT A FORECAST OF SPENDING. Income is the planned pay rows
+// (the paycheck floor, never raised), costs are the planned bills plus the lean
+// budget's monthly target, and the schedule starts from today's real balances. So
+// the screen prints it with its condition, "if on budget", and it moves only when
+// the plan or the balances do: a real payment pulls it in, a skipped one lets it
+// slide a payday.
+//
+// It used to be built from the average of the last three months' spending, and
+// that broke three ways at once. A heavy month could leave no date at all ("No date
+// yet", which read as "no data yet"). At midnight on the 1st a different set of
+// three months came into the average and the date jumped. And it set floor pay
+// against spending that above-floor checks had paid for, so it asked a question the
+// numbers could not answer.
+//
+// The three-month pace survives as one measured fact beside the date: how far over
+// the budget a month it ran, net of money back that traces to the lines
+// (netVariableSpentInMonth). It never feeds the date.
+//
+// planFirepower is the LOWEST planMath firepower of this month and the next eleven
+// (see payoffSchedule's KNOWN LIMITATION): a bill that ends soon cannot pull the
+// date in, and one that starts later in the year is counted from today. The window
+// rolls on the 1st, so a cost starting in the month that enters it can move the
+// date at midnight on the 1st; the per-month firepower follow-up removes that.
+
+/** Over budget by less than this a month reads as on budget: noise, not a trend. */
+export const OVER_BUDGET_NOISE = 25;
+
+export type PayoffKind = "debtFree" | "noPay" | "plan" | "short";
+
+export interface PayoffPlan {
+  /** debtFree: nothing open is owed. noPay: no live paycheck row. plan: the plan
+   *  clears. short: it does not, even on budget. Checked in that order. */
+  kind: PayoffKind;
+  /** The plan's schedule, payday by payday. Empty for debtFree and noPay. */
+  schedule: PayoffEvent[];
+  /** Monthly $ the plan aims at the debt: the lowest of the next twelve months. */
+  planFirepower: number;
+  /** Graded variable spend a month over the last three complete months, net of
+   *  money back that traces to the lines. The budget target when there is none. */
+  pace: number;
+  /** The lean budget's monthly target. */
+  target: number;
+  /** pace − target when that is at least OVER_BUDGET_NOISE, else 0. */
+  overBy: number;
+  /** The last payday of the schedule, when it clears. */
+  clearsOn: Date | null;
+  monthsToGo: number;
+  interest: number;
+  /** The first payday that sends money at the debt. */
+  next: PayoffEvent | null;
+  /** short only: the extra $/mo the plan needs before it has any date. */
+  shortBy: number;
+}
+
+/**
+ * The payoff date the Home tile, Insights and the attack ladder all show, from one
+ * call. `head` is passed by a caller that already holds firepowerStatus for the
+ * same instant, so the ledger is not walked twice.
+ */
+export function payoffPlan(
+  data: AppData,
+  now: Date,
+  head: FirepowerStatus = firepowerStatus(data, now),
+): PayoffPlan {
+  const target = head.monthlyTarget;
+  const today = isoDate(now);
+  const month = monthKeyOf(now);
+  let planFirepower = Infinity;
+  for (let i = 0; i < 12; i++) {
+    const on = i === 0 ? today : `${shiftMonthKey(month, i)}-01`;
+    const f = planMath(data.recurring, data.debts, target, on, data.transactions).firepower;
+    if (f < planFirepower) planFirepower = f;
+  }
+  const pace = avgVariableSpend(data.transactions, now, 3, target, (k) => netVariableSpentInMonth(data, k));
+  const overBy = pace - target >= OVER_BUDGET_NOISE ? pace - target : 0;
+  const ordered = orderedDebts(data.debts);
+  const autopays = autopaysOf(data.recurring, today);
+  const base = { planFirepower, pace, target, overBy, clearsOn: null, monthsToGo: 0, interest: 0, next: null, shortBy: 0 };
+
+  if (head.math.totalDebt <= 0.005) return { ...base, kind: "debtFree", schedule: [] };
+  if (head.math.income <= 0) return { ...base, kind: "noPay", schedule: [] };
+
+  const schedule =
+    planFirepower > 0 ? payoffSchedule(ordered, planFirepower, now, PAY_DAYS, SAVINGS_SPLIT, 0, autopays) : [];
+  if (payoffClears(schedule)) {
+    const clearsOn = schedule[schedule.length - 1].date;
+    return {
+      ...base,
+      kind: "plan",
+      schedule,
+      clearsOn,
+      monthsToGo: Math.max(1, Math.round((clearsOn.getTime() - now.getTime()) / 2.592e9)),
+      interest: schedule.reduce((s, e) => s + e.interest, 0),
+      next: schedule.find((e) => e.toDebt > 0.005) ?? null,
+    };
+  }
+  return {
+    ...base,
+    kind: "short",
+    schedule,
+    shortBy: Math.max(0, minFirepowerToClear(ordered, now, PAY_DAYS, SAVINGS_SPLIT, autopays) - planFirepower),
   };
 }
 

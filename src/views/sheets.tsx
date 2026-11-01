@@ -7,11 +7,11 @@ import { Check, CreditCard, FileUp, Landmark } from "lucide-react";
 import type { Account, Debt } from "../types";
 import { useStore } from "../store/FinanceStore";
 import { useAuth } from "../auth/AuthProvider";
-import { formatMoney } from "../lib/format";
+import { formatMoney, monthYearLabel } from "../lib/format";
 import { cashAccounts } from "../lib/recurring";
 import { payoffSchedule } from "../lib/plan";
 import { type ScheduleEntry } from "../lib/schedule";
-import { t } from "../lib/i18n";
+import { getLang, t } from "../lib/i18n";
 import { Button, inputClass, labelClass, ProgressBar, Sheet } from "../components/ui";
 import { usePlaidLink } from "react-plaid-link";
 import {
@@ -27,9 +27,6 @@ function shortDebt(name: string): string {
   const m = /…(\d{4})/.exec(name) || /(\d{4})/.exec(name);
   if (m) return "…" + m[1];
   return name.replace(/^Affirm — /, "").replace(/ \(China\)/, "");
-}
-function fmtDay(d: Date): string {
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function Eyebrow({
@@ -171,21 +168,36 @@ export function SprintSheet({
   ordered,
   schedule,
   totalDebt,
+  pace,
+  target,
+  overBy,
 }: {
   open: boolean;
   onClose: () => void;
   ordered: Debt[];
   schedule: ReturnType<typeof payoffSchedule>;
   totalDebt: number;
+  // The last three months' spending a month, the budget, and how far over (0 = within).
+  pace: number;
+  target: number;
+  overBy: number;
 }) {
   const clearDateOf = (id: string) => {
     const ev = schedule.find((e) => e.payments.some((p) => p.debtId === id && p.clears));
     return ev ? ev.date : null;
   };
+  const whole = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
   return (
     <Sheet open={open} onClose={onClose} title={t("The attack ladder")}>
         <div className="space-y-2.5">
-          <p className="text-xs text-taupe">{t("In the order we pay them")}</p>
+          <div>
+            <p className="text-xs text-taupe">{t("In the order we pay them · dates if on budget")}</p>
+            {overBy > 0 && (
+              <p className="mt-0.5 text-[11px] font-medium" style={{ color: "#e3b341" }}>
+                {t("Last 3 months: {pace}/mo vs {target} budget", { pace: whole(pace), target: whole(target) })}
+              </p>
+            )}
+          </div>
           {ordered.map((d, i) => {
             const done = d.balance <= 0.005;
             const isTarget = !done && ordered.slice(0, i).every((x) => x.balance <= 0.005);
@@ -221,7 +233,9 @@ export function SprintSheet({
                       )}
                     </div>
                     {cd && !done && (
-                      <p className="text-[11px] text-faint">{t("clears ~{date}", { date: fmtDay(cd) })}</p>
+                      <p className="text-[11px] text-faint">
+                        {t("clears ~{date}", { date: monthYearLabel(cd, getLang() === "zh") })}
+                      </p>
                     )}
                   </div>
                   <span className={`text-sm font-bold ${done ? "text-mint" : "text-bone"}`}>
