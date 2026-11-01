@@ -255,14 +255,14 @@ function SuggestionCard({
     <div className="rounded-xl p-3" style={{ background: "#141a24", border: "1px solid #232d3a" }}>
       <div className="flex items-start gap-3">
         <span className="min-w-0 flex-1">
-          <span className="block text-[13.5px] font-semibold" style={{ color: "#e6edf3" }}>
+          <span className="block text-[13.5px] font-semibold text-bone">
             {s.title}
           </span>
           <span className="mt-0.5 block text-[11.5px] leading-snug" style={{ color: "#8b97a6" }}>
             {s.detail}
           </span>
         </span>
-        <span className="num shrink-0 text-[14px] font-bold" style={{ color: "#e6edf3" }}>
+        <span className="tabular-nums shrink-0 text-[14px] font-bold text-bone">
           {money2(s.amount)}
         </span>
       </div>
@@ -281,7 +281,7 @@ function SuggestionCard({
         </p>
       )}
       {state.phase === "refused" && (
-        <p className="mt-2 text-[11.5px]" style={{ color: "#e8a09a" }}>
+        <p className="mt-2 text-[11.5px]" style={{ color: "#f4a6b6" }}>
           {state.reason}
         </p>
       )}
@@ -340,8 +340,8 @@ export function ReviewCard({ count, onOpen }: { count: number; onOpen: () => voi
       style={{ background: "#241f12", border: "1px solid #4a3f1c" }}
     >
       <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-        style={{ background: "#2a2416", color: "#e3b341" }}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+        style={{ background: "#e3b34126", color: "#e3b341" }}
       >
         <Lightbulb size={17} />
       </span>

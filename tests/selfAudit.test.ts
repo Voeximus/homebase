@@ -244,6 +244,44 @@ describe("check 5 — a split must not resize the charge", () => {
   });
 });
 
+describe("check 6 — a bill paid in installments is priced per installment", () => {
+  // A $480 monthly bill on the 15th and the 30th is two $240 payments — the
+  // schedule's own perPayment (monthly / days). Each payment is grouped as its own
+  // cycle, so it must be compared with one installment, not the whole month.
+  const twice = bill({ id: "split-bill", name: "Twice a month", amount: 480, dueDays: [15, 30] });
+  const paid = (id: string, day: number, amount: number) =>
+    txn({
+      id,
+      date: `2026-08-${day}`,
+      amount,
+      categoryId: "bills",
+      appliesTo: { kind: "bill", recurringId: "split-bill", monthKey: "2026-08", day, settled: true },
+    });
+
+  it("one installment paid in full is settled, not $240 short", () => {
+    const c = byId(selfAudit(data({ recurring: [twice], transactions: [paid("p1", 15, 240)] }), NOW), "settled-means-settled");
+    expect(c.status).toBe("ok");
+  });
+
+  it("both installments paid in full are both settled", () => {
+    const r = selfAudit(
+      data({ recurring: [twice], transactions: [paid("p1", 15, 240), paid("p2", 30, 240)] }),
+      NOW,
+    );
+    const c = byId(r, "settled-means-settled");
+    expect(c.status).toBe("ok");
+    expect(c.detail).toContain("All 2 settled");
+  });
+
+  it("an installment paid short still fails, named against its own price", () => {
+    const c = byId(selfAudit(data({ recurring: [twice], transactions: [paid("p1", 15, 200)] }), NOW), "settled-means-settled");
+    expect(c.status).toBe("fail");
+    expect(c.detail).toContain("$200.00 of $240.00");
+    // One offender has nothing to be "the largest" of.
+    expect(c.detail).not.toContain("the largest");
+  });
+});
+
 describe("check 8 — a link must point at something that still exists", () => {
   it("catches the real $165 hole: four payments left pointing at a deleted bill", () => {
     // The exact shape the live ledger carried on 2026-09-26. A phantom $35/month

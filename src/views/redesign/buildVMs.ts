@@ -18,17 +18,22 @@ import {
   billExpected,
   previousPayday,
   isOpenDebt,
+  inAnyLine,
+  payCycleFor,
   type PayoffEvent,
 } from "../../lib/plan";
 import { firepowerStatus } from "../../lib/headline";
+// The Home Bills tile reads the Bills sheet's own window, from the same call.
+import { billsBeforeNextPayday, monthGetter } from "../../lib/headline";
 import { transferIds } from "../../lib/flow";
 import { unusualCharges } from "../../lib/unusual";
 import { totalBalance, cashAccounts, totalPendingHold } from "../../lib/recurring";
-import { monthlySchedule, type ScheduleEntry } from "../../lib/schedule";
+import { weekView } from "../../lib/weekPlan";
+import { inActivityLedger, isTransferRow, needsReviewTx, countedTx } from "../../lib/activityRules";
 import { ownAccounts, jointAccounts, type Lens } from "../../lib/lens";
 import { OWNER_NAME, OWNER_COLOR, type Owner } from "../../lib/owner";
 import { t } from "../../lib/i18n";
-import type { HomeVM, BillsVM } from "./vm";
+import type { HomeVM } from "./vm";
 import type { InsightsVM } from "./InsightsTab";
 import type { ActivityVM, ActivityMonth, ActivityRow, ActivityFate } from "./ActivityTab";
 import type { ProfileVM } from "./ProfileTab";
@@ -41,11 +46,14 @@ const fmtMY = (d: Date) =>
   d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '");
 const fmtDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-const OWNER_DOT: Record<string, string> = {
-  Gino: "#5b82b3",
-  Xinyan: "#46d18a",
-  Joint: "#687180",
-};
+// An account row's dot is its owner's colour — the same accent the avatar and the
+// health side use (owner.ts), not a second palette — and grey for Joint.
+const ownerDot = (accountOwner: string) =>
+  accountOwner === "Gino"
+    ? OWNER_COLOR.gino
+    : accountOwner === "Xinyan"
+      ? OWNER_COLOR.xinyan
+      : "#687180";
 
 const shortDebt = (n: string) => {
   const m = n.match(/…(\d{4})/);
@@ -62,7 +70,6 @@ export interface FinanceVMs {
   insights: InsightsVM;
   activity: ActivityVM;
   profile: ProfileVM;
-  bills: BillsVM;
   // The budget envelopes — each bar AND the transactions behind it, from one
   // calculation. FinanceTabs looks one up by key; it must never recompute.
   envelopes: EnvelopeVM[];
@@ -138,7 +145,11 @@ export function buildFinanceVMs(
   const totalCash = totalBalance(data.accounts);
   const jointCash = personal ? totalBalance(jointAccounts(data.accounts)) : 0;
   const cash = personal ? totalBalance(myAccounts) + jointCash : totalCash;
-  const cashAcctCount = cashAccounts(personal ? myAccounts : data.accounts).length;
+  // Counted over the same accounts the total adds up (own + Joint in Mine), so the
+  // tile never says "1 account" under a figure that sums two.
+  const cashAcctCount = cashAccounts(
+    personal ? [...myAccounts, ...jointAccounts(data.accounts)] : data.accounts,
+  ).length;
   // "still processing" hold — mirror the cash lens (own + joint when personal)
   const processing = personal
     ? totalPendingHold(myAccounts) + totalPendingHold(jointAccounts(data.accounts))
@@ -219,16 +230,22 @@ export function buildFinanceVMs(
 
   // debtFreeBy / monthsToGo are derived from the deploy plan (built after bills).
 
-  // ── lens-filtered ledger (same predicate as OnePager `recent`/`ledgerTxns`) ──
-  const visible = data.transactions
-    .filter((tx) => !tx.appliesTo?.settled)
-    // "Set aside · excluded" drops out of the active ledger (like a transfer);
-    // "set aside · reimbursable" stays VISIBLE until settled (it's owed to you).
-    .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
-    .filter((tx) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId))
+  // ── the listed ledger: the household's, then the lens over it ──
+  // inActivityLedger (src/lib/activityRules.ts) is the ONE rule for which rows the
+  // lists show — FinanceTabs builds the All-activity ledger from it too, so the two
+  // lists cannot drift apart again. "Set aside · excluded" drops out (like a
+  // transfer); "set aside · reimbursable" stays VISIBLE until settled (it's owed to
+  // you); a bank-feed bill or debt payment is listed even though the feed marks it
+  // settled ("already in the anchored balance", not "hide").
+  const inLens = (tx: Transaction) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId);
+  const household = data.transactions
+    .filter(inActivityLedger)
     .sort((a, b) =>
       a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date),
     );
+  const visible = personal ? household.filter(inLens) : household;
+  // The same pairing the counted figures skip, over the same rows they are summed from.
+  const movedV = transferIds(visible);
 
   const catName = (id: string) => data.categories.find((c) => c.id === id)?.name ?? id;
   const envLabel = (catId: string) =>
@@ -253,23 +270,33 @@ export function buildFinanceVMs(
     pending: !!tx.pending,
   }));
 
-  // ── "spent since Monday" — lens-filtered (matches the lists, not the household) ──
-  const dow = now.getDay();
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((dow + 6) % 7));
-  const mondayKey = dateKeyOf(monday);
-  const sinceMonday = visible
-    .filter((t) => t.type === "expense" && t.date >= mondayKey && !t.pending)
-    .reduce((s, t) => s + t.amount, 0);
+  // ── spent this week — the household's Sun–Sat week, the week the $/week plan runs on.
+  // BOTH lenses are weekView's own spentTotal: graded line spend (pending included, as
+  // on every bar) with money back netted. All runs it over the household's rows, so it
+  // equals finance.week to the cent; Mine runs the SAME rule over the lens's rows, so
+  // a person's week is a part of the household's and never larger than it. (Mine used
+  // to add up line spend without netting money back, so one refund on a personal
+  // account put a person's week above the household's.) This used to be "since
+  // Monday": a Monday-start window with no end, posted rows only, every expense in the
+  // list — a third weekly number that agreed with neither the plan nor Muse.
+  const week = weekView(data, data.weekPlans ?? [], todayKey, "this");
+  const spentThisWeek = personal
+    ? weekView({ ...data, transactions: data.transactions.filter(inLens) }, data.weekPlans ?? [], todayKey, "this")
+        .spentTotal
+    : week.spentTotal;
 
   // ── simple anomaly count: a free-form charge > 2.5× its category's monthly mean.
-  //    From `visible` (lens-filtered) so the count matches what the list can show —
-  //    otherwise a spouse's anomaly counts here but opens to an empty lens-filtered list.
+  //    Judged over the HOUSEHOLD's charges, then filtered to the lens — so Mine is a
+  //    strict subset of All, and the same Joint charge is never "unusual" on one phone
+  //    and normal on the other. (Judging each lens on its own rows recomputed every
+  //    category's mean over one person's few charges, which flagged ordinary buys.)
+  //    The count still matches what the lens-filtered list can show.
   //
   //    THE RULE ITSELF MOVED to src/lib/unusual.ts on 2026-10-10, unchanged, so the
   //    read door's finance.unusual answers from the same function instead of a copy —
   //    this screen is being retired, and the write door's dismiss_unusual had nothing
   //    to point at. What stays here is only what this screen draws from it.
-  const anomalies = unusualCharges(visible, monthKey).map(({ tx: t, ratio }) => ({
+  const anomalies = unusualCharges(household, monthKey).filter(({ tx }) => inLens(tx)).map(({ tx: t, ratio }) => ({
     id: t.id,
     merchant: t.description || catName(t.categoryId),
     catId: t.categoryId,
@@ -280,94 +307,17 @@ export function buildFinanceVMs(
   const anomalyIds = anomalies.map((a) => a.id);
   const anomalyCount = anomalies.length;
 
-  // ── bills + money calendar ──
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const firstWeekday = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
-  const todayNum = now.getDate();
-  const { entries } = monthlySchedule(data.recurring, monthKey, data.transactions, data.debts);
-  const outEntries = entries.filter((e) => e.direction === "out");
-  // The scheduled installment days for each recurring this month — used to snap a
-  // recorded payment to the right installment even if the feed logged the raw bank
-  // post-day (a row with no baked due_days records postDay, which can sit a day or
-  // two off the scheduled day). Without this, a real payment fails the exact
-  // day-equality check and the bill wrongly shows unpaid.
-  const recDaysByRec: Record<string, number[]> = {};
-  outEntries.forEach((e) => {
-    if (e.recurringId) (recDaysByRec[e.recurringId] ??= []).push(e.day);
-  });
-  const recordedBill = (e: ScheduleEntry, mk: string = monthKey) =>
-    e.recurringId
-      ? data.transactions.find((t) => {
-          if (t.type !== "expense" || t.appliesTo?.kind !== "bill") return false;
-          if (t.appliesTo.recurringId !== e.recurringId || t.appliesTo.monthKey !== mk)
-            return false;
-          // snap the recorded day to this recurring's nearest scheduled day, then
-          // require it to land on THIS entry — so single-installment bills flip on
-          // any near day, while multi-installment bills (e.g. Mom 15/30) still map
-          // each payment to the correct installment.
-          const days = recDaysByRec[e.recurringId!] ?? [e.day];
-          const rd = t.appliesTo.day;
-          if (rd == null) return days.length === 1; // no day to snap → only the unambiguous single-installment
-          const nearest = days.reduce((b, d) => (Math.abs(d - rd) < Math.abs(b - rd) ? d : b), days[0]);
-          return nearest === e.day;
-        })
-      : undefined;
-  const isBillPaid = (e: ScheduleEntry) =>
-    e.recurringId ? !!recordedBill(e) : Math.min(e.day, daysInMonth) <= todayNum;
-  const recCatOf = (recId?: string) =>
-    data.recurring.find((r) => r.id === recId)?.categoryId ?? "other";
-  const relLabelOf = (day: number) => {
-    if (day === todayNum) return t("today");
-    if (day === todayNum + 1) return t("tomorrow");
-    if (day < todayNum) return t("overdue");
-    return t("in {n} days", { n: day - todayNum });
-  };
-  const dayDate = (day: number) =>
-    new Date(now.getFullYear(), now.getMonth(), Math.min(day, daysInMonth));
-  const unpaidBills = outEntries.filter((e) => !isBillPaid(e)).sort((a, b) => a.day - b.day);
-  const paidBills = outEntries.filter(isBillPaid);
-  const leftThisMonth = unpaidBills.reduce((s, e) => s + e.amount, 0);
-  const calMap: Record<number, { in: boolean; out: boolean }> = {};
-  entries.forEach((e) => {
-    const d = Math.min(e.day, daysInMonth);
-    calMap[d] ??= { in: false, out: false };
-    if (e.direction === "in") calMap[d].in = true;
-    else calMap[d].out = true;
-  });
-  const nextBill = unpaidBills.find((e) => e.day >= todayNum) ?? unpaidBills[0];
-  const bills: BillsVM = {
-    leftThisMonth,
-    upcoming: unpaidBills.map((e) => ({
-      id: `${e.recurringId ?? e.label}@${e.day}`,
-      recurringId: e.recurringId,
-      name: e.label,
-      catId: recCatOf(e.recurringId),
-      amount: e.amount,
-      day: e.day,
-      dateLabel: fmtDay(dayDate(e.day)),
-      relLabel: relLabelOf(e.day),
-      variable: !!e.variable,
-    })),
-    paidCount: paidBills.length,
-    paidTotal: paidBills.reduce((s, e) => s + e.amount, 0),
-    monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-    todayNum,
-    daysInMonth,
-    firstWeekday,
-    calendar: Object.entries(calMap).map(([d, v]) => ({ day: +d, in: v.in, out: v.out })),
-    monthBills: outEntries.map((e) => ({
-      id: `${e.recurringId ?? e.label}@${e.day}`,
-      recurringId: e.recurringId,
-      name: e.label,
-      catId: recCatOf(e.recurringId),
-      amount: e.amount,
-      day: e.day,
-      dateLabel: fmtDay(dayDate(e.day)),
-      relLabel: relLabelOf(e.day),
-      variable: !!e.variable,
-      paid: isBillPaid(e),
-    })),
-  };
+  // ── the Home Bills tile — still due before the next payday ──
+  // The same window, the same call and the same paid rule as the Bills sheet's header
+  // and the read door's finance.next_bills (src/lib/headline.ts). This tile used to
+  // read the CALENDAR month with its own spelling of "paid", so at every month end —
+  // exactly when rent on the 1st sits in the next month — it read "$0 left" and
+  // "next: — ·" under a sheet that said thousands were still due.
+  const due = billsBeforeNextPayday(monthGetter(data, now), now);
+  // "next" is the next bill still AHEAD — never an overdue one. When every bill left
+  // in the window is overdue, the tile reads "Nothing else due before payday" beside
+  // the red overdue figure rather than naming the same bill as both.
+  const nextDue = due.bills.find((b) => !b.overdue);
 
   // ── Debt payoff projection (for the attack-ladder view + the debt-free date) ──
   // Month-to-date against the MONTHLY pace, deliberately: `projVariable` is a
@@ -381,7 +331,11 @@ export function buildFinanceVMs(
   // questions about one month — they are meant to differ.
   const monthDent = Math.max(0, spentMonth - projVariable);
   const schedule = payoffSchedule(ordered, projFirepower, now, PAY_DAYS, SAVINGS_SPLIT, monthDent);
-  const next = schedule[0] ?? null;
+  // The Home tile's "what leaves on payday" is the first payday that actually SENDS
+  // money at the debt. The first paydays of a schedule can send $0 — this month's
+  // spend above the pace is debited from them first — and schedule[0] then read
+  // "$0", which the tile could only hide.
+  const next = schedule.find((e) => e.toDebt > 0.005) ?? null;
   // A schedule that ran out its 240-payday guard without clearing the debt is
   // the same SHAPE as one that finished — a non-empty array — so `schedule.length`
   // was reading "it gave up in Aug '36" as "you are debt-free in Aug '36".
@@ -392,6 +346,10 @@ export function buildFinanceVMs(
     ? Math.max(1, Math.round((schedule[schedule.length - 1].date.getTime() - now.getTime()) / 2.592e9))
     : 0;
   const totalInterest = schedule.reduce((s, e) => s + e.interest, 0);
+  // When the plan does not clear: how far short a month the planned paychecks fall of
+  // living costs plus the recent spending pace — the honest reason there is no date.
+  // At the planned pay (a floor), so the screen says "at this pace", never a promise.
+  const payoffShortBy = clears ? 0 : Math.max(0, projVariable - (math.income - math.fixedNonDebt));
   const deploy = { ordered, schedule, totalDebt: math.totalDebt };
 
   // ── Tracking: what was actually sent at debt this cycle (live from tagged txns).
@@ -406,21 +364,33 @@ export function buildFinanceVMs(
     .map((d) => d.trackPattern)
     .filter((p): p is string => !!p)
     .map((p) => p.toUpperCase());
+  // A card payment the bank sync links files as a BILL on the debt-linked recurring
+  // row (the card-payment bill), never as kind "debt", and a provider-linked card
+  // has no trackPattern — so neither older case could ever see it. Resolve a bill
+  // row's debt the way the store's money engine does (its own debtId, else the
+  // recurring row's linkedDebtId) and count it when that debt is open. One OR per
+  // row, so nothing is counted twice.
+  const openDebtIds = new Set(data.debts.filter(isOpenDebt).map((d) => d.id));
+  const billDebt = (t: Transaction) =>
+    t.appliesTo?.kind === "bill"
+      ? (t.appliesTo.debtId ?? data.recurring.find((r) => r.id === t.appliesTo!.recurringId)?.linkedDebtId)
+      : undefined;
   const deployedThisCycle = data.transactions
     .filter(
       (t) =>
         t.date >= cycleStartKey &&
         (t.appliesTo?.kind === "debt" ||
-          // `amount` is always positive — the sign is `type` — so this read
-          // `t.amount < 0` and never matched anything until 2026-10-26.
-          (t.type === "expense" && debtPatterns.some((p) => (t.description ?? "").toUpperCase().includes(p)))),
+          (t.type === "expense" &&
+            // `amount` is always positive — the sign is `type` — so this read
+            // `t.amount < 0` and never matched anything until 2026-10-26.
+            (debtPatterns.some((p) => (t.description ?? "").toUpperCase().includes(p)) ||
+              openDebtIds.has(billDebt(t) ?? "")))),
     )
     .reduce((s, t) => s + Math.abs(t.amount), 0);
 
   // ── "Owed to you" — reimbursable set-asides (real cash out until repaid) ──
   const isReimbursable = (tx: Transaction) =>
     tx.type === "expense" && tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "reimbursable";
-  const inLens = (tx: Transaction) => !personal || !tx.accountId || !otherAccountIds.has(tx.accountId);
   const owed = data.transactions
     .filter((tx) => isReimbursable(tx) && !tx.appliesTo!.settled && inLens(tx))
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -472,6 +442,7 @@ export function buildFinanceVMs(
     owedList,
     owedSettled,
     debtFreeBy,
+    payoffShortBy,
     deployedThisCycle,
     // the "Send X at the debt" tile is the DEBT portion only — in the final
     // payoff phase `total` also includes the savings skim (surfaced separately in
@@ -495,18 +466,24 @@ export function buildFinanceVMs(
     streakDay: commit.day,
     streakTotal: commit.total,
     recent,
-    sinceMonday,
+    spentThisWeek,
     bills: {
-      left: leftThisMonth,
-      nextName: nextBill ? nextBill.label : "—",
-      nextDate: nextBill ? fmtDay(dayDate(nextBill.day)) : "",
+      left: due.total,
+      nextName: nextDue?.name ?? "",
+      nextDate: nextDue ? fmtDay(new Date(nextDue.due + "T00:00:00")) : "",
+      overdue: due.overdueTotal,
     },
+    household: personal,
   };
 
   // ── Insights ──
-  const ladder = ordered.map((d, i) => {
+  // Open debts only: a closed debt (finished and kept) is not a rung to
+  // climb. orderedDebts itself still lists it, on purpose — the attack-ladder sheet
+  // shows it as "Cleared" and the door lists it as closed.
+  const openOrdered = ordered.filter(isOpenDebt);
+  const ladder = openOrdered.map((d, i) => {
     const done = d.balance <= 0.005;
-    const isTarget = !done && ordered.slice(0, i).every((x) => x.balance <= 0.005);
+    const isTarget = !done && openOrdered.slice(0, i).every((x) => x.balance <= 0.005);
     return {
       rank: i + 1,
       name: shortDebt(d.name),
@@ -527,21 +504,43 @@ export function buildFinanceVMs(
     income: math.income,
     living: math.fixedNonDebt,
     variable: math.variable,
-    atDebt: firepower,
+    // The PLAN's share for debt — income less living less the variable budget — so
+    // the bar and the four stats beside it add up to the income. This was the live,
+    // month-to-date firepower (that share less this month's overspend and outside-
+    // the-budget cash, clamped at 0): the right number for "what is free right now",
+    // the wrong one for "where every dollar goes", where it left the debt share unaccounted for
+    // and dropped the Debt slice from the bar entirely in any month that ran over.
+    atDebt: Math.max(0, math.firepower),
     debtFreeBy,
     monthsToGo,
     interest: totalInterest,
+    clears,
+    // The same "short a month" figure as Home's Payoff tile, so the two screens say
+    // the same thing when there is no date.
+    shortBy: payoffShortBy,
     ladder,
+    household: personal,
   };
 
   // ── Activity (this-month + recent rows, fate-badged) ──
+  const accountOwnerOf = (id?: string) => (id ? data.accounts.find((a) => a.id === id)?.owner : undefined);
   const fateOf = (tx: Transaction): { fate: ActivityFate; badge: string } => {
-    if (tx.type === "income") return { fate: "income", badge: t("Income · not in budget") };
+    // Set-asides first: an IOU keeps its "owed back to you" pill whatever else it is.
     if (tx.appliesTo?.kind === "setaside") {
       return tx.appliesTo.reason === "reimbursable"
         ? { fate: "setaside", badge: t("Set aside · owed back to you") }
         : { fate: "setaside", badge: t("Set aside") };
     }
+    // Money moved between their own accounts — BOTH legs, the card payment and the
+    // card's credit for it. The counted figures already skip these (transferIds);
+    // the list called one leg "Income" and asked about the other, a card payment
+    // that was never spending sitting in the review queue for months.
+    if (isTransferRow(tx, movedV))
+      return { fate: "skip", badge: t("{Kind} · not in budget", { Kind: t("Transfer") }) };
+    if (tx.type === "income")
+      return tx.categoryId === "refund"
+        ? { fate: "income", badge: t("Money back") }
+        : { fate: "income", badge: t("Income · not in budget") };
     if (tx.appliesTo) {
       const k = tx.appliesTo.kind;
       return {
@@ -572,9 +571,16 @@ export function buildFinanceVMs(
     // `other` stays, but only when he has not answered it himself: Misc is the
     // absence of a category, so an unfiled row IS an open question — while one he
     // deliberately put in Misc is a closed one.
-    if (tx.needsReview || (tx.categoryId === "other" && !tx.userCategorized))
-      return { fate: "review", badge: t("Needs review") };
-    return { fate: "envelope", badge: t("→ {label}", { label: envLabel(tx.categoryId) }) };
+    //
+    // The rule lives in src/lib/activityRules.ts now, so the All-activity ledger
+    // asks exactly the same question about the same charge.
+    if (needsReviewTx(tx, movedV)) return { fate: "review", badge: t("Needs review") };
+    // A category no budget line grades (education, car, interest, a bill filed as
+    // spending) is real cash out but is NOT in the budget — it must not wear the
+    // same tinted "→ Category" pill as a row the bar is adding up.
+    if (!inAnyLine(tx.categoryId))
+      return { fate: "skip", badge: t("{Kind} · not in budget", { Kind: t(catName(tx.categoryId)) }) };
+    return { fate: "envelope", badge: t("→ {label}", { label: t(envLabel(tx.categoryId)) }) };
   };
   // The Activity tab is THIS month (matches the "June 2026" header) and is NOT
   // capped — so the "Needs review" badge count equals what the filter shows, and
@@ -585,15 +591,28 @@ export function buildFinanceVMs(
   const toRows = (txns: typeof visible): ActivityRow[] =>
     txns.map((tx) => {
       const f = fateOf(tx);
+      // A paycheck reads as one, with whose it is, rather than the bank's payroll
+      // string cut off mid-word. TxnSheet still shows what the bank wrote.
+      const paycheck = tx.type === "income" && tx.categoryId === "salary";
+      const payOwner = paycheck ? accountOwnerOf(tx.accountId) : undefined;
+      const merchant = paycheck
+        ? payOwner
+          ? `${t("Paycheck")} · ${t(payOwner)}`
+          : t("Paycheck")
+        : tx.description || catName(tx.categoryId);
       return {
         id: tx.id,
-        merchant: tx.description || catName(tx.categoryId),
+        merchant,
         catId: tx.categoryId,
         sub: relDay(tx.date),
         amount: tx.amount,
         fate: f.fate,
         badgeLabel: tx.pending ? t("Processing") : f.badge,
         pending: !!tx.pending,
+        // The "$X counted" figure's own predicate, so the In budget filter lists
+        // exactly the rows that figure adds up.
+        counted: countedTx(tx, movedV),
+        credit: tx.type === "income",
       };
     });
 
@@ -617,45 +636,84 @@ export function buildFinanceVMs(
   // cycle's spend but files under last month, so the budget number can't be
   // reconciled against anything you can see. This puts the cycle first, so the
   // list you scroll IS the list the envelope is adding up.
-  const cycleRows = toRows(
-    visible.filter((tx) => tx.date >= cycle.start && tx.date <= cycle.end),
-  );
-  const cycleGroup: ActivityMonth = {
-    monthKey: `cycle:${cycle.start}`,
-    monthLabel: `${t("This cycle")} · ${cycle.label}`,
-    rows: cycleRows,
-    counted: variableSpentBetween(visible, cycle.start, cycle.end),
-    needsReview: cycleRows.filter((r) => r.fate === "review").length,
+  const cycleGroupOf = (c: { start: string; end: string; label: string }, title: string): ActivityMonth => {
+    const rows = toRows(visible.filter((tx) => tx.date >= c.start && tx.date <= c.end));
+    return {
+      monthKey: `cycle:${c.start}`,
+      monthLabel: `${title} · ${c.label}`,
+      rows,
+      counted: variableSpentBetween(visible, c.start, c.end),
+      needsReview: rows.filter((r) => r.fate === "review").length,
+    };
   };
-  const months: ActivityMonth[] = [cycleGroup, ...monthGroups];
-  const activity: ActivityVM = { sinceMonday, processing, months };
+  const cycleGroup = cycleGroupOf(cycle, t("This cycle"));
+  // One tap back is the cycle before — the one last payday's charges belong to —
+  // and only then the calendar months.
+  const [csy, csm, csd] = cycle.start.split("-").map(Number);
+  const prevCycle = payCycleFor(new Date(csy, csm - 1, csd - 1));
+  const lastCycleGroup = cycleGroupOf(prevCycle, t("Last cycle"));
+  const months: ActivityMonth[] = [cycleGroup, lastCycleGroup, ...monthGroups];
+  // Every pending hold is now its own row in the list. When those rows add up to the
+  // bank's hold exactly, the card can say so plainly; when they do not (the bank
+  // holding a lump it has not itemized), it keeps the old "~" wording.
+  const heldRows = visible.filter((tx) => tx.pending && tx.type === "expense");
+  const processingCount = heldRows.length;
+  const processingItemized =
+    processingCount > 0 && Math.abs(heldRows.reduce((s, tx) => s + tx.amount, 0) - processing) < 0.01;
+  const activity: ActivityVM = { spentThisWeek, processing, processingCount, processingItemized, months };
 
   // ── Profile ──
   // Same lens rule as the Cash sheet/total: own + joint in "me", all in "all".
   const profileAccounts = personal
     ? [...myAccounts, ...jointAccounts(data.accounts)]
     : data.accounts;
-  const connected = data.accounts.filter((a) => a.providerAccountId).length;
+  const linked = data.accounts.filter((a) => a.providerAccountId);
+  // The bank login's count is the CASH accounts it brings — the ones listed under
+  // Accounts below. The two cards it also syncs are named on the next row, as debt.
+  // A household figure in both lenses, because the login is the household's.
+  const connected = cashAccounts(linked).length;
   const linkedCards = data.debts
     .filter((d) => d.providerAccountId)
     .map((d) => (d.name.match(/…(\d{4})/) ? `…${d.name.match(/…(\d{4})/)![1]}` : d.name));
+  // This device's owner first, then the spouse, then Joint.
+  const accountRank = (o: string) => (o === OWNER_NAME[owner] ? 0 : o === "Joint" ? 2 : 1);
+  // What a variable bill's estimate is actually made of. billExpected returns a set
+  // amount before it averages anything, and averages however many charges exist (one
+  // to three) — so "est. from last 3" was false for both of those. A bill that has
+  // not started yet says when it starts.
+  const variableEst = (r: (typeof data.recurring)[number]) => {
+    const x = billExpected(r, data.transactions).toFixed(2);
+    if (r.startsOn && r.startsOn > todayKey)
+      return t("${x} · from {date}", { x, date: fmtDay(new Date(r.startsOn + "T00:00:00")) });
+    if (r.knownAmount != null) return t("${x} · set amount", { x });
+    const n = Math.min(
+      3,
+      data.transactions.filter(
+        (tx) => tx.type === "expense" && tx.appliesTo?.kind === "bill" && tx.appliesTo.recurringId === r.id,
+      ).length,
+    );
+    return n === 0 ? t("${x} · no bills yet", { x }) : t("~${x} · est. from last {n}", { x, n });
+  };
   const profile: ProfileVM = {
     ownerName: OWNER_NAME[owner],
     ownerColor: OWNER_COLOR[owner],
     email: extra.email,
-    bankName: connected ? "Bank of America" : t("Connect a bank"),
-    bankSub: connected
+    bankName: linked.length ? "Bank of America" : t("Connect a bank"),
+    bankSub: linked.length
       ? t("Connected · {n} accounts", { n: connected })
       : t("Tap to connect"),
     cardsSub: linkedCards.length
       ? t("{cards} linked · auto-syncs", { cards: linkedCards.join(" + ") })
       : t("Track a card as debt"),
-    accounts: cashAccounts(profileAccounts).map((a) => ({
-      name: `${a.name} …${a.last4 ?? ""}`,
-      owner: a.owner,
-      balance: a.balance,
-      dot: OWNER_DOT[a.owner] ?? "#687180",
-    })),
+    accounts: cashAccounts(profileAccounts)
+      .map((a, i) => ({ a, i }))
+      .sort((x, y) => accountRank(x.a.owner) - accountRank(y.a.owner) || x.i - y.i)
+      .map(({ a }) => ({
+        name: `${a.name} …${a.last4 ?? ""}`,
+        owner: a.owner,
+        balance: a.balance,
+        dot: ownerDot(a.owner),
+      })),
     lang: extra.lang,
     lens,
     variableBills: data.recurring
@@ -664,10 +722,10 @@ export function buildFinanceVMs(
         id: r.id,
         name: r.name,
         icon: /electric|srp/i.test(r.name) ? ("electric" as const) : ("phone" as const),
-        est: t("~${x} · est. from last 3", { x: billExpected(r, data.transactions).toFixed(2) }),
-        on: true,
+        est: variableEst(r),
+        on: !!r.variable,
       })),
   };
 
-  return { home, insights, activity, profile, bills, envelopes, deploy };
+  return { home, insights, activity, profile, envelopes, deploy };
 }

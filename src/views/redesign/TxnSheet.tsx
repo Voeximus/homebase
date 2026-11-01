@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Trash2, Check, SplitSquareHorizontal, Plus, ChevronLeft } from "lucide-react";
 import { useStore } from "../../store/FinanceStore";
-import { catColor, catIcon } from "../../lib/catColor";
+import { BRAND_GRADIENT, catColor, catIcon } from "../../lib/catColor";
 import { isMultiDepartment, isStatementNoiseKey, merchantKey } from "../../lib/categorize";
 import { t } from "../../lib/i18n";
 import type { Transaction, TxnSplit } from "../../types";
@@ -39,6 +39,15 @@ export function TxnSheet({
   useEffect(() => {
     setSplitting(false);
   }, [txnId, open]);
+  // Escape closes the sheet, like every other way out of it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   const txn = txnId ? data.transactions.find((t) => t.id === txnId) : null;
   if (!open || !txn) return null;
@@ -89,6 +98,8 @@ export function TxnSheet({
   const linkedBill = billLink?.recurringId
     ? data.recurring.find((r) => r.id === billLink.recurringId)
     : undefined;
+  // Which account (and so whose) this charge is on — two accounts can share a name.
+  const acct = txn.accountId ? data.accounts.find((a) => a.id === txn.accountId) : undefined;
 
   return (
     <div
@@ -109,16 +120,30 @@ export function TxnSheet({
       >
         <div className="mb-3 flex items-start gap-2.5">
           {splitting && (
-            <button onClick={() => setSplitting(false)} style={{ color: "#7a8595" }} aria-label="Back">
+            <button
+              onClick={() => setSplitting(false)}
+              aria-label={t("Back")}
+              className="h-hit -ml-1.5 -mt-1.5 rounded-full p-1.5 transition active:bg-white/5"
+              style={{ color: "var(--color-faint)" }}
+            >
               <ChevronLeft size={20} />
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <div className="break-words text-[15px] font-bold text-bone">
+            <div className="break-words text-[17px] font-bold text-bone">
               {splitting ? t("Split transaction") : txn.description || txn.categoryId}
             </div>
             <div className="mt-0.5 text-[12px]" style={{ color: "#8b97a6" }}>
               {fmtDate(txn.date)} · {money2(txn.amount)}
+              {txn.pending ? ` · ${t("Processing")}` : ""}
+              {acct ? (
+                <>
+                  {" · "}
+                  <span className="whitespace-nowrap">
+                    {acct.name} …{acct.last4 ?? ""}
+                  </span>
+                </>
+              ) : null}
             </div>
             {/* What the bank actually wrote. Shown only when it says more than the
                 clean merchant name — that extra text is often the only way to tell
@@ -133,7 +158,12 @@ export function TxnSheet({
               </div>
             )}
           </div>
-          <button onClick={onClose} style={{ color: "#7a8595" }}>
+          <button
+            onClick={onClose}
+            aria-label={t("Close")}
+            className="h-hit -mr-1.5 -mt-1.5 rounded-full p-1.5 transition active:bg-white/5"
+            style={{ color: "var(--color-faint)" }}
+          >
             <X size={20} />
           </button>
         </div>
@@ -171,7 +201,7 @@ export function TxnSheet({
                     <div key={i} className="flex items-center gap-2 py-1">
                       <Icon size={14} style={{ color: col }} />
                       <span className="flex-1 text-[12.5px] text-bone">{catName(s.categoryId)}</span>
-                      <span className="num text-[12.5px] font-semibold text-bone">{money2(s.amount)}</span>
+                      <span className="tabular-nums text-[12.5px] font-semibold text-bone">{money2(s.amount)}</span>
                     </div>
                   );
                 })}
@@ -346,7 +376,7 @@ export function TxnSheet({
                     onClose();
                   }}
                   className="flex-1 rounded-xl py-2.5 text-[12px] font-semibold"
-                  style={{ background: "#16241b", color: "#7fbf6a" }}
+                  style={{ background: "#16241b", color: "#46d18a" }}
                 >
                   {t("Set aside · owed back to me")}
                 </button>
@@ -479,7 +509,7 @@ function SplitEditor({
             </div>
           </div>
           <div className="text-right">
-            <div className="num text-[13px] font-semibold text-bone">
+            <div className="tabular-nums text-[13px] font-semibold text-bone">
               {money2(sum)} <span style={{ color: "#7a8595", fontWeight: 400 }}>/ {money2(total)}</span>
             </div>
             {!balanced && remaining > 0 && (
@@ -527,13 +557,13 @@ function SplitEditor({
                 </button>
               )}
               <div className="flex items-center gap-0.5 rounded-lg px-2 py-1.5" style={{ background: "#0f141c", border: "1px solid #232d3a" }}>
-                <span className="text-[12px]" style={{ color: "#5f6a78" }}>$</span>
+                <span className="text-[12px]" style={{ color: "#7e8a98" }}>$</span>
                 <input
                   value={r.amount}
                   inputMode="decimal"
                   onChange={(e) => setAmount(i, e.target.value)}
                   placeholder="0.00"
-                  className="num w-[58px] bg-transparent text-right text-[14px] font-semibold text-bone outline-none placeholder:text-[#5f6a78]"
+                  className="tabular-nums w-[58px] bg-transparent text-right text-[14px] font-semibold text-bone outline-none placeholder:text-[#7e8a98]"
                 />
               </div>
               {rows.length > 2 && (
@@ -568,7 +598,7 @@ function SplitEditor({
         onClick={save}
         disabled={!valid}
         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl py-3 text-[14px] font-semibold text-white transition active:scale-[0.98]"
-        style={{ background: "linear-gradient(150deg,#10b981,#06b6d4)", opacity: valid ? 1 : 0.4 }}
+        style={{ background: BRAND_GRADIENT, opacity: valid ? 1 : 0.4 }}
       >
         <Check size={16} /> {valid ? t("Save split") : !balanced ? t("Allocate all {amt} to save", { amt: money2(remaining) }) : t("Use 2+ categories")}
       </button>

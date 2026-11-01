@@ -8,7 +8,7 @@ import type { Account, Debt } from "../types";
 import { useStore } from "../store/FinanceStore";
 import { useAuth } from "../auth/AuthProvider";
 import { formatMoney } from "../lib/format";
-import { accountFlow, cashAccounts } from "../lib/recurring";
+import { cashAccounts } from "../lib/recurring";
 import { payoffSchedule } from "../lib/plan";
 import { type ScheduleEntry } from "../lib/schedule";
 import { t } from "../lib/i18n";
@@ -58,25 +58,45 @@ export function AccountsSheet({
   // Set when the write came back unconfirmed — the typed figure is still only on
   // this phone, so the editor has to stay open and say so.
   const [failed, setFailed] = useState(false);
+  const listed = cashAccounts(accounts ?? data.accounts);
+  // A bank-linked account's balance is the bank's own figure, overwritten on every
+  // sync — a hand-set number here would be wrong until the next sync and then
+  // silently undone. So only an unlinked account offers "tap to set".
+  const anyUnlinked = listed.some((a) => !a.providerAccountId);
   return (
     <Sheet open={open} onClose={onClose} title={t("Cash & accounts")}>
       <div className="space-y-2">
-        {cashAccounts(accounts ?? data.accounts).map((a) => {
-          const f = accountFlow(a.id, data.recurring);
+        {listed.map((a) => {
           const editing = edit?.id === a.id;
+          const linked = !!a.providerAccountId;
           return (
             <div key={a.id} className="rounded-xl bg-raised p-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-bone">
                     {a.name}{" "}
-                    <span className="text-faint">····{a.last4}</span>
+                    <span className="text-taupe">····{a.last4}</span>
                   </p>
-                  <p className="text-[11px] text-faint">
-                    {a.owner} · {t("{amount}/mo", { amount: formatMoney(f.net, { sign: true }) })}
-                  </p>
+                  {/* Whose it is. (This line used to carry a signed "/mo" built from
+                      the PLANNED recurring rows only, with no everyday spending in it,
+                      so every account read as growing in a month that ran over.) */}
+                  <p className="text-[11px] text-taupe">{t(a.owner)}</p>
+                  {/* The hold sits under the owner, on the left, so the right column
+                      is the balance alone and the name keeps its one line. */}
+                  {linked && a.pendingHold ? (
+                    <p className="text-[11px] text-gold">
+                      {t("after {amount} still processing", { amount: formatMoney(a.pendingHold) })}
+                    </p>
+                  ) : null}
                 </div>
-                {editing ? (
+                {linked ? (
+                  <div className="text-right">
+                    <span className="font-semibold text-bone">{formatMoney(a.balance)}</span>
+                    {/* Only worth saying beside a "tap to set" row; when every row is
+                        linked the footer says it once for all of them. */}
+                    {anyUnlinked && <span className="block text-[10px] text-taupe">{t("from your bank")}</span>}
+                  </div>
+                ) : editing ? (
                   <span className="text-sm text-faint">{t("editing…")}</span>
                 ) : (
                   <button
@@ -136,7 +156,9 @@ export function AccountsSheet({
           );
         })}
         <p className="px-1 text-[11px] text-faint">
-          {t("Set each account to the real balance from your bank — every event moves it from there.")}
+          {anyUnlinked
+            ? t("Set each account to the real balance from your bank — every event moves it from there.")
+            : t("Balances come from your bank. Charges still processing are already taken out.")}
         </p>
       </div>
     </Sheet>
@@ -163,7 +185,7 @@ export function SprintSheet({
   return (
     <Sheet open={open} onClose={onClose} title={t("The attack ladder")}>
         <div className="space-y-2.5">
-          <p className="text-xs text-taupe">{t("Snowball order · smallest first")}</p>
+          <p className="text-xs text-taupe">{t("In the order we pay them")}</p>
           {ordered.map((d, i) => {
             const done = d.balance <= 0.005;
             const isTarget = !done && ordered.slice(0, i).every((x) => x.balance <= 0.005);
@@ -188,7 +210,7 @@ export function SprintSheet({
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-sm font-medium text-bone">{d.name}</span>
                       {d.apr != null && d.apr > 20 && (
-                        <span className="rounded-full bg-ember/15 px-1.5 text-[10px] font-medium text-ember">
+                        <span className="rounded-full bg-ember/15 px-1.5 text-[10px] font-medium" style={{ color: "#f4a6b6" }}>
                           {d.apr}%
                         </span>
                       )}

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Pencil,
   Landmark,
   CreditCard,
   FileUp,
@@ -55,6 +54,8 @@ export interface ProfileVM {
 function AuditPanel({ result }: { result: AuditResult }) {
   const [open, setOpen] = useState(false);
   const failing = result.checks.filter((c) => c.status === "fail");
+  // Failing checks first, so a second failure is not row 9 of 12 between green dots.
+  const ordered = [...failing, ...result.checks.filter((c) => c.status !== "fail")];
 
   return (
     <Group label={t("Does this add up?")}>
@@ -63,16 +64,16 @@ function AuditPanel({ result }: { result: AuditResult }) {
         className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition active:bg-white/5"
       >
         <span
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
           style={{
-            background: result.clean ? "#16241c" : "#2a1618",
-            color: result.clean ? "#46d18a" : "#e8746a",
+            background: result.clean ? "#46d18a26" : "#f0556e26",
+            color: result.clean ? "#46d18a" : "#f0556e",
           }}
         >
           {result.clean ? <CircleCheck size={17} /> : <AlertTriangle size={17} />}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold" style={{ color: "#e6edf3" }}>
+          <span className="block text-[14px] font-semibold" style={{ color: "var(--color-bone)" }}>
             {result.clean
               ? t("Every number checks out")
               : t("{n} check{s} did not add up", {
@@ -80,40 +81,45 @@ function AuditPanel({ result }: { result: AuditResult }) {
                   s: failing.length > 1 ? "s" : "",
                 })}
           </span>
-          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "#8b97a6" : "#e8a09a" }}>
+          <span className="block text-[11.5px] leading-snug" style={{ color: result.clean ? "var(--color-taupe)" : "#f4a6b6" }}>
             {result.clean
               ? t("{n} of {n} internal checks passed — the app agrees with itself.", {
                   n: result.checks.length,
                 })
               : failing[0].detail}
           </span>
+          {!result.clean && failing.length > 1 && (
+            <span className="mt-0.5 block text-[11px]" style={{ color: "#f4a6b6" }}>
+              {t("+{n} more below", { n: failing.length - 1 })}
+            </span>
+          )}
         </span>
         {open ? (
-          <ChevronDown size={16} style={{ color: "#8b97a6" }} />
+          <ChevronDown size={16} style={{ color: "var(--color-taupe)" }} />
         ) : (
-          <ChevronRight size={16} style={{ color: "#8b97a6" }} />
+          <ChevronRight size={16} style={{ color: "var(--color-taupe)" }} />
         )}
       </button>
 
       {open && (
         <div className="flex flex-col gap-2.5 px-4 pb-4 pt-1">
-          {result.checks.map((c) => (
+          {ordered.map((c) => (
             <div key={c.id} className="flex gap-2.5">
               <span
                 className="mt-[3px] h-2 w-2 shrink-0 rounded-full"
-                style={{ background: c.status === "ok" ? "#46d18a" : "#e8746a" }}
+                style={{ background: c.status === "ok" ? "#46d18a" : "#f0556e" }}
               />
               <span className="min-w-0">
                 <span className="block text-[12.5px] font-medium" style={{ color: "#c9d4de" }}>
                   {t(c.question)}
                 </span>
-                <span className="block text-[11.5px] leading-snug" style={{ color: "#8b97a6" }}>
+                <span className="block text-[11.5px] leading-snug" style={{ color: "var(--color-taupe)" }}>
                   {c.detail}
                 </span>
               </span>
             </div>
           ))}
-          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "#74838f" }}>
+          <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--color-taupe)" }}>
             {t(
               "Each of these compares one of your numbers against the same number worked out a second, separate way. They are exact — anything other than a perfect match is a real mistake, not a rounding difference, which is why there is no 'maybe' here.",
             )}
@@ -137,7 +143,7 @@ interface ProfileTaps {
   onToggleVariableBill?: (id: string, on: boolean) => void;
 }
 
-// A grouped bento list: a mono eyebrow label above a divided card.
+// A grouped bento list: an eyebrow label above a divided card.
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -153,16 +159,18 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 }
 
 // The small pill toggle (38x22), cyan when on, knob slides right. A button when
-// given onToggle, so it actually flips the underlying preference.
-function Toggle({ on, onToggle }: { on: boolean; onToggle?: () => void }) {
+// given onToggle, so it actually flips the underlying preference; without one it is
+// display-only and drawn dimmed so it does not read as tappable.
+function Toggle({ on, onToggle, label }: { on: boolean; onToggle?: () => void; label?: string }) {
   return (
     <button
       type="button"
       onClick={onToggle}
       disabled={!onToggle}
       className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
-      style={{ background: on ? "#34c5e8" : "#2a3441" }}
+      style={{ background: on ? "#34c5e8" : "#2a3441", opacity: onToggle ? 1 : 0.6 }}
       aria-pressed={on}
+      aria-label={label}
     >
       <span
         className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all"
@@ -253,7 +261,7 @@ function PushRow() {
         <div className="text-[14px] font-medium text-bone">{t("Notifications")}</div>
         {/* Orange, not grey: "not registered" is a fault to act on, not a preference
             that happens to be off. */}
-        <div className="text-[11.5px]" style={{ color: broken ? "#f97316" : "#8b97a6" }}>{sub}</div>
+        <div className="text-[11.5px]" style={{ color: broken ? "#f97316" : "var(--color-taupe)" }}>{sub}</div>
       </div>
       <button
         type="button"
@@ -262,6 +270,7 @@ function PushRow() {
         className="h-hit relative inline-block h-[22px] w-[38px] shrink-0 rounded-full transition"
         style={{ background: registered ? "#34c5e8" : "#2a3441", opacity: locked ? 0.45 : 1 }}
         aria-pressed={registered}
+        aria-label={t("Notifications")}
       >
         <span className="absolute top-[3px] h-4 w-4 rounded-full bg-white transition-all" style={{ left: registered ? "19px" : "3px" }} />
       </button>
@@ -304,19 +313,14 @@ export function ProfileTab({
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[20px] font-bold leading-tight">{vm.ownerName}</div>
-          <div className="truncate text-[12px] opacity-90">{vm.email}</div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] opacity-90">
+          <div className="truncate text-[12px]">{vm.email}</div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11px]">
             <span className="h-2 w-2 rounded-full" style={{ background: "#46d18a" }} />
             {t("Synced · this device is {name}", { name: vm.ownerName })}
           </div>
         </div>
-        <button
-          onClick={taps.onEdit}
-          className="h-hit shrink-0 rounded-full p-1.5 transition active:scale-90"
-          aria-label="Edit profile"
-        >
-          <Pencil size={18} />
-        </button>
+        {/* No "Edit profile" pencil: it opened the Settings sheet, where nothing
+            edits a profile. */}
       </div>
 
       <div className="flex flex-col gap-5 p-4">
@@ -359,11 +363,11 @@ export function ProfileTab({
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Cards as debt")}</div>
-              <div className="text-[12px]" style={{ color: "#8b97a6" }}>
+              <div className="text-[12px]" style={{ color: "var(--color-taupe)" }}>
                 {vm.cardsSub}
               </div>
             </div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "var(--color-faint)" }} />
           </button>
 
           <button
@@ -379,7 +383,7 @@ export function ProfileTab({
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-medium text-bone">{t("Import a statement")}</div>
             </div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "var(--color-faint)" }} />
           </button>
         </Group>
 
@@ -398,11 +402,11 @@ export function ProfileTab({
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.dot }} />
               <div className="min-w-0 flex-1">
                 <div className="text-[14px] font-medium text-bone">{a.name}</div>
-                <div className="text-[12px]" style={{ color: "#8b97a6" }}>
-                  {a.owner}
+                <div className="text-[12px]" style={{ color: "var(--color-taupe)" }}>
+                  {t(a.owner)}
                 </div>
               </div>
-              <span className="num text-[14px] font-semibold text-bone">{money2(a.balance)}</span>
+              <span className="tabular-nums text-[14px] font-semibold text-bone">{money2(a.balance)}</span>
             </div>
           ))}
         </Group>
@@ -444,7 +448,8 @@ export function ProfileTab({
             <Segmented
               options={[
                 { key: "me", label: t("Mine") },
-                { key: "all", label: t("Household") },
+                // The same word the top switch uses for the same choice.
+                { key: "all", label: t("All") },
               ]}
               active={vm.lens}
               onSelect={taps.onLens}
@@ -464,7 +469,7 @@ export function ProfileTab({
               <HeartPulse size={17} />
             </span>
             <div className="min-w-0 flex-1 text-[14px] font-medium text-bone">{t("Health mode")}</div>
-            <ChevronRight size={18} style={{ color: "#7a8595" }} />
+            <ChevronRight size={18} style={{ color: "var(--color-faint)" }} />
           </button>
         </Group>
 
@@ -490,18 +495,21 @@ export function ProfileTab({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-medium text-bone">{b.name}</div>
-                  <div className="text-[12px]" style={{ color: "#8b97a6" }}>
+                  <div className="text-[12px]" style={{ color: "var(--color-taupe)" }}>
                     {b.est}
                   </div>
                 </div>
-                <Toggle
-                  on={b.on}
-                  onToggle={
-                    taps.onToggleVariableBill
-                      ? () => taps.onToggleVariableBill!(b.id, !b.on)
-                      : undefined
-                  }
-                />
+                {/* Only a switch that can be used is drawn. Without the tap (the app
+                    leaves it off: the pay-bill sheet owns this switch) a dimmed,
+                    disabled toggle read as broken; the section title and the
+                    "est. from last 3" line already say the bill is variable. */}
+                {taps.onToggleVariableBill && (
+                  <Toggle
+                    on={b.on}
+                    label={t("Variable amount: {name}", { name: b.name })}
+                    onToggle={() => taps.onToggleVariableBill!(b.id, !b.on)}
+                  />
+                )}
               </div>
             );
           })}
@@ -511,7 +519,7 @@ export function ProfileTab({
         <button
           onClick={taps.onSignOut}
           className="flex items-center justify-center gap-2 rounded-[16px] border p-4 text-[14px] font-medium transition active:scale-[0.99]"
-          style={{ borderColor: "#232d3a", color: "#8b97a6" }}
+          style={{ borderColor: "#232d3a", color: "var(--color-taupe)" }}
         >
           <LogOut size={17} /> {t("Sign out")}
         </button>
@@ -520,11 +528,12 @@ export function ProfileTab({
         <button
           onClick={taps.onAdvanced}
           className="h-hit flex items-center gap-2.5 px-1 text-[12px] transition active:scale-[0.99]"
-          style={{ color: "#7a8595" }}
+          style={{ color: "var(--color-faint)" }}
         >
           <AlertTriangle size={15} />
           <span className="flex-1 text-left">{t("Advanced · re-seed, clear all data")}</span>
-          <ChevronDown size={16} />
+          {/* It opens a sheet, so it points right, not down. */}
+          <ChevronRight size={16} />
         </button>
       </div>
       <div className="h-2" />
@@ -546,7 +555,7 @@ function Segmented<T extends string>({
   return (
     <span
       className="flex shrink-0 items-center rounded-full p-0.5"
-      style={{ background: "#1d2530" }}
+      style={{ background: "#141a24", border: "1px solid #232d3a" }}
     >
       {options.map((o) => {
         const isOn = o.key === active;
@@ -559,8 +568,8 @@ function Segmented<T extends string>({
             className="h-hit rounded-full px-2.5 py-1 text-[12px] font-medium transition"
             style={
               isOn
-                ? { background: "#34c5e8", color: "#0b0f17" }
-                : { color: "#8b97a6" }
+                ? { background: "#263142", color: "#eef2f7", fontWeight: 600 }
+                : { color: "var(--color-taupe)" }
             }
           >
             {t(o.label)}

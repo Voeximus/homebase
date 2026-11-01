@@ -1023,7 +1023,7 @@ describe("Rule 4 — every string out is scrubbed", () => {
     const envelope = checks.find((c) => c.id === "lines-sum-to-envelope")!;
     // Short enough to survive intact, and it is the one check that carries both
     // figures as numbers.
-    expect(envelope.detail).toBe("The lines total $1600.00, matching the envelope.");
+    expect(envelope.detail).toBe("The lines total $1,600.00, matching the envelope.");
     expect(envelope.a?.value).toBe(1600);
     for (const c of checks) expect(c.detail.length).toBeLessThanOrEqual(NAME_MAX + 40);
   });

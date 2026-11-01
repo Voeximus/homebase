@@ -36,8 +36,10 @@ import { dismissLocally, loadDismissed, mergeDismissed } from "../../lib/doctorD
 import type { Suggestion } from "../../lib/reviewTypes";
 import { monthCalendar, type ScheduleEntry, type MonthCalBill } from "../../lib/schedule";
 import { LEAN_VARIABLE, type BudgetLine } from "../../lib/plan";
-import { merchantKey } from "../../lib/categorize";
+import { inActivityLedger } from "../../lib/activityRules";
 import { monthKeyOf } from "../../lib/format";
+
+const SEG_ON = { background: "#263142", color: "#eef2f7", fontWeight: 600 } as const;
 
 function Seg({
   active,
@@ -52,7 +54,9 @@ function Seg({
     <button
       onClick={onClick}
       className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition"
-      style={active ? { background: "#34c5e8", color: "#06303a", fontWeight: 600 } : { color: "#8b97a6" }}
+      // One active style for every segmented control: a raised neutral chip. Cyan
+      // stays for the tab bar and actions, so the hero leads the page, not this.
+      style={active ? SEG_ON : { color: "var(--color-taupe)" }}
     >
       {children}
     </button>
@@ -146,6 +150,10 @@ export function FinanceTabs({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [billsOpen, setBillsOpen] = useState(false);
   const [payBillEntry, setPayBillEntry] = useState<ScheduleEntry | null>(null);
+  // The month a payment is filed under: the bill's own due month. The Bills sheet
+  // lists bills up to the next payday, which at a month end is next month's rent —
+  // filing that under this month would mark this month's (already paid) slot.
+  const [payMonthKey, setPayMonthKey] = useState<string | null>(null);
   const [txnId, setTxnId] = useState<string | null>(null);
   const [ledgerView, setLedgerView] = useState<"all" | "unusual">("all");
   const [anomalyOpen, setAnomalyOpen] = useState(false);
@@ -227,7 +235,8 @@ export function FinanceTabs({
     void ext.dismissSuggestion?.(s.key, s.kind);
   };
 
-  // Lens-filtered ledger + a merchant-rule lookup, for the reused LedgerSheet.
+  // Lens-filtered ledger for the reused LedgerSheet — the SAME row rule as the
+  // Activity tab's list (inActivityLedger), so the two lists cannot drift apart.
   const personal = lens === "me";
   const ledgerTxns = useMemo(() => {
     const otherLabel = owner === "gino" ? "Xinyan" : "Gino";
@@ -235,15 +244,9 @@ export function FinanceTabs({
       data.accounts.filter((a) => a.owner === otherLabel).map((a) => a.id),
     );
     return data.transactions
-      .filter((tx) => !tx.appliesTo?.settled)
-      // excluded set-asides drop from the all-time ledger too (match `visible`)
-      .filter((tx) => !(tx.appliesTo?.kind === "setaside" && tx.appliesTo.reason === "excluded"))
+      .filter(inActivityLedger)
       .filter((tx) => !personal || !tx.accountId || !otherIds.has(tx.accountId));
   }, [data.transactions, data.accounts, personal, owner]);
-  const hasRule = useMemo(() => {
-    const set = new Set(data.merchantRules.map((r) => r.pattern));
-    return (d: string) => set.has(merchantKey(d));
-  }, [data.merchantRules]);
   // The Cash account LIST follows the lens like the cash TOTAL does: own + joint
   // in "Mine", everyone in "Household". (The total in buildVMs was already
   // lens-aware; this brings the expandable list in line.)
@@ -264,8 +267,9 @@ export function FinanceTabs({
   };
   const openCategory = (catId: string) =>
     setEnvLine(LEAN_VARIABLE.find((l) => l.cats.includes(catId)) ?? null);
-  const openBillPay = (b: MonthCalBill) => {
+  const openBillPay = (b: MonthCalBill & { due?: string }) => {
     setBillsOpen(false);
+    setPayMonthKey(b.due ? b.due.slice(0, 7) : monthKey);
     setPayBillEntry({
       day: b.day,
       label: b.name,
@@ -285,7 +289,9 @@ export function FinanceTabs({
 
   return (
     <div
-      className="mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
+      // tabular-nums here, once: every tab and sheet is a DOM child, so every amount
+      // column lines up digit for digit.
+      className="tabular-nums mx-auto flex h-[100dvh] max-w-[440px] flex-col overflow-hidden"
       style={{ background: "#0b0f17" }}
     >
       <TopBar mode={mode} onMode={onMode} lens={lens} onLens={onLens} />
@@ -320,6 +326,10 @@ export function FinanceTabs({
               onRow: (id) => setTxnId(id),
               onAdd: () => setAddOpen(true),
               onReview: () => setReviewOpen(true),
+              onLedger: () => {
+                setLedgerView("all");
+                setLedgerOpen(true);
+              },
             }}
           />
         ) : (
@@ -330,13 +340,15 @@ export function FinanceTabs({
               onHealth: () => onMode("health"),
               onSignOut: () => void signOut(),
               onImport: () => setImportOpen(true),
-              onEdit: () => setSettingsOpen(true),
               onBank: () => setSettingsOpen(true),
               onCards: () => setSettingsOpen(true),
               onAdvanced: () => setSettingsOpen(true),
               onLang: (l) => setLang(l),
               onLens,
-              onToggleVariableBill: (id, on) => void setRecurringVariable(id, on),
+              // No onToggleVariableBill: the Profile switches are display-only. A tap
+              // there turned the bill OFF, the row then left the list (it lists only
+              // variable bills) so it could not be turned back on, and the forecast
+              // silently changed. The pay-bill sheet owns this switch.
             }}
           />
         )}
@@ -351,7 +363,6 @@ export function FinanceTabs({
             ? ledgerTxns.filter((t) => vms.home.anomalyIds.includes(t.id))
             : ledgerTxns
         }
-        hasRule={hasRule}
       />
       <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
@@ -382,7 +393,7 @@ export function FinanceTabs({
       />
       <PayBillSheet
         entry={payBillEntry}
-        monthKey={monthKey}
+        monthKey={payMonthKey ?? monthKey}
         accounts={data.accounts}
         defaultAccountId={payRec?.accountId}
         variable={payRec?.variable ?? false}
@@ -392,7 +403,10 @@ export function FinanceTabs({
             : undefined;
           return !!d && (!!d.providerAccountId || !!d.trackPattern);
         })()}
-        onClose={() => setPayBillEntry(null)}
+        onClose={() => {
+          setPayBillEntry(null);
+          setPayMonthKey(null);
+        }}
         onPay={payBill}
         onMarkPaid={markBillPaid}
         onSetVariable={setRecurringVariable}

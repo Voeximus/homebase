@@ -20,3 +20,19 @@ export function barPct(spent: number, target: number): number {
   if (target > 0) return Math.min(100, (spent / target) * 100);
   return spent > 0 ? 100 : 0;
 }
+
+// The budget card's one-word verdict, shared by Home's "This cycle" card and the
+// Insights gauge so the two can never disagree about the same cycle.
+//   · "over"  — more spent than the whole cycle allows;
+//   · "ahead" — still under the total, but past an even pace for the day the cycle
+//               is on (target × day ÷ days), so the rest of the cycle is tighter;
+//   · "ok"    — at or under that pace.
+// Both cards already print "day n of total" as the pace check; this makes the word
+// beside the number read it too, instead of saying "on track" with half the cycle's
+// money gone on day 1.
+export type BudgetVerdict = "over" | "ahead" | "ok";
+export function budgetVerdict(spent: number, target: number, day: number, days: number): BudgetVerdict {
+  if (spent > target) return "over";
+  const pace = days > 0 ? (target * Math.min(Math.max(day, 0), days)) / days : target;
+  return spent > pace + 0.005 ? "ahead" : "ok";
+}

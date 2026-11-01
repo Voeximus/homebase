@@ -9,6 +9,8 @@ import { useStore } from "../store/FinanceStore";
 import { getCategory } from "../lib/seed";
 import { isStatementNoiseKey, merchantKey } from "../lib/categorize";
 import { LEAN_VARIABLE, variableSpentThisMonth } from "../lib/plan";
+import { transferIds } from "../lib/flow";
+import { countedTx, needsReviewTx } from "../lib/activityRules";
 import { formatMoney, formatDate, monthLabel } from "../lib/format";
 import { t } from "../lib/i18n";
 import { Button, Sheet, labelClass } from "./ui";
@@ -23,12 +25,10 @@ export function LedgerSheet({
   open,
   onClose,
   txns,
-  hasRule,
 }: {
   open: boolean;
   onClose: () => void;
   txns: Transaction[]; // already lens-filtered by the caller
-  hasRule: (desc: string) => boolean; // a merchant_rule exists for this merchant
 }) {
   const {
     data,
@@ -51,9 +51,23 @@ export function LedgerSheet({
   const bankWording = !!edit && isStatementNoiseKey(merchantKey(edit.description));
   const expenseCats = data.categories.filter((c) => c.type === "expense" || c.type === "both");
 
-  const counts = (tx: Transaction) => tx.type === "expense" && !tx.appliesTo;
-  const needsReview = (tx: Transaction) =>
-    counts(tx) && (tx.needsReview || tx.categoryId === "other" || !hasRule(tx.description));
+  // The Activity tab's own two rules (src/lib/activityRules.ts), so a charge reads the
+  // same on both screens. "Needs review" used to also flag every merchant with no
+  // remembered rule and every pending hold — dozens of rows here against a handful there —
+  // and "In budget" took in categories no budget line grades.
+  const moved = useMemo(() => transferIds(txns), [txns]);
+  const counts = (tx: Transaction) => countedTx(tx, moved);
+  const needsReview = (tx: Transaction) => needsReviewTx(tx, moved);
+  // A month's "$X counted" is the MONTH's figure, from the whole lens list — not the
+  // sum of whatever a filter or a search left showing, which read a fraction of the
+  // month's figure under a filter and so disagreed with Activity and the budget.
+  const countedByMonth = useMemo(
+    () =>
+      new Map(
+        [...new Set(txns.map((tx) => tx.date.slice(0, 7)))].map((mk) => [mk, variableSpentThisMonth(txns, mk)]),
+      ),
+    [txns],
+  );
 
   const rows = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -100,9 +114,14 @@ export function LedgerSheet({
               <button
                 key={k}
                 onClick={() => setQuick(k)}
-                className={`rounded-lg px-2 py-1.5 text-[12px] font-semibold transition ${
-                  quick === k ? "bg-bg text-bone shadow-sm" : "text-taupe"
-                }`}
+                // The same raised chip as the Activity tab's filter one tap earlier
+                // (and the other segmented controls), not a sunken black well.
+                className="rounded-lg px-2 py-1.5 text-[12px] transition"
+                style={
+                  quick === k
+                    ? { background: "#263142", color: "#eef2f7", fontWeight: 600 }
+                    : { color: "var(--color-taupe)", fontWeight: 500 }
+                }
               >
                 {label}
               </button>
@@ -115,12 +134,12 @@ export function LedgerSheet({
         )}
 
         {groups.map(([mk, list]) => {
-          const counted = variableSpentThisMonth(list, mk);
+          const counted = countedByMonth.get(mk) ?? 0;
           return (
             <div key={mk} className="mb-4">
               <div className="sticky top-0 z-10 flex items-center justify-between bg-tile/95 py-1.5 backdrop-blur">
                 <p className="eyebrow text-faint">{monthLabel(mk)}</p>
-                <p className="num text-[11px] text-taupe">
+                <p className="text-[11px] text-taupe">
                   {formatMoney(counted)} {t("counted")}
                 </p>
               </div>
@@ -150,10 +169,21 @@ export function LedgerSheet({
                         <p className="truncate text-[13px] font-medium text-bone">
                           {tx.description || t(cat.name)}
                         </p>
-                        <p className="num truncate text-[11px] text-taupe">
-                          {[formatDate(tx.date), acct?.name, t(cat.name)].filter(Boolean).join(" · ")}
+                        {/* Only the last4 in this dense line: the name truncated the
+                            last4 (what tells two same-named accounts apart) and the
+                            category off the end at phone width. The digits are
+                            tabular already, from the Finance root. */}
+                        <p className="truncate text-[11px] text-taupe">
+                          {[formatDate(tx.date), acct ? (acct.last4 ? `…${acct.last4}` : acct.name) : undefined, t(cat.name)]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </p>
                         <div className="mt-1 flex flex-wrap gap-1">
+                          {tx.pending && (
+                            <span className="rounded-full bg-gold/15 px-1.5 py-0.5 text-[10px] font-semibold text-gold">
+                              ◌ {t("Processing")}
+                            </span>
+                          )}
                           {env && (
                             <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
                               → {t(env.label)}

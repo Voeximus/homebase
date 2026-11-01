@@ -1053,6 +1053,71 @@ const SEED: Record<string, string> = {
   Gas: "油费",
   Pets: "宠物",
   Misc: "杂项",
+
+  // ── 2026-10-31 audit fixes: Home ──
+  "debt left": "剩余欠款",
+  "{pct}% cleared": "已清偿 {pct}%",
+  "deployed {amount} at debt this cycle": "本周期已还 {amount}",
+  Payoff: "还清",
+  "{amount} on {date}": "{date} 还 {amount}",
+  "−{amount} · over budget this cycle": "−{amount} · 本周期超支",
+  "after {amount} still processing": "已扣除处理中的 {amount}",
+  "1 account": "1 个账户",
+  "Debt-free": "已无债务",
+  "No date yet": "暂无日期",
+  "Nothing left to pay": "已无欠款",
+  "{amount}/mo short at this pace": "按此进度每月差 {amount}",
+  "not clearing at this pace": "按此进度还不清",
+  "ahead of pace": "花得偏快",
+  "1 buy ran higher than usual": "1 笔消费高于平常",
+  "{amount} this week": "本周 {amount}",
+
+  // ── 2026-10-31 audit fixes: Insights + category sheet ──
+  "Ahead of pace": "花得偏快",
+  "{amount} over the lean budget": "超出精简预算 {amount}",
+  "no date at this pace": "按此进度暂无日期",
+  "~1 month to go": "约还剩 1 个月",
+  "· in the order we pay": "· 按还款顺序",
+  "1 day left": "还剩 1 天",
+  "{amount} of this is still processing at the bank": "其中 {amount} 银行仍在处理",
+
+  // ── 2026-10-31 audit fixes: sheets ──
+  "In the order we pay them": "按我们的还款顺序",
+  "from your bank": "来自银行",
+  "Balances come from your bank. Charges still processing are already taken out.":
+    "余额来自银行。处理中的消费已经扣除。",
+
+  // ── 2026-10-31 audit fixes: Activity ──
+  "spent {amount} this week": "本周已花费 {amount}",
+  "1 charge still processing · {amount}": "1 笔消费处理中 · {amount}",
+  "{n} charges still processing · {amount}": "{n} 笔消费处理中 · {amount}",
+  "Each one is in the list as ◌ Processing and is already taken out of your balance. Amounts can still change until they post, usually 1–3 days.":
+    "每一笔都在列表中标为 ◌ 处理中，并且已经从余额中扣除。入账前金额仍可能变化，通常需要 1–3 天。",
+  "Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They are already taken out of your balance.":
+    "银行暂扣了这些消费，入账时（通常 1–3 天）会逐笔列出。它们已经从余额中扣除。",
+  Older: "更早",
+  Newer: "更新",
+  "Nothing to review here": "这里没有需要核对的",
+  "{n} in {month}": "{month} 有 {n} 笔",
+  "All activity · Search": "全部动态 · 搜索",
+  "Last cycle": "上个发薪周期",
+  "Money back": "退款",
+  Paycheck: "工资",
+
+  // ── 2026-10-31 audit fixes: Profile ──
+  "+{n} more below": "下方还有 {n} 项",
+  "${x} · from {date}": "${x} · {date} 起",
+  "${x} · set amount": "${x} · 设定金额",
+  "${x} · no bills yet": "${x} · 暂无账单",
+  "~${x} · est. from last {n}": "约${x} · 按最近{n}次估算",
+  "Variable amount: {name}": "浮动金额：{name}",
+  "Is every bill marked paid actually paid in full?": "每笔标为已付的账单都付清了吗？",
+  "Is any bill recorded as paid twice?": "有没有账单被记成付了两次？",
+  "Does every charge still point at something real?": "每笔消费关联的对象都还存在吗？",
+  "Was every recent bill paid from the account that pays it?": "最近的每笔账单都是从负责支付它的账户付的吗？",
+  "Is any bill paid twice — once by a hand note and once by the bank?": "有没有账单被付了两次——一次是手动记录，一次是银行？",
+  "Does every bill that pays a debt plan at least that debt's minimum payment?": "每笔用来还债的账单，计划金额都不低于该债务的最低还款额吗？",
+  "Is every bill filed under a real category, never under 'other'?": "每笔账单都归入了真正的分类，而不是“其他”吗？",
 };
 
 // Muscle region names come from muscleRegions.ts, so the body map, the Progress

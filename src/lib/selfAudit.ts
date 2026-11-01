@@ -103,6 +103,10 @@ export interface AuditResult {
 
 const CENT = 0.005; // half a cent: below this is float noise, not disagreement
 
+/** Dollars as the rest of the app writes them in a sentence: "$1,234.56". */
+const usd = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 /** Run every self-check. Pure: no I/O, no clock beyond the `now` you pass. */
 export function selfAudit(data: AppData, now: Date = new Date()): AuditResult {
   const checks: AuditCheck[] = [
@@ -183,7 +187,7 @@ function scheduleMatchesMonthlyAmount(data: AppData, now: Date): AuditCheck {
     question: "Do your bills add up the same way on every screen?",
     status: offenders.length ? "fail" : "ok",
     detail: offenders.length
-      ? `${offenders.length} bill${offenders.length > 1 ? "s" : ""} counted differently by the budget than by the calendar, the largest by $${worst.toFixed(2)} over a year: ${offenders.join("; ")}.`
+      ? `${offenders.length} bill${offenders.length > 1 ? "s" : ""} counted differently by the budget than by the calendar${offenders.length > 1 ? `, the largest by ${usd(worst)} over a year` : `, off by ${usd(worst)} over a year`}: ${offenders.join("; ")}.`
       : `All ${eligible.length} fixed bills are counted identically by the budget and the calendar.`,
   };
 }
@@ -233,7 +237,7 @@ function budgetRowsSumToTheirBar(data: AppData, now: Date): AuditCheck {
     question: "Does each budget line equal the charges behind it?",
     status: offenders.length ? "fail" : "ok",
     detail: offenders.length
-      ? `${offenders.length} budget line${offenders.length > 1 ? "s" : ""} do not match the charges they list, the largest by $${worst.toFixed(2)}: ${offenders.join("; ")}.`
+      ? `${offenders.length} budget line${offenders.length > 1 ? "s do" : " does"} not match the charges ${offenders.length > 1 ? "they list" : "it lists"}${offenders.length > 1 ? `, the largest by ${usd(worst)}` : `, off by ${usd(worst)}`}: ${offenders.join("; ")}.`
       : `Every budget line equals the sum of the charges it shows.`,
   };
 }
@@ -285,7 +289,7 @@ function everyCategoryIsAccountedFor(data: AppData): AuditCheck {
     question: "Could money vanish into a category nothing watches?",
     status: orphans.length ? "fail" : "ok",
     detail: orphans.length
-      ? `${orphans.map((id) => `${id} ($${amountIn(id).toFixed(2)})`).join(", ")} — spending here counts against no budget and reduces no available cash, so it disappears from every screen.`
+      ? `${orphans.map((id) => `${id} (${usd(amountIn(id))})`).join(", ")} — spending here counts against no budget and reduces no available cash, so it disappears from every screen.`
       : `All ${live.size} spending categories in use are either budgeted or deliberately set outside the budget.`,
   };
 }
@@ -300,8 +304,8 @@ function linesSumToTheEnvelope(): AuditCheck {
     status: gap > CENT ? "fail" : "ok",
     detail:
       gap > CENT
-        ? `The lines total $${sum.toFixed(2)} but the envelope is $${MONTHLY_ENVELOPE.toFixed(2)} — off by $${gap.toFixed(2)}.`
-        : `The lines total $${sum.toFixed(2)}, matching the envelope.`,
+        ? `The lines total ${usd(sum)} but the envelope is ${usd(MONTHLY_ENVELOPE)} — off by ${usd(gap)}.`
+        : `The lines total ${usd(sum)}, matching the envelope.`,
     a: { label: "lines", value: sum },
     b: { label: "envelope", value: MONTHLY_ENVELOPE },
   };
@@ -332,7 +336,7 @@ function splitsSumToTheirTransaction(data: AppData): AuditCheck {
     question: "Do split charges still add up to what you paid?",
     status: offenders.length ? "fail" : "ok",
     detail: offenders.length
-      ? `${offenders.length} split charge${offenders.length > 1 ? "s" : ""} do not sum to the amount paid, the largest by $${worst.toFixed(2)}: ${offenders.join("; ")}.`
+      ? `${offenders.length} split charge${offenders.length > 1 ? "s do" : " does"} not sum to the amount paid${offenders.length > 1 ? `, the largest by ${usd(worst)}` : `, off by ${usd(worst)}`}: ${offenders.join("; ")}.`
       : `All ${split} split charges sum exactly to what was paid.`,
   };
 }
@@ -414,13 +418,20 @@ function aSettledBillIsActuallySettled(data: AppData, now: Date): AuditCheck {
     // question that matters is forward-looking anyway: is the app telling the
     // household an obligation it STILL OWES is handled?
     if (monthKey < nowKey) continue;
-    const owed = rec.knownAmount ?? rec.amount;
+    // Priced per CYCLE the way the schedule prices it (schedule.ts: perPayment =
+    // monthly / days for a monthly row on several days). The payments above are
+    // grouped per installment (cycleKeyOf), so comparing each against the whole
+    // month's price read a bill paid in two equal halves as short every time a half
+    // was paid. A semimonthly or biweekly row's amount is already per payment.
+    const base = rec.knownAmount ?? rec.amount;
+    const perMonth = rec.cadence === "monthly" && rec.dueDays && rec.dueDays.length > 1 ? rec.dueDays.length : 1;
+    const owed = base / perMonth;
     if (!(owed > 0)) continue;
     checked++;
     const short = owed - paid;
     if (short > CENT) {
       offenders.push(
-        `${rec.name} ${monthKey} reads paid, but only $${paid.toFixed(2)} of $${owed.toFixed(2)} was charged`,
+        `${rec.name} ${monthKey} reads paid, but only ${usd(paid)} of ${usd(owed)} was charged`,
       );
       worst = Math.max(worst, short);
     }
@@ -430,7 +441,7 @@ function aSettledBillIsActuallySettled(data: AppData, now: Date): AuditCheck {
     question: "Is every bill marked paid actually paid in full?",
     status: offenders.length ? "fail" : "ok",
     detail: offenders.length
-      ? `${offenders.length} bill cycle${offenders.length > 1 ? "s are" : " is"} marked paid with money still owed, the largest by $${worst.toFixed(2)}: ${offenders.join("; ")}.`
+      ? `${offenders.length} bill cycle${offenders.length > 1 ? "s are" : " is"} marked paid with money still owed${offenders.length > 1 ? `, the largest by ${usd(worst)}` : ""}: ${offenders.join("; ")}.`
       : `All ${checked} settled fixed-bill cycles from this month on were paid in full.`,
   };
 }
@@ -461,7 +472,7 @@ function onePaymentPerBillCycle(data: AppData): AuditCheck {
     const extra = rows.slice(1).reduce((s, r) => s + r.amount, 0);
     doubled += extra;
     offenders.push(
-      `${name} ${monthKey} is claimed by ${rows.length} charges (${rows.map((r) => `${r.date} $${r.amount.toFixed(2)}`).join(", ")})`,
+      `${name} ${monthKey} is claimed by ${rows.length} charges (${rows.map((r) => `${r.date} ${usd(r.amount)}`).join(", ")})`,
     );
   }
   return {
@@ -469,7 +480,7 @@ function onePaymentPerBillCycle(data: AppData): AuditCheck {
     question: "Is any bill recorded as paid twice?",
     status: offenders.length ? "fail" : "ok",
     detail: offenders.length
-      ? `${offenders.length} bill cycle${offenders.length > 1 ? "s are" : " is"} claimed by more than one charge, counting $${doubled.toFixed(2)} of spending twice: ${offenders.join("; ")}.`
+      ? `${offenders.length} bill cycle${offenders.length > 1 ? "s are" : " is"} claimed by more than one charge, counting ${usd(doubled)} of spending twice: ${offenders.join("; ")}.`
       : `Every settled bill cycle is claimed by exactly one charge.`,
   };
 }
@@ -596,7 +607,7 @@ function linksPointSomewhere(data: AppData): AuditCheck {
 
   const offenders = rows.map((r) =>
     r.txnId
-      ? `${r.date} ${r.description} ($${r.amount.toFixed(2)}) points at a deleted ${r.targets.join(" and ")}`
+      ? `${r.date} ${r.description} (${usd(r.amount)}) points at a deleted ${r.targets.join(" and ")}`
       : `the bill ${r.description} points at a deleted debt`,
   );
   const broken = rows.reduce((n, r) => n + r.targets.length, 0);
@@ -606,7 +617,7 @@ function linksPointSomewhere(data: AppData): AuditCheck {
   const many = broken > 1;
   const money =
     stranded > CENT
-      ? `, so $${stranded.toFixed(2)} of real spending counts against no budget and settles no bill`
+      ? `, so ${usd(stranded)} of real spending counts against no budget and settles no bill`
       : "";
   return {
     id: "links-point-somewhere",
@@ -738,7 +749,7 @@ export function paidFromWrongAccount(data: AppData, now: Date): WrongAccountPaym
 function paidFromItsOwnAccount(data: AppData, now: Date): AuditCheck {
   const offenders = paidFromWrongAccount(data, now).map(
     (p) =>
-      `${p.bill} ${p.monthKey} is settled by ${p.date} $${p.amount.toFixed(2)} from ${p.paidFrom}, but it is paid from ${p.paysFrom}`,
+      `${p.bill} ${p.monthKey} is settled by ${p.date} ${usd(p.amount)} from ${p.paidFrom}, but it is paid from ${p.paysFrom}`,
   );
   return {
     id: "paid-from-its-own-account",
@@ -865,8 +876,8 @@ function noHandNoteBesideTheBank(data: AppData): AuditCheck {
   const twice = pairs.reduce((s, p) => s + p.note.amount, 0);
   const offenders = pairs.map(
     (p) =>
-      `${p.bill.name} ${p.monthKey} is paid by a hand note ($${p.note.amount.toFixed(2)}) while the bank shows ${p.charges
-        .map((c) => `${c.date} $${c.amount.toFixed(2)}`)
+      `${p.bill.name} ${p.monthKey} is paid by a hand note (${usd(p.note.amount)}) while the bank shows ${p.charges
+        .map((c) => `${c.date} ${usd(c.amount)}`)
         .join(", ")} for it`,
   );
   const many = pairs.length > 1;
@@ -875,7 +886,7 @@ function noHandNoteBesideTheBank(data: AppData): AuditCheck {
     question: "Is any bill paid twice — once by a hand note and once by the bank?",
     status: pairs.length ? "fail" : "ok",
     detail: pairs.length
-      ? `${pairs.length} bill month${many ? "s are" : " is"} paid by a hand note while the bank's own charge for the same bill sits beside it as ordinary spending, counting $${twice.toFixed(2)} twice: ${offenders.join("; ")}. Worth a look shows each one. Take the note off — or attach the bank's charge to the bill through Muse, which takes the note off in the same step — and the bank's charge pays the bill.`
+      ? `${pairs.length} bill month${many ? "s are" : " is"} paid by a hand note while the bank's own charge for the same bill sits beside it as ordinary spending, counting ${usd(twice)} twice: ${offenders.join("; ")}. Worth a look shows each one. Take the note off — or attach the bank's charge to the bill through Muse, which takes the note off in the same step — and the bank's charge pays the bill.`
       : `No bill month is paid by a hand note while the bank's own charge for it sits unattached.`,
   };
 }
@@ -957,10 +968,10 @@ function billCoversItsDebtMinimum(data: AppData, now: Date): AuditCheck {
   const short = debtMinimumShortfalls(data, now);
   const offenders = short.map(
     (s) =>
-      `${s.bills.join(" and ")} plans $${s.plans.toFixed(2)} a month for ${s.debt}, ` +
+      `${s.bills.join(" and ")} plans ${usd(s.plans)} a month for ${s.debt}, ` +
       (s.due < s.minimum
-        ? `which has $${s.due.toFixed(2)} left to pay`
-        : `whose minimum is $${s.minimum.toFixed(2)}`),
+        ? `which has ${usd(s.due)} left to pay`
+        : `whose minimum is ${usd(s.minimum)}`),
   );
   return {
     id: "bill-covers-debt-minimum",

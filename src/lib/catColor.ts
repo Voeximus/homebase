@@ -22,6 +22,7 @@ import {
   Receipt,
   Plane,
   GraduationCap,
+  Percent,
   type LucideIcon,
 } from "lucide-react";
 
@@ -61,6 +62,9 @@ export const CAT_COLOR: Record<string, string> = {
   education: "#a3e635", // lime — tuition and course fees
   bills: "#0ea5e9", // sky — an extra / catch-up payment on a modeled bill
   salary: "#46d18a", // mint (income)
+  // Card interest + late fees: the cost of carrying debt. The same rose seed.ts gives
+  // the category. Ungraded, so it never sits beside another slice in the donut.
+  interest: "#e11d48",
 };
 
 export const catColor = (id?: string): string =>
@@ -85,21 +89,25 @@ const CAT_ICON: Record<string, LucideIcon> = {
   education: GraduationCap,
   bills: Receipt,
   salary: Banknote,
+  // Was the HelpCircle fallback — the same "?" a needs-review row wears.
+  interest: Percent,
 };
 
 export const catIcon = (id?: string): LucideIcon =>
   (id && CAT_ICON[id]) || HelpCircle;
 
-// The signature brand gradient — the green→cyan→blue wash on every hero.
+// The signature brand gradient — the green→cyan→blue wash on every hero. The same
+// three hues one step deeper than the old #10b981/#06b6d4/#3b82f6, so the small white
+// hero text passes 4.5:1 (white measures 4.64 / 4.63 / 5.17 on the stops).
 export const BRAND_GRADIENT =
-  "linear-gradient(150deg,#10b981 0%,#06b6d4 52%,#3b82f6 100%)";
+  "linear-gradient(150deg,#04855f 0%,#0c7f9d 52%,#2563eb 100%)";
 
 // Health mode's brand wash — the rose→pink health gradient, so Health reads red
 // the way Finance reads green-cyan. Built on the `health` category rose (#fb7185).
 // Reserved for PRIMARY actions + key highlights (sparingly), NOT for filling
 // large hero cards — those use the neutral HEALTH_HERO surface below.
 export const HEALTH = "#fb7185";
-
+export const HEALTH_GRADIENT =
   "linear-gradient(150deg,#fb7185 0%,#fb6f92 52%,#f43f5e 100%)";
 // Neutral, professional hero surface for the big summary cards — a deep slate
 // wash that lets the colored content (rings, macro counters) stand out instead
@@ -110,6 +118,9 @@ export const HEALTH_HERO =
 // Build a conic-gradient string from weighted segments (for the spending donut).
 export function conicFromSegments(
   segs: { color: string; value: number }[],
+  // Where the first segment starts. -90 (9 o'clock) suits a pie that is always full;
+  // a gauge passes 0 so its fill starts at 12 o'clock and runs clockwise.
+  from = -90,
 ): string {
   const total = segs.reduce((s, x) => s + x.value, 0) || 1;
   let acc = 0;
@@ -119,7 +130,23 @@ export function conicFromSegments(
     const end = (acc / total) * 100;
     return `${s.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
   });
-  return `conic-gradient(from -90deg, ${stops.join(", ")})`;
+  return `conic-gradient(from ${from}deg, ${stops.join(", ")})`;
+}
+
+// The budget ring as a GAUGE: the category arcs take spent ÷ target of the ring and the
+// rest is the empty track, so half the budget spent fills half the ring. Over target,
+// the categories fill it. With nothing spent there would be no colour stops at all
+// (invalid CSS, so the ring vanished), so it falls back to the bare track. Home's
+// "This cycle" donut and the Insights ring both draw through this, so the same budget
+// is never a full ring on one tab and a half ring on the next.
+export const GAUGE_TRACK = "#222b38";
+export function gaugeSegs(
+  segs: { color: string; value: number }[],
+  target: number,
+): { color: string; value: number }[] {
+  const spent = segs.reduce((a, x) => a + x.value, 0);
+  const s = [...segs, { color: GAUGE_TRACK, value: Math.max(0, target - spent) }];
+  return s.some((x) => x.value > 0) ? s : [{ color: GAUGE_TRACK, value: 1 }];
 }
 
 /**

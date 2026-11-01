@@ -76,7 +76,7 @@ export function BillCalendar({
         {t("S M T W T F S")
           .split(" ")
           .map((d, i) => (
-            <div key={i} className="text-center text-[10px]" style={{ color: "#5f6a78" }}>
+            <div key={i} className="text-center text-[10px]" style={{ color: "#7e8a98" }}>
               {d}
             </div>
           ))}
@@ -141,10 +141,8 @@ export function BillCalendar({
                   <span className="flex flex-1 flex-col">
                     <span
                       className="text-[13px]"
-                      style={{
-                        color: b.paid ? "#7e8a98" : "#e6edf3",
-                        textDecoration: b.paid ? "line-through" : "none",
-                      }}
+                      // No strikethrough: the dimmer name and the green "paid" date say it.
+                      style={{ color: b.paid ? "#7e8a98" : "var(--color-bone)" }}
                     >
                       {b.name}
                     </span>
@@ -152,7 +150,7 @@ export function BillCalendar({
                       {b.paid ? t("paid {date}", { date: b.paidDate ?? "" }) : t("due {date}", { date: b.dateLabel })}
                     </span>
                   </span>
-                  <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}>
+                  <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#7e8a98" : "var(--color-bone)" }}>
                     {b.variable && !b.paid ? "~" : ""}
                     {money2(b.amount)}
                   </span>

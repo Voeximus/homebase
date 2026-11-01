@@ -78,7 +78,7 @@ function ledgerEditSheet(description: string): string {
   mock.edit = txn;
   try {
     return renderToStaticMarkup(
-      createElement(LedgerSheet, { open: false, onClose: () => {}, txns: [], hasRule: () => false }),
+      createElement(LedgerSheet, { open: false, onClose: () => {}, txns: [] }),
     );
   } finally {
     mock.edit = null;

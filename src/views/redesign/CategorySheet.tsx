@@ -42,6 +42,10 @@ export function CategorySheet({
   const near = !over && pct > 80;
   const barColor = over ? "#f0556e" : near ? "#e3b341" : c;
   const left = vm.target - vm.spent;
+  // The bar is capped at a full width; the TEXT is the real share, so a line at four
+  // times its goal reads 400%, not 100%. A $0 goal with spending has no share to
+  // state, so that line reads only "$X over".
+  const usedPct = vm.target > 0 ? Math.round((vm.spent / vm.target) * 100) : vm.spent > 0 ? null : 0;
 
   return (
     <div
@@ -63,13 +67,18 @@ export function CategorySheet({
 
         <div className="mb-3.5 flex items-center gap-2.5">
           <span
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
             style={{ background: c + "26", color: c }}
           >
             <Icon size={19} />
           </span>
-          <div className="flex-1 text-[18px] font-bold text-bone">{vm.label}</div>
-          <button onClick={onClose} style={{ color: "#7a8595" }}>
+          <div className="flex-1 text-[18px] font-bold text-bone">{t(vm.label)}</div>
+          <button
+            onClick={onClose}
+            aria-label={t("Close")}
+            className="h-hit -mr-1.5 rounded-full p-1.5 transition active:bg-white/5"
+            style={{ color: "var(--color-faint)" }}
+          >
             <X size={20} />
           </button>
         </div>
@@ -79,18 +88,19 @@ export function CategorySheet({
           style={{ background: "#141a24", border: "1px solid #232d3a" }}
         >
           <div className="flex items-baseline justify-between">
-            <span className="text-[12.5px]" style={{ color: "#8b97a6" }}>
-              {t("Spent this month")}
+            <span className="text-[12.5px]" style={{ color: "var(--color-taupe)" }}>
+              {t("Spent this cycle")}
             </span>
             <span className="text-[15px] font-bold text-bone">
-              {money2(vm.spent)} <span style={{ color: "#7a8595", fontWeight: 400 }}>/ {money2(vm.target)}</span>
+              {money2(vm.spent)} <span style={{ color: "var(--color-faint)", fontWeight: 400 }}>/ {money2(vm.target)}</span>
             </span>
           </div>
           <div className="mt-2.5 h-2 overflow-hidden rounded-full" style={{ background: "#222b38" }}>
             <div className="h-full" style={{ width: `${pct}%`, background: barColor }} />
           </div>
           <div className="mt-1.5 text-[11.5px] font-medium" style={{ color: barColor }}>
-            {t("{pct}% used", { pct: Math.round(pct) })} · {over ? t("{amount} over", { amount: money2(-left) }) : t("{amount} left", { amount: money2(left) })}
+            {usedPct != null && <>{t("{pct}% used", { pct: usedPct })} · </>}
+            {over ? t("{amount} over", { amount: money2(-left) }) : t("{amount} left", { amount: money2(left) })}
           </div>
           {/* Pending charges COUNT toward the bar — the bank has already taken that
               money out of the balance shown on the Home tab, so leaving them out
@@ -99,14 +109,14 @@ export function CategorySheet({
               much of this bar is still settling rather than presenting it as
               final. Without this line a bar at 346% just looks broken. */}
           {vm.pending > 0 && (
-            <div className="mt-1 text-[11px]" style={{ color: "#7e8a98" }}>
+            <div className="mt-1 text-[11px]" style={{ color: "var(--color-faint)" }}>
               {t("{amount} of this is still processing at the bank", { amount: money2(vm.pending) })}
             </div>
           )}
         </div>
 
         {vm.txns.length === 0 ? (
-          <p className="py-6 text-center text-[13px]" style={{ color: "#7e8a98" }}>
+          <p className="py-6 text-center text-[13px]" style={{ color: "var(--color-faint)" }}>
             {t("Nothing in this category yet.")}
           </p>
         ) : (
@@ -126,7 +136,7 @@ export function CategorySheet({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] font-medium text-bone">{tx.name}</div>
-                  <div className="text-[11px]" style={{ color: "#7e8a98" }}>
+                  <div className="text-[11px]" style={{ color: "var(--color-faint)" }}>
                     {tx.dateLabel} · {t("tap to recategorize")}
                   </div>
                 </div>

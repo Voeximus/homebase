@@ -43,7 +43,7 @@ export function AnomalySheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: "#2a2416", color: "#e3b341" }}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "#e3b34126", color: "#e3b341" }}>
             <AlertTriangle size={18} />
           </span>
           <div className="min-w-0 flex-1">
@@ -52,7 +52,12 @@ export function AnomalySheet({
               {t("Bigger than your usual for the category. Review, then dismiss.")}
             </div>
           </div>
-          <button onClick={onClose} style={{ color: "#7a8595" }}>
+          <button
+            onClick={onClose}
+            aria-label={t("Close")}
+            className="h-hit -mr-1.5 -mt-1.5 rounded-full p-1.5 transition active:bg-white/5"
+            style={{ color: "var(--color-faint)" }}
+          >
             <X size={20} />
           </button>
         </div>
@@ -79,7 +84,7 @@ export function AnomalySheet({
                         {t("{x}× your usual {cat}", { x: a.ratio.toFixed(1), cat: a.catLabel })}
                       </div>
                     </div>
-                    <span className="num text-[14px] font-bold text-bone">{money2(a.amount)}</span>
+                    <span className="tabular-nums text-[14px] font-bold text-bone">{money2(a.amount)}</span>
                   </button>
                   <div className="mt-2 flex gap-2">
                     <button onClick={() => onTxn(a.id)} className="flex-1 rounded-lg py-2 text-[12.5px] font-semibold" style={{ background: "#0e2230", color: "#34c5e8" }}>

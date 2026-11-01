@@ -20,6 +20,12 @@ export interface ActivityRow {
   fate: ActivityFate;
   badgeLabel: string;
   pending?: boolean; // still-processing bank charge
+  // Does the month's "$X counted" figure add this row up? The In budget filter lists
+  // exactly these. Optional so a mock without it still compiles (falls back to fate).
+  counted?: boolean;
+  // Money IN (sign and colour), whatever the pill says — a transfer's incoming leg
+  // reads "Transfer · not in budget" but is still a credit.
+  credit?: boolean;
 }
 
 // One month's worth of activity — the tab flips through these (newest first).
@@ -32,9 +38,14 @@ export interface ActivityMonth {
 }
 
 export interface ActivityVM {
-  sinceMonday: number;
-  processing: number; // $ held at the bank but not yet itemized (BoA posts later)
-  months: ActivityMonth[]; // newest first; [0] is the current month
+  // The household's Sun–Sat week, graded as finance.week grades it (Mine: the lens's rows).
+  spentThisWeek: number;
+  processing: number; // $ the bank is holding (current − available), already out of the balance
+  // How many pending charges are listed, and whether they add up to the hold exactly
+  // (then the card can say they are all in the list). Optional for mocks.
+  processingCount?: number;
+  processingItemized?: boolean;
+  months: ActivityMonth[]; // newest first; [0] is this pay cycle, [1] the last one
 }
 
 interface ActivityTaps {
@@ -43,6 +54,8 @@ interface ActivityTaps {
   onAdd?: () => void;
   /** Open "Worth a look" — the review sheet. */
   onReview?: () => void;
+  /** Open the searchable All-activity ledger. */
+  onLedger?: () => void;
 }
 
 type FilterKey = "all" | "budget" | "review";
@@ -93,7 +106,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
     return (
       <span
         className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-        style={{ background: "#16241b", color: "#7fbf6a" }}
+        style={{ background: "#16241b", color: "#46d18a" }}
       >
         {row.badgeLabel}
       </span>
@@ -103,7 +116,7 @@ function FateBadge({ row }: { row: ActivityRow }) {
   return (
     <span
       className="rounded-full px-2 py-0.5 text-[10.5px] font-medium"
-      style={{ background: "#1b2129", color: "#8b97a6" }}
+      style={{ background: "#1b2129", color: "var(--color-taupe)" }}
     >
       {row.badgeLabel}
     </span>
@@ -147,11 +160,14 @@ export function ActivityTab({
     }
   };
 
-  // The filter chips actually filter now: "In budget" = counted living spend,
-  // "Needs review" = uncategorized, "All" = everything.
+  // The filter chips actually filter now: "In budget" = exactly the rows the
+  // "$X counted" figure adds up (so the list sums to it), "Needs review" =
+  // uncategorized, "All" = everything.
   const shown = m.rows.filter((r) =>
-    filter === "all" ? true : filter === "budget" ? r.fate === "envelope" : r.fate === "review",
+    filter === "all" ? true : filter === "budget" ? (r.counted ?? r.fate === "envelope") : r.fate === "review",
   );
+  // An empty review filter points at the nearest older group that still has questions.
+  const olderReviewIdx = filter === "review" ? months.findIndex((g, k) => k > idx && g.needsReview > 0) : -1;
 
   const chip = (key: FilterKey, label: string, badge?: number) => {
     const active = filter === key;
@@ -160,9 +176,13 @@ export function ActivityTab({
         key={key}
         onClick={() => setFilter(key)}
         className="h-hit flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]"
+        // Raised, not sunken: the selected chip is lighter than its track (it was
+        // #0b0f17 on #141a24 and read as a hole). The same active style as the top
+        // bar and Profile's segmented controls.
         style={{
-          background: active ? "#0b0f17" : "transparent",
-          color: active ? "#e6edf3" : "#8b97a6",
+          background: active ? "#263142" : "transparent",
+          color: active ? "#eef2f7" : "var(--color-taupe)",
+          fontWeight: active ? 600 : 500,
         }}
       >
         {label}
@@ -187,17 +207,20 @@ export function ActivityTab({
       >
         <div>
           <div className="text-[26px] font-bold leading-none tracking-tight">{t("Activity")}</div>
-          <div className="mt-1.5 text-[12px] opacity-90">
-            {t("spent {amount} since Monday", { amount: money(vm.sinceMonday) })}
+          <div className="mt-1.5 text-[12px]">
+            {t("spent {amount} this week", { amount: money(vm.spentThisWeek) })}
           </div>
         </div>
         <button
           onClick={doRefresh}
           disabled={refreshing}
           className="h-hit flex min-h-[40px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition active:scale-[0.97]"
+          // DARKEN the gradient under the white label, as Home's over-budget pill
+          // does: a white wash lightened it to 3.3:1, under AA at 12px. The green
+          // "Updated" state is carried by the border alone.
           style={{
-            background: justRefreshed ? "rgba(70,209,138,.25)" : "rgba(255,255,255,.2)",
-            border: justRefreshed ? "1px solid rgba(70,209,138,.5)" : "1px solid rgba(255,255,255,.3)",
+            background: "rgba(0,0,0,.18)",
+            border: justRefreshed ? "1px solid rgba(70,209,138,.6)" : "1px solid rgba(255,255,255,.3)",
           }}
         >
           {justRefreshed ? (
@@ -213,7 +236,7 @@ export function ActivityTab({
         </button>
       </div>
 
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex flex-col gap-4 p-4 pb-24">
         {/* ── Worth a look — the review layer's one entry point ── */}
         {taps.onReview && <ReviewCard count={reviewCount} onOpen={taps.onReview} />}
 
@@ -227,17 +250,29 @@ export function ActivityTab({
           {chip("review", t("Needs review"), m.needsReview)}
         </div>
 
-        {/* ── still-processing notice — BoA holds pending charges as a lump and
-              only itemizes each one when it posts, so explain where they are ── */}
+        {/* ── still-processing notice. The bank sync now writes every pending charge
+              as its own row, so when those rows add up to the hold the card says
+              they are in the list (and already out of the balance). When they do
+              not — the bank holding a lump it has not itemized yet — it keeps the
+              "~" wording that says so. ── */}
         {vm.processing > 0 && (
           <div className="flex items-start gap-2.5 rounded-[13px] p-3" style={{ background: "#241f12", border: "1px solid #4a3f1c" }}>
             <span className="bump mt-0.5 text-[15px] leading-none" style={{ color: "#e3b341" }}>◌</span>
             <div className="min-w-0 flex-1">
               <div className="text-[12.5px] font-semibold" style={{ color: "#e3b341" }}>
-                {t("~{amount} processing", { amount: money(vm.processing) })}
+                {vm.processingItemized
+                  ? vm.processingCount === 1
+                    ? t("1 charge still processing · {amount}", { amount: money2(vm.processing) })
+                    : t("{n} charges still processing · {amount}", {
+                        n: vm.processingCount ?? 0,
+                        amount: money2(vm.processing),
+                      })
+                  : t("~{amount} processing", { amount: money(vm.processing) })}
               </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: "#9aa6b2" }}>
-                {t("Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They'll appear + notify you the moment they clear.")}
+              <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-taupe)" }}>
+                {vm.processingItemized
+                  ? t("Each one is in the list as ◌ Processing and is already taken out of your balance. Amounts can still change until they post, usually 1–3 days.")
+                  : t("Your bank holds these charges and itemizes each one when it posts (usually 1–3 days). They are already taken out of your balance.")}
               </div>
             </div>
           </div>
@@ -250,9 +285,9 @@ export function ActivityTab({
               <button
                 onClick={() => setMIdx((i) => Math.min(i + 1, months.length - 1))}
                 disabled={idx >= months.length - 1}
-                aria-label={t("Previous month")}
+                aria-label={t("Older")}
                 className="h-hit rounded-md p-1 disabled:opacity-30"
-                style={{ color: "#9aa6b2" }}
+                style={{ color: "var(--color-taupe)" }}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -260,9 +295,9 @@ export function ActivityTab({
               <button
                 onClick={() => setMIdx((i) => Math.max(i - 1, 0))}
                 disabled={idx <= 0}
-                aria-label={t("Next month")}
+                aria-label={t("Newer")}
                 className="h-hit rounded-md p-1 disabled:opacity-30"
-                style={{ color: "#9aa6b2" }}
+                style={{ color: "var(--color-taupe)" }}
               >
                 <ChevronRight size={16} />
               </button>
@@ -275,16 +310,28 @@ export function ActivityTab({
             style={{ background: "#141a24", borderColor: "#232d3a" }}
           >
             {shown.length === 0 && (
-              <p className="px-4 py-8 text-center text-[13px]" style={{ color: "#7e8a98" }}>
-                {t("Nothing here yet.")}
-              </p>
+              <div className="px-4 py-8 text-center text-[13px]" style={{ color: "var(--color-faint)" }}>
+                {filter === "review" ? t("Nothing to review here") : t("Nothing here yet.")}
+                {olderReviewIdx > 0 && (
+                  <button
+                    onClick={() => setMIdx(olderReviewIdx)}
+                    className="mt-2 block w-full text-center text-[12.5px] font-medium"
+                    style={{ color: "#e3b341" }}
+                  >
+                    {t("{n} in {month}", {
+                      n: months[olderReviewIdx].needsReview,
+                      month: months[olderReviewIdx].monthLabel,
+                    })}
+                  </button>
+                )}
+              </div>
             )}
             {shown.map((r, i) => {
-              const income = r.fate === "income";
+              const income = r.fate === "income" || !!r.credit;
               const review = r.fate === "review";
               const c = income ? "#34c5e8" : catColor(r.catId);
               const Icon = income ? ArrowDownLeft : review ? HelpCircle : catIcon(r.catId);
-              const chipBg = income ? "#0e2230" : review ? "#2a2410" : c + "26";
+              const chipBg = income ? "#0e2230" : review ? "#e3b34126" : c + "26";
               const chipColor = income ? "#34c5e8" : review ? "#e3b341" : c;
               return (
                 <button
@@ -296,7 +343,7 @@ export function ActivityTab({
                   }}
                 >
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px]"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
                     style={{ background: chipBg, color: chipColor }}
                   >
                     <Icon size={17} />
@@ -305,21 +352,36 @@ export function ActivityTab({
                     <div className="truncate text-[13.5px] font-medium text-bone">
                       {r.merchant}
                     </div>
-                    <div className="mt-1">
+                    <div className="mt-1 flex items-center gap-2">
                       <FateBadge row={r} />
+                      {r.sub && (
+                        <span className="text-[11px]" style={{ color: "var(--color-faint)" }}>
+                          {r.sub}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <span
                     className="shrink-0 text-[13.5px] font-semibold"
-                    style={{ color: income ? "#46d18a" : "#e6edf3" }}
+                    style={{ color: income ? "#46d18a" : "var(--color-bone)" }}
                   >
-                    {income ? "+" : "-"}
+                    {income ? "+" : "−"}
                     {money2(r.amount)}
                   </span>
                 </button>
               );
             })}
           </div>
+          {/* The searchable, all-time ledger — reachable from here, not only from Home. */}
+          {taps.onLedger && (
+            <button
+              onClick={taps.onLedger}
+              className="h-hit mx-auto mt-2 block px-2 py-1 text-[12px] font-medium"
+              style={{ color: "var(--color-taupe)" }}
+            >
+              {t("All activity · Search")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -327,8 +389,12 @@ export function ActivityTab({
             floats over the cards in the middle of the list ── */}
       <button
         onClick={taps.onAdd}
-        className="fixed bottom-[74px] right-[18px] z-40 flex h-[52px] w-[52px] items-center justify-center rounded-full text-white shadow-lg transition active:scale-[0.94]"
-        style={{ background: BRAND_GRADIENT }}
+        aria-label={t("Add transaction")}
+        className="fixed right-[18px] z-40 flex h-[52px] w-[52px] items-center justify-center rounded-full text-white shadow-lg transition active:scale-[0.94]"
+        // The tab bar is 8px + 48px + max(12px, safe area) tall, so a fixed 74px sat
+        // the bottom of this button over the bar on an installed iPhone (safe area
+        // ~34px). Tied to the same safe-area term, it clears the bar by ~10px everywhere.
+        style={{ background: BRAND_GRADIENT, bottom: "calc(max(12px, env(safe-area-inset-bottom)) + 66px)" }}
       >
         <Plus size={24} />
       </button>

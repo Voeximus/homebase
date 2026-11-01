@@ -82,7 +82,7 @@ export function OwedSheet({
                       {o.note ? ` · ${o.note}` : ""}
                     </div>
                   </div>
-                  <div className="ml-2 text-[15px] font-bold" style={{ color: "#7fbf6a" }}>
+                  <div className="ml-2 text-[15px] font-bold" style={{ color: "#46d18a" }}>
                     {money2(o.amount)}
                   </div>
                 </div>
@@ -114,7 +114,7 @@ export function OwedSheet({
             <>
               <div
                 className="mb-1.5 mt-3 px-1 text-[11px] font-medium uppercase tracking-wide"
-                style={{ color: "#5e6a78" }}
+                style={{ color: "#7e8a98" }}
               >
                 {t("Recently settled")}
               </div>
@@ -126,7 +126,7 @@ export function OwedSheet({
                 >
                   <div className="min-w-0">
                     <div className="truncate text-[12.5px]" style={{ color: "#8b97a6" }}>{o.merchant}</div>
-                    <div className="text-[11px]" style={{ color: "#5e6a78" }}>
+                    <div className="text-[11px]" style={{ color: "#7e8a98" }}>
                       {o.dateLabel} · {money2(o.amount)}
                     </div>
                   </div>

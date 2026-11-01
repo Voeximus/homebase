@@ -12,6 +12,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2026.10.31b",
+    date: "October 31, 2026",
+    notes: [
+      "Payoff no longer shows a blank \"—\". When the plan can't clear the debt at the current spending pace, it says \"No date yet\" and how much a month it falls short. Insights says the same.",
+      "The Bills tile shows what's left to pay before the next payday and which bill is next, even when that bill falls in next month, like rent on the 1st. The Bills sheet lists all of them.",
+      "\"This week\" is the same Sunday-to-Saturday week as your weekly plan. On Mine it is your share of the household number, refunds included.",
+      "Activity now shows rent, card payments and the other bills, marked \"not in budget\". Each row shows its date. There is a Last cycle section and an \"All activity · Search\" link.",
+      "Insights: \"Where every dollar goes\" shows the real amount going to debt. The debt list is in the order we pay, with paid-off loans left out. A category over its goal shows its real percentage.",
+      "Profile no longer flags a bill as short when one of its two monthly payments was paid in full. It counts the accounts correctly. Variable bills no longer show a switch that does nothing.",
+      "A fresh look on the same screens: solid, flat colors with no glows; numbers that line up; one label style; slightly deeper header colors so the white text is easier to read; and one style for all the tab switches.",
+    ],
+  },
+  {
     version: "2026.10.31a",
     date: "October 31, 2026",
     notes: [

@@ -62,7 +62,7 @@ const MOCK_INSIGHTS: InsightsVM = {
 };
 
 const MOCK_ACTIVITY: ActivityVM = {
-  sinceMonday: 1136,
+  spentThisWeek: 1136,
   processing: 144.43,
   months: [
     {
@@ -157,7 +157,7 @@ const HOME: HomeVM = {
   anomalies: [],
   streakDay: 4,
   streakTotal: 90,
-  sinceMonday: 1136,
+  spentThisWeek: 1136,
   recent: [
     { id: "1", merchant: "Sam's Club", catId: "groceries", sub: "Groceries · today", amount: 229.81 },
     { id: "2", merchant: "QuikTrip", catId: "transport", sub: "Gas · yesterday", amount: 9.07 },

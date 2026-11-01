@@ -50,10 +50,12 @@ export function TabNav({
             onClick={() => onTab(key)}
             aria-current={on ? "page" : undefined}
             className="flex min-h-[48px] flex-col items-center justify-center gap-1 text-[11px] transition active:scale-95"
-            style={{ color: on ? "#34c5e8" : "#7a8595" }}
+            style={{ color: on ? "#34c5e8" : "var(--color-faint)" }}
           >
-            <Icon size={21} />
-            <span className="inline-flex items-center gap-1">
+            {/* Weight as well as colour marks the current tab: a heavier stroke and a
+                semibold label, so it reads without relying on cyan alone. */}
+            <Icon size={22} strokeWidth={on ? 2.25 : 1.75} />
+            <span className={`inline-flex items-center gap-1 ${on ? "font-semibold" : ""}`}>
               {t(label)}
               {badge > 0 && (
                 <span

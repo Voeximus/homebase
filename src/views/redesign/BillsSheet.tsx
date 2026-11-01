@@ -2,13 +2,19 @@ import { useState } from "react";
 import { Receipt, X, CalendarDays, ChevronDown, ChevronRight } from "lucide-react";
 import { t } from "../../lib/i18n";
 import { catColor, catIcon } from "../../lib/catColor";
-import type { MonthCalendar, MonthCalBill } from "../../lib/schedule";
+import { dueOn, type MonthCalendar, type MonthCalBill } from "../../lib/schedule";
 import { BillCalendar } from "./BillCalendar";
 import { billsBeforeNextPayday } from "../../lib/headline";
 
 const money2 = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money0 = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+
+// A bill on the sheet. `due` is its resolved calendar date ("2026-11-01") when the row
+// came from the before-payday window, which can reach into next month — the same
+// recurringId@day id repeats across months, so the date is part of its key, and it is
+// the month the payment must be filed under.
+type SheetBill = MonthCalBill & { due?: string };
 
 // One bill line inside a container. Unpaid rows are tappable → pay; paid rows are
 // static and show WHEN they were paid (which can be a prior month for an early
@@ -27,15 +33,15 @@ function BillLine({ b, onPay }: { b: MonthCalBill; onPay?: (b: MonthCalBill) => 
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className="truncate text-[13px]"
-          style={{ color: b.paid ? "#7e8a98" : "#e6edf3", textDecoration: b.paid ? "line-through" : "none" }}
+          style={{ color: b.paid ? "var(--color-faint)" : "var(--color-bone)" }}
         >
           {b.name}
         </span>
-        <span className="text-[11px]" style={{ color: b.paid ? "#6b9e83" : "#7e8a98" }}>
+        <span className="text-[11px]" style={{ color: b.paid ? "#6b9e83" : "var(--color-faint)" }}>
           {b.paid ? t("paid {date}", { date: b.paidDate ?? "" }) : t("due {date}", { date: b.dateLabel })}
         </span>
       </span>
-      <span className="text-[13px] font-semibold" style={{ color: b.paid ? "#7e8a98" : "#e6edf3" }}>
+      <span className="text-[13px] font-semibold" style={{ color: b.paid ? "var(--color-faint)" : "var(--color-bone)" }}>
         {b.variable && !b.paid ? "~" : ""}
         {money2(b.amount)}
       </span>
@@ -62,25 +68,25 @@ function BillContainer({
 }: {
   title: string;
   accent: string;
-  bills: MonthCalBill[];
+  bills: SheetBill[];
   open: boolean;
   onToggle: () => void;
-  onPay?: (b: MonthCalBill) => void;
+  onPay?: (b: SheetBill) => void;
 }) {
   const total = bills.reduce((s, b) => s + b.amount, 0);
   return (
     <div className="mb-2 overflow-hidden rounded-xl" style={{ border: "1px solid #1b232e" }}>
       <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-3" style={{ background: "#131a23" }}>
         {open ? (
-          <ChevronDown size={16} style={{ color: "#8b97a6" }} />
+          <ChevronDown size={16} style={{ color: "var(--color-taupe)" }} />
         ) : (
-          <ChevronRight size={16} style={{ color: "#8b97a6" }} />
+          <ChevronRight size={16} style={{ color: "var(--color-taupe)" }} />
         )}
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />
         <span className="flex-1 text-left text-[13.5px] font-semibold text-bone">{title}</span>
         <span
           className="rounded-full px-1.5 text-[11px] font-semibold"
-          style={{ background: "#1b232e", color: "#9aa6b2" }}
+          style={{ background: "#1b232e", color: "var(--color-taupe)" }}
         >
           {bills.length}
         </span>
@@ -88,13 +94,13 @@ function BillContainer({
       </button>
       {open &&
         (bills.length === 0 ? (
-          <p className="px-3.5 py-3 text-[12px]" style={{ color: "#7e8a98" }}>
+          <p className="px-3.5 py-3 text-[12px]" style={{ color: "var(--color-faint)" }}>
             {t("Nothing here this month.")}
           </p>
         ) : (
           <div>
             {bills.map((b) => (
-              <BillLine key={b.id} b={b} onPay={onPay} />
+              <BillLine key={`${b.due ?? ""}|${b.id}`} b={b} onPay={onPay} />
             ))}
           </div>
         ))}
@@ -114,7 +120,7 @@ export function BillsSheet({
 }: {
   open: boolean;
   onClose: () => void;
-  onPay?: (b: MonthCalBill) => void;
+  onPay?: (b: SheetBill) => void;
   getMonth: (year: number, month: number) => MonthCalendar;
   baseDate?: Date;
 }) {
@@ -139,7 +145,19 @@ export function BillsSheet({
   // before — and `month` below is the very calendar the total was computed from, so
   // the list and the figure above it can never come from two different builds of it.
   const { month: mc, cycle, daysLeft, ...beforePayday } = billsBeforeNextPayday(getMonth, base);
-  const unpaid = mc.bills.filter((b) => !b.paid);
+  // "Unpaid · posting" lists the bills the figure above it adds up — the window's,
+  // which crosses into next month at a month end (rent on the 1st) — plus any of this
+  // month's unpaid bills outside it, so nothing unpaid this month disappears. It used
+  // to list this calendar month alone: at every month end, a real "still due" figure
+  // over an empty "Unpaid · 0".
+  const seen = new Set(beforePayday.bills.map((b) => `${b.due}|${b.id}`));
+  const unpaid: SheetBill[] = [
+    ...beforePayday.bills,
+    ...mc.bills
+      .filter((b) => !b.paid)
+      .map((b) => ({ ...b, due: dueOn(mc, b) }))
+      .filter((b) => !seen.has(`${b.due}|${b.id}`)),
+  ].sort((a, b) => a.due.localeCompare(b.due));
   const paid = mc.bills.filter((b) => b.paid);
 
   return (
@@ -161,18 +179,23 @@ export function BillsSheet({
       >
         <div className="mb-3.5 flex items-center gap-2.5">
           <span
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            style={{ background: "#2a2016", color: "#fb923c" }}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+            style={{ background: "#fb923c26", color: "#fb923c" }}
           >
             <Receipt size={18} />
           </span>
           <div className="flex-1 text-[18px] font-bold text-bone">{t("Bills")}</div>
           {!showCal && (
-            <span className="text-[12px]" style={{ color: "#8b97a6" }}>
+            <span className="text-[12px]" style={{ color: "var(--color-taupe)" }}>
               {mc.monthLabel}
             </span>
           )}
-          <button onClick={onClose} style={{ color: "#7a8595" }}>
+          <button
+            onClick={onClose}
+            aria-label={t("Close")}
+            className="h-hit -mr-1.5 rounded-full p-1.5 transition active:bg-white/5"
+            style={{ color: "var(--color-faint)" }}
+          >
             <X size={20} />
           </button>
         </div>
@@ -182,9 +205,13 @@ export function BillsSheet({
             className="mb-3 rounded-[14px] px-3 py-2.5"
             style={{ background: "#141a24", border: "1px solid #232d3a" }}
           >
-            <div className="text-[11.5px]" style={{ color: "#8b97a6" }}>
+            <div className="text-[11.5px]" style={{ color: "var(--color-taupe)" }}>
               {cycle.label} ·{" "}
-              {daysLeft === 0 ? t("last day") : t("{n} days left", { n: daysLeft })}
+              {daysLeft === 0
+                ? t("last day")
+                : daysLeft === 1
+                  ? t("1 day left")
+                  : t("{n} days left", { n: daysLeft })}
             </div>
             <div className="mt-0.5 text-[13.5px] font-semibold" style={{ color: "#fb923c" }}>
               {beforePayday.total > 0
@@ -195,7 +222,7 @@ export function BillsSheet({
               {/* Named separately because it is a different kind of fact: not
                   "coming up" but "already past its date and still unpaid". */}
               {beforePayday.overdueTotal > 0 && (
-                <span style={{ color: "#e8746a" }}>
+                <span style={{ color: "#f0556e" }}>
                   {" · "}
                   {t("{amount} already overdue", { amount: money2(beforePayday.overdueTotal) })}
                 </span>

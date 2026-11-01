@@ -15,10 +15,14 @@ export interface RecentRow {
 
 export interface HomeVM {
   firepower: number; // $/mo free to fire at debt (already net of budget overspend)
-  overspent: number; // $ over the lean budget this month (0 = on/under budget) — reduces firepower
-  debtFreeBy: string; // "Oct '26"
+  overspent: number; // $ over the lean budget this PAY CYCLE (0 = on/under budget)
+  debtFreeBy: string; // "Oct '26", or "—" when the plan does not clear at the current pace
+  // When the plan does not clear: how far a month the planned paychecks fall short of
+  // living costs plus the recent spending pace ($/mo). 0 when it clears. Optional so a
+  // mock without it still compiles; absent reads as 0.
+  payoffShortBy?: number;
   deployedThisCycle: number; // $ actually sent at debt this cycle (live from tagged txns) — tracking
-  nextAmount: number; // next payday send
+  nextAmount: number; // the first payday that actually sends money at the debt
   nextDate: string; // "Jun 30"
   cash: number;
   cashAccounts: number;
@@ -39,8 +43,16 @@ export interface HomeVM {
   streakDay: number;
   streakTotal: number;
   recent: RecentRow[];
-  sinceMonday: number; // "spent $X since Monday"
-  bills: { left: number; nextName: string; nextDate: string }; // the Home Bills tile
+  // The household's Sun–Sat week (the week the $/week plan runs on), as finance.week
+  // counts it: graded line spend with money back taken off. In Mine, the same rule over
+  // the lens's rows (money back taken off there too), so it never exceeds All.
+  spentThisWeek: number;
+  // The Home Bills tile: still due before the next payday (the same window as the
+  // Bills sheet's header and finance.next_bills), the next one, and what is overdue.
+  bills: { left: number; nextName: string; nextDate: string; overdue?: number };
+  // True in the Mine lens: the budget card's figures are the household's, not this
+  // person's, so the card says so.
+  household?: boolean;
   owedToYou: number; // sum of unsettled reimbursable set-asides (0 = hide the tile)
   // reimbursables still owed back, for the "Owed to you" sheet. `suggested` is set
   // when a single payback deposit matches → an honest "is this it?" confirm (the
@@ -48,36 +60,4 @@ export interface HomeVM {
   owedList: { id: string; merchant: string; amount: number; dateLabel: string; note?: string; suggested?: { id: string; label: string } }[];
   // recently-settled reimbursables — the undo path if a match was confirmed wrongly.
   owedSettled: { id: string; merchant: string; amount: number; dateLabel: string }[];
-}
-
-// ── Bills surface (Option A list + calendar on tap) ──
-export interface BillRow {
-  id: string; // recurringId@day
-  recurringId?: string;
-  name: string;
-  catId: string; // icon + color
-  amount: number;
-  day: number; // due day-of-month
-  dateLabel: string; // "Jun 20"
-  relLabel: string; // "tomorrow" / "in 10 days" / "overdue"
-  variable: boolean; // amount is a rolling-avg estimate
-}
-
-export interface CalDay {
-  day: number;
-  in: boolean; // an income lands this day
-  out: boolean; // a bill is due this day
-}
-
-export interface BillsVM {
-  leftThisMonth: number;
-  upcoming: BillRow[]; // unpaid, soonest first
-  paidCount: number;
-  paidTotal: number;
-  monthLabel: string; // "June 2026"
-  todayNum: number;
-  daysInMonth: number;
-  firstWeekday: number; // 0=Sun … the weekday of day 1
-  calendar: CalDay[]; // days that carry a dot
-  monthBills: (BillRow & { paid: boolean })[]; // every bill this month (for day tap)
 }
